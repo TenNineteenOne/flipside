@@ -23,17 +23,21 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async jwt({ token, account, profile }) {
       // On first login, store Spotify tokens and profile in JWT
       if (account && profile) {
-        token.spotifyId = profile.id
-        token.accessToken = account.access_token
-        token.refreshToken = account.refresh_token
-        token.expiresAt = account.expires_at
-        token.displayName = (profile as any).display_name
-        token.avatarUrl = (profile as any).images?.[0]?.url ?? null
+        return {
+          ...token,
+          spotifyId: profile.id,
+          accessToken: account.access_token,
+          refreshToken: account.refresh_token,
+          expiresAt: account.expires_at,
+          displayName: (profile as any).display_name,
+          avatarUrl: (profile as any).images?.[0]?.url ?? null,
+        }
       }
-      // Refresh token if expired
-      if (Date.now() < (token.expiresAt as number) * 1000) {
-        return token
-      }
+      // No refresh token = no session, return as-is
+      if (!token.refreshToken) return token
+      // Token still valid
+      if (Date.now() < (token.expiresAt as number) * 1000) return token
+      // Token expired — refresh it
       return refreshSpotifyToken(token)
     },
     async session({ session, token }) {
