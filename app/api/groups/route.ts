@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
-import { apiError, apiUnauthorized } from "@/lib/errors"
+import { apiError, apiUnauthorized, dbError } from "@/lib/errors"
 import { getUserId } from "@/lib/groups"
 
 export async function GET() {
@@ -17,7 +17,7 @@ export async function GET() {
     .select("groups(*)")
     .eq("user_id", userId)
 
-  if (error) return apiError(error.message)
+  if (error) return dbError(error, "groups/list")
 
   const groups = (data ?? []).map((row: any) => row.groups).filter(Boolean)
   return Response.json({ groups })
@@ -53,7 +53,7 @@ export async function POST(request: Request) {
     .select()
     .single()
 
-  if (groupError) return apiError(groupError.message)
+  if (groupError) return dbError(groupError, "groups/create")
 
   // Add creator as first member
   const { error: memberError } = await supabase
@@ -61,9 +61,8 @@ export async function POST(request: Request) {
     .insert({ group_id: group.id, user_id: userId })
 
   if (memberError) {
-    // Roll back group creation
     await supabase.from("groups").delete().eq("id", group.id)
-    return apiError(memberError.message)
+    return dbError(memberError, "groups/add-creator")
   }
 
   const inviteUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? ""}/join/${inviteCode}`

@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
-import { apiError, apiUnauthorized } from "@/lib/errors"
+import { apiError, apiUnauthorized, dbError } from "@/lib/errors"
+import { isValidSpotifyId } from "@/lib/spotify-ids"
 import { getUserId } from "@/lib/groups"
 
 export async function POST(request: Request): Promise<Response> {
@@ -18,7 +19,8 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   const { spotifyArtistId, signal } = body
-  if (!spotifyArtistId) return apiError("spotifyArtistId is required", 400)
+  if (!spotifyArtistId || !isValidSpotifyId(spotifyArtistId))
+    return apiError("Valid spotifyArtistId is required", 400)
   if (signal !== "thumbs_up" && signal !== "thumbs_down")
     return apiError("signal must be thumbs_up or thumbs_down", 400)
 
@@ -32,7 +34,7 @@ export async function POST(request: Request): Promise<Response> {
       { onConflict: "user_id,spotify_artist_id" }
     )
 
-  if (feedbackError) return apiError(feedbackError.message)
+  if (feedbackError) return dbError(feedbackError, "feedback/upsert")
 
   // Update seen_at in recommendation_cache
   const { error: cacheError } = await supabase
@@ -41,7 +43,7 @@ export async function POST(request: Request): Promise<Response> {
     .eq("user_id", userId)
     .eq("spotify_artist_id", spotifyArtistId)
 
-  if (cacheError) return apiError(cacheError.message)
+  if (cacheError) return dbError(cacheError, "feedback/cache-update")
 
   // If thumbs_up, write group_activity for all user's groups
   if (signal === "thumbs_up") {
@@ -61,7 +63,7 @@ export async function POST(request: Request): Promise<Response> {
       .select("group_id")
       .eq("user_id", userId)
 
-    if (membershipsError) return apiError(membershipsError.message)
+    if (membershipsError) return dbError(membershipsError, "feedback/memberships")
 
     if (memberships && memberships.length > 0) {
       const activityRows = memberships.map((m: { group_id: string }) => ({
@@ -76,7 +78,7 @@ export async function POST(request: Request): Promise<Response> {
         .from("group_activity")
         .upsert(activityRows)
 
-      if (activityError) return apiError(activityError.message)
+      if (activityError) return dbError(activityError, "feedback/activity")
     }
   }
 

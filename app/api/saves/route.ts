@@ -1,7 +1,10 @@
 import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
-import { apiError, apiUnauthorized } from "@/lib/errors"
+import { apiError, apiUnauthorized, dbError } from "@/lib/errors"
+import { getAccessToken } from "@/lib/get-access-token"
+import { isValidSpotifyId } from "@/lib/spotify-ids"
 import { getUserId } from "@/lib/groups"
+import { type NextRequest } from "next/server"
 
 async function spotifyFetch(url: string, accessToken: string, options: RequestInit = {}) {
   const res = await fetch(url, {
@@ -15,17 +18,15 @@ async function spotifyFetch(url: string, accessToken: string, options: RequestIn
   return res
 }
 
-export async function POST(request: Request) {
-  // 1. Auth check
+export async function POST(request: NextRequest) {
   const session = await auth()
-  if (!session?.user?.spotifyId || !session?.user?.accessToken) return apiUnauthorized()
+  if (!session?.user?.spotifyId) return apiUnauthorized()
 
-  const { spotifyId, accessToken } = session.user as {
-    spotifyId: string
-    accessToken: string
-  }
+  const accessToken = await getAccessToken(request)
+  if (!accessToken) return apiUnauthorized()
 
-  // Parse body
+  const { spotifyId } = session.user
+
   let body: { spotifyArtistId?: string; spotifyTrackId?: string; artistName?: string }
   try {
     body = await request.json()
@@ -37,14 +38,15 @@ export async function POST(request: Request) {
   if (!spotifyArtistId || !spotifyTrackId) {
     return apiError("spotifyArtistId and spotifyTrackId are required", 400)
   }
+  if (!isValidSpotifyId(spotifyArtistId) || !isValidSpotifyId(spotifyTrackId)) {
+    return apiError("Invalid Spotify ID format", 400)
+  }
 
-  // 2. Get userId
   const userId = await getUserId(spotifyId)
   if (!userId) return apiUnauthorized()
 
   const supabase = createServiceClient()
 
-  // 3. Fetch user record
   const { data: user, error: userError } = await supabase
     .from("users")
     .select("id, spotify_id, flipside_playlist_id")
@@ -53,25 +55,21 @@ export async function POST(request: Request) {
 
   if (userError || !user) return apiError("User not found", 404)
 
-  // 4. Insert into saves
   const { error: saveError } = await supabase
     .from("saves")
     .insert({ user_id: userId, spotify_artist_id: spotifyArtistId, spotify_track_id: spotifyTrackId })
 
-  if (saveError) return apiError(saveError.message)
+  if (saveError) return dbError(saveError, "saves/insert")
 
-  // 5. Update recommendation_cache seen_at
   await supabase
     .from("recommendation_cache")
     .update({ seen_at: new Date().toISOString() })
     .eq("user_id", userId)
     .eq("spotify_artist_id", spotifyArtistId)
 
-  // 6. Spotify playlist management
   let playlistId: string = user.flipside_playlist_id ?? ""
 
   if (!playlistId) {
-    // Create playlist
     const createRes = await spotifyFetch(
       `https://api.spotify.com/v1/users/${user.spotify_id}/playlists`,
       accessToken,
@@ -91,8 +89,6 @@ export async function POST(request: Request) {
     } else if (createRes.ok) {
       const playlist = await createRes.json()
       playlistId = playlist.id
-
-      // Save playlist ID to users table
       await supabase
         .from("users")
         .update({ flipside_playlist_id: playlistId })
@@ -101,7 +97,6 @@ export async function POST(request: Request) {
   }
 
   if (playlistId) {
-    // Add track to playlist
     const addRes = await spotifyFetch(
       `https://api.spotify.com/v1/playlists/${playlistId}/tracks`,
       accessToken,
@@ -117,7 +112,6 @@ export async function POST(request: Request) {
     }
   }
 
-  // 7. Write group_activity
   const { data: memberships } = await supabase
     .from("group_members")
     .select("group_id")
@@ -126,7 +120,6 @@ export async function POST(request: Request) {
   const groupIds: string[] = (memberships ?? []).map((m: any) => m.group_id)
 
   if (groupIds.length > 0) {
-    // Resolve artist name: try recommendation_cache first, fall back to request body
     let resolvedArtistName = artistName ?? ""
     const { data: cached } = await supabase
       .from("recommendation_cache")
@@ -151,6 +144,5 @@ export async function POST(request: Request) {
     await supabase.from("group_activity").insert(activityRows)
   }
 
-  // 8. Return result
   return Response.json({ success: true, playlistId: playlistId || null })
 }

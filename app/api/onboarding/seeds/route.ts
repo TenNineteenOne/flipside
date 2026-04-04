@@ -1,6 +1,8 @@
 import { type NextRequest } from "next/server"
 import { auth } from "@/lib/auth"
 import { apiError, apiUnauthorized } from "@/lib/errors"
+import { getAccessToken } from "@/lib/get-access-token"
+import { isValidSpotifyId } from "@/lib/spotify-ids"
 import { createServiceClient } from "@/lib/supabase/server"
 
 interface SpotifyArtistImage {
@@ -21,9 +23,10 @@ interface SpotifyArtistsResponse {
 
 export async function POST(req: NextRequest) {
   const session = await auth()
-  if (!session?.user?.accessToken || !session?.user?.spotifyId) {
-    return apiUnauthorized()
-  }
+  if (!session?.user?.spotifyId) return apiUnauthorized()
+
+  const accessToken = await getAccessToken(req)
+  if (!accessToken) return apiUnauthorized()
 
   let body: { artistIds?: unknown }
   try {
@@ -37,17 +40,14 @@ export async function POST(req: NextRequest) {
     !Array.isArray(artistIds) ||
     artistIds.length < 3 ||
     artistIds.length > 5 ||
-    !artistIds.every((id) => typeof id === "string")
+    !artistIds.every((id) => typeof id === "string" && isValidSpotifyId(id))
   ) {
-    return apiError("artistIds must be an array of 3–5 Spotify artist ID strings", 400)
+    return apiError("artistIds must be an array of 3–5 valid Spotify artist IDs", 400)
   }
 
-  // Fetch artist details directly from Spotify
   const spotifyRes = await fetch(
     `https://api.spotify.com/v1/artists?ids=${artistIds.join(",")}`,
-    {
-      headers: { Authorization: `Bearer ${session.user.accessToken}` },
-    }
+    { headers: { Authorization: `Bearer ${accessToken}` } }
   )
 
   if (!spotifyRes.ok) {

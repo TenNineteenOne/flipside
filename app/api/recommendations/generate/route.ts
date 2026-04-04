@@ -1,12 +1,17 @@
 import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, apiUnauthorized } from "@/lib/errors"
+import { getAccessToken } from "@/lib/get-access-token"
 import { accumulateSpotifyHistory } from "@/lib/listened-artists"
 import { buildRecommendations } from "@/lib/recommendation/engine"
+import { type NextRequest } from "next/server"
 
-export async function POST(): Promise<Response> {
+export async function POST(req: NextRequest): Promise<Response> {
   const session = await auth()
   if (!session?.user?.spotifyId) return apiUnauthorized()
+
+  const accessToken = await getAccessToken(req)
+  if (!accessToken) return apiUnauthorized()
 
   const supabase = createServiceClient()
 
@@ -19,15 +24,14 @@ export async function POST(): Promise<Response> {
   if (userError || !user) return apiError("User not found", 404)
 
   try {
-    // Accumulate Spotify history first so play counts are fresh
     await accumulateSpotifyHistory({
       userId: user.id,
-      accessToken: session.user.accessToken,
+      accessToken,
     })
 
     const count = await buildRecommendations({
       userId: user.id,
-      accessToken: session.user.accessToken,
+      accessToken,
       spotifyId: session.user.spotifyId,
       playThreshold: user.play_threshold ?? 25,
     })
@@ -36,6 +40,6 @@ export async function POST(): Promise<Response> {
   } catch (err) {
     const message = err instanceof Error ? err.message : "Generation failed"
     console.error("[recommendations/generate] Error:", message)
-    return apiError(message)
+    return apiError("Recommendation generation failed", 500)
   }
 }

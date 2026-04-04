@@ -37,10 +37,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
     async session({ session, token }) {
       session.user.spotifyId = token.spotifyId as string
-      session.user.accessToken = token.accessToken as string
       session.user.displayName = token.displayName as string
       session.user.avatarUrl = token.avatarUrl as string | null
-      session.error = token.error as string | undefined
+      // accessToken is intentionally omitted — read via getToken() in server-only code
+      if (token.error) console.error("[auth] token error:", token.error)
       return session
     },
   },

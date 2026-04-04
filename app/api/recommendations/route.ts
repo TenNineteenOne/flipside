@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
-import { apiError, apiUnauthorized } from "@/lib/errors"
+import { apiError, apiUnauthorized, dbError } from "@/lib/errors"
 
 export async function GET(): Promise<Response> {
   const session = await auth()
@@ -27,17 +27,8 @@ export async function GET(): Promise<Response> {
     .order("score", { ascending: false })
     .limit(20)
 
-  if (error) return apiError(error.message)
+  if (error) return dbError(error, "recommendations/fetch")
 
-  // Auto-trigger generation if cache is empty
-  if (!data || data.length === 0) {
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? ""
-    void fetch(`${baseUrl}/api/recommendations/generate`, {
-      method: "POST",
-      headers: { Cookie: "" }, // server-to-server; generation cron handles auth separately
-    }).catch(() => {})
-    return Response.json({ recommendations: [], generating: true })
-  }
-
-  return Response.json({ recommendations: data, generating: false })
+  // Return empty — client will trigger POST /api/recommendations/generate via useEffect
+  return Response.json({ recommendations: data ?? [], generating: false })
 }

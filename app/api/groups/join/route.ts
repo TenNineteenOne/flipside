@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
-import { apiError, apiUnauthorized } from "@/lib/errors"
+import { apiError, apiUnauthorized, dbError } from "@/lib/errors"
 import { getUserId } from "@/lib/groups"
 
 export async function POST(request: Request): Promise<Response> {
@@ -29,7 +29,7 @@ export async function POST(request: Request): Promise<Response> {
     .eq("invite_code", inviteCode)
     .maybeSingle()
 
-  if (groupError) return apiError(groupError.message)
+  if (groupError) return dbError(groupError, "groups/join-find")
   if (!group) return apiError("Invalid invite code", 404)
 
   // Check group size (max 10 members)
@@ -38,7 +38,7 @@ export async function POST(request: Request): Promise<Response> {
     .select("id", { count: "exact", head: true })
     .eq("group_id", group.id)
 
-  if (countError) return apiError(countError.message)
+  if (countError) return dbError(countError, "groups/join-count")
   if ((count ?? 0) >= 10) return apiError("This group is full (max 10 members)", 400)
 
   // Upsert membership (idempotent)
@@ -46,7 +46,7 @@ export async function POST(request: Request): Promise<Response> {
     .from("group_members")
     .upsert({ group_id: group.id, user_id: userId }, { onConflict: "group_id,user_id" })
 
-  if (memberError) return apiError(memberError.message)
+  if (memberError) return dbError(memberError, "groups/join-member")
 
   return Response.json({ groupId: group.id }, { status: 200 })
 }

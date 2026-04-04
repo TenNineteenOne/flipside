@@ -43,6 +43,14 @@ export function FeedClient({ recommendations, groups }: FeedClientProps) {
   const [actedIds, setActedIds] = useState<Set<string>>(new Set())
   const [friendActivity, setFriendActivity] = useState<Record<string, string[]>>({})
 
+  // Trigger generation when cache is empty, then reload after a short delay
+  useEffect(() => {
+    if (recommendations.length !== 0) return
+    fetch("/api/recommendations/generate", { method: "POST" }).then(() => {
+      setTimeout(() => window.location.reload(), 3000)
+    }).catch(() => {/* generation failed silently */})
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (recommendations.length === 0) return
     const artistIds = recommendations.map((r) => r.spotify_artist_id).join(",")

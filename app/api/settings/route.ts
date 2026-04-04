@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
-import { apiError, apiUnauthorized } from "@/lib/errors"
+import { apiError, apiUnauthorized, dbError } from "@/lib/errors"
 import { getUserId } from "@/lib/groups"
 
 export async function PATCH(request: Request) {
@@ -28,7 +28,11 @@ export async function PATCH(request: Request) {
   }
 
   if (body.lastfmUsername !== undefined) {
-    update.lastfm_username = body.lastfmUsername.trim() || null
+    const lfmUsername = body.lastfmUsername.trim()
+    if (lfmUsername && !/^[a-zA-Z][a-zA-Z0-9_-]{0,24}$/.test(lfmUsername)) {
+      return apiError("Invalid Last.fm username format", 400)
+    }
+    update.lastfm_username = lfmUsername || null
   }
 
   if (Object.keys(update).length === 0) {
@@ -38,7 +42,7 @@ export async function PATCH(request: Request) {
   const supabase = createServiceClient()
   const { error } = await supabase.from("users").update(update).eq("id", userId)
 
-  if (error) return apiError(error.message)
+  if (error) return dbError(error, "settings/update")
 
   return Response.json({ success: true })
 }
