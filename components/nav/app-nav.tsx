@@ -5,16 +5,18 @@ import { usePathname } from "next/navigation"
 import { Music2, Users, Settings, LogOut } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-// TODO: replace with real session from #15
-const mockUser = { name: "User", image: null }
-
 const navLinks = [
   { href: "/feed", label: "Feed", icon: Music2 },
   { href: "/groups", label: "Groups", icon: Users },
   { href: "/settings", label: "Settings", icon: Settings },
 ]
 
-export function AppNav() {
+interface AppNavProps {
+  userName?: string
+  userImage?: string | null
+}
+
+export function AppNav({ userName = "User", userImage = null }: AppNavProps) {
   const pathname = usePathname()
 
   return (
@@ -54,9 +56,18 @@ export function AppNav() {
           {/* Right side: avatar + sign out */}
           <div className="flex items-center gap-3">
             {/* Avatar */}
-            <div className="flex size-8 items-center justify-center rounded-full bg-primary/20 text-xs font-semibold text-primary ring-1 ring-primary/30">
-              {mockUser.name.charAt(0).toUpperCase()}
-            </div>
+            {userImage ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={userImage}
+                alt={userName}
+                className="size-8 rounded-full object-cover ring-1 ring-primary/30"
+              />
+            ) : (
+              <div className="flex size-8 items-center justify-center rounded-full bg-primary/20 text-xs font-semibold text-primary ring-1 ring-primary/30">
+                {userName.charAt(0).toUpperCase()}
+              </div>
+            )}
 
             {/* Sign out */}
             <button
@@ -75,9 +86,18 @@ export function AppNav() {
         <span className="text-lg font-bold tracking-tight text-primary">
           flipside
         </span>
-        <div className="flex size-8 items-center justify-center rounded-full bg-primary/20 text-xs font-semibold text-primary ring-1 ring-primary/30">
-          {mockUser.name.charAt(0).toUpperCase()}
-        </div>
+        {userImage ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={userImage}
+            alt={userName}
+            className="size-8 rounded-full object-cover ring-1 ring-primary/30"
+          />
+        ) : (
+          <div className="flex size-8 items-center justify-center rounded-full bg-primary/20 text-xs font-semibold text-primary ring-1 ring-primary/30">
+            {userName.charAt(0).toUpperCase()}
+          </div>
+        )}
       </header>
 
       {/* Mobile bottom nav */}

@@ -4,7 +4,7 @@ import { notFound } from "next/navigation"
 import { createServiceClient } from "@/lib/supabase/server"
 import { getUserId } from "@/lib/groups"
 import { CopyInviteButton } from "@/components/groups/copy-invite-button"
-import { Button } from "@/components/ui/button"
+import { LeaveGroupButton } from "@/components/groups/leave-group-button"
 import { ArrowLeft } from "lucide-react"
 import Link from "next/link"
 
@@ -111,14 +111,9 @@ export default async function GroupDetailPage({ params }: GroupDetailPageProps) 
         </ul>
       </section>
 
-      {/* Leave group — stub, full impl in issue #33 */}
+      {/* Leave group */}
       <div className="mt-10 border-t border-border pt-6">
-        <Button variant="destructive" disabled>
-          Leave group
-        </Button>
-        <p className="mt-1.5 text-xs text-muted-foreground">
-          Coming soon
-        </p>
+        <LeaveGroupButton groupId={group.id} />
       </div>
     </div>
   )
