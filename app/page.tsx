@@ -1,6 +1,12 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { auth } from "@/lib/auth";
 
-export default function LandingPage() {
+export default async function LandingPage() {
+  const session = await auth();
+  if (session) {
+    redirect("/feed");
+  }
   return (
     <main className="flex flex-col items-center justify-center min-h-screen px-6 text-center">
       <div className="max-w-md w-full space-y-8">
