@@ -70,13 +70,14 @@ export function AppNav({ userName = "User", userImage = null }: AppNavProps) {
             )}
 
             {/* Sign out */}
-            <button
+            <Link
+              href="/api/auth/signout"
               className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
               aria-label="Sign out"
             >
               <LogOut className="size-4" />
               <span className="hidden lg:inline">Sign out</span>
-            </button>
+            </Link>
           </div>
         </div>
       </header>

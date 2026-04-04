@@ -1,5 +1,6 @@
 import type { MusicProvider } from "./index"
 import type { Artist, PlayHistory, Track } from "./types"
+import { getSpotifyClientToken } from "@/lib/spotify-client-token"
 
 const SPOTIFY_BASE = "https://api.spotify.com/v1"
 const LASTFM_BASE = "http://ws.audioscrobbler.com/2.0"
@@ -215,10 +216,7 @@ export class SpotifyProvider implements MusicProvider {
    * Last.fm artists without a discoverable Spotify match are silently dropped.
    */
   private async _searchOneArtist(name: string): Promise<Artist | null> {
-    // We need an access token for Spotify search. Since getSimilarArtists does
-    // not receive one, we check for a server-side client credentials token in
-    // the environment. If unavailable we skip this artist.
-    const serverToken = process.env.SPOTIFY_SERVER_TOKEN
+    const serverToken = await getSpotifyClientToken()
     if (!serverToken) return null
 
     const res = await spotifyFetch(
@@ -234,7 +232,7 @@ export class SpotifyProvider implements MusicProvider {
 
   /** Fetch similar artists from Spotify Recommendations (seed by artist). */
   private async _getSimilarViaSpotifyRecs(artistId: string): Promise<Artist[]> {
-    const serverToken = process.env.SPOTIFY_SERVER_TOKEN
+    const serverToken = await getSpotifyClientToken()
     if (!serverToken) return []
 
     const res = await spotifyFetch(

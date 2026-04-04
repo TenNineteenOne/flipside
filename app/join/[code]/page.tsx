@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { cookies } from "next/headers"
 import { createServiceClient } from "@/lib/supabase/server"
+import { getUserId } from "@/lib/groups"
 import { notFound } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Users } from "lucide-react"
@@ -60,12 +61,31 @@ export default async function JoinPage({ params }: JoinPageProps) {
           {memberCount ?? 0} {memberCount === 1 ? "member" : "members"}
         </p>
 
-        {/* Join button — stub, full implementation in issue #25 */}
         <form
           action={async () => {
             "use server"
-            // Full join logic lives in issue #25 (POST /api/groups/join)
-            // For now redirect to groups list
+            const session = await auth()
+            if (!session?.user?.spotifyId) redirect("/")
+            const userId = await getUserId(session.user.spotifyId)
+            if (!userId) redirect("/")
+            const supabase = createServiceClient()
+            // Find group by invite code
+            const { data: g } = await supabase
+              .from("groups")
+              .select("id")
+              .eq("invite_code", code)
+              .maybeSingle()
+            if (!g) redirect("/groups")
+            // Check group is not full
+            const { count } = await supabase
+              .from("group_members")
+              .select("id", { count: "exact", head: true })
+              .eq("group_id", g.id)
+            if ((count ?? 0) >= 10) redirect("/groups")
+            // Upsert membership (idempotent)
+            await supabase
+              .from("group_members")
+              .upsert({ group_id: g.id, user_id: userId }, { onConflict: "group_id,user_id" })
             redirect("/groups")
           }}
         >
