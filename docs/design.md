@@ -2,7 +2,7 @@
 
 ## Context
 
-The user wants a music discovery web app called **Flipside** for themselves and a small friend group. The core problem: without social media, finding new music from artists you've never heard is hard. Flipside connects to Spotify, analyzes your listening history, and surfaces artists you've never played — filtered, ranked, and enriched with social signal from your friend group. Users can preview tracks, react with thumbs up/down, save to Spotify, and discover what friends are finding. The feedback loop improves recommendations over time.
+Flipside is a private music discovery web app for small friend groups (max 10 people). The core problem: without social media, finding new music from artists you've never heard is hard. Flipside connects to Spotify, analyzes your listening history, and surfaces artists you've never played — filtered, ranked, and enriched with social signal from your friend group. Users can preview tracks, react with thumbs up/down, save to Spotify, and discover what friends are finding. The feedback loop improves recommendations over time.
 
 GitHub repo: https://github.com/TenNineteenOne/flipside
 
@@ -12,9 +12,11 @@ GitHub repo: https://github.com/TenNineteenOne/flipside
 
 - **Next.js 14** (App Router, TypeScript)
 - **NextAuth.js** — Spotify OAuth (sole identity provider, no separate accounts)
-- **Supabase** — PostgreSQL database + real-time subscriptions
+- **Supabase** — PostgreSQL database + real-time subscriptions + RLS
 - **Vercel** — deployment + cron jobs for daily feed refresh
-- **Spotify Web API** — top artists, related artists, recommendations, 30s preview URLs, playlist management
+- **Spotify Web API** — top artists, recommendations, 30s preview URLs, playlist management
+- **Last.fm API** — similar artists (`artist.getSimilar`) + full scrobble history via username; read-only, no OAuth required
+- **Tailwind CSS + shadcn/ui** — dark mode only; blues, teals, purples palette; Spotify-inspired layout
 
 ---
 
@@ -24,20 +26,21 @@ GitHub repo: https://github.com/TenNineteenOne/flipside
 Browser (Next.js React)
   ↕
 Next.js API Routes (server-side — Spotify tokens never exposed to client)
-  ↕                    ↕
-Spotify API        Supabase DB
-(music data)       (users, groups, feedback, cache)
+  ↕                    ↕                   ↕
+Spotify API        Supabase DB          Last.fm API
+(music data)       (users, groups,      (similar artists,
+                    feedback, cache)     scrobble history)
 ```
 
-### MusicProvider Interface (critical for Last.fm future support)
+### MusicProvider Interface
 
-All recommendation logic talks to a `MusicProvider` interface, never to Spotify directly. This is the most important architectural seam in the app.
+All recommendation logic talks to a `MusicProvider` interface, never to Spotify or Last.fm directly. This is the most important architectural seam in the app.
 
 ```typescript
 interface MusicProvider {
   getTopArtists(userId: string, term: 'short' | 'medium' | 'long'): Promise<Artist[]>
-  getRelatedArtists(artistId: string): Promise<Artist[]>
-  getPlayHistory(userId: string): Promise<PlayHistory[]>
+  getSimilarArtists(artistId: string): Promise<Artist[]>   // uses Last.fm artist.getSimilar
+  getRecentlyPlayed(userId: string): Promise<PlayHistory[]>
   searchArtists(query: string): Promise<Artist[]>
   getArtistTopTracks(artistId: string, limit: number): Promise<Track[]>
   createPlaylist(userId: string, name: string): Promise<string>
@@ -45,7 +48,7 @@ interface MusicProvider {
 }
 ```
 
-`SpotifyProvider` implements this interface. `LastFmProvider` will implement the same interface when added — no other code changes required.
+`SpotifyProvider` implements this interface. Note: Spotify deprecated `/artists/{id}/related-artists` in November 2024. `getSimilarArtists` uses Last.fm `artist.getSimilar` (unauthenticated) as the primary source and Spotify Recommendations API as secondary. Do not use the deprecated Spotify endpoint.
 
 ---
 
@@ -60,6 +63,7 @@ users (
   avatar_url text,
   play_threshold int DEFAULT 0,       -- 0 = strict (never played), adjustable in Settings
   flipside_playlist_id text,          -- Spotify playlist ID for saves, auto-created on first save
+  lastfm_username text,               -- optional; validated against Last.fm API on save
   created_at timestamptz
 )
 
@@ -79,7 +83,8 @@ group_members (
   joined_at timestamptz
 )
 
--- Cold start: manually selected seed artists shown during onboarding
+-- Cold start: manually selected seed artists during onboarding
+-- Used until user has >= 10 Spotify top artists, then ignored entirely
 seed_artists (
   id uuid PK,
   user_id uuid FK users,
@@ -89,6 +94,20 @@ seed_artists (
   added_at timestamptz
 )
 
+-- Accumulated listening history (private — never exposed to groups via RLS)
+-- Built from: Spotify top artists, Spotify recently-played, Last.fm scrobbles
+listened_artists (
+  id uuid PK,
+  user_id uuid FK users,
+  spotify_artist_id text,             -- null for Last.fm-only entries
+  lastfm_artist_name text,            -- null for Spotify-only entries
+  source text CHECK (source IN ('spotify_recent', 'spotify_top', 'lastfm')),
+  play_count int DEFAULT 1,           -- incremented on each new occurrence
+  last_seen_at timestamptz,
+  created_at timestamptz,
+  UNIQUE(user_id, spotify_artist_id)
+)
+
 -- Daily-refreshed recommendation cache
 recommendation_cache (
   id uuid PK,
@@ -96,10 +115,10 @@ recommendation_cache (
   spotify_artist_id text,
   artist_data jsonb,                  -- name, genres, image, top 3 tracks, preview URLs
   score float,                        -- ranking score (boosted by feedback + friend signals)
-  why text,                           -- "Because you like X" explanation
+  why jsonb,                          -- { sourceArtists: string[], genres: string[], friendBoost: string[] }
   seen_at timestamptz,                -- null = not yet shown to user
   expires_at timestamptz,             -- seen items expire after 7 days; unseen items after 30 days
-  source text,                        -- 'spotify_related' | 'spotify_recommendations' | 'seed'
+  source text,                        -- 'lastfm_similar' | 'spotify_recommendations' | 'seed'
   created_at timestamptz
 )
 
@@ -113,7 +132,7 @@ feedback (
   deleted_at timestamptz              -- soft delete for undo; null = active
 )
 
--- Saves (also treated as implicit thumbs_up)
+-- Saves (also treated as implicit thumbs_up in scoring)
 saves (
   id uuid PK,
   user_id uuid FK users,
@@ -131,7 +150,7 @@ group_activity (
   artist_name text,
   action_type text CHECK (action_type IN ('thumbs_up', 'save')),
   created_at timestamptz
-  -- Note: records persist when user leaves group (historical data retained)
+  -- Records persist when user leaves group (historical data retained)
 )
 ```
 
@@ -139,19 +158,31 @@ group_activity (
 
 ## Recommendation Engine
 
-Runs as a daily Vercel Cron job (or Supabase Edge Function). For each user:
+Runs on-demand after first login (with loading state), then daily via Vercel Cron (`0 3 * * *` — 3am UTC). For each user:
 
-1. **Fetch listening history** via `MusicProvider.getTopArtists()` (short, medium, long term)
-2. **Seed fallback**: if history is sparse, include `seed_artists` from onboarding
-3. **Expand**: for each top/seed artist, call `MusicProvider.getRelatedArtists()`
-4. **Filter**: remove any artist where user's play count exceeds their `play_threshold`
-5. **Filter**: remove thumbs-down'd artists (feedback where signal='thumbs_down' and deleted_at IS NULL)
-6. **Score**: base score from Spotify popularity + relationship proximity
+1. **Fetch top artists** via `MusicProvider.getTopArtists()` (short, medium, long term)
+2. **Seed fallback**: if user has < 5 Spotify top artists, include `seed_artists`. Seeds ignored once user has ≥10 top artists (hard cutoff).
+3. **Expand**: call `MusicProvider.getSimilarArtists()` (Last.fm) and Spotify Recommendations API for each top/seed artist. Engine works at track level where it produces better results, deduplicating to artist level afterward.
+4. **Filter — history**: exclude artists where `spotify_artist_id` appears in `listened_artists` with `play_count > play_threshold`, OR where normalized artist name matches a `lastfm_artist_name` entry with `play_count > play_threshold`.
+5. **Filter — feedback**: remove thumbs-down'd artists (feedback where signal='thumbs_down' and deleted_at IS NULL)
+6. **Score**: base score from Spotify popularity + relationship proximity to seed/top artists
 7. **Boost**: +score for artists related to thumbs-up'd artists and saves
 8. **Boost**: +score for artists that group members have thumbs-up'd or saved
-9. **Deduplicate** and rank
-10. **Fetch top 3 tracks** per artist via `MusicProvider.getArtistTopTracks(artistId, 3)`
-11. **Write** to `recommendation_cache`, replacing previous day's unseen items
+9. **Resurfacing**: a seen-but-ignored artist (seen_at IS NOT NULL, no feedback) is re-eligible if `ceil(groupSize * 0.2)` other group members have reacted since the user ignored it
+10. **Deduplicate** and rank
+11. **Fetch top tracks**: call `MusicProvider.getArtistTopTracks(artistId, 10)`, surface top 3 in `artist_data`. Tracks with null `preview_url` are included but flagged — frontend shows disabled play button.
+12. **Write** to `recommendation_cache`: replace previous unseen items, preserve unexpired seen items
+13. **Cron batching**: process users 10 at a time, 1 batch per minute, exponential backoff on Spotify 429s
+
+### why field structure
+```json
+{
+  "sourceArtists": ["Snail Mail", "Soccer Mommy"],
+  "genres": ["indie rock", "lo-fi"],
+  "friendBoost": ["Jordan", "Alex"]
+}
+```
+Max 2 source artists, max 2 genres. Populated at cache-build time. Frontend renders: *"Because you like Snail Mail and Soccer Mommy · indie rock, lo-fi · Jordan also likes this"*
 
 ---
 
@@ -161,11 +192,11 @@ Runs as a daily Vercel Cron job (or Supabase Edge Function). For each user:
 | Route | Description |
 |---|---|
 | `/` | Landing page with "Connect Spotify" button |
-| `/onboarding` | Seed artist picker (3–5 artists); shown when listening history is sparse |
+| `/onboarding` | Seed artist picker (3–5 artists); shown when Spotify top artists < 5 |
 | `/feed` | Main discovery feed; group filter tabs if user is in multiple groups |
 | `/groups` | List user's groups; create group button |
-| `/join/[code]` | Join group via invite link (works before or after auth) |
-| `/settings` | Play threshold, hidden artists list (undo thumbs down), playlist selection |
+| `/join/[code]` | Join group via invite link; works before or after auth (see pre-auth flow) |
+| `/settings` | Play threshold, hidden artists, playlist selection, Last.fm username |
 
 ### API Routes
 | Route | Method | Description |
@@ -179,82 +210,138 @@ Runs as a daily Vercel Cron job (or Supabase Edge Function). For each user:
 | `/api/groups/[id]/invite` | GET | Get/regenerate invite code |
 | `/api/groups/join` | POST | Join group by invite code |
 | `/api/groups/[id]/activity` | GET | Real-time group feed activity |
+| `/api/cron/recommendations` | POST | Vercel Cron handler — daily feed rebuild |
 
 ---
 
 ## UX Details
 
-**Artist card** (feed item):
+### Artist card (feed item)
 - Artist name, genres, avatar image
-- "Because you like [Artist X]" — sourced from `recommendation_cache.why`
-- Friend overlap: "Jordan and Alex also like this" (from group_activity)
-- 3 preview tracks with inline play/pause (HTML5 `<audio>` + Spotify `preview_url`)
-- Thumbs up / Thumbs down / Save buttons
+- `why` rendered from `recommendation_cache.why` jsonb: "Because you like X and Y · genre1, genre2"
+- Friend overlap: "Jordan and Alex also like this" (live-updated via Supabase real-time — annotation only, no reordering)
+- Up to 3 preview tracks with inline play/pause (HTML5 `<audio>` + Spotify `preview_url`). Tracks with null `preview_url` show a disabled play button — artist is still shown.
+- Thumbs up / Thumbs down / Save buttons (no swipe gestures in v1; card built to support swipe later)
 
-**Thumbs down flow**:
-- Card immediately shows an "Undo" toast overlay for 5 seconds
-- User can tap Undo to cancel — card returns to normal state
-- After 5 seconds, card slides out and artist is added to feedback table
-- Full hidden artists list available in Settings → Hidden Artists
+### Thumbs down flow
+- Card immediately shows an inline "Undo" overlay for 5 seconds
+- Tap Undo → card returns to normal state, no feedback record written
+- After 5 seconds → card slides out, `feedback` row written with `deleted_at = null`
+- Full hidden artists list in Settings → Hidden Artists (restore via DELETE `/api/feedback/[artistId]`)
 
-**Feed behavior**:
-- Seen-but-not-reacted artists expire after 7 days (can resurface if friend boosts them)
-- Thumbs-down'd artists are permanently hidden (recoverable via Settings)
-- Feed sorted by score; refreshed daily in background
+### Feed behavior
+- Seen-but-not-reacted artists expire after 7 days; can resurface if `ceil(groupSize * 0.2)` other group members react
+- Thumbs-down'd artists permanently hidden (recoverable via Settings)
+- Feed sorted by score; card order frozen until next daily cron run
+- Real-time (Supabase) updates friend annotations only — no mid-session reordering
 
-**Groups**:
+### Groups
 - Max 10 members per group
 - Any member can share the invite link
 - Users can be in multiple groups; feed has per-group filter tabs
-- Past reactions/saves stay in group_activity when a member leaves
+- Past reactions/saves stay in `group_activity` when a member leaves
 
-**Cold start**:
-- Detect sparse history (< 5 top artists) after Spotify login
-- Show onboarding seed picker: search Spotify artists, pick 3–5
-- Seeds used as additional starting points in recommendation engine
-- Seeds fade in weight as real history accumulates
+### Pre-auth invite flow
+1. User clicks `/join/[code]` while unauthenticated
+2. Invite code stored in a cookie
+3. User is redirected to Spotify OAuth
+4. After auth and user record creation, pending invite cookie is processed → user auto-joined to group
+5. Redirect to feed (already in the group)
 
-**Saves**:
+### Cold start / onboarding
+- Trigger: user has < 5 Spotify top artists after login
+- Show seed picker: search Spotify artists, pick 3–5
+- Seeds treated as top artists in the engine until real history reaches ≥10 top artists (hard cutoff)
+- First feed generated on-demand with loading state ("Building your first feed…"); subsequent refreshes via cron
+
+### Last.fm username
+- Optional field in Settings
+- Validated against Last.fm API on save (`user.getInfo`)
+- Scrobble history pulled via `user.getTopArtists` + `user.getRecentTracks` (no auth needed)
+- History stored in `listened_artists` with `source = 'lastfm'`; matched at filter time by normalized artist name
+- Dramatically improves "never played" filter accuracy for active Last.fm users
+
+### Saves
 - First save auto-creates "Discovered via Flipside" playlist in user's Spotify
 - Playlist ID stored in `users.flipside_playlist_id`
-- User can point to a different playlist in Settings
+- User can configure a different destination playlist in Settings
+
+---
+
+## Row Level Security
+
+All Supabase tables have RLS enabled from day one.
+
+| Table | Policy |
+|---|---|
+| `users` | User can read/write own row only |
+| `feedback` | User can read/write own rows only |
+| `saves` | User can read/write own rows only |
+| `recommendation_cache` | User can read/write own rows only |
+| `seed_artists` | User can read/write own rows only |
+| `listened_artists` | User can read/write own rows only; **never readable by group members** |
+| `groups` | Members of the group can read; creator can update |
+| `group_members` | Members of the group can read |
+| `group_activity` | Members of the group can read |
 
 ---
 
 ## Background Jobs
 
 **Daily feed refresh** (Vercel Cron `0 3 * * *` — 3am UTC):
-- For each user: run recommendation engine, write new cache entries
-- Mark expired cache entries (seen > 7 days ago)
+- Pull all users in batches of 10, 1 batch per minute
+- For each user: run recommendation engine, write new `recommendation_cache` entries
+- Mark expired cache entries (seen_at > 7 days ago)
+- Exponential backoff on Spotify 429 responses
+
+**listened_artists accumulation** (runs as part of daily cron per user):
+- Call Spotify recently-played (last 50 tracks), upsert artists into `listened_artists`
+- If `lastfm_username` set, pull Last.fm `user.getRecentTracks` (paginated), upsert by normalized name
 
 ---
 
-## Future: Last.fm Integration
+## Visual Design
 
-When adding Last.fm:
-1. Write `LastFmProvider` implementing the `MusicProvider` interface
-2. Add `music_provider` field to `users` table (`'spotify' | 'lastfm'`)
-3. Auth: add Last.fm OAuth via NextAuth (separate provider)
-4. Feed builder picks provider based on user setting — zero changes to scoring/ranking logic
-5. Users who connect both get merged history (de-duped by artist name/MusicBrainz ID)
+- Dark mode only
+- Color palette: blues, teals, purples — used for accents, interactive states, and highlights
+- Spotify-inspired layout: vertical feed of cards, prominent artist imagery, clean typography
+- Component library: Tailwind CSS + shadcn/ui for primitives (buttons, dialogs, inputs, tabs)
+- Custom card component for artist feed items — built to support swipe gestures as a future enhancement
 
-The interface is documented with this future use in mind. Keep `MusicProvider` methods generic (no Spotify-specific types in signatures).
+---
+
+## Future Considerations
+
+- **Swipe gestures** on feed cards (left = thumbs down, right = thumbs up) — card component is built with this in mind
+- **Last.fm OAuth** — not needed; username-only provides equivalent read-only data for public profiles
+- **Apple Music / Tidal** — no viable public history API; deferred indefinitely
+- **MusicBrainz ID deduplication** — if merging Last.fm + Spotify history more precisely in future; current normalized-name approach is sufficient for v1
 
 ---
 
 ## Verification Checklist
 
 - [ ] Spotify OAuth login → user record created in Supabase
-- [ ] Sparse history → onboarding seed picker appears
-- [ ] Seed picker → selected artists appear in recommendation engine input
-- [ ] Feed loads → all artists absent from user's Spotify history (per threshold)
-- [ ] Thumbs down → undo toast appears, then card slides out after 5s
+- [ ] Sparse history (< 5 top artists) → onboarding seed picker appears
+- [ ] Seed picker → selected artists used in recommendation engine
+- [ ] ≥10 Spotify top artists → seeds ignored in engine
+- [ ] First login → on-demand feed generation with loading state
+- [ ] Feed loads → all artists absent from user's listening history (per threshold)
+- [ ] Tracks with null preview_url → disabled play button shown, artist still visible
+- [ ] Thumbs down → undo overlay appears for 5s, then card slides out
 - [ ] Undo → card restored, no feedback record written
-- [ ] Settings → Hidden Artists list shows thumbs-down'd artists, restore works
+- [ ] Settings → Hidden Artists list shows thumbs-down'd artists; restore works
 - [ ] 3 preview tracks → each plays inline without leaving the app
 - [ ] Save → track added to Flipside playlist in user's Spotify account
 - [ ] Create group → invite link generated, shareable by any member
-- [ ] Friend joins via link → appears in group, their activity surfaces in your feed
+- [ ] Pre-auth invite → invite code preserved through OAuth, user auto-joined after login
+- [ ] Friend joins → their activity surfaces in your feed via real-time annotation
+- [ ] Real-time friend activity → appends to card annotation, does not reorder feed
+- [ ] Resurfacing → ignored artist reappears when ceil(groupSize * 0.2) other members react
 - [ ] Daily cron → recommendation cache rebuilt, feed updated next load
+- [ ] Cron batching → processes users 10/min, retries on 429
 - [ ] Multiple groups → filter tabs visible in feed, per-group view works
 - [ ] Leave group → historical group_activity records remain for other members
+- [ ] Last.fm username saved → validated, scrobble history populates listened_artists
+- [ ] listened_artists → never readable by group members (RLS enforced)
+- [ ] why field → renders source artists, genres, and friend names on card
