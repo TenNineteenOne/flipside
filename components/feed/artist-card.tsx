@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react"
 import Image from "next/image"
-import { Play, Pause, ThumbsUp, ThumbsDown, Bookmark, Music, Plus } from "lucide-react"
+import { Play, Pause, ThumbsUp, ThumbsDown, Music, Plus, ExternalLink } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -45,7 +45,7 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed, friendNames 
   const [playingTrackId, setPlayingTrackId] = useState<string | null>(null)
   const [loadingAction, setLoadingAction] = useState<string | null>(null)
 
-  // Prefer tracks with preview URLs so rows are actually playable
+  // Prefer tracks with preview URLs so they appear first
   const withPreview = artist.topTracks.filter((t) => t.previewUrl)
   const withoutPreview = artist.topTracks.filter((t) => !t.previewUrl)
   const visibleTracks = [...withPreview, ...withoutPreview].slice(0, 3)
@@ -54,13 +54,11 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed, friendNames 
     if (!track.previewUrl) return
 
     if (playingTrackId === track.id) {
-      // Pause current
       audioRef.current?.pause()
       setPlayingTrackId(null)
       return
     }
 
-    // Stop any current audio
     if (audioRef.current) {
       audioRef.current.pause()
       audioRef.current.src = ""
@@ -79,8 +77,7 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed, friendNames 
   }
 
   async function handleFeedback(signal: "thumbs_up" | "thumbs_down") {
-    const key = signal
-    setLoadingAction(key)
+    setLoadingAction(signal)
     try {
       const res = await fetch("/api/feedback", {
         method: "POST",
@@ -92,25 +89,6 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed, friendNames 
       onActed(spotifyArtistId)
     } catch {
       toast.error("Couldn't save your feedback. Try again.")
-    } finally {
-      setLoadingAction(null)
-    }
-  }
-
-  async function handleSave() {
-    setLoadingAction("save")
-    try {
-      const res = await fetch("/api/saves", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ spotifyArtistId }),
-      })
-      if (!res.ok) throw new Error("Failed to save artist")
-      audioRef.current?.pause()
-      onActed(spotifyArtistId)
-      toast.success(`Saved ${artist.name}`)
-    } catch {
-      toast.error("Couldn't save artist. Try again.")
     } finally {
       setLoadingAction(null)
     }
@@ -179,7 +157,7 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed, friendNames 
         </div>
       </div>
 
-      {/* Social proof badge — always mounted so realtime subscription is active */}
+      {/* Social proof badge */}
       <div className="px-4 pt-3 -mb-1">
         <GroupActivityBadge
           spotifyArtistId={spotifyArtistId}
@@ -206,15 +184,13 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed, friendNames 
           <div className="space-y-1">
             {visibleTracks.map((track) => {
               const isPlaying = playingTrackId === track.id
-              const canPlay = !!track.previewUrl
+              const hasPreview = !!track.previewUrl
               return (
                 <div
                   key={track.id}
                   className={cn(
                     "flex items-center gap-3 rounded-xl px-2 py-2 transition-colors",
-                    isPlaying
-                      ? "bg-primary/10 ring-1 ring-primary/20"
-                      : "hover:bg-muted/60"
+                    isPlaying ? "bg-primary/10 ring-1 ring-primary/20" : "hover:bg-muted/60"
                   )}
                 >
                   {/* Album art */}
@@ -236,12 +212,10 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed, friendNames 
 
                   {/* Track info */}
                   <div className="min-w-0 flex-1">
-                    <p
-                      className={cn(
-                        "truncate text-sm font-medium leading-tight",
-                        isPlaying ? "text-primary" : "text-foreground"
-                      )}
-                    >
+                    <p className={cn(
+                      "truncate text-sm font-medium leading-tight",
+                      isPlaying ? "text-primary" : "text-foreground"
+                    )}>
                       {track.name}
                     </p>
                     <p className="truncate text-xs text-muted-foreground">
@@ -249,27 +223,30 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed, friendNames 
                     </p>
                   </div>
 
-                  {/* Play button */}
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => handlePlayPause(track)}
-                    disabled={!canPlay}
-                    aria-label={isPlaying ? "Pause" : "Play preview"}
-                    className={cn(
-                      "shrink-0",
-                      isPlaying && "text-primary hover:text-primary",
-                      !canPlay && "opacity-30"
-                    )}
-                  >
-                    {isPlaying ? (
-                      <Pause className="size-4" />
-                    ) : (
-                      <Play className="size-4" />
-                    )}
-                  </Button>
+                  {/* Play preview (if available) or Open in Spotify */}
+                  {hasPreview ? (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => handlePlayPause(track)}
+                      aria-label={isPlaying ? "Pause" : "Play preview"}
+                      className={cn("shrink-0", isPlaying && "text-primary hover:text-primary")}
+                    >
+                      {isPlaying ? <Pause className="size-4" /> : <Play className="size-4" />}
+                    </Button>
+                  ) : (
+                    <a
+                      href={`https://open.spotify.com/track/${track.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label="Open in Spotify"
+                      className="flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-primary"
+                    >
+                      <ExternalLink className="size-3.5" />
+                    </a>
+                  )}
 
-                  {/* Add to playlist button */}
+                  {/* Save track to playlist */}
                   <Button
                     variant="ghost"
                     size="icon-sm"
@@ -285,9 +262,8 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed, friendNames 
           </div>
         )}
 
-        {/* Action buttons */}
+        {/* Action buttons — thumbs only */}
         <div className="flex items-center justify-between gap-2 pt-1">
-          {/* Thumbs down */}
           <Button
             variant="ghost"
             size="icon"
@@ -299,18 +275,6 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed, friendNames 
             <ThumbsDown className="size-5" />
           </Button>
 
-          {/* Save — centered, primary */}
-          <Button
-            variant="default"
-            onClick={handleSave}
-            disabled={loadingAction !== null}
-            className="flex h-11 flex-1 items-center justify-center gap-2 rounded-full bg-primary text-primary-foreground shadow-md shadow-primary/30 hover:bg-primary/80"
-          >
-            <Bookmark className="size-4" />
-            <span className="text-sm font-semibold">Save Artist</span>
-          </Button>
-
-          {/* Thumbs up */}
           <Button
             variant="ghost"
             size="icon"

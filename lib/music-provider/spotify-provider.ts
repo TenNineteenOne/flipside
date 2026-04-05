@@ -314,7 +314,7 @@ export class SpotifyProvider implements MusicProvider {
     limit: number
   ): Promise<Track[]> {
     const res = await spotifyFetch(
-      `${SPOTIFY_BASE}/artists/${artistId}/top-tracks?market=US`,
+      `${SPOTIFY_BASE}/artists/${artistId}/top-tracks?market=from_token`,
       accessToken
     )
     if (!res || !res.ok) return []
