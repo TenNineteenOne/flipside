@@ -1,14 +1,13 @@
 import { musicProvider } from '@/lib/music-provider/provider'
 import type { Artist } from '@/lib/music-provider/types'
 import { createServiceClient } from '@/lib/supabase/server'
-import { normalizeArtistName } from '@/lib/listened-artists'
 import type { RecommendationInput, ScoredArtist } from './types'
 
 export async function buildRecommendations(input: RecommendationInput): Promise<number> {
-  const { userId, accessToken, playThreshold } = input
+  const { userId, accessToken } = input
   const supabase = createServiceClient()
 
-  // ── Step 1: Fetch top artists for all 3 terms ──────────────────────────────
+  // ── Step 1: Get user's top artists ──────────────────────────────────────
   const [shortTerm, mediumTerm, longTerm] = await Promise.all([
     musicProvider.getTopArtists(accessToken, 'short_term'),
     musicProvider.getTopArtists(accessToken, 'medium_term'),
@@ -22,140 +21,63 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     }
   }
 
-  // ── Step 2: Seed fallback ──────────────────────────────────────────────────
-  // If total top artists < 5, fetch seed_artists and include them.
-  // Seeds are ignored entirely if top artists >= 10.
-  const seedArtistMap = new Map<string, Artist>()
-  if (topArtistMap.size < 10) {
-    const { data: seeds } = await supabase
-      .from('seed_artists')
-      .select('spotify_artist_id, name, image_url')
-      .eq('user_id', userId)
+  console.log(`[engine] topArtists=${topArtistMap.size}`)
 
-    if (seeds && topArtistMap.size < 5) {
-      for (const seed of seeds) {
-        if (!topArtistMap.has(seed.spotify_artist_id) && !seedArtistMap.has(seed.spotify_artist_id)) {
-          seedArtistMap.set(seed.spotify_artist_id, {
-            id: seed.spotify_artist_id,
-            name: seed.name,
-            genres: [],
-            imageUrl: seed.image_url ?? null,
-            popularity: 50,
-          })
-        }
-      }
+  if (topArtistMap.size === 0) {
+    console.error('[engine] No top artists found — user may need more Spotify history')
+    return 0
+  }
+
+  // ── Step 2: Collect unique genres from top artists ──────────────────────
+  const genreCounts = new Map<string, number>()
+  for (const artist of topArtistMap.values()) {
+    for (const genre of artist.genres) {
+      genreCounts.set(genre, (genreCounts.get(genre) ?? 0) + 1)
     }
   }
 
-  // Combined source artists (top + seeds when applicable)
-  const sourceArtistMap = new Map<string, Artist>([...topArtistMap, ...seedArtistMap])
+  // Sort genres by frequency (most common first) and take top 8
+  const topGenres = [...genreCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([genre]) => genre)
 
-  // ── Step 2b: Seed thumbs-up artists into source pool ─────────────────────
-  // Artists the user has liked become seeds for getSimilarArtists expansion.
-  // Two separate queries — no FK between feedback and recommendation_cache.
-  const { data: thumbsUpRows } = await supabase
-    .from('feedback')
-    .select('spotify_artist_id')
-    .eq('user_id', userId)
-    .eq('signal', 'thumbs_up')
-    .is('deleted_at', null)
+  console.log(`[engine] genres=${topGenres.length}: ${topGenres.join(', ')}`)
 
-  if (thumbsUpRows && thumbsUpRows.length > 0) {
-    const thumbsUpIds = thumbsUpRows.map((r) => r.spotify_artist_id)
-    const { data: cachedArtists } = await supabase
-      .from('recommendation_cache')
-      .select('spotify_artist_id, artist_data')
-      .eq('user_id', userId)
-      .in('spotify_artist_id', thumbsUpIds)
+  // ── Step 3: Search Spotify by genre to find new artists ─────────────────
+  // Uses searchArtists which takes the user's access token (proven to work)
+  const candidateMap = new Map<string, { artist: Artist; sourceGenres: string[] }>()
 
-    for (const row of cachedArtists ?? []) {
-      if (sourceArtistMap.has(row.spotify_artist_id)) continue
-      if (row.artist_data) {
-        sourceArtistMap.set(row.spotify_artist_id, row.artist_data as Artist)
-      }
-    }
-  }
-
-  // ── Step 3: Expand via getSimilarArtists ───────────────────────────────────
-  // Track which source artist each candidate was found from
-  const candidateMap = new Map<string, { artist: Artist; sourceArtists: string[]; degree: number }>()
-
-  // Expand from top 5 source artists — keeps total API calls under 30
-  const sourceArtistsToExpand = Array.from(sourceArtistMap.values()).slice(0, 5)
-
-  // Expand all 5 source artists in parallel
-  const expansionResults = await Promise.all(
-    sourceArtistsToExpand.map(async (sourceArtist) => {
+  const searchResults = await Promise.all(
+    topGenres.map(async (genre) => {
       try {
-        const similar = await musicProvider.getSimilarArtists(accessToken, sourceArtist.id, sourceArtist.name, sourceArtist.genres)
-        return { sourceArtist, similar, degree: 1 }
+        const artists = await musicProvider.searchArtists(accessToken, `genre:"${genre}"`)
+        return { genre, artists }
       } catch {
-        return { sourceArtist, similar: [] as Artist[], degree: 1 }
+        return { genre, artists: [] as Artist[] }
       }
     })
   )
 
-  for (const { sourceArtist, similar, degree } of expansionResults) {
-    for (const candidate of similar) {
-      // Skip if it's already a source artist
-      if (sourceArtistMap.has(candidate.id)) continue
+  for (const { genre, artists } of searchResults) {
+    for (const artist of artists) {
+      // Skip if it's one of the user's top artists
+      if (topArtistMap.has(artist.id)) continue
 
-      if (candidateMap.has(candidate.id)) {
-        const existing = candidateMap.get(candidate.id)!
-        if (!existing.sourceArtists.includes(sourceArtist.name)) {
-          existing.sourceArtists.push(sourceArtist.name)
+      if (candidateMap.has(artist.id)) {
+        const existing = candidateMap.get(artist.id)!
+        if (!existing.sourceGenres.includes(genre)) {
+          existing.sourceGenres.push(genre)
         }
       } else {
-        candidateMap.set(candidate.id, {
-          artist: candidate,
-          sourceArtists: [sourceArtist.name],
-          degree,
-        })
+        candidateMap.set(artist.id, { artist, sourceGenres: [genre] })
       }
-
-      if (candidateMap.size >= 200) break
-    }
-    if (candidateMap.size >= 200) break
-  }
-
-  // ── Step 4: Fetch thumbs-up and saved artists for scoring boosts ───────────
-  const [feedbackData, savesData] = await Promise.all([
-    supabase
-      .from('feedback')
-      .select('spotify_artist_id')
-      .eq('user_id', userId)
-      .eq('signal', 'thumbs_up')
-      .is('deleted_at', null),
-    supabase
-      .from('saves')
-      .select('spotify_artist_id')
-      .eq('user_id', userId),
-  ])
-
-  const likedArtistIds = new Set<string>([
-    ...((feedbackData.data ?? []).map((r) => r.spotify_artist_id)),
-    ...((savesData.data ?? []).map((r) => r.spotify_artist_id)),
-  ])
-
-  // ── Step 5: Filter — history ───────────────────────────────────────────────
-  const { data: listenedData } = await supabase
-    .from('listened_artists')
-    .select('spotify_artist_id, lastfm_artist_name, play_count')
-    .eq('user_id', userId)
-
-  const listenedBySpotifyId = new Map<string, number>()
-  const listenedByNormalizedName = new Map<string, number>()
-
-  for (const row of listenedData ?? []) {
-    if (row.spotify_artist_id) {
-      listenedBySpotifyId.set(row.spotify_artist_id, row.play_count)
-    }
-    if (row.lastfm_artist_name) {
-      listenedByNormalizedName.set(normalizeArtistName(row.lastfm_artist_name), row.play_count)
     }
   }
 
-  // ── Step 6: Filter — active thumbs-down ───────────────────────────────────
+  console.log(`[engine] candidates=${candidateMap.size} from genre search`)
+
+  // ── Step 4: Filter — thumbs-down ──────────────────────────────────────
   const { data: thumbsDownData } = await supabase
     .from('feedback')
     .select('spotify_artist_id')
@@ -165,202 +87,65 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
 
   const thumbsDownIds = new Set((thumbsDownData ?? []).map((r) => r.spotify_artist_id))
 
-  // ── Step 7: Apply filters and score ───────────────────────────────────────
-  const filteredCandidates: Array<{
-    artist: Artist
-    sourceArtists: string[]
-    degree: number
-  }> = []
+  const filteredCandidates = [...candidateMap.entries()]
+    .filter(([id]) => !thumbsDownIds.has(id))
+    .map(([, val]) => val)
 
-  for (const [artistId, candidate] of candidateMap) {
-    // Filter: active thumbs-down
-    if (thumbsDownIds.has(artistId)) continue
+  // ── Step 5: Score candidates ──────────────────────────────────────────
+  // Prefer: less popular (more obscure discovery), more genre overlap
+  const scored: ScoredArtist[] = filteredCandidates.map(({ artist, sourceGenres }) => {
+    // Lower popularity = higher discovery value (invert 0-100 scale)
+    const discoveryScore = (100 - artist.popularity) / 100
 
-    // Filter: history — only applies when threshold > 0
-    // (0 = maximum discovery: include all candidates regardless of play history)
-    if (playThreshold > 0) {
-      const playCount = listenedBySpotifyId.get(artistId)
-      if (playCount !== undefined && playCount > playThreshold) continue
+    // More genre matches = more relevant
+    const genreRelevance = Math.min(sourceGenres.length / 3, 1)
 
-      const normalizedName = normalizeArtistName(candidate.artist.name)
-      const lfmPlayCount = listenedByNormalizedName.get(normalizedName)
-      if (lfmPlayCount !== undefined && lfmPlayCount > playThreshold) continue
-    }
+    const score = discoveryScore * 0.6 + genreRelevance * 0.4
 
-    filteredCandidates.push(candidate)
-  }
-
-  // ── Step 8: Fetch groups and group_activity for group boost ────────────────
-  const { data: groupMemberships } = await supabase
-    .from('group_members')
-    .select('group_id')
-    .eq('user_id', userId)
-
-  const groupIds = (groupMemberships ?? []).map((g) => g.group_id)
-
-  // For each group, fetch all other members and their activity
-  interface GroupMemberRow { user_id: string }
-  interface GroupActivityRow {
-    spotify_artist_id: string
-    user_id: string
-    group_id: string
-    created_at: string
-  }
-  interface UserDisplayRow { id: string; display_name: string | null }
-
-  let allGroupActivity: GroupActivityRow[] = []
-  const memberDisplayNames = new Map<string, string>() // user_id -> display_name
-  let groupSize = 0
-
-  if (groupIds.length > 0) {
-    const [activityResult, membersResult] = await Promise.all([
-      supabase
-        .from('group_activity')
-        .select('spotify_artist_id, user_id, group_id, created_at')
-        .in('group_id', groupIds)
-        .neq('user_id', userId),
-      supabase
-        .from('group_members')
-        .select('user_id')
-        .in('group_id', groupIds)
-        .neq('user_id', userId),
-    ])
-
-    allGroupActivity = (activityResult.data ?? []) as GroupActivityRow[]
-    const memberIds = [...new Set(((membersResult.data ?? []) as GroupMemberRow[]).map((m) => m.user_id))]
-    groupSize = memberIds.length
-
-    if (memberIds.length > 0) {
-      const { data: usersData } = await supabase
-        .from('users')
-        .select('id, display_name')
-        .in('id', memberIds)
-
-      for (const u of (usersData ?? []) as UserDisplayRow[]) {
-        memberDisplayNames.set(u.id, u.display_name ?? 'A friend')
+    // Find which of the user's top artists share genres with this candidate
+    const relatedTopArtists: string[] = []
+    for (const topArtist of topArtistMap.values()) {
+      if (topArtist.genres.some((g) => sourceGenres.includes(g))) {
+        relatedTopArtists.push(topArtist.name)
+        if (relatedTopArtists.length >= 2) break
       }
     }
-  }
 
-  // Build a map: artistId -> { boostCount, friendNames }
-  const groupBoostMap = new Map<string, { count: number; friends: string[] }>()
-  for (const activity of allGroupActivity) {
-    const entry = groupBoostMap.get(activity.spotify_artist_id) ?? { count: 0, friends: [] }
-    entry.count += 1
-    const name = memberDisplayNames.get(activity.user_id) ?? 'A friend'
-    if (!entry.friends.includes(name)) {
-      entry.friends.push(name)
+    return {
+      artist: { ...artist, topTracks: [] },
+      score,
+      why: {
+        sourceArtists: relatedTopArtists,
+        genres: sourceGenres.slice(0, 2),
+        friendBoost: [],
+      },
+      source: 'genre_search',
     }
-    groupBoostMap.set(activity.spotify_artist_id, entry)
-  }
+  })
 
-  // ── Step 9: Resurfacing from recommendation_cache ──────────────────────────
-  const { data: seenCacheRows } = await supabase
-    .from('recommendation_cache')
-    .select('spotify_artist_id, seen_at')
-    .eq('user_id', userId)
-    .not('seen_at', 'is', null)
-
-  // Re-include if ceil(groupSize * 0.2) other members reacted since seen_at
-  const resurface = new Set<string>()
-  if (seenCacheRows && groupSize > 0) {
-    const requiredReactions = Math.ceil(groupSize * 0.2)
-    for (const row of seenCacheRows) {
-      const artistActivity = allGroupActivity.filter(
-        (a) =>
-          a.spotify_artist_id === row.spotify_artist_id &&
-          row.seen_at !== null &&
-          new Date(a.created_at) > new Date(row.seen_at)
-      )
-      const uniqueReactors = new Set(artistActivity.map((a) => a.user_id))
-      if (uniqueReactors.size >= requiredReactions) {
-        resurface.add(row.spotify_artist_id)
-      }
-    }
-  }
-
-  // Add resurfaced artists that aren't already in filteredCandidates
-  const filteredIds = new Set(filteredCandidates.map((c) => c.artist.id))
-  for (const artistId of resurface) {
-    if (!filteredIds.has(artistId) && candidateMap.has(artistId)) {
-      filteredCandidates.push(candidateMap.get(artistId)!)
-    }
-  }
-
-  // ── Score each candidate ───────────────────────────────────────────────────
-  const scored: ScoredArtist[] = []
-
-  for (const candidate of filteredCandidates) {
-    const { artist, sourceArtists, degree } = candidate
-
-    // Base score from popularity
-    let score = artist.popularity / 100
-
-    // Relationship boost
-    if (degree === 1) {
-      score += 0.3
-    } else {
-      score += 0.2
-    }
-
-    // Thumbs-up / saved boost: related to any liked artist
-    const relatedToLiked = sourceArtists.some((name) => {
-      // Check if any source artist ID is in likedArtistIds
-      for (const [id, a] of sourceArtistMap) {
-        if (a.name === name && likedArtistIds.has(id)) return true
-      }
-      return false
-    })
-    if (relatedToLiked) {
-      score += 0.2
-    }
-
-    // Group boost
-    const groupBoost = groupBoostMap.get(artist.id)
-    const friendBoost: string[] = []
-    if (groupBoost) {
-      score += groupBoost.count * 0.1
-      friendBoost.push(...groupBoost.friends)
-    }
-
-    // Build why
-    const why = {
-      sourceArtists: sourceArtists.slice(0, 2),
-      genres: artist.genres.slice(0, 2),
-      friendBoost,
-    }
-
-    scored.push({ artist: { ...artist, topTracks: [] }, score, why, source: 'spotify_recommendations' })
-  }
-
-  // ── Step 10: Sort and take top 20 ─────────────────────────────────────────
+  // ── Step 6: Sort and take top 20 ──────────────────────────────────────
   scored.sort((a, b) => b.score - a.score)
-  const top50 = scored.slice(0, 20)
+  const top = scored.slice(0, 20)
 
-  // ── Step 11: Fetch top tracks for each artist
+  console.log(`[engine] scored=${scored.length} top=${top.length}`)
+
+  if (top.length === 0) return 0
+
+  // ── Step 7: Fetch top tracks ──────────────────────────────────────────
   const userMarket = await musicProvider.getUserMarket(accessToken)
 
-  const withTracks: typeof top50 = []
-  const TRACK_BATCH = 20
-  for (let i = 0; i < top50.length; i += TRACK_BATCH) {
-    const batch = top50.slice(i, i + TRACK_BATCH)
-    const results = await Promise.all(
-      batch.map(async (item) => {
-        try {
-          const tracks = await musicProvider.getArtistTopTracks(accessToken, item.artist.id, 10, userMarket)
-          return { ...item, artist: { ...item.artist, topTracks: tracks.slice(0, 10) } }
-        } catch {
-          return item
-        }
-      })
-    )
-    withTracks.push(...results)
-  }
+  const withTracks = await Promise.all(
+    top.map(async (item) => {
+      try {
+        const tracks = await musicProvider.getArtistTopTracks(accessToken, item.artist.id, 10, userMarket)
+        return { ...item, artist: { ...item.artist, topTracks: tracks.slice(0, 10) } }
+      } catch {
+        return item
+      }
+    })
+  )
 
-  // ── Step 12: why field is already built above ──────────────────────────────
-
-  // ── Step 13: Write to recommendation_cache ─────────────────────────────────
-  // Fetch existing seen_at values to preserve them
+  // ── Step 8: Write to cache ────────────────────────────────────────────
   const { data: existingCache } = await supabase
     .from('recommendation_cache')
     .select('spotify_artist_id, seen_at')
@@ -375,7 +160,6 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
   const expiresAt = new Date(now)
   expiresAt.setDate(expiresAt.getDate() + 30)
 
-  // Build rows to upsert (skip already-seen artists)
   const rows = withTracks
     .filter((item) => {
       const seen = existingSeenAt.get(item.artist.id)
@@ -399,22 +183,12 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
       .upsert(rows, { onConflict: 'user_id,spotify_artist_id' })
 
     if (error) {
-      console.error('[buildRecommendations] Batch upsert error:', error.message)
+      console.error('[engine] Batch upsert error:', error.message)
     } else {
       written = rows.length
     }
   }
 
-  // ── Step 14: Expire old seen entries ──────────────────────────────────────
-  const sevenDaysAgo = new Date(now)
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-
-  await supabase
-    .from('recommendation_cache')
-    .update({ expires_at: now.toISOString() })
-    .eq('user_id', userId)
-    .not('seen_at', 'is', null)
-    .lt('seen_at', sevenDaysAgo.toISOString())
-
+  console.log(`[engine] written=${written}`)
   return written
 }
