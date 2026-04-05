@@ -15,6 +15,9 @@ export interface MusicProvider {
   /** Get recently played artists (deduplicated) */
   getRecentlyPlayed(accessToken: string): Promise<PlayHistory[]>
 
+  /** Fetch full artist objects by IDs (batch, up to 50 per call). Always includes genres. */
+  getArtists(accessToken: string, ids: string[]): Promise<Artist[]>
+
   /** Search for artists by name */
   searchArtists(accessToken: string, query: string): Promise<Artist[]>
 

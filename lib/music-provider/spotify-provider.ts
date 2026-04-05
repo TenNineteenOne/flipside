@@ -282,6 +282,26 @@ export class SpotifyProvider implements MusicProvider {
   }
 
   // -------------------------------------------------------------------------
+  // getArtists (batch by ID — always includes genres)
+  // -------------------------------------------------------------------------
+  async getArtists(accessToken: string, ids: string[]): Promise<Artist[]> {
+    if (!ids.length) return []
+    const artists: Artist[] = []
+    // Spotify allows up to 50 IDs per request
+    for (let i = 0; i < ids.length; i += 50) {
+      const batch = ids.slice(i, i + 50)
+      const res = await spotifyFetch(
+        `${SPOTIFY_BASE}/artists?ids=${batch.join(',')}`,
+        accessToken
+      )
+      if (!res || !res.ok) continue
+      const data = (await res.json()) as { artists: SpotifyArtistObject[] }
+      artists.push(...(data.artists ?? []).filter(Boolean).map(mapArtist))
+    }
+    return artists
+  }
+
+  // -------------------------------------------------------------------------
   // searchArtists
   // -------------------------------------------------------------------------
   async searchArtists(accessToken: string, query: string): Promise<Artist[]> {

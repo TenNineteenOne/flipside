@@ -26,6 +26,16 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     return 0
   }
 
+  // ── Step 1b: Fetch full artist objects to get genres ────────────────────
+  // /me/top/artists may return empty genres; /artists?ids=... always has them
+  const allIds = [...topArtistMap.keys()]
+  const fullArtists = await musicProvider.getArtists(accessToken, allIds)
+  for (const artist of fullArtists) {
+    if (artist.genres.length > 0) {
+      topArtistMap.set(artist.id, artist)
+    }
+  }
+
   // ── Step 2: Collect unique genres from top artists ──────────────────────
   const genreCounts = new Map<string, number>()
   for (const artist of topArtistMap.values()) {
