@@ -162,6 +162,8 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
 
   const thumbsDownIds = new Set((thumbsDownData ?? []).map((r) => r.spotify_artist_id))
 
+  console.log(`[engine] sourceArtists=${sourceArtistMap.size} candidates=${candidateMap.size} listenedBySpotifyId=${listenedBySpotifyId.size} listenedByName=${listenedByNormalizedName.size} thumbsDown=${thumbsDownIds.size} threshold=${playThreshold}`)
+
   // ── Step 7: Apply filters and score ───────────────────────────────────────
   const filteredCandidates: Array<{
     artist: Artist
@@ -327,6 +329,8 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
 
     scored.push({ artist: { ...artist, topTracks: [] }, score, why, source: 'spotify_recommendations' })
   }
+
+  console.log(`[engine] filteredCandidates=${filteredCandidates.length} scored=${scored.length}`)
 
   // ── Step 10: Sort and take top 50 ─────────────────────────────────────────
   scored.sort((a, b) => b.score - a.score)

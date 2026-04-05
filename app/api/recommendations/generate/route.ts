@@ -45,6 +45,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       playThreshold: user.play_threshold ?? 25,
     })
 
+    console.log(`[recommendations/generate] userId=${user.id} written=${count} threshold=${user.play_threshold ?? 25}`)
     return Response.json({ success: true, count })
   } catch (err) {
     const message = err instanceof Error ? err.message : "Generation failed"

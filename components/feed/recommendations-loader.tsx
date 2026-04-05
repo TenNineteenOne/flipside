@@ -20,6 +20,10 @@ export function RecommendationsLoader() {
           const data = await res.json().catch(() => ({}))
           throw new Error((data as { error?: string }).error ?? "Generation failed")
         }
+        const data = await res.json().catch(() => ({ count: -1 }))
+        if (data.count === 0) {
+          throw new Error("No new artists found. Your listening history may be filtering everything out — try raising your play threshold in Settings.")
+        }
         router.refresh()
       } catch (err) {
         if (!cancelled) {
