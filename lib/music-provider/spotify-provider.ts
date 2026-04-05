@@ -227,13 +227,19 @@ export class SpotifyProvider implements MusicProvider {
    */
   private async _searchOneArtist(name: string): Promise<Artist | null> {
     const serverToken = await getSpotifyClientToken()
-    if (!serverToken) return null
+    if (!serverToken) {
+      console.error("[spotify] _searchOneArtist: no client token")
+      return null
+    }
 
     const res = await spotifyFetch(
       `${SPOTIFY_BASE}/search?q=${encodeURIComponent(name)}&type=artist&limit=5`,
       serverToken
     )
-    if (!res || !res.ok) return null
+    if (!res || !res.ok) {
+      console.error(`[spotify] _searchOneArtist "${name}": status=${res?.status}`)
+      return null
+    }
 
     const data = (await res.json()) as SpotifySearchResponse
     const items = data.artists?.items ?? []
