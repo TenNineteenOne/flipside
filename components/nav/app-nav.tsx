@@ -2,13 +2,13 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Music2, Users, Settings, LogOut } from "lucide-react"
+import { Music2, Users, Bookmark, LogOut } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const navLinks = [
   { href: "/feed", label: "Feed", icon: Music2 },
   { href: "/groups", label: "Groups", icon: Users },
-  { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/saved", label: "Saved", icon: Bookmark },
 ]
 
 interface AppNavProps {

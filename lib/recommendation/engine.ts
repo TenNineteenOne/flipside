@@ -50,6 +50,32 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
   // Combined source artists (top + seeds when applicable)
   const sourceArtistMap = new Map<string, Artist>([...topArtistMap, ...seedArtistMap])
 
+  // ── Step 2b: Seed thumbs-up artists into source pool ─────────────────────
+  // Artists the user has liked become seeds for getSimilarArtists expansion.
+  // Two separate queries — no FK between feedback and recommendation_cache.
+  const { data: thumbsUpRows } = await supabase
+    .from('feedback')
+    .select('spotify_artist_id')
+    .eq('user_id', userId)
+    .eq('signal', 'thumbs_up')
+    .is('deleted_at', null)
+
+  if (thumbsUpRows && thumbsUpRows.length > 0) {
+    const thumbsUpIds = thumbsUpRows.map((r) => r.spotify_artist_id)
+    const { data: cachedArtists } = await supabase
+      .from('recommendation_cache')
+      .select('spotify_artist_id, artist_data')
+      .eq('user_id', userId)
+      .in('spotify_artist_id', thumbsUpIds)
+
+    for (const row of cachedArtists ?? []) {
+      if (sourceArtistMap.has(row.spotify_artist_id)) continue
+      if (row.artist_data) {
+        sourceArtistMap.set(row.spotify_artist_id, row.artist_data as Artist)
+      }
+    }
+  }
+
   // ── Step 3: Expand via getSimilarArtists ───────────────────────────────────
   // Track which source artist each candidate was found from
   const candidateMap = new Map<string, { artist: Artist; sourceArtists: string[]; degree: number }>()

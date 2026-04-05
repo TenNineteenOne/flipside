@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
+import { useRouter } from "next/navigation"
 import { CheckCircle2 } from "lucide-react"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { ArtistCard } from "@/components/feed/artist-card"
@@ -40,16 +41,24 @@ interface FeedClientProps {
 }
 
 export function FeedClient({ recommendations, groups }: FeedClientProps) {
+  const router = useRouter()
   const [actedIds, setActedIds] = useState<Set<string>>(new Set())
   const [friendActivity, setFriendActivity] = useState<Record<string, string[]>>({})
+  const generatingRef = useRef(false)
 
-  // Trigger generation when cache is empty, then reload after a short delay
+  // Auto-replenish when fewer than 5 unseen recommendations remain
   useEffect(() => {
-    if (recommendations.length !== 0) return
-    fetch("/api/recommendations/generate", { method: "POST" }).then(() => {
-      setTimeout(() => window.location.reload(), 3000)
-    }).catch(() => {/* generation failed silently */})
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+    const remaining = recommendations.filter(
+      (r) => !actedIds.has(r.spotify_artist_id)
+    ).length
+    if (remaining < 5 && !generatingRef.current) {
+      generatingRef.current = true
+      fetch("/api/recommendations/generate", { method: "POST" })
+        .then(() => router.refresh())
+        .catch(() => {})
+        .finally(() => { generatingRef.current = false })
+    }
+  }, [actedIds, recommendations, router])
 
   useEffect(() => {
     if (recommendations.length === 0) return

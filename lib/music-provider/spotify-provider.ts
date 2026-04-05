@@ -220,14 +220,21 @@ export class SpotifyProvider implements MusicProvider {
     if (!serverToken) return null
 
     const res = await spotifyFetch(
-      `${SPOTIFY_BASE}/search?q=${encodeURIComponent(name)}&type=artist&limit=1`,
+      `${SPOTIFY_BASE}/search?q=${encodeURIComponent(name)}&type=artist&limit=5`,
       serverToken
     )
     if (!res || !res.ok) return null
 
     const data = (await res.json()) as SpotifySearchResponse
-    const item = data.artists?.items?.[0]
-    return item ? mapArtist(item) : null
+    const items = data.artists?.items ?? []
+    if (!items.length) return null
+
+    // Prefer exact name match, then fall back to highest popularity.
+    // This prevents "Lawrence" (ambient) winning over "Lawrence" (soul/funk band).
+    const lower = name.toLowerCase()
+    const exact = items.find((a) => a.name.toLowerCase() === lower)
+    const best = exact ?? [...items].sort((a, b) => b.popularity - a.popularity)[0]
+    return best ? mapArtist(best) : null
   }
 
   /** Fetch similar artists from Spotify Recommendations (seed by artist). */

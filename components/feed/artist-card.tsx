@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react"
 import Image from "next/image"
-import { Play, Pause, ThumbsUp, ThumbsDown, Bookmark, Music } from "lucide-react"
+import { Play, Pause, ThumbsUp, ThumbsDown, Bookmark, Music, Plus } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -45,7 +45,10 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed, friendNames 
   const [playingTrackId, setPlayingTrackId] = useState<string | null>(null)
   const [loadingAction, setLoadingAction] = useState<string | null>(null)
 
-  const visibleTracks = artist.topTracks.slice(0, 3)
+  // Prefer tracks with preview URLs so rows are actually playable
+  const withPreview = artist.topTracks.filter((t) => t.previewUrl)
+  const withoutPreview = artist.topTracks.filter((t) => !t.previewUrl)
+  const visibleTracks = [...withPreview, ...withoutPreview].slice(0, 3)
 
   function handlePlayPause(track: Track) {
     if (!track.previewUrl) return
@@ -100,10 +103,7 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed, friendNames 
       const res = await fetch("/api/saves", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          spotifyArtistId,
-          spotifyTrackId: artist.topTracks[0]?.id,
-        }),
+        body: JSON.stringify({ spotifyArtistId }),
       })
       if (!res.ok) throw new Error("Failed to save artist")
       audioRef.current?.pause()
@@ -113,6 +113,20 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed, friendNames 
       toast.error("Couldn't save artist. Try again.")
     } finally {
       setLoadingAction(null)
+    }
+  }
+
+  async function handleAddToPlaylist(trackId: string) {
+    try {
+      const res = await fetch("/api/saves", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ spotifyArtistId, spotifyTrackId: trackId }),
+      })
+      if (!res.ok) throw new Error("Failed to add track")
+      toast.success("Added to playlist")
+    } catch {
+      toast.error("Couldn't add to playlist. Try again.")
     }
   }
 
@@ -126,7 +140,7 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed, friendNames 
   return (
     <article className="w-full max-w-xl overflow-hidden rounded-2xl border border-border bg-card shadow-lg shadow-black/20">
       {/* Artist image with overlay */}
-      <div className="relative aspect-square w-full overflow-hidden">
+      <div className="relative aspect-square w-full max-h-[55vh] overflow-hidden">
         {artist.imageUrl ? (
           <Image
             src={artist.imageUrl}
@@ -253,6 +267,17 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed, friendNames 
                     ) : (
                       <Play className="size-4" />
                     )}
+                  </Button>
+
+                  {/* Add to playlist button */}
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => handleAddToPlaylist(track.id)}
+                    aria-label="Add to Flipside Discoveries playlist"
+                    className="shrink-0 text-muted-foreground hover:text-primary"
+                  >
+                    <Plus className="size-4" />
                   </Button>
                 </div>
               )
