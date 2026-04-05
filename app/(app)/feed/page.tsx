@@ -1,7 +1,15 @@
 import { redirect } from "next/navigation"
 import { auth } from "@/lib/auth"
+import { createServiceClient } from "@/lib/supabase/server"
+import { FeedClient } from "@/components/feed/feed-client"
+import { RecommendationsLoader } from "@/components/feed/recommendations-loader"
 
-type Rec = { spotify_artist_id: string; artist_data: any; score: number; why: { sourceArtists: string[] } }
+interface Rec {
+  spotify_artist_id: string
+  artist_data: any
+  score: number
+  why: { sourceArtists: string[]; genres: string[]; friendBoost: string[] }
+}
 
 /** Round-robin interleave by primary source artist so results aren't clustered. */
 function interleave(recs: Rec[]): Rec[] {
@@ -22,9 +30,6 @@ function interleave(recs: Rec[]): Rec[] {
   }
   return out
 }
-import { createServiceClient } from "@/lib/supabase/server"
-import { FeedClient } from "@/components/feed/feed-client"
-import { RecommendationsLoader } from "@/components/feed/recommendations-loader"
 
 export default async function FeedPage() {
   const session = await auth()
@@ -78,5 +83,5 @@ export default async function FeedPage() {
     return <RecommendationsLoader />
   }
 
-  return <FeedClient recommendations={interleave(recs)} groups={groups} />
+  return <FeedClient recommendations={interleave(recs as Rec[])} groups={groups} />
 }
