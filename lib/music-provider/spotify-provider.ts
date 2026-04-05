@@ -178,13 +178,22 @@ export class SpotifyProvider implements MusicProvider {
         `&limit=50`
 
       const res = await fetch(url)
-      if (!res.ok) return []
+      if (!res.ok) {
+        console.error(`[lastfm] ${artistName}: HTTP ${res.status}`)
+        return []
+      }
 
       const data = (await res.json()) as LastFmSimilarArtistsResponse
-      if (data.error || !data.similarartists?.artist?.length) return []
+      if (data.error || !data.similarartists?.artist?.length) {
+        console.error(`[lastfm] ${artistName}: no similar artists (error=${data.error ?? 'none'})`)
+        return []
+      }
 
-      // Skip the top 5 (always the obvious well-known matches); take the next 20 deeper cuts
-      const names = data.similarartists.artist.map((a) => a.name).slice(5, 25)
+      const total = data.similarartists.artist.length
+      // Take up to 20 starting at position 5 — skip the most obvious top matches.
+      // But clamp start so we never skip past what Last.fm returned.
+      const start = Math.min(5, Math.max(0, total - 1))
+      const names = data.similarartists.artist.map((a) => a.name).slice(start, start + 20)
 
       // Resolve in batches of 5
       const resolved: Artist[] = []
@@ -195,6 +204,7 @@ export class SpotifyProvider implements MusicProvider {
           if (r.status === "fulfilled" && r.value) resolved.push(r.value)
         }
       }
+      console.log(`[lastfm] ${artistName}: total=${total} took=${names.length} resolved=${resolved.length}`)
       return resolved
     } catch {
       return []
@@ -207,7 +217,14 @@ export class SpotifyProvider implements MusicProvider {
       `${SPOTIFY_BASE}/search?q=${encodeURIComponent(name)}&type=artist&limit=5`,
       accessToken
     )
-    if (!res || !res.ok) return null
+    if (!res) {
+      console.error(`[search] "${name}": 401 (token rejected)`)
+      return null
+    }
+    if (!res.ok) {
+      console.error(`[search] "${name}": HTTP ${res.status}`)
+      return null
+    }
 
     const data = (await res.json()) as SpotifySearchResponse
     const items = data.artists?.items ?? []
