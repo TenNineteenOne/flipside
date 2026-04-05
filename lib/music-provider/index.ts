@@ -16,7 +16,7 @@ export interface MusicProvider {
   searchArtists(accessToken: string, query: string): Promise<Artist[]>
 
   /** Get top tracks for an artist. Fetch up to `limit` tracks. */
-  getArtistTopTracks(accessToken: string, artistId: string, limit: number): Promise<Track[]>
+  getArtistTopTracks(accessToken: string, artistId: string, limit: number, market?: string): Promise<Track[]>
 
   /** Create a new playlist for the user, return playlist ID */
   createPlaylist(accessToken: string, userId: string, name: string): Promise<string>

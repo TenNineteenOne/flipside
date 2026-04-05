@@ -333,6 +333,9 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
   const top50 = scored.slice(0, 50)
 
   // ── Step 11: Fetch top tracks for each artist (batched to avoid rate limits)
+  // market param is required by Spotify — get user's actual country first
+  const userMarket = await (musicProvider as any).getUserMarket?.(accessToken) ?? "US"
+
   const withTracks: typeof top50 = []
   const TRACK_BATCH = 5
   for (let i = 0; i < top50.length; i += TRACK_BATCH) {
@@ -340,7 +343,7 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     const results = await Promise.all(
       batch.map(async (item) => {
         try {
-          const tracks = await musicProvider.getArtistTopTracks(accessToken, item.artist.id, 10)
+          const tracks = await musicProvider.getArtistTopTracks(accessToken, item.artist.id, 10, userMarket)
           return { ...item, artist: { ...item.artist, topTracks: tracks.slice(0, 10) } }
         } catch {
           return item

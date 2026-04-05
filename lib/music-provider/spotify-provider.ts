@@ -311,16 +311,31 @@ export class SpotifyProvider implements MusicProvider {
   async getArtistTopTracks(
     accessToken: string,
     artistId: string,
-    limit: number
+    limit: number,
+    market = "US"
   ): Promise<Track[]> {
     const res = await spotifyFetch(
-      `${SPOTIFY_BASE}/artists/${artistId}/top-tracks`,
+      `${SPOTIFY_BASE}/artists/${artistId}/top-tracks?market=${market}`,
       accessToken
     )
-    if (!res || !res.ok) return []
+    if (!res || !res.ok) {
+      console.error(`[getArtistTopTracks] ${artistId} market=${market} status=${res?.status}`)
+      return []
+    }
 
     const data = (await res.json()) as { tracks: SpotifyTrackObject[] }
     return (data.tracks ?? []).slice(0, limit).map(mapTrack)
+  }
+
+  async getUserMarket(accessToken: string): Promise<string> {
+    try {
+      const res = await spotifyFetch(`${SPOTIFY_BASE}/me`, accessToken)
+      if (!res || !res.ok) return "US"
+      const profile = await res.json() as { country?: string }
+      return profile.country ?? "US"
+    } catch {
+      return "US"
+    }
   }
 
   // -------------------------------------------------------------------------

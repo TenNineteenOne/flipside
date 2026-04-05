@@ -4,6 +4,7 @@ import Spotify from "next-auth/providers/spotify"
 const SPOTIFY_SCOPES = [
   "user-top-read",
   "user-read-recently-played",
+  "user-read-private",
   "playlist-modify-private",
   "playlist-modify-public",
 ].join(" ")
