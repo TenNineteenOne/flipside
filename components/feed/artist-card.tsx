@@ -45,6 +45,16 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed, friendNames 
   const [playingTrackId, setPlayingTrackId] = useState<string | null>(null)
   const [loadingAction, setLoadingAction] = useState<string | null>(null)
 
+  // Clean up audio on unmount
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current.src = ""
+      }
+    }
+  }, [])
+
   // Prefer tracks with preview URLs so they appear first
   const withPreview = artist.topTracks.filter((t) => t.previewUrl)
   const withoutPreview = artist.topTracks.filter((t) => !t.previewUrl)

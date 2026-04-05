@@ -24,14 +24,14 @@ export async function POST(request: NextRequest) {
 
   const { spotifyId } = session.user
 
-  let body: { spotifyArtistId?: string; spotifyTrackId?: string; artistName?: string }
+  let body: { spotifyArtistId?: string; spotifyTrackId?: string }
   try {
     body = await request.json()
   } catch {
     return apiError("Invalid JSON", 400)
   }
 
-  const { spotifyArtistId, spotifyTrackId, artistName } = body
+  const { spotifyArtistId, spotifyTrackId } = body
 
   if (!spotifyArtistId || !isValidSpotifyId(spotifyArtistId)) {
     return apiError("Valid spotifyArtistId is required", 400)
@@ -45,11 +45,30 @@ export async function POST(request: NextRequest) {
 
   const supabase = createServiceClient()
 
+  // Resolve artist name from cache (needed for saves table + group_activity)
+  let resolvedArtistName = ""
+  {
+    const { data: cached } = await supabase
+      .from("recommendation_cache")
+      .select("artist_data")
+      .eq("user_id", userId)
+      .eq("spotify_artist_id", spotifyArtistId)
+      .single()
+    if (cached?.artist_data?.name) {
+      resolvedArtistName = cached.artist_data.name
+    }
+  }
+
   // Upsert the artist bookmark (idempotent — unique on user_id + spotify_artist_id)
   const { error: saveError } = await supabase
     .from("saves")
     .upsert(
-      { user_id: userId, spotify_artist_id: spotifyArtistId, spotify_track_id: spotifyTrackId ?? null },
+      {
+        user_id: userId,
+        spotify_artist_id: spotifyArtistId,
+        spotify_track_id: spotifyTrackId ?? null,
+        artist_name: resolvedArtistName || null,
+      },
       { onConflict: "user_id,spotify_artist_id" }
     )
 
@@ -129,22 +148,7 @@ export async function POST(request: NextRequest) {
   const groupIds: string[] = (memberships ?? []).map((m: any) => m.group_id)
 
   if (groupIds.length > 0) {
-    let resolvedArtistName = artistName ?? ""
-    if (!resolvedArtistName) {
-      const { data: cached } = await supabase
-        .from("recommendation_cache")
-        .select("artist_data")
-        .eq("user_id", userId)
-        .eq("spotify_artist_id", spotifyArtistId)
-        .single()
-
-      if (cached?.artist_data?.name) {
-        resolvedArtistName = cached.artist_data.name
-      }
-    }
-
     const activityRows = groupIds.map((groupId: string) => ({
-      id: crypto.randomUUID(),
       user_id: userId,
       group_id: groupId,
       spotify_artist_id: spotifyArtistId,
@@ -152,7 +156,9 @@ export async function POST(request: NextRequest) {
       action_type: "save" as const,
     }))
 
-    await supabase.from("group_activity").insert(activityRows)
+    await supabase
+      .from("group_activity")
+      .upsert(activityRows, { onConflict: "user_id,group_id,spotify_artist_id", ignoreDuplicates: true })
   }
 
   return Response.json({ success: true, playlistId: playlistId ?? null })

@@ -76,7 +76,7 @@ export async function POST(request: Request): Promise<Response> {
 
       const { error: activityError } = await supabase
         .from("group_activity")
-        .upsert(activityRows)
+        .upsert(activityRows, { onConflict: "user_id,group_id,spotify_artist_id", ignoreDuplicates: true })
 
       if (activityError) return dbError(activityError, "feedback/activity")
     }

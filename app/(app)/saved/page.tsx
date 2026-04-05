@@ -28,16 +28,22 @@ export default async function SavedPage() {
 
   if (!user) redirect("/api/auth/signin")
 
-  // Fetch saved artist IDs (newest first)
+  // Fetch saved artists (newest first)
   const { data: saveRows } = await supabase
     .from("saves")
-    .select("spotify_artist_id, created_at")
+    .select("spotify_artist_id, artist_name, created_at")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false })
 
-  const artistIds = (saveRows ?? []).map((r) => r.spotify_artist_id)
+  const artistIds = (saveRows ?? []).map((r: any) => r.spotify_artist_id)
+  // Build a name fallback from saves table (populated since migration 0003)
+  const savedNameMap = new Map<string, string>(
+    (saveRows ?? [])
+      .filter((r: any) => r.artist_name)
+      .map((r: any) => [r.spotify_artist_id, r.artist_name as string])
+  )
 
-  // Fetch cached artist data for those IDs (separate query — no FK)
+  // Fetch richer artist data from cache (best-effort — may be missing)
   const cacheMap = new Map<string, ArtistData>()
   if (artistIds.length > 0) {
     const { data: cacheRows } = await supabase
@@ -93,7 +99,7 @@ export default async function SavedPage() {
                 {/* Artist info */}
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-foreground">
-                    {artist?.name ?? artistId}
+                    {artist?.name ?? savedNameMap.get(artistId) ?? artistId}
                   </p>
                   {artist?.genres && artist.genres.length > 0 && (
                     <p className="truncate text-xs text-muted-foreground">
