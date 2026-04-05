@@ -91,7 +91,6 @@ async function spotifyFetch(
   url: string,
   accessToken: string,
   options: RequestInit = {},
-  isRetry = false
 ): Promise<Response | null> {
   const res = await fetch(url, {
     ...options,
@@ -106,11 +105,8 @@ async function spotifyFetch(
     return null
   }
 
-  if (res.status === 429 && !isRetry) {
-    const retryAfter = parseInt(res.headers.get("Retry-After") ?? "2", 10)
-    await new Promise((resolve) => setTimeout(resolve, retryAfter * 1000))
-    return spotifyFetch(url, accessToken, options, true)
-  }
+  // Don't retry on 429 — callers handle non-OK responses gracefully.
+  // Retrying with Spotify's Retry-After (often 30-60s) causes function timeouts.
 
   return res
 }
@@ -187,12 +183,12 @@ export class SpotifyProvider implements MusicProvider {
       const data = (await res.json()) as LastFmSimilarArtistsResponse
       if (data.error || !data.similarartists?.artist?.length) return []
 
-      const names = data.similarartists.artist.map((a) => a.name).slice(0, 10)
+      const names = data.similarartists.artist.map((a) => a.name).slice(0, 5)
 
-      // Resolve in batches of 10 (user token has generous rate limits)
+      // Resolve all at once (only 5 calls)
       const resolved: Artist[] = []
-      for (let i = 0; i < names.length; i += 10) {
-        const batch = names.slice(i, i + 10)
+      for (let i = 0; i < names.length; i += 5) {
+        const batch = names.slice(i, i + 5)
         const settled = await Promise.allSettled(batch.map((n) => this._searchOneArtist(accessToken, n)))
         for (const r of settled) {
           if (r.status === "fulfilled" && r.value) resolved.push(r.value)

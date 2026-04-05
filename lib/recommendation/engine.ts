@@ -80,26 +80,20 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
   // Track which source artist each candidate was found from
   const candidateMap = new Map<string, { artist: Artist; sourceArtists: string[]; degree: number }>()
 
-  // Expand from top 10 source artists — keeps total API calls manageable
-  // (10 artists × ~10 Last.fm names × Spotify search = ~100 calls)
-  const sourceArtistsToExpand = Array.from(sourceArtistMap.values()).slice(0, 10)
+  // Expand from top 5 source artists — keeps total API calls under 30
+  const sourceArtistsToExpand = Array.from(sourceArtistMap.values()).slice(0, 5)
 
-  // Process 3 at a time to balance speed vs rate limits
-  const expansionResults: Array<{ sourceArtist: Artist; similar: Artist[]; degree: number }> = []
-  for (let i = 0; i < sourceArtistsToExpand.length; i += 3) {
-    const batch = sourceArtistsToExpand.slice(i, i + 3)
-    const batchResults = await Promise.all(
-      batch.map(async (sourceArtist) => {
-        try {
-          const similar = await musicProvider.getSimilarArtists(accessToken, sourceArtist.id, sourceArtist.name, sourceArtist.genres)
-          return { sourceArtist, similar, degree: 1 }
-        } catch {
-          return { sourceArtist, similar: [] as Artist[], degree: 1 }
-        }
-      })
-    )
-    expansionResults.push(...batchResults)
-  }
+  // Expand all 5 source artists in parallel
+  const expansionResults = await Promise.all(
+    sourceArtistsToExpand.map(async (sourceArtist) => {
+      try {
+        const similar = await musicProvider.getSimilarArtists(accessToken, sourceArtist.id, sourceArtist.name, sourceArtist.genres)
+        return { sourceArtist, similar, degree: 1 }
+      } catch {
+        return { sourceArtist, similar: [] as Artist[], degree: 1 }
+      }
+    })
+  )
 
   for (const { sourceArtist, similar, degree } of expansionResults) {
     for (const candidate of similar) {
@@ -339,16 +333,15 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     scored.push({ artist: { ...artist, topTracks: [] }, score, why, source: 'spotify_recommendations' })
   }
 
-  // ── Step 10: Sort and take top 50 ─────────────────────────────────────────
+  // ── Step 10: Sort and take top 20 ─────────────────────────────────────────
   scored.sort((a, b) => b.score - a.score)
-  const top50 = scored.slice(0, 50)
+  const top50 = scored.slice(0, 20)
 
-  // ── Step 11: Fetch top tracks for each artist (batched to avoid rate limits)
-  // market param is required by Spotify — get user's actual country first
+  // ── Step 11: Fetch top tracks for each artist
   const userMarket = await musicProvider.getUserMarket(accessToken)
 
   const withTracks: typeof top50 = []
-  const TRACK_BATCH = 10
+  const TRACK_BATCH = 20
   for (let i = 0; i < top50.length; i += TRACK_BATCH) {
     const batch = top50.slice(i, i + TRACK_BATCH)
     const results = await Promise.all(
