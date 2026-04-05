@@ -73,23 +73,26 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
   }
 
   const uniqueNames = [...nameToSeeds.keys()]
-  const lfmSummary = lfmResults.map(r => `${r.seed.name.slice(0, 10)}:${r.names.length}`).join(' ')
-  console.log(`[engine] top=${topArtistMap.size} seeds=${seeds.length} lfm=[${lfmSummary}] unique=${uniqueNames.length}`)
+  const lfmTotal = lfmResults.reduce((sum, r) => sum + r.names.length, 0)
+  console.log(`[engine] seeds=${seeds.length} lfm_names=${lfmTotal} unique=${uniqueNames.length}`)
 
   if (uniqueNames.length === 0) {
-    console.error('[engine] Last.fm returned 0 unique names')
+    console.error('[engine] 0 unique names from Last.fm')
     return 0
   }
 
-  // ── Step 5: Resolve unique names → Spotify artists (sequential batches) ──
-  // Sequential batches of 5 to stay well under Spotify rate limits.
+  // ── Step 5: Resolve unique names → Spotify artists ───────────────────────
+  // Batches of 5 with 500ms between to stay under Spotify rate limits.
   const candidateMap = new Map<string, { artist: Artist; seedArtists: string[] }>()
 
-  // Get recently played for exclusion
   const recentlyPlayed = await musicProvider.getRecentlyPlayed(accessToken)
   const recentIds = new Set(recentlyPlayed.map((r) => r.artistId))
 
+  let searchOk = 0
+  let searchFail = 0
+
   for (let i = 0; i < uniqueNames.length; i += 5) {
+    if (i > 0) await new Promise(r => setTimeout(r, 500))
     const batch = uniqueNames.slice(i, i + 5)
     const settled = await Promise.allSettled(
       batch.map(async (name) => {
@@ -101,7 +104,8 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
       })
     )
     for (const r of settled) {
-      if (r.status !== 'fulfilled' || !r.value) continue
+      if (r.status !== 'fulfilled' || !r.value) { searchFail++; continue }
+      searchOk++
       const { name, artist } = r.value
       if (topArtistMap.has(artist.id)) continue
       if (recentIds.has(artist.id)) continue
@@ -117,7 +121,7 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     }
   }
 
-  const searchSummary = ''  // replaced by lfmSummary above
+  console.log(`[engine] search ok=${searchOk} fail=${searchFail} candidates=${candidateMap.size}`)
 
   // ── Step 5: Filter — thumbs-down ─────────────────────────────────────────
   const { data: thumbsDownData } = await supabase
@@ -171,10 +175,8 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     top = scored.slice(0, 20)
   }
 
-  console.log(`[engine] candidates=${candidateMap.size} cap=${capLabel} written=${top.length}`)
-
   if (top.length === 0) {
-    console.error('[engine] 0 candidates after all filtering')
+    console.error(`[engine] 0 after cap=${capLabel} (scored=${scored.length})`)
     return 0
   }
 
@@ -236,5 +238,6 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     }
   }
 
+  console.log(`[engine] cap=${capLabel} top=${top.length} written=${written}`)
   return written
 }

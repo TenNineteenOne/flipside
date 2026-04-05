@@ -186,10 +186,10 @@ export class SpotifyProvider implements MusicProvider {
       if (data.error || !data.similarartists?.artist?.length) return []
 
       const all = data.similarartists.artist.map((a) => a.name)
-      // Skip top-5 obvious matches, take up to 20 deeper cuts.
-      // Clamp start so short lists still produce results.
+      // Skip top-5 obvious matches, take up to 8 deeper cuts.
+      // Clamp start so short lists still produce names.
       const start = Math.min(5, Math.max(0, all.length - 1))
-      return all.slice(start, start + 20)
+      return all.slice(start, start + 8)
     } catch {
       return []
     }
