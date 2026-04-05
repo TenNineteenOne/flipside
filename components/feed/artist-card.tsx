@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import Image from "next/image"
 import { Play, Pause, ThumbsUp, ThumbsDown, Music, Plus, ExternalLink } from "lucide-react"
 import { toast } from "sonner"
