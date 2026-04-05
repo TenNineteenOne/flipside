@@ -158,12 +158,14 @@ export class SpotifyProvider implements MusicProvider {
     return merged
   }
 
-  /** Fetch similar artists from Last.fm and resolve each to a Spotify Artist object. */
-  private async _getSimilarViaLastFm(accessToken: string, artistName: string): Promise<Artist[]> {
+  // -------------------------------------------------------------------------
+  // getSimilarArtistNames — Last.fm only, no Spotify call, no access token
+  // -------------------------------------------------------------------------
+  async getSimilarArtistNames(artistName: string): Promise<string[]> {
     const apiKey = process.env.LASTFM_API_KEY
     if (!apiKey) {
       if (!SpotifyProvider._lastFmKeyMissing) {
-        console.warn("[spotify] LASTFM_API_KEY not set — Last.fm expansion disabled")
+        console.warn("[spotify] LASTFM_API_KEY not set")
         SpotifyProvider._lastFmKeyMissing = true
       }
       return []
@@ -178,37 +180,34 @@ export class SpotifyProvider implements MusicProvider {
         `&limit=50`
 
       const res = await fetch(url)
-      if (!res.ok) {
-        console.error(`[lastfm] ${artistName}: HTTP ${res.status}`)
-        return []
-      }
+      if (!res.ok) return []
 
       const data = (await res.json()) as LastFmSimilarArtistsResponse
-      if (data.error || !data.similarartists?.artist?.length) {
-        console.error(`[lastfm] ${artistName}: no similar artists (error=${data.error ?? 'none'})`)
-        return []
-      }
+      if (data.error || !data.similarartists?.artist?.length) return []
 
-      const total = data.similarartists.artist.length
-      // Take up to 20 starting at position 5 — skip the most obvious top matches.
-      // But clamp start so we never skip past what Last.fm returned.
-      const start = Math.min(5, Math.max(0, total - 1))
-      const names = data.similarartists.artist.map((a) => a.name).slice(start, start + 20)
-
-      // Resolve in batches of 5
-      const resolved: Artist[] = []
-      for (let i = 0; i < names.length; i += 5) {
-        const batch = names.slice(i, i + 5)
-        const settled = await Promise.allSettled(batch.map((n) => this._searchOneArtist(accessToken, n)))
-        for (const r of settled) {
-          if (r.status === "fulfilled" && r.value) resolved.push(r.value)
-        }
-      }
-      console.log(`[lastfm] ${artistName}: total=${total} took=${names.length} resolved=${resolved.length}`)
-      return resolved
+      const all = data.similarartists.artist.map((a) => a.name)
+      // Skip top-5 obvious matches, take up to 20 deeper cuts.
+      // Clamp start so short lists still produce results.
+      const start = Math.min(5, Math.max(0, all.length - 1))
+      return all.slice(start, start + 20)
     } catch {
       return []
     }
+  }
+
+  /** @deprecated Use getSimilarArtistNames + engine-level Spotify resolution instead */
+  private async _getSimilarViaLastFm(accessToken: string, artistName: string): Promise<Artist[]> {
+    const names = await this.getSimilarArtistNames(artistName)
+    if (!names.length) return []
+    const resolved: Artist[] = []
+    for (let i = 0; i < names.length; i += 5) {
+      const batch = names.slice(i, i + 5)
+      const settled = await Promise.allSettled(batch.map((n) => this._searchOneArtist(accessToken, n)))
+      for (const r of settled) {
+        if (r.status === "fulfilled" && r.value) resolved.push(r.value)
+      }
+    }
+    return resolved
   }
 
   /** Search Spotify for a single artist by name. Uses the caller's access token. */

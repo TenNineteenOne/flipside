@@ -18,6 +18,9 @@ export interface MusicProvider {
   /** Fetch full artist objects by IDs (batch, up to 50 per call). Always includes genres. */
   getArtists(accessToken: string, ids: string[]): Promise<Artist[]>
 
+  /** Get similar artist names from Last.fm (no Spotify call, no access token needed) */
+  getSimilarArtistNames(artistName: string): Promise<string[]>
+
   /** Search for artists by name */
   searchArtists(accessToken: string, query: string): Promise<Artist[]>
 

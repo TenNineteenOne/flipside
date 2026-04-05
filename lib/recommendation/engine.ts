@@ -50,47 +50,74 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     return 0
   }
 
-  // ── Step 3: Get recently played to add to exclusion set ─────────────────
-  const recentlyPlayed = await musicProvider.getRecentlyPlayed(accessToken)
-  const recentIds = new Set(recentlyPlayed.map((r) => r.artistId))
+  // ── Step 3: Fetch Last.fm names for all seeds IN PARALLEL ───────────────
+  // No Spotify calls here — Last.fm is free, no auth, no rate limit.
+  const topArtistNames = new Set([...topArtistMap.values()].map(a => a.name.toLowerCase()))
 
-  // ── Step 4: Get Last.fm similar artists for each seed (sequential) ──────
-  // Sequential to avoid Spotify rate-limiting — 10 seeds × 5 parallel searches
-  // each = 50 concurrent requests which triggers 429s. Sequential keeps it at 5.
-  const candidateMap = new Map<string, { artist: Artist; seedArtists: string[] }>()
-  const similarResults: Array<{ seed: Artist; similar: Artist[]; error: string | null }> = []
+  const lfmResults = await Promise.all(
+    seeds.map(async (seed) => ({
+      seed,
+      names: await musicProvider.getSimilarArtistNames(seed.name),
+    }))
+  )
 
-  for (const seed of seeds) {
-    try {
-      const similar = await musicProvider.getSimilarArtists(
-        accessToken, seed.id, seed.name, seed.genres
-      )
-      similarResults.push({ seed, similar, error: null })
-    } catch (err) {
-      similarResults.push({ seed, similar: [], error: String(err) })
+  // ── Step 4: Deduplicate names across seeds, build name→seeds map ─────────
+  // One Spotify search per unique name — not per seed × name.
+  const nameToSeeds = new Map<string, string[]>()
+  for (const { seed, names } of lfmResults) {
+    for (const name of names) {
+      if (topArtistNames.has(name.toLowerCase())) continue  // skip known artists by name
+      if (!nameToSeeds.has(name)) nameToSeeds.set(name, [])
+      nameToSeeds.get(name)!.push(seed.name)
     }
   }
 
-  for (const { seed, similar } of similarResults) {
-    for (const artist of similar) {
-      // Exclude top artists and recently played
+  const uniqueNames = [...nameToSeeds.keys()]
+  const lfmSummary = lfmResults.map(r => `${r.seed.name.slice(0, 10)}:${r.names.length}`).join(' ')
+  console.log(`[engine] top=${topArtistMap.size} seeds=${seeds.length} lfm=[${lfmSummary}] unique=${uniqueNames.length}`)
+
+  if (uniqueNames.length === 0) {
+    console.error('[engine] Last.fm returned 0 unique names')
+    return 0
+  }
+
+  // ── Step 5: Resolve unique names → Spotify artists (sequential batches) ──
+  // Sequential batches of 5 to stay well under Spotify rate limits.
+  const candidateMap = new Map<string, { artist: Artist; seedArtists: string[] }>()
+
+  // Get recently played for exclusion
+  const recentlyPlayed = await musicProvider.getRecentlyPlayed(accessToken)
+  const recentIds = new Set(recentlyPlayed.map((r) => r.artistId))
+
+  for (let i = 0; i < uniqueNames.length; i += 5) {
+    const batch = uniqueNames.slice(i, i + 5)
+    const settled = await Promise.allSettled(
+      batch.map(async (name) => {
+        const results = await musicProvider.searchArtists(accessToken, name)
+        if (!results.length) return null
+        const lower = name.toLowerCase()
+        const exact = results.find(a => a.name.toLowerCase() === lower)
+        return { name, artist: exact ?? results[0] }
+      })
+    )
+    for (const r of settled) {
+      if (r.status !== 'fulfilled' || !r.value) continue
+      const { name, artist } = r.value
       if (topArtistMap.has(artist.id)) continue
       if (recentIds.has(artist.id)) continue
-
+      const seedArtists = nameToSeeds.get(name) ?? []
       if (candidateMap.has(artist.id)) {
         const existing = candidateMap.get(artist.id)!
-        if (!existing.seedArtists.includes(seed.name)) {
-          existing.seedArtists.push(seed.name)
+        for (const s of seedArtists) {
+          if (!existing.seedArtists.includes(s)) existing.seedArtists.push(s)
         }
       } else {
-        candidateMap.set(artist.id, { artist, seedArtists: [seed.name] })
+        candidateMap.set(artist.id, { artist, seedArtists })
       }
     }
   }
 
-  const searchSummary = similarResults
-    .map(r => `${r.seed.name.slice(0, 12)}:${r.similar.length}${r.error ? '!' : ''}`)
-    .join(' ')
+  const searchSummary = ''  // replaced by lfmSummary above
 
   // ── Step 5: Filter — thumbs-down ─────────────────────────────────────────
   const { data: thumbsDownData } = await supabase
@@ -144,7 +171,7 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     top = scored.slice(0, 20)
   }
 
-  console.log(`[engine] top=${topArtistMap.size} seeds=${seeds.length} similar=[${searchSummary}] candidates=${candidateMap.size} cap=${capLabel} written=${top.length}`)
+  console.log(`[engine] candidates=${candidateMap.size} cap=${capLabel} written=${top.length}`)
 
   if (top.length === 0) {
     console.error('[engine] 0 candidates after all filtering')
