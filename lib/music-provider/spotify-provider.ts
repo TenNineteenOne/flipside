@@ -175,7 +175,7 @@ export class SpotifyProvider implements MusicProvider {
         `&artist=${encodeURIComponent(artistName)}` +
         `&api_key=${apiKey}` +
         `&format=json` +
-        `&limit=30`
+        `&limit=50`
 
       const res = await fetch(url)
       if (!res.ok) return []
@@ -183,9 +183,10 @@ export class SpotifyProvider implements MusicProvider {
       const data = (await res.json()) as LastFmSimilarArtistsResponse
       if (data.error || !data.similarartists?.artist?.length) return []
 
-      const names = data.similarartists.artist.map((a) => a.name).slice(0, 5)
+      // Skip the top 5 (always the obvious well-known matches); take the next 20 deeper cuts
+      const names = data.similarartists.artist.map((a) => a.name).slice(5, 25)
 
-      // Resolve all at once (only 5 calls)
+      // Resolve in batches of 5
       const resolved: Artist[] = []
       for (let i = 0; i < names.length; i += 5) {
         const batch = names.slice(i, i + 5)
@@ -215,7 +216,8 @@ export class SpotifyProvider implements MusicProvider {
     // Prefer exact name match, then fall back to highest popularity.
     const lower = name.toLowerCase()
     const exact = items.find((a) => a.name.toLowerCase() === lower)
-    const best = exact ?? [...items].sort((a, b) => b.popularity - a.popularity)[0]
+    // Fall back to items[0] — Spotify's own relevance ranking for the name query
+    const best = exact ?? items[0]
     return best ? mapArtist(best) : null
   }
 

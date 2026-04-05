@@ -7,7 +7,7 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
   const { userId, accessToken } = input
   const supabase = createServiceClient()
 
-  // ── Step 1: Get user's top artists ──────────────────────────────────────
+  // ── Step 1: Get user's top artists (all 3 time ranges) ──────────────────
   const [shortTerm, mediumTerm, longTerm] = await Promise.all([
     musicProvider.getTopArtists(accessToken, 'short_term'),
     musicProvider.getTopArtists(accessToken, 'medium_term'),
@@ -16,9 +16,7 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
 
   const topArtistMap = new Map<string, Artist>()
   for (const artist of [...shortTerm, ...mediumTerm, ...longTerm]) {
-    if (!topArtistMap.has(artist.id)) {
-      topArtistMap.set(artist.id, artist)
-    }
+    if (!topArtistMap.has(artist.id)) topArtistMap.set(artist.id, artist)
   }
 
   if (topArtistMap.size === 0) {
@@ -26,73 +24,74 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     return 0
   }
 
-  // ── Step 1b: Fetch full artist objects to get genres ────────────────────
-  // /me/top/artists may return empty genres; /artists?ids=... always has them
-  const allIds = [...topArtistMap.keys()]
-  const fullArtists = await musicProvider.getArtists(accessToken, allIds)
-  for (const artist of fullArtists) {
-    if (artist.genres.length > 0) {
-      topArtistMap.set(artist.id, artist)
+  // ── Step 2: Pick 10 diverse seeds across all time ranges ────────────────
+  // 4 from short, 4 from medium, 2 from long — avoids over-indexing on recent weeks
+  const seenSeedIds = new Set<string>()
+  const pickSeeds = (artists: Artist[], n: number): Artist[] => {
+    const picked: Artist[] = []
+    for (const a of artists) {
+      if (picked.length >= n) break
+      if (!seenSeedIds.has(a.id)) {
+        seenSeedIds.add(a.id)
+        picked.push(a)
+      }
     }
+    return picked
   }
 
-  // ── Step 2: Collect unique genres from top artists ──────────────────────
-  const genreCounts = new Map<string, number>()
-  for (const artist of topArtistMap.values()) {
-    for (const genre of artist.genres) {
-      genreCounts.set(genre, (genreCounts.get(genre) ?? 0) + 1)
-    }
-  }
+  const seeds = [
+    ...pickSeeds(shortTerm, 4),
+    ...pickSeeds(mediumTerm, 4),
+    ...pickSeeds(longTerm, 2),
+  ]
 
-  // Sort genres by frequency (most common first) and take top 8
-  const topGenres = [...genreCounts.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 8)
-    .map(([genre]) => genre)
-
-  if (topGenres.length === 0) {
-    console.error(`[engine] topArtists=${topArtistMap.size} but 0 genres found`)
+  if (seeds.length === 0) {
+    console.error('[engine] No seeds available')
     return 0
   }
 
-  // ── Step 3: Search Spotify by genre to find new artists ─────────────────
-  // Uses searchArtists which takes the user's access token (proven to work)
-  const candidateMap = new Map<string, { artist: Artist; sourceGenres: string[] }>()
+  // ── Step 3: Get recently played to add to exclusion set ─────────────────
+  const recentlyPlayed = await musicProvider.getRecentlyPlayed(accessToken)
+  const recentIds = new Set(recentlyPlayed.map((r) => r.artistId))
 
-  const searchResults = await Promise.all(
-    topGenres.map(async (genre) => {
+  // ── Step 4: Get Last.fm similar artists for each seed ───────────────────
+  const candidateMap = new Map<string, { artist: Artist; seedArtists: string[] }>()
+
+  const similarResults = await Promise.all(
+    seeds.map(async (seed) => {
       try {
-        // Use genre: field filter without quotes (quotes can cause 0 results)
-        const artists = await musicProvider.searchArtists(accessToken, `genre:${genre}`)
-        return { genre, artists, error: null }
+        const similar = await musicProvider.getSimilarArtists(
+          accessToken, seed.id, seed.name, seed.genres
+        )
+        return { seed, similar, error: null }
       } catch (err) {
-        return { genre, artists: [] as Artist[], error: String(err) }
+        return { seed, similar: [] as Artist[], error: String(err) }
       }
     })
   )
 
-  // Log all search results in one line (Vercel only shows first log per request)
-  const searchSummary = searchResults.map(r => `${r.genre}:${r.artists.length}${r.error ? '!' : ''}`).join(' ')
-
-  for (const { genre, artists } of searchResults) {
-    for (const artist of artists) {
-      // Skip if it's one of the user's top artists
+  for (const { seed, similar } of similarResults) {
+    for (const artist of similar) {
+      // Exclude top artists and recently played
       if (topArtistMap.has(artist.id)) continue
+      if (recentIds.has(artist.id)) continue
 
       if (candidateMap.has(artist.id)) {
         const existing = candidateMap.get(artist.id)!
-        if (!existing.sourceGenres.includes(genre)) {
-          existing.sourceGenres.push(genre)
+        if (!existing.seedArtists.includes(seed.name)) {
+          existing.seedArtists.push(seed.name)
         }
       } else {
-        candidateMap.set(artist.id, { artist, sourceGenres: [genre] })
+        candidateMap.set(artist.id, { artist, seedArtists: [seed.name] })
       }
     }
   }
 
-  console.log(`[engine] top=${topArtistMap.size} genres=${topGenres.length} search=[${searchSummary}] candidates=${candidateMap.size}`)
+  const searchSummary = similarResults
+    .map(r => `${r.seed.name.slice(0, 12)}:${r.similar.length}${r.error ? '!' : ''}`)
+    .join(' ')
 
-  // ── Step 4: Filter — thumbs-down ──────────────────────────────────────
+  // ── Step 5: Filter — thumbs-down ─────────────────────────────────────────
   const { data: thumbsDownData } = await supabase
     .from('feedback')
     .select('spotify_artist_id')
@@ -106,48 +105,52 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     .filter(([id]) => !thumbsDownIds.has(id))
     .map(([, val]) => val)
 
-  // ── Step 5: Score candidates ──────────────────────────────────────────
-  // Prefer: less popular (more obscure discovery), more genre overlap
-  const scored: ScoredArtist[] = filteredCandidates.map(({ artist, sourceGenres }) => {
-    // Lower popularity = higher discovery value (invert 0-100 scale)
-    const discoveryScore = (100 - artist.popularity) / 100
-
-    // More genre matches = more relevant
-    const genreRelevance = Math.min(sourceGenres.length / 3, 1)
-
-    const score = discoveryScore * 0.6 + genreRelevance * 0.4
-
-    // Find which of the user's top artists share genres with this candidate
-    const relatedTopArtists: string[] = []
-    for (const topArtist of topArtistMap.values()) {
-      if (topArtist.genres.some((g) => sourceGenres.includes(g))) {
-        relatedTopArtists.push(topArtist.name)
-        if (relatedTopArtists.length >= 2) break
-      }
-    }
+  // ── Step 6: Score — aggressive discovery curve ───────────────────────────
+  // Power-of-2 curve crushes mid/high popularity; 80% weight on obscurity
+  const scored: ScoredArtist[] = filteredCandidates.map(({ artist, seedArtists }) => {
+    const discoveryScore = Math.pow((100 - artist.popularity) / 100, 2)
+    const seedRelevance = Math.min(seedArtists.length / 3, 1)
+    const score = discoveryScore * 0.80 + seedRelevance * 0.20
 
     return {
       artist: { ...artist, topTracks: [] },
       score,
       why: {
-        sourceArtists: relatedTopArtists,
-        genres: sourceGenres.slice(0, 2),
+        sourceArtists: seedArtists.slice(0, 2),
+        genres: artist.genres.slice(0, 2),
         friendBoost: [],
       },
-      source: 'genre_search',
+      source: 'lastfm_similar',
     }
   })
 
-  // ── Step 6: Sort and take top 20 ──────────────────────────────────────
   scored.sort((a, b) => b.score - a.score)
-  const top = scored.slice(0, 20)
+
+  // ── Step 7: Tiered popularity cap — target underground (pop ≤ 55) ────────
+  let capLabel = 'none'
+  let top: ScoredArtist[]
+
+  const capped55 = scored.filter(s => s.artist.popularity <= 55)
+  const capped65 = scored.filter(s => s.artist.popularity <= 65)
+
+  if (capped55.length >= 5) {
+    top = capped55.slice(0, 20)
+    capLabel = '55'
+  } else if (capped65.length >= 5) {
+    top = capped65.slice(0, 20)
+    capLabel = '65'
+  } else {
+    top = scored.slice(0, 20)
+  }
+
+  console.log(`[engine] top=${topArtistMap.size} seeds=${seeds.length} similar=[${searchSummary}] candidates=${candidateMap.size} cap=${capLabel} written=${top.length}`)
 
   if (top.length === 0) {
-    console.error(`[engine] 0 scored candidates after filtering`)
+    console.error('[engine] 0 candidates after all filtering')
     return 0
   }
 
-  // ── Step 7: Fetch top tracks ──────────────────────────────────────────
+  // ── Step 8: Fetch top tracks ──────────────────────────────────────────────
   const userMarket = await musicProvider.getUserMarket(accessToken)
 
   const withTracks = await Promise.all(
@@ -161,7 +164,7 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     })
   )
 
-  // ── Step 8: Write to cache ────────────────────────────────────────────
+  // ── Step 9: Write to cache ────────────────────────────────────────────────
   const { data: existingCache } = await supabase
     .from('recommendation_cache')
     .select('spotify_artist_id, seen_at')
