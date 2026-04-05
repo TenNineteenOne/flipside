@@ -80,19 +80,31 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
   // Track which source artist each candidate was found from
   const candidateMap = new Map<string, { artist: Artist; sourceArtists: string[]; degree: number }>()
 
-  // First-degree: similar to top artists
-  const expandPromises = Array.from(sourceArtistMap.values()).map(async (sourceArtist) => {
-    try {
-      const similar = await musicProvider.getSimilarArtists(sourceArtist.id, sourceArtist.name, sourceArtist.genres)
-      return { sourceArtist, similar, degree: 1 }
-    } catch {
-      return { sourceArtist, similar: [] as Artist[], degree: 1 }
-    }
-  })
+  // Limit expansion to top 25 source artists to avoid Spotify rate limits.
+  // More sources don't help if they all get rate-limited to 0 candidates.
+  const sourceArtistsToExpand = Array.from(sourceArtistMap.values()).slice(0, 25)
 
-  const expansionResults = await Promise.all(expandPromises)
+  // Process in batches of 5 to keep concurrent Spotify search calls manageable
+  const expansionResults: Array<{ sourceArtist: Artist; similar: Artist[]; degree: number }> = []
+  for (let i = 0; i < sourceArtistsToExpand.length; i += 5) {
+    const batch = sourceArtistsToExpand.slice(i, i + 5)
+    const batchResults = await Promise.all(
+      batch.map(async (sourceArtist) => {
+        try {
+          const similar = await musicProvider.getSimilarArtists(sourceArtist.id, sourceArtist.name, sourceArtist.genres)
+          return { sourceArtist, similar, degree: 1 }
+        } catch {
+          return { sourceArtist, similar: [] as Artist[], degree: 1 }
+        }
+      })
+    )
+    expansionResults.push(...batchResults)
+    // Early exit if we already have enough candidates
+    const totalSoFar = expansionResults.reduce((s, r) => s + r.similar.length, 0)
+    if (totalSoFar >= 200) break
+  }
 
-  console.log(`[engine] sourceArtists=${sourceArtistMap.size} expansionResults=${expansionResults.length} totalSimilar=${expansionResults.reduce((s, r) => s + r.similar.length, 0)}`)
+  console.log(`[engine] sourceArtists=${sourceArtistMap.size} expanded=${expansionResults.length} totalSimilar=${expansionResults.reduce((s, r) => s + r.similar.length, 0)}`)
 
   for (const { sourceArtist, similar, degree } of expansionResults) {
     for (const candidate of similar) {

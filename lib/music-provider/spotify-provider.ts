@@ -188,21 +188,17 @@ export class SpotifyProvider implements MusicProvider {
       const data = (await res.json()) as LastFmSimilarArtistsResponse
       if (data.error || !data.similarartists?.artist?.length) return []
 
-      const names = data.similarartists.artist.map((a) => a.name)
-      console.log(`[lastfm] "${artistName}" -> ${names.length} similar names`)
+      const names = data.similarartists.artist.map((a) => a.name).slice(0, 15)
 
-      // Resolve each name to a Spotify Artist in parallel (best-effort)
-      const settled = await Promise.allSettled(
-        names.map((name) => this._searchOneArtist(name))
-      )
-
-      const resolved = settled
-        .filter(
-          (r): r is PromiseFulfilledResult<Artist | null> => r.status === "fulfilled"
-        )
-        .map((r) => r.value)
-        .filter((a): a is Artist => a !== null)
-      console.log(`[lastfm] "${artistName}" -> ${resolved.length}/${names.length} resolved to Spotify artists`)
+      // Resolve in batches of 5 to avoid Spotify rate limits
+      const resolved: Artist[] = []
+      for (let i = 0; i < names.length; i += 5) {
+        const batch = names.slice(i, i + 5)
+        const settled = await Promise.allSettled(batch.map((n) => this._searchOneArtist(n)))
+        for (const r of settled) {
+          if (r.status === "fulfilled" && r.value) resolved.push(r.value)
+        }
+      }
       return resolved
     } catch (err) {
       console.error(`[lastfm] "${artistName}" error:`, err instanceof Error ? err.message : err)
