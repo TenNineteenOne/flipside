@@ -10,6 +10,16 @@ const SPOTIFY_SCOPES = [
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   secret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET,
+  logger: {
+    debug(message, metadata) {
+      if (message === "authorization url is ready") {
+        console.log("[auth][debug] redirect_uri:", (metadata as any)?.url?.searchParams?.get("redirect_uri"))
+        console.log("[auth][debug] authorization url:", (metadata as any)?.url?.toString())
+      }
+    },
+    error: console.error,
+    warn: console.warn,
+  },
   providers: [
     Spotify({
       clientId: process.env.SPOTIFY_CLIENT_ID!,
