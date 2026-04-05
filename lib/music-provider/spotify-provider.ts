@@ -34,10 +34,6 @@ interface SpotifyTrackObject {
   }
 }
 
-interface SpotifyRecommendationsResponse {
-  tracks: Array<SpotifyTrackObject & { artists: SpotifyArtistObject[] }>
-}
-
 interface SpotifySearchResponse {
   artists: {
     items: SpotifyArtistObject[]
@@ -124,6 +120,8 @@ async function spotifyFetch(
 // ---------------------------------------------------------------------------
 
 export class SpotifyProvider implements MusicProvider {
+  private static _lastFmKeyMissing = false
+
   // -------------------------------------------------------------------------
   // getTopArtists
   // -------------------------------------------------------------------------
@@ -165,7 +163,14 @@ export class SpotifyProvider implements MusicProvider {
   /** Fetch similar artists from Last.fm and resolve each to a Spotify Artist object. */
   private async _getSimilarViaLastFm(artistName: string): Promise<Artist[]> {
     const apiKey = process.env.LASTFM_API_KEY
-    if (!apiKey) return []
+    if (!apiKey) {
+      // Only log once (the first time this runs per cold start) to avoid log spam
+      if (!SpotifyProvider._lastFmKeyMissing) {
+        console.warn("[spotify] LASTFM_API_KEY not set — Last.fm expansion disabled")
+        SpotifyProvider._lastFmKeyMissing = true
+      }
+      return []
+    }
 
     try {
       const url =
@@ -237,29 +242,25 @@ export class SpotifyProvider implements MusicProvider {
     return best ? mapArtist(best) : null
   }
 
-  /** Fetch similar artists from Spotify Recommendations (seed by artist). */
+  /** Fetch related artists from Spotify's related-artists endpoint (not deprecated). */
   private async _getSimilarViaSpotifyRecs(artistId: string): Promise<Artist[]> {
     const serverToken = await getSpotifyClientToken()
-    if (!serverToken) return []
-
-    const res = await spotifyFetch(
-      `${SPOTIFY_BASE}/recommendations?seed_artists=${artistId}&limit=20`,
-      serverToken
-    )
-    if (!res || !res.ok) return []
-
-    const data = (await res.json()) as SpotifyRecommendationsResponse
-    const artistMap = new Map<string, Artist>()
-
-    for (const track of data.tracks ?? []) {
-      for (const a of track.artists ?? []) {
-        if (!artistMap.has(a.id)) {
-          artistMap.set(a.id, mapArtist(a))
-        }
-      }
+    if (!serverToken) {
+      console.error("[spotify] No client credentials token available for related-artists")
+      return []
     }
 
-    return Array.from(artistMap.values())
+    const res = await spotifyFetch(
+      `${SPOTIFY_BASE}/artists/${artistId}/related-artists`,
+      serverToken
+    )
+    if (!res || !res.ok) {
+      console.error(`[spotify] related-artists failed for ${artistId}: status=${res?.status}`)
+      return []
+    }
+
+    const data = (await res.json()) as { artists: SpotifyArtistObject[] }
+    return (data.artists ?? []).map(mapArtist)
   }
 
   // -------------------------------------------------------------------------
