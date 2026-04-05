@@ -83,7 +83,7 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
   // First-degree: similar to top artists
   const expandPromises = Array.from(sourceArtistMap.values()).map(async (sourceArtist) => {
     try {
-      const similar = await musicProvider.getSimilarArtists(sourceArtist.id, sourceArtist.name)
+      const similar = await musicProvider.getSimilarArtists(sourceArtist.id, sourceArtist.name, sourceArtist.genres)
       return { sourceArtist, similar, degree: 1 }
     } catch {
       return { sourceArtist, similar: [] as Artist[], degree: 1 }

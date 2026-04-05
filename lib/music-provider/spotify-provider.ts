@@ -142,15 +142,17 @@ export class SpotifyProvider implements MusicProvider {
   // -------------------------------------------------------------------------
   // getSimilarArtists
   // -------------------------------------------------------------------------
-  async getSimilarArtists(artistId: string, artistName: string): Promise<Artist[]> {
+  async getSimilarArtists(artistId: string, artistName: string, genres: string[] = []): Promise<Artist[]> {
     const lastFmArtists = await this._getSimilarViaLastFm(artistName)
-    const spotifyRecArtists = await this._getSimilarViaSpotifyRecs(artistId)
+    const genreArtists = lastFmArtists.length < 5
+      ? await this._getSimilarViaGenreSearch(genres)
+      : []
 
-    // Merge: Last.fm results first, then Spotify recs not already included
+    // Merge: Last.fm results first, then genre search not already included
     const seen = new Set<string>()
     const merged: Artist[] = []
 
-    for (const a of [...lastFmArtists, ...spotifyRecArtists]) {
+    for (const a of [...lastFmArtists, ...genreArtists]) {
       if (!seen.has(a.id)) {
         seen.add(a.id)
         merged.push(a)
@@ -242,25 +244,41 @@ export class SpotifyProvider implements MusicProvider {
     return best ? mapArtist(best) : null
   }
 
-  /** Fetch related artists from Spotify's related-artists endpoint (not deprecated). */
-  private async _getSimilarViaSpotifyRecs(artistId: string): Promise<Artist[]> {
+  /** Search Spotify for artists by genre when Last.fm returns few results. */
+  private async _getSimilarViaGenreSearch(genres: string[]): Promise<Artist[]> {
+    if (!genres.length) return []
+
     const serverToken = await getSpotifyClientToken()
-    if (!serverToken) {
-      console.error("[spotify] No client credentials token available for related-artists")
-      return []
-    }
+    if (!serverToken) return []
 
-    const res = await spotifyFetch(
-      `${SPOTIFY_BASE}/artists/${artistId}/related-artists`,
-      serverToken
+    // Pick up to 2 genres to search, deduplicated
+    const toSearch = [...new Set(genres)].slice(0, 2)
+
+    const results = await Promise.allSettled(
+      toSearch.map(async (genre) => {
+        const res = await spotifyFetch(
+          `${SPOTIFY_BASE}/search?q=genre:${encodeURIComponent(`"${genre}"`)}&type=artist&limit=10`,
+          serverToken
+        )
+        if (!res || !res.ok) return [] as Artist[]
+        const data = (await res.json()) as SpotifySearchResponse
+        return (data.artists?.items ?? []).map(mapArtist)
+      })
     )
-    if (!res || !res.ok) {
-      console.error(`[spotify] related-artists failed for ${artistId}: status=${res?.status}`)
-      return []
-    }
 
-    const data = (await res.json()) as { artists: SpotifyArtistObject[] }
-    return (data.artists ?? []).map(mapArtist)
+    const artists: Artist[] = []
+    const seen = new Set<string>()
+    for (const r of results) {
+      if (r.status === "fulfilled") {
+        for (const a of r.value) {
+          if (!seen.has(a.id)) {
+            seen.add(a.id)
+            artists.push(a)
+          }
+        }
+      }
+    }
+    return artists
   }
 
   // -------------------------------------------------------------------------
@@ -313,7 +331,7 @@ export class SpotifyProvider implements MusicProvider {
     accessToken: string,
     artistId: string,
     limit: number,
-    market = "US"
+    market = "from_token"
   ): Promise<Track[]> {
     const res = await spotifyFetch(
       `${SPOTIFY_BASE}/artists/${artistId}/top-tracks?market=${market}`,
