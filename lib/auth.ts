@@ -10,13 +10,6 @@ const SPOTIFY_SCOPES = [
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   secret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET,
-  logger: {
-    error(e: any) {
-      const cause = e?.cause
-      console.error("[auth] ERR", e?.message, "|", cause?.message ?? cause ?? "(no cause)")
-    },
-    warn: console.warn,
-  },
   providers: [
     Spotify({
       clientId: process.env.SPOTIFY_CLIENT_ID!,
