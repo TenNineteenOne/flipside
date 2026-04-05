@@ -24,14 +24,14 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (userError || !user) return apiError("User not found", 404)
 
   try {
-    // Clear unseen cache entries that have no track data (stale from before market fix)
-    // These would never get shown but would prevent regeneration from being triggered
+    // Clear all unseen cache entries before regenerating.
+    // Seen entries (seen_at IS NOT NULL) are preserved.
+    // This ensures stale entries (e.g. with empty topTracks) can't block the feed.
     await supabase
       .from("recommendation_cache")
       .delete()
       .eq("user_id", user.id)
       .is("seen_at", null)
-      .filter("artist_data->topTracks", "eq", "[]")
 
     await accumulateSpotifyHistory({
       userId: user.id,
