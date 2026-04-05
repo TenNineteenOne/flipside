@@ -78,10 +78,15 @@ export default async function FeedPage() {
     .order("score", { ascending: false })
     .limit(20)
 
-  // No recommendations yet — client component triggers generation and refreshes
-  if (!recs || recs.length === 0) {
+  // Filter out stale entries where topTracks is empty (from pre-fix cache writes)
+  const validRecs = (recs ?? []).filter(
+    (r: any) => Array.isArray(r.artist_data?.topTracks) && r.artist_data.topTracks.length > 0
+  )
+
+  // No valid recommendations — client component triggers generation and refreshes
+  if (validRecs.length === 0) {
     return <RecommendationsLoader />
   }
 
-  return <FeedClient recommendations={interleave(recs as Rec[])} groups={groups} />
+  return <FeedClient recommendations={interleave(validRecs as Rec[])} groups={groups} />
 }
