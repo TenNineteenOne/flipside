@@ -189,20 +189,23 @@ export class SpotifyProvider implements MusicProvider {
       if (data.error || !data.similarartists?.artist?.length) return []
 
       const names = data.similarartists.artist.map((a) => a.name)
+      console.log(`[lastfm] "${artistName}" -> ${names.length} similar names`)
 
       // Resolve each name to a Spotify Artist in parallel (best-effort)
       const settled = await Promise.allSettled(
         names.map((name) => this._searchOneArtist(name))
       )
 
-      return settled
+      const resolved = settled
         .filter(
           (r): r is PromiseFulfilledResult<Artist | null> => r.status === "fulfilled"
         )
         .map((r) => r.value)
         .filter((a): a is Artist => a !== null)
-    } catch {
-      // Network error or bad API key — fall through to Spotify recs
+      console.log(`[lastfm] "${artistName}" -> ${resolved.length}/${names.length} resolved to Spotify artists`)
+      return resolved
+    } catch (err) {
+      console.error(`[lastfm] "${artistName}" error:`, err instanceof Error ? err.message : err)
       return []
     }
   }

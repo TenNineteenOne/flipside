@@ -92,6 +92,8 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
 
   const expansionResults = await Promise.all(expandPromises)
 
+  console.log(`[engine] sourceArtists=${sourceArtistMap.size} expansionResults=${expansionResults.length} totalSimilar=${expansionResults.reduce((s, r) => s + r.similar.length, 0)}`)
+
   for (const { sourceArtist, similar, degree } of expansionResults) {
     for (const candidate of similar) {
       // Skip if it's already a source artist
@@ -114,6 +116,8 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     }
     if (candidateMap.size >= 200) break
   }
+
+  console.log(`[engine] candidateMap.size=${candidateMap.size} after expansion`)
 
   // ── Step 4: Fetch thumbs-up and saved artists for scoring boosts ───────────
   const [feedbackData, savesData] = await Promise.all([
