@@ -58,16 +58,34 @@ export async function POST(req: NextRequest) {
 
   const supabase = createServiceClient()
 
+  // Upsert user row (creates on first login, updates profile on subsequent)
+  const { data: userRow, error: userError } = await supabase
+    .from("users")
+    .upsert(
+      {
+        spotify_id: session.user.spotifyId,
+        display_name: session.user.displayName ?? null,
+        avatar_url: session.user.avatarUrl ?? null,
+      },
+      { onConflict: "spotify_id" }
+    )
+    .select("id")
+    .single()
+
+  if (userError || !userRow) {
+    return apiError("Failed to create user account", 500)
+  }
+
   const rows = spotifyData.artists.map((artist) => ({
-    spotify_user_id: session.user.spotifyId,
-    artist_id: artist.id,
-    artist_name: artist.name,
-    artist_image_url: artist.images?.[0]?.url ?? null,
+    user_id: userRow.id,
+    spotify_artist_id: artist.id,
+    name: artist.name,
+    image_url: artist.images?.[0]?.url ?? null,
   }))
 
   const { error } = await supabase
     .from("seed_artists")
-    .upsert(rows, { onConflict: "spotify_user_id,artist_id" })
+    .upsert(rows, { onConflict: "user_id,spotify_artist_id" })
 
   if (error) {
     return apiError("Failed to save seed artists", 500)

@@ -20,7 +20,7 @@ export default async function FeedPage() {
     .single()
 
   if (!user) {
-    redirect("/api/auth/signin")
+    redirect("/onboarding")
   }
 
   // Fetch groups this user belongs to
