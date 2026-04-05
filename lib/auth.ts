@@ -13,8 +13,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   logger: {
     debug(message, metadata) {
       if (message === "authorization url is ready") {
-        console.log("[auth][debug] redirect_uri:", (metadata as any)?.url?.searchParams?.get("redirect_uri"))
-        console.log("[auth][debug] authorization url:", (metadata as any)?.url?.toString())
+        const url = (metadata as any)?.url as URL | undefined
+        console.log("[auth] Spotify authorize URL:", url?.toString())
       }
     },
     error: console.error,
