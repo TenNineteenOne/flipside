@@ -54,21 +54,22 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
   const recentlyPlayed = await musicProvider.getRecentlyPlayed(accessToken)
   const recentIds = new Set(recentlyPlayed.map((r) => r.artistId))
 
-  // ── Step 4: Get Last.fm similar artists for each seed ───────────────────
+  // ── Step 4: Get Last.fm similar artists for each seed (sequential) ──────
+  // Sequential to avoid Spotify rate-limiting — 10 seeds × 5 parallel searches
+  // each = 50 concurrent requests which triggers 429s. Sequential keeps it at 5.
   const candidateMap = new Map<string, { artist: Artist; seedArtists: string[] }>()
+  const similarResults: Array<{ seed: Artist; similar: Artist[]; error: string | null }> = []
 
-  const similarResults = await Promise.all(
-    seeds.map(async (seed) => {
-      try {
-        const similar = await musicProvider.getSimilarArtists(
-          accessToken, seed.id, seed.name, seed.genres
-        )
-        return { seed, similar, error: null }
-      } catch (err) {
-        return { seed, similar: [] as Artist[], error: String(err) }
-      }
-    })
-  )
+  for (const seed of seeds) {
+    try {
+      const similar = await musicProvider.getSimilarArtists(
+        accessToken, seed.id, seed.name, seed.genres
+      )
+      similarResults.push({ seed, similar, error: null })
+    } catch (err) {
+      similarResults.push({ seed, similar: [], error: String(err) })
+    }
+  }
 
   for (const { seed, similar } of similarResults) {
     for (const artist of similar) {
