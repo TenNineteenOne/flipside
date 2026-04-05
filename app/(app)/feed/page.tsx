@@ -78,9 +78,9 @@ export default async function FeedPage() {
     .order("score", { ascending: false })
     .limit(20)
 
-  // Filter out stale entries where topTracks is empty (from pre-fix cache writes)
+  // Filter out entries missing essential artist data
   const validRecs = (recs ?? []).filter(
-    (r: any) => Array.isArray(r.artist_data?.topTracks) && r.artist_data.topTracks.length > 0
+    (r: any) => r.artist_data?.id && r.artist_data?.name
   )
 
   // No valid recommendations — client component triggers generation and refreshes

@@ -91,7 +91,7 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     const batchResults = await Promise.all(
       batch.map(async (sourceArtist) => {
         try {
-          const similar = await musicProvider.getSimilarArtists(sourceArtist.id, sourceArtist.name, sourceArtist.genres)
+          const similar = await musicProvider.getSimilarArtists(accessToken, sourceArtist.id, sourceArtist.name, sourceArtist.genres)
           return { sourceArtist, similar, degree: 1 }
         } catch {
           return { sourceArtist, similar: [] as Artist[], degree: 1 }
@@ -103,8 +103,6 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     const totalSoFar = expansionResults.reduce((s, r) => s + r.similar.length, 0)
     if (totalSoFar >= 200) break
   }
-
-  console.log(`[engine] sourceArtists=${sourceArtistMap.size} expanded=${expansionResults.length} totalSimilar=${expansionResults.reduce((s, r) => s + r.similar.length, 0)}`)
 
   for (const { sourceArtist, similar, degree } of expansionResults) {
     for (const candidate of similar) {
@@ -128,8 +126,6 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     }
     if (candidateMap.size >= 200) break
   }
-
-  console.log(`[engine] candidateMap.size=${candidateMap.size} after expansion`)
 
   // ── Step 4: Fetch thumbs-up and saved artists for scoring boosts ───────────
   const [feedbackData, savesData] = await Promise.all([
@@ -352,7 +348,7 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
 
   // ── Step 11: Fetch top tracks for each artist (batched to avoid rate limits)
   // market param is required by Spotify — get user's actual country first
-  const userMarket = await (musicProvider as any).getUserMarket?.(accessToken) ?? "US"
+  const userMarket = await musicProvider.getUserMarket(accessToken)
 
   const withTracks: typeof top50 = []
   const TRACK_BATCH = 5

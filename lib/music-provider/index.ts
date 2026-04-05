@@ -7,7 +7,10 @@ export interface MusicProvider {
   getTopArtists(accessToken: string, term: 'short_term' | 'medium_term' | 'long_term'): Promise<Artist[]>
 
   /** Get similar artists — uses Last.fm getSimilar as primary, Spotify genre search as secondary */
-  getSimilarArtists(artistId: string, artistName: string, genres?: string[]): Promise<Artist[]>
+  getSimilarArtists(accessToken: string, artistId: string, artistName: string, genres?: string[]): Promise<Artist[]>
+
+  /** Get the user's country/market from their Spotify profile */
+  getUserMarket(accessToken: string): Promise<string>
 
   /** Get recently played artists (deduplicated) */
   getRecentlyPlayed(accessToken: string): Promise<PlayHistory[]>
