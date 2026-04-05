@@ -40,9 +40,8 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
   }
 
   const seeds = [
-    ...pickSeeds(shortTerm, 4),
-    ...pickSeeds(mediumTerm, 4),
-    ...pickSeeds(longTerm, 2),
+    ...pickSeeds(shortTerm, 2),
+    ...pickSeeds(mediumTerm, 1),
   ]
 
   if (seeds.length === 0) {
@@ -91,33 +90,24 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
   let searchOk = 0
   let searchFail = 0
 
-  for (let i = 0; i < uniqueNames.length; i += 5) {
-    if (i > 0) await new Promise(r => setTimeout(r, 500))
-    const batch = uniqueNames.slice(i, i + 5)
-    const settled = await Promise.allSettled(
-      batch.map(async (name) => {
-        const results = await musicProvider.searchArtists(accessToken, name)
-        if (!results.length) return null
-        const lower = name.toLowerCase()
-        const exact = results.find(a => a.name.toLowerCase() === lower)
-        return { name, artist: exact ?? results[0] }
-      })
-    )
-    for (const r of settled) {
-      if (r.status !== 'fulfilled' || !r.value) { searchFail++; continue }
-      searchOk++
-      const { name, artist } = r.value
-      if (topArtistMap.has(artist.id)) continue
-      if (recentIds.has(artist.id)) continue
-      const seedArtists = nameToSeeds.get(name) ?? []
-      if (candidateMap.has(artist.id)) {
-        const existing = candidateMap.get(artist.id)!
-        for (const s of seedArtists) {
-          if (!existing.seedArtists.includes(s)) existing.seedArtists.push(s)
-        }
-      } else {
-        candidateMap.set(artist.id, { artist, seedArtists })
+  // One search at a time, 2s apart — minimal rate limit pressure
+  for (const name of uniqueNames) {
+    await new Promise(r => setTimeout(r, 2000))
+    const results = await musicProvider.searchArtists(accessToken, name)
+    if (!results.length) { searchFail++; continue }
+    searchOk++
+    const lower = name.toLowerCase()
+    const artist = results.find(a => a.name.toLowerCase() === lower) ?? results[0]
+    if (topArtistMap.has(artist.id)) continue
+    if (recentIds.has(artist.id)) continue
+    const seedArtists = nameToSeeds.get(name) ?? []
+    if (candidateMap.has(artist.id)) {
+      const existing = candidateMap.get(artist.id)!
+      for (const s of seedArtists) {
+        if (!existing.seedArtists.includes(s)) existing.seedArtists.push(s)
       }
+    } else {
+      candidateMap.set(artist.id, { artist, seedArtists })
     }
   }
 

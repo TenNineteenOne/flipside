@@ -186,10 +186,10 @@ export class SpotifyProvider implements MusicProvider {
       if (data.error || !data.similarartists?.artist?.length) return []
 
       const all = data.similarartists.artist.map((a) => a.name)
-      // Skip top-5 obvious matches, take up to 8 deeper cuts.
+      // Skip top-5 obvious matches, take the next 3.
       // Clamp start so short lists still produce names.
       const start = Math.min(5, Math.max(0, all.length - 1))
-      return all.slice(start, start + 8)
+      return all.slice(start, start + 3)
     } catch {
       return []
     }
@@ -327,7 +327,14 @@ export class SpotifyProvider implements MusicProvider {
       `${SPOTIFY_BASE}/search?q=${encodeURIComponent(query)}&type=artist&limit=10`,
       accessToken
     )
-    if (!res || !res.ok) return []
+    if (!res) {
+      console.error(`[search] "${query}": 401`)
+      return []
+    }
+    if (!res.ok) {
+      console.error(`[search] "${query}": HTTP ${res.status}`)
+      return []
+    }
 
     const data = (await res.json()) as SpotifySearchResponse
     return (data.artists?.items ?? []).map(mapArtist)
