@@ -33,10 +33,14 @@ export async function POST(req: NextRequest): Promise<Response> {
       .eq("user_id", user.id)
       .is("seen_at", null)
 
-    await accumulateSpotifyHistory({
-      userId: user.id,
-      accessToken,
-    })
+    // Only accumulate listening history when play_threshold > 0
+    // (threshold 0 = no filtering, so history data isn't needed)
+    if ((user.play_threshold ?? 0) > 0) {
+      await accumulateSpotifyHistory({
+        userId: user.id,
+        accessToken,
+      })
+    }
 
     const count = await buildRecommendations({
       userId: user.id,

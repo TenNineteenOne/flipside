@@ -382,35 +382,33 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
   const expiresAt = new Date(now)
   expiresAt.setDate(expiresAt.getDate() + 30)
 
+  // Build rows to upsert (skip already-seen artists)
+  const rows = withTracks
+    .filter((item) => {
+      const seen = existingSeenAt.get(item.artist.id)
+      return seen === undefined || seen === null
+    })
+    .map((item) => ({
+      user_id: userId,
+      spotify_artist_id: item.artist.id,
+      artist_data: item.artist,
+      score: item.score,
+      why: item.why,
+      source: item.source,
+      expires_at: expiresAt.toISOString(),
+      seen_at: null,
+    }))
+
   let written = 0
-
-  for (const item of withTracks) {
-    const artistId = item.artist.id
-    const existingSeen = existingSeenAt.get(artistId)
-
-    // Don't overwrite items the user has already seen
-    if (existingSeen !== undefined && existingSeen !== null) continue
-
+  if (rows.length > 0) {
     const { error } = await supabase
       .from('recommendation_cache')
-      .upsert(
-        {
-          user_id: userId,
-          spotify_artist_id: artistId,
-          artist_data: item.artist,
-          score: item.score,
-          why: item.why,
-          source: item.source,
-          expires_at: expiresAt.toISOString(),
-          seen_at: null,
-        },
-        { onConflict: 'user_id,spotify_artist_id' }
-      )
+      .upsert(rows, { onConflict: 'user_id,spotify_artist_id' })
 
     if (error) {
-      console.error('[buildRecommendations] Upsert error for artist:', artistId, error.message)
+      console.error('[buildRecommendations] Batch upsert error:', error.message)
     } else {
-      written++
+      written = rows.length
     }
   }
 
