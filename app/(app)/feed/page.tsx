@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation"
 import { auth } from "@/lib/auth"
 
-type Rec = { spotify_artist_id: string; artist_data: unknown; score: number; why: { sourceArtists: string[] } }
+type Rec = { spotify_artist_id: string; artist_data: any; score: number; why: { sourceArtists: string[] } }
 
 /** Round-robin interleave by primary source artist so results aren't clustered. */
 function interleave(recs: Rec[]): Rec[] {
