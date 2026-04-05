@@ -80,14 +80,14 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
   // Track which source artist each candidate was found from
   const candidateMap = new Map<string, { artist: Artist; sourceArtists: string[]; degree: number }>()
 
-  // Limit expansion to top 25 source artists to avoid Spotify rate limits.
-  // More sources don't help if they all get rate-limited to 0 candidates.
-  const sourceArtistsToExpand = Array.from(sourceArtistMap.values()).slice(0, 25)
+  // Expand from top 10 source artists — keeps total API calls manageable
+  // (10 artists × ~10 Last.fm names × Spotify search = ~100 calls)
+  const sourceArtistsToExpand = Array.from(sourceArtistMap.values()).slice(0, 10)
 
-  // Process in batches of 5 to keep concurrent Spotify search calls manageable
+  // Process 3 at a time to balance speed vs rate limits
   const expansionResults: Array<{ sourceArtist: Artist; similar: Artist[]; degree: number }> = []
-  for (let i = 0; i < sourceArtistsToExpand.length; i += 5) {
-    const batch = sourceArtistsToExpand.slice(i, i + 5)
+  for (let i = 0; i < sourceArtistsToExpand.length; i += 3) {
+    const batch = sourceArtistsToExpand.slice(i, i + 3)
     const batchResults = await Promise.all(
       batch.map(async (sourceArtist) => {
         try {
@@ -99,9 +99,6 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
       })
     )
     expansionResults.push(...batchResults)
-    // Early exit if we already have enough candidates
-    const totalSoFar = expansionResults.reduce((s, r) => s + r.similar.length, 0)
-    if (totalSoFar >= 200) break
   }
 
   for (const { sourceArtist, similar, degree } of expansionResults) {
@@ -351,7 +348,7 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
   const userMarket = await musicProvider.getUserMarket(accessToken)
 
   const withTracks: typeof top50 = []
-  const TRACK_BATCH = 5
+  const TRACK_BATCH = 10
   for (let i = 0; i < top50.length; i += TRACK_BATCH) {
     const batch = top50.slice(i, i + TRACK_BATCH)
     const results = await Promise.all(

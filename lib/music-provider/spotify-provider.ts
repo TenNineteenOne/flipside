@@ -187,12 +187,12 @@ export class SpotifyProvider implements MusicProvider {
       const data = (await res.json()) as LastFmSimilarArtistsResponse
       if (data.error || !data.similarartists?.artist?.length) return []
 
-      const names = data.similarartists.artist.map((a) => a.name).slice(0, 15)
+      const names = data.similarartists.artist.map((a) => a.name).slice(0, 10)
 
-      // Resolve in batches of 5 to avoid Spotify rate limits
+      // Resolve in batches of 10 (user token has generous rate limits)
       const resolved: Artist[] = []
-      for (let i = 0; i < names.length; i += 5) {
-        const batch = names.slice(i, i + 5)
+      for (let i = 0; i < names.length; i += 10) {
+        const batch = names.slice(i, i + 10)
         const settled = await Promise.allSettled(batch.map((n) => this._searchOneArtist(accessToken, n)))
         for (const r of settled) {
           if (r.status === "fulfilled" && r.value) resolved.push(r.value)
