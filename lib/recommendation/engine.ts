@@ -21,10 +21,8 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     }
   }
 
-  console.log(`[engine] topArtists=${topArtistMap.size}`)
-
   if (topArtistMap.size === 0) {
-    console.error('[engine] No top artists found — user may need more Spotify history')
+    console.error('[engine] No top artists found')
     return 0
   }
 
@@ -42,7 +40,10 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     .slice(0, 8)
     .map(([genre]) => genre)
 
-  console.log(`[engine] genres=${topGenres.length}: ${topGenres.join(', ')}`)
+  if (topGenres.length === 0) {
+    console.error(`[engine] topArtists=${topArtistMap.size} but 0 genres found`)
+    return 0
+  }
 
   // ── Step 3: Search Spotify by genre to find new artists ─────────────────
   // Uses searchArtists which takes the user's access token (proven to work)
@@ -51,13 +52,17 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
   const searchResults = await Promise.all(
     topGenres.map(async (genre) => {
       try {
-        const artists = await musicProvider.searchArtists(accessToken, `genre:"${genre}"`)
-        return { genre, artists }
-      } catch {
-        return { genre, artists: [] as Artist[] }
+        // Use genre: field filter without quotes (quotes can cause 0 results)
+        const artists = await musicProvider.searchArtists(accessToken, `genre:${genre}`)
+        return { genre, artists, error: null }
+      } catch (err) {
+        return { genre, artists: [] as Artist[], error: String(err) }
       }
     })
   )
+
+  // Log all search results in one line (Vercel only shows first log per request)
+  const searchSummary = searchResults.map(r => `${r.genre}:${r.artists.length}${r.error ? '!' : ''}`).join(' ')
 
   for (const { genre, artists } of searchResults) {
     for (const artist of artists) {
@@ -75,7 +80,7 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     }
   }
 
-  console.log(`[engine] candidates=${candidateMap.size} from genre search`)
+  console.log(`[engine] top=${topArtistMap.size} genres=${topGenres.length} search=[${searchSummary}] candidates=${candidateMap.size}`)
 
   // ── Step 4: Filter — thumbs-down ──────────────────────────────────────
   const { data: thumbsDownData } = await supabase
@@ -127,9 +132,10 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
   scored.sort((a, b) => b.score - a.score)
   const top = scored.slice(0, 20)
 
-  console.log(`[engine] scored=${scored.length} top=${top.length}`)
-
-  if (top.length === 0) return 0
+  if (top.length === 0) {
+    console.error(`[engine] 0 scored candidates after filtering`)
+    return 0
+  }
 
   // ── Step 7: Fetch top tracks ──────────────────────────────────────────
   const userMarket = await musicProvider.getUserMarket(accessToken)
@@ -189,6 +195,5 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     }
   }
 
-  console.log(`[engine] written=${written}`)
   return written
 }
