@@ -1,5 +1,27 @@
 import { redirect } from "next/navigation"
 import { auth } from "@/lib/auth"
+
+type Rec = { spotify_artist_id: string; artist_data: unknown; score: number; why: { sourceArtists: string[] } }
+
+/** Round-robin interleave by primary source artist so results aren't clustered. */
+function interleave(recs: Rec[]): Rec[] {
+  const buckets = new Map<string, Rec[]>()
+  for (const rec of recs) {
+    const key = rec.why?.sourceArtists?.[0] ?? "__none"
+    if (!buckets.has(key)) buckets.set(key, [])
+    buckets.get(key)!.push(rec)
+  }
+  const groups = Array.from(buckets.values())
+  const out: Rec[] = []
+  let i = 0
+  while (out.length < recs.length) {
+    const g = groups[i % groups.length]
+    if (g.length > 0) out.push(g.shift()!)
+    i++
+    if (groups.every((g) => g.length === 0)) break
+  }
+  return out
+}
 import { createServiceClient } from "@/lib/supabase/server"
 import { FeedClient } from "@/components/feed/feed-client"
 import { RecommendationsLoader } from "@/components/feed/recommendations-loader"
@@ -56,5 +78,5 @@ export default async function FeedPage() {
     return <RecommendationsLoader />
   }
 
-  return <FeedClient recommendations={recs} groups={groups} />
+  return <FeedClient recommendations={interleave(recs)} groups={groups} />
 }
