@@ -32,8 +32,8 @@ export const proxy = auth((req) => {
   return NextResponse.next()
 })
 
-export const config = {
+export const proxyConfig = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/auth|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 }
