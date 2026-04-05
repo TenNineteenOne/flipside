@@ -42,10 +42,9 @@ export async function POST(req: NextRequest): Promise<Response> {
       userId: user.id,
       accessToken,
       spotifyId: session.user.spotifyId,
-      playThreshold: user.play_threshold ?? 25,
+      playThreshold: user.play_threshold ?? 0,
     })
 
-    console.log(`[recommendations/generate] userId=${user.id} written=${count} threshold=${user.play_threshold ?? 25}`)
     return Response.json({ success: true, count })
   } catch (err) {
     const message = err instanceof Error ? err.message : "Generation failed"

@@ -162,8 +162,6 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
 
   const thumbsDownIds = new Set((thumbsDownData ?? []).map((r) => r.spotify_artist_id))
 
-  console.log(`[engine] sourceArtists=${sourceArtistMap.size} candidates=${candidateMap.size} listenedBySpotifyId=${listenedBySpotifyId.size} listenedByName=${listenedByNormalizedName.size} thumbsDown=${thumbsDownIds.size} threshold=${playThreshold}`)
-
   // ── Step 7: Apply filters and score ───────────────────────────────────────
   const filteredCandidates: Array<{
     artist: Artist
@@ -175,14 +173,16 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     // Filter: active thumbs-down
     if (thumbsDownIds.has(artistId)) continue
 
-    // Filter: history — spotify ID match with play count > threshold
-    const playCount = listenedBySpotifyId.get(artistId)
-    if (playCount !== undefined && playCount > playThreshold) continue
+    // Filter: history — only applies when threshold > 0
+    // (0 = maximum discovery: include all candidates regardless of play history)
+    if (playThreshold > 0) {
+      const playCount = listenedBySpotifyId.get(artistId)
+      if (playCount !== undefined && playCount > playThreshold) continue
 
-    // Filter: history — normalized lastfm name match with play count > threshold
-    const normalizedName = normalizeArtistName(candidate.artist.name)
-    const lfmPlayCount = listenedByNormalizedName.get(normalizedName)
-    if (lfmPlayCount !== undefined && lfmPlayCount > playThreshold) continue
+      const normalizedName = normalizeArtistName(candidate.artist.name)
+      const lfmPlayCount = listenedByNormalizedName.get(normalizedName)
+      if (lfmPlayCount !== undefined && lfmPlayCount > playThreshold) continue
+    }
 
     filteredCandidates.push(candidate)
   }
@@ -329,8 +329,6 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
 
     scored.push({ artist: { ...artist, topTracks: [] }, score, why, source: 'spotify_recommendations' })
   }
-
-  console.log(`[engine] filteredCandidates=${filteredCandidates.length} scored=${scored.length}`)
 
   // ── Step 10: Sort and take top 50 ─────────────────────────────────────────
   scored.sort((a, b) => b.score - a.score)
