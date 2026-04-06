@@ -87,10 +87,30 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
   const recentIds = new Set(recentlyPlayed.map((r) => r.artistId))
 
   let searchOk = 0, searchFail = 0, filtTop = 0, filtRecent = 0
+  let rateLimited = false
 
   for (const name of uniqueNames) {
     await new Promise(r => setTimeout(r, 2000))
     const results = await musicProvider.searchArtists(accessToken, name)
+    if (results === null) {
+      // 429 rate limited — wait 35s and retry once, then abort remaining searches
+      searchFail++
+      if (!rateLimited) {
+        rateLimited = true
+        await new Promise(r => setTimeout(r, 35000))
+        const retry = await musicProvider.searchArtists(accessToken, name)
+        if (retry === null || !retry.length) break  // still rate limited, stop here
+        // retry succeeded — process it
+        searchOk++
+        const lower = name.toLowerCase()
+        const artist = retry.find(a => a.name.toLowerCase() === lower) ?? retry[0]
+        if (topArtistMap.has(artist.id)) { filtTop++; continue }
+        if (recentIds.has(artist.id)) { filtRecent++; continue }
+        const seedArtists = nameToSeeds.get(name) ?? []
+        if (!candidateMap.has(artist.id)) candidateMap.set(artist.id, { artist, seedArtists })
+      }
+      break  // don't keep trying after a 429
+    }
     if (!results.length) { searchFail++; continue }
     searchOk++
     const lower = name.toLowerCase()

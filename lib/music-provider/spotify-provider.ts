@@ -322,7 +322,7 @@ export class SpotifyProvider implements MusicProvider {
   // -------------------------------------------------------------------------
   // searchArtists
   // -------------------------------------------------------------------------
-  async searchArtists(accessToken: string, query: string): Promise<Artist[]> {
+  async searchArtists(accessToken: string, query: string): Promise<Artist[] | null> {
     const res = await spotifyFetch(
       `${SPOTIFY_BASE}/search?q=${encodeURIComponent(query)}&type=artist&limit=10`,
       accessToken
@@ -330,6 +330,11 @@ export class SpotifyProvider implements MusicProvider {
     if (!res) {
       console.log(`[s401] "${query}"`)
       return []
+    }
+    if (res.status === 429) {
+      const retryAfter = res.headers.get('retry-after') ?? '?'
+      console.log(`[s429] "${query}" retry-after=${retryAfter}s`)
+      return null
     }
     if (!res.ok) {
       console.log(`[s${res.status}] "${query}"`)

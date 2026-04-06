@@ -21,8 +21,8 @@ export interface MusicProvider {
   /** Get similar artist names from Last.fm (no Spotify call, no access token needed) */
   getSimilarArtistNames(artistName: string): Promise<string[]>
 
-  /** Search for artists by name */
-  searchArtists(accessToken: string, query: string): Promise<Artist[]>
+  /** Search for artists by name. Returns null if rate-limited (429). */
+  searchArtists(accessToken: string, query: string): Promise<Artist[] | null>
 
   /** Get top tracks for an artist. Fetch up to `limit` tracks. */
   getArtistTopTracks(accessToken: string, artistId: string, limit: number, market?: string): Promise<Track[]>
