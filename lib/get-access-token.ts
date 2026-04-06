@@ -12,5 +12,7 @@ export async function getAccessToken(req: NextRequest): Promise<string | null> {
     secret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET,
     secureCookie: process.env.NODE_ENV === "production",
   })
+  // If the refresh token failed, the stored accessToken is expired — treat as no token
+  if (token?.error === "RefreshTokenError") return null
   return (token?.accessToken as string) ?? null
 }

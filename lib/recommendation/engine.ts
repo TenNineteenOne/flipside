@@ -20,7 +20,7 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
   }
 
   if (topArtistMap.size === 0) {
-    console.error('[engine] No top artists found')
+    console.error('[engine] FAIL no_top_artists')
     return 0
   }
 
@@ -45,7 +45,7 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
   ]
 
   if (seeds.length === 0) {
-    console.error('[engine] No seeds available')
+    console.error('[engine] FAIL no_seeds')
     return 0
   }
 
@@ -73,24 +73,21 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
 
   const uniqueNames = [...nameToSeeds.keys()]
   const lfmTotal = lfmResults.reduce((sum, r) => sum + r.names.length, 0)
-  console.log(`[engine] seeds=${seeds.length} lfm_names=${lfmTotal} unique=${uniqueNames.length}`)
 
   if (uniqueNames.length === 0) {
-    console.error('[engine] 0 unique names from Last.fm')
+    console.error(`[engine] FAIL no_unique seeds=${seeds.length} lfm=${lfmTotal}`)
     return 0
   }
 
   // ── Step 5: Resolve unique names → Spotify artists ───────────────────────
-  // Batches of 5 with 500ms between to stay under Spotify rate limits.
+  // One search at a time, 2s apart — minimal rate limit pressure.
   const candidateMap = new Map<string, { artist: Artist; seedArtists: string[] }>()
 
   const recentlyPlayed = await musicProvider.getRecentlyPlayed(accessToken)
   const recentIds = new Set(recentlyPlayed.map((r) => r.artistId))
 
-  let searchOk = 0
-  let searchFail = 0
+  let searchOk = 0, searchFail = 0, filtTop = 0, filtRecent = 0
 
-  // One search at a time, 2s apart — minimal rate limit pressure
   for (const name of uniqueNames) {
     await new Promise(r => setTimeout(r, 2000))
     const results = await musicProvider.searchArtists(accessToken, name)
@@ -98,8 +95,8 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     searchOk++
     const lower = name.toLowerCase()
     const artist = results.find(a => a.name.toLowerCase() === lower) ?? results[0]
-    if (topArtistMap.has(artist.id)) continue
-    if (recentIds.has(artist.id)) continue
+    if (topArtistMap.has(artist.id)) { filtTop++; continue }
+    if (recentIds.has(artist.id)) { filtRecent++; continue }
     const seedArtists = nameToSeeds.get(name) ?? []
     if (candidateMap.has(artist.id)) {
       const existing = candidateMap.get(artist.id)!
@@ -110,8 +107,6 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
       candidateMap.set(artist.id, { artist, seedArtists })
     }
   }
-
-  console.log(`[engine] search ok=${searchOk} fail=${searchFail} candidates=${candidateMap.size}`)
 
   // ── Step 5: Filter — thumbs-down ─────────────────────────────────────────
   const { data: thumbsDownData } = await supabase
@@ -166,7 +161,7 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
   }
 
   if (top.length === 0) {
-    console.error(`[engine] 0 after cap=${capLabel} (scored=${scored.length})`)
+    console.error(`[engine] FAIL zero_top seeds=${seeds.length} lfm=${lfmTotal} uniq=${uniqueNames.length} ok=${searchOk} fail=${searchFail} filtTop=${filtTop} filtRecent=${filtRecent} cands=${candidateMap.size} scored=${scored.length} cap=${capLabel}`)
     return 0
   }
 
@@ -222,12 +217,12 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
       .upsert(rows, { onConflict: 'user_id,spotify_artist_id' })
 
     if (error) {
-      console.error('[engine] Batch upsert error:', error.message)
+      console.error(`[engine] FAIL upsert_error seeds=${seeds.length} lfm=${lfmTotal} uniq=${uniqueNames.length} ok=${searchOk} fail=${searchFail} filtTop=${filtTop} filtRecent=${filtRecent} cands=${candidateMap.size} cap=${capLabel} top=${top.length} err=${error.message}`)
     } else {
       written = rows.length
     }
   }
 
-  console.log(`[engine] cap=${capLabel} top=${top.length} written=${written}`)
+  console.log(`[engine] OK seeds=${seeds.length} lfm=${lfmTotal} uniq=${uniqueNames.length} ok=${searchOk} fail=${searchFail} filtTop=${filtTop} filtRecent=${filtRecent} cands=${candidateMap.size} cap=${capLabel} top=${top.length} written=${written}`)
   return written
 }
