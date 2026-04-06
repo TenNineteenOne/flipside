@@ -194,14 +194,28 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     try {
       const tracks = await musicProvider.getArtistTopTracks(accessToken, item.artist.id, 5, userMarket)
       withTracks.push({ ...item, artist: { ...item.artist, topTracks: tracks } })
-      tracksFetched++
+      if (tracks.length > 0) {
+        tracksFetched++
+      } else {
+        console.log(`[step8] empty artist="${item.artist.name}"`)
+        tracksFailed++
+      }
     } catch (err) {
-      console.log(`[step8] fail artist="${item.artist.name}" err=${err instanceof Error ? err.message : err}`)
+      const msg = err instanceof Error ? err.message : String(err)
+      console.log(`[step8] fail artist="${item.artist.name}" err=${msg}`)
       withTracks.push(item)
       tracksFailed++
+      // On 429, stop fetching — remaining artists would all fail too
+      if (msg.includes('429')) {
+        console.log(`[step8] 429 hit, stopping track fetch`)
+        for (const remaining of top.slice(top.indexOf(item) + 1)) {
+          withTracks.push(remaining)
+        }
+        break
+      }
     }
   }
-  console.log(`[step8] tracks fetched=${tracksFetched} failed=${tracksFailed}`)
+  console.log(`[step8] ok=${tracksFetched} fail=${tracksFailed} total=${top.length}`)
 
   // ── Step 9: Write to cache ────────────────────────────────────────────────
   const { data: existingCache } = await supabase

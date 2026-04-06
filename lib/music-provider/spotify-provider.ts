@@ -358,7 +358,8 @@ export class SpotifyProvider implements MusicProvider {
       `${SPOTIFY_BASE}/artists/${artistId}/top-tracks?market=${market}`,
       accessToken
     )
-    if (!res || !res.ok) return []
+    if (!res) throw new Error('auth_expired')
+    if (!res.ok) throw new Error(`http_${res.status}`)
 
     const data = (await res.json()) as { tracks: SpotifyTrackObject[] }
     return (data.tracks ?? []).slice(0, limit).map(mapTrack)
