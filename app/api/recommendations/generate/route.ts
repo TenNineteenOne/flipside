@@ -6,6 +6,7 @@ import { buildRecommendations } from "@/lib/recommendation/engine"
 import { type NextRequest } from "next/server"
 
 export async function POST(req: NextRequest): Promise<Response> {
+  console.log(`[generate] POST`)
   const session = await auth()
   if (!session?.user?.spotifyId) return apiUnauthorized()
 
@@ -24,11 +25,12 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   try {
     // Clear all unseen cache entries before regenerating
-    await supabase
+    const { error: deleteError } = await supabase
       .from("recommendation_cache")
       .delete()
       .eq("user_id", user.id)
       .is("seen_at", null)
+    if (deleteError) console.log(`[generate] cache-delete err=${deleteError.message}`)
 
     const count = await buildRecommendations({
       userId: user.id,
@@ -39,8 +41,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
     return Response.json({ success: true, count })
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Generation failed"
-    console.error("[recommendations/generate] Error:", message)
+    console.log(`[generate] fail err=${err instanceof Error ? err.message : err}`)
     return apiError("Recommendation generation failed", 500)
   }
 }

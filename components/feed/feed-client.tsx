@@ -52,7 +52,7 @@ export function FeedClient({ recommendations }: FeedClientProps) {
       generatingRef.current = true
       fetch("/api/recommendations/generate", { method: "POST" })
         .then(() => router.refresh())
-        .catch(() => {})
+        .catch((err) => { console.error(`[feed] replenish failed:`, err) })
         .finally(() => { generatingRef.current = false })
     }
   }, [actedIds, recommendations, router])

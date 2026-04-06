@@ -54,7 +54,8 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed }: ArtistCard
       })
       if (!res.ok) throw new Error("Failed to submit feedback")
       onActed(spotifyArtistId)
-    } catch {
+    } catch (err) {
+      console.error(`[card] feedback failed artistId=${spotifyArtistId}`, err)
       toast.error("Couldn't save your feedback. Try again.")
     } finally {
       setLoadingAction(null)
@@ -77,7 +78,8 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed }: ArtistCard
       }
       if (!res.ok) throw new Error(data?.error ?? "Failed")
       toast.success("Liked in Spotify!")
-    } catch {
+    } catch (err) {
+      console.error(`[card] like failed trackId=${trackId}`, err)
       toast.error("Couldn't like track. Try again.")
     } finally {
       setLoadingTrack(null)
@@ -95,7 +97,8 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed }: ArtistCard
       })
       if (!res.ok) throw new Error("Failed")
       toast.success("Added to Flipside Discoveries playlist!")
-    } catch {
+    } catch (err) {
+      console.error(`[card] playlist failed trackId=${trackId}`, err)
       toast.error("Couldn't add to playlist. Try again.")
     } finally {
       setLoadingTrack(null)
@@ -113,7 +116,8 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed }: ArtistCard
       })
       if (!res.ok) throw new Error("Failed")
       toast.success("Saved to Flipside!")
-    } catch {
+    } catch (err) {
+      console.error(`[card] save failed trackId=${trackId}`, err)
       toast.error("Couldn't save. Try again.")
     } finally {
       setLoadingTrack(null)
@@ -131,7 +135,8 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed }: ArtistCard
       })
       if (!res.ok) throw new Error("Failed")
       toast.success("Artist saved to Flipside!")
-    } catch {
+    } catch (err) {
+      console.error(`[card] save-artist failed artistId=${spotifyArtistId}`, err)
       toast.error("Couldn't save artist. Try again.")
     } finally {
       setLoadingAction(null)

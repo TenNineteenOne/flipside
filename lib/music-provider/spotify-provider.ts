@@ -129,7 +129,8 @@ export class SpotifyProvider implements MusicProvider {
       `${SPOTIFY_BASE}/me/top/artists?limit=50&time_range=${term}`,
       accessToken
     )
-    if (!res || !res.ok) return []
+    if (!res) { console.log(`[topArtists] 401 term=${term}`); return [] }
+    if (!res.ok) { console.log(`[topArtists] ${res.status} term=${term}`); return [] }
 
     const data = (await res.json()) as { items: SpotifyArtistObject[] }
     return (data.items ?? []).map(mapArtist)
@@ -180,7 +181,7 @@ export class SpotifyProvider implements MusicProvider {
         `&limit=50`
 
       const res = await fetch(url)
-      if (!res.ok) return []
+      if (!res.ok) { console.log(`[lfm] ${res.status} artist="${artistName}"`); return [] }
 
       const data = (await res.json()) as LastFmSimilarArtistsResponse
       if (data.error || !data.similarartists?.artist?.length) return []
@@ -190,7 +191,8 @@ export class SpotifyProvider implements MusicProvider {
       // Clamp start so short lists still produce names.
       const start = Math.min(5, Math.max(0, all.length - 1))
       return all.slice(start, start + 3)
-    } catch {
+    } catch (err) {
+      console.log(`[lfm] fail artist="${artistName}" err=${err instanceof Error ? err.message : err}`)
       return []
     }
   }
@@ -249,7 +251,10 @@ export class SpotifyProvider implements MusicProvider {
           `${SPOTIFY_BASE}/search?q=genre:${encodeURIComponent(`"${genre}"`)}&type=artist&limit=10`,
           accessToken
         )
-        if (!res || !res.ok) return [] as Artist[]
+        if (!res || !res.ok) {
+          console.log(`[genreSearch] ${res?.status ?? 401} genre="${genre}"`)
+          return [] as Artist[]
+        }
         const data = (await res.json()) as SpotifySearchResponse
         return (data.artists?.items ?? []).map(mapArtist)
       })
@@ -278,7 +283,8 @@ export class SpotifyProvider implements MusicProvider {
       `${SPOTIFY_BASE}/me/player/recently-played?limit=50`,
       accessToken
     )
-    if (!res || !res.ok) return []
+    if (!res) { console.log(`[recent] 401`); return [] }
+    if (!res.ok) { console.log(`[recent] ${res.status}`); return [] }
 
     const data = (await res.json()) as SpotifyRecentlyPlayedResponse
     const seen = new Set<string>()
@@ -312,7 +318,10 @@ export class SpotifyProvider implements MusicProvider {
         `${SPOTIFY_BASE}/artists?ids=${batch.join(',')}`,
         accessToken
       )
-      if (!res || !res.ok) continue
+      if (!res || !res.ok) {
+        console.log(`[getArtists] ${res?.status ?? 401} batch=${i}-${i + 50}`)
+        continue
+      }
       const data = (await res.json()) as { artists: SpotifyArtistObject[] }
       artists.push(...(data.artists ?? []).filter(Boolean).map(mapArtist))
     }
@@ -371,10 +380,12 @@ export class SpotifyProvider implements MusicProvider {
   async getUserMarket(accessToken: string): Promise<string> {
     try {
       const res = await spotifyFetch(`${SPOTIFY_BASE}/me`, accessToken)
-      if (!res || !res.ok) return "US"
+      if (!res) { console.log(`[market] 401`); return "US" }
+      if (!res.ok) { console.log(`[market] ${res.status}`); return "US" }
       const profile = await res.json() as { country?: string }
       return profile.country ?? "US"
-    } catch {
+    } catch (err) {
+      console.log(`[market] err=${err instanceof Error ? err.message : err}`)
       return "US"
     }
   }

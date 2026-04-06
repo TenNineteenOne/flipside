@@ -79,11 +79,12 @@ export async function POST(request: NextRequest) {
   if (saveError) return dbError(saveError, "saves/upsert")
   console.log(`[saves] db-upsert ok`)
 
-  await supabase
+  const { error: seenError } = await supabase
     .from("recommendation_cache")
     .update({ seen_at: new Date().toISOString() })
     .eq("user_id", userId)
     .eq("spotify_artist_id", spotifyArtistId)
+  if (seenError) console.log(`[saves] seen_at err=${seenError.message}`)
 
   // Only add to Spotify playlist when explicitly requested
   let playlistId: string | null = null

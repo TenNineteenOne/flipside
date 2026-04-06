@@ -20,5 +20,10 @@ export async function GET(req: NextRequest) {
 
   const artists = await musicProvider.searchArtists(accessToken, query.trim())
 
+  if (artists === null) {
+    console.log(`[onboard-search] 429 query="${query.trim()}"`)
+    return apiError("Rate limited, try again in a moment", 429)
+  }
+
   return Response.json({ artists })
 }

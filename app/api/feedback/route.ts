@@ -24,6 +24,8 @@ export async function POST(request: Request): Promise<Response> {
   if (signal !== "thumbs_up" && signal !== "thumbs_down")
     return apiError("signal must be thumbs_up or thumbs_down", 400)
 
+  console.log(`[feedback] ${signal} artistId=${spotifyArtistId}`)
+
   const supabase = createServiceClient()
 
   // Upsert feedback
