@@ -185,19 +185,23 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     return 0
   }
 
-  // ── Step 8: Fetch top tracks ──────────────────────────────────────────────
+  // ── Step 8: Fetch top tracks — sequential to avoid Spotify 429 ───────────
   const userMarket = await musicProvider.getUserMarket(accessToken)
+  const withTracks: ScoredArtist[] = []
+  let tracksFetched = 0, tracksFailed = 0
 
-  const withTracks = await Promise.all(
-    top.map(async (item) => {
-      try {
-        const tracks = await musicProvider.getArtistTopTracks(accessToken, item.artist.id, 10, userMarket)
-        return { ...item, artist: { ...item.artist, topTracks: tracks.slice(0, 10) } }
-      } catch {
-        return item
-      }
-    })
-  )
+  for (const item of top) {
+    try {
+      const tracks = await musicProvider.getArtistTopTracks(accessToken, item.artist.id, 5, userMarket)
+      withTracks.push({ ...item, artist: { ...item.artist, topTracks: tracks } })
+      tracksFetched++
+    } catch (err) {
+      console.log(`[step8] fail artist="${item.artist.name}" err=${err instanceof Error ? err.message : err}`)
+      withTracks.push(item)
+      tracksFailed++
+    }
+  }
+  console.log(`[step8] tracks fetched=${tracksFetched} failed=${tracksFailed}`)
 
   // ── Step 9: Write to cache ────────────────────────────────────────────────
   const { data: existingCache } = await supabase

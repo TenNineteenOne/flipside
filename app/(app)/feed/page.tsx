@@ -57,17 +57,6 @@ export default async function FeedPage() {
     redirect("/api/auth/signin")
   }
 
-  // Fetch groups this user belongs to
-  const { data: memberRows } = await supabase
-    .from("group_members")
-    .select("groups(id, name)")
-    .eq("user_id", user.id)
-
-  const groups: { id: string; name: string }[] = (memberRows ?? [])
-    .map((row: any) => row.groups)
-    .flat()
-    .filter((g: any): g is { id: string; name: string } => g !== null && g !== undefined)
-
   // Fetch cached recommendations
   const { data: recs } = await supabase
     .from("recommendation_cache")
@@ -88,5 +77,5 @@ export default async function FeedPage() {
     return <RecommendationsLoader />
   }
 
-  return <FeedClient recommendations={interleave(validRecs as Rec[])} groups={groups} />
+  return <FeedClient recommendations={interleave(validRecs as Rec[])} />
 }

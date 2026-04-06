@@ -32,4 +32,7 @@ export interface MusicProvider {
 
   /** Add tracks to an existing playlist */
   addTracksToPlaylist(accessToken: string, playlistId: string, trackUris: string[]): Promise<void>
+
+  /** Save a track to the user's Spotify Liked Songs. Throws typed errors: 'auth_expired' | 'scope_missing' | 'rate_limited' | 'http_N' */
+  likeTrack(accessToken: string, trackId: string): Promise<void>
 }

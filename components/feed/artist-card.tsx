@@ -1,12 +1,11 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useState } from "react"
 import Image from "next/image"
-import { Play, Pause, ThumbsUp, ThumbsDown, Music, Plus, ExternalLink } from "lucide-react"
+import { ThumbsUp, ThumbsDown, Music, Heart, ListPlus, Bookmark, ExternalLink } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { GroupActivityBadge } from "@/components/feed/group-activity-badge"
 
 interface Track {
   id: string
@@ -37,54 +36,13 @@ interface ArtistCardProps {
   artist: ArtistWithTracks
   why: WhyRec
   onActed: (artistId: string) => void
-  friendNames?: string[]
 }
 
-export function ArtistCard({ spotifyArtistId, artist, why, onActed, friendNames = [] }: ArtistCardProps) {
-  const audioRef = useRef<HTMLAudioElement | null>(null)
-  const [playingTrackId, setPlayingTrackId] = useState<string | null>(null)
-  const [loadingAction, setLoadingAction] = useState<string | null>(null)
+export function ArtistCard({ spotifyArtistId, artist, why, onActed }: ArtistCardProps) {
+  const [loadingAction, setLoadingAction] = useState<'thumbs_up' | 'thumbs_down' | 'save_artist' | null>(null)
+  const [loadingTrack, setLoadingTrack] = useState<{ id: string; action: 'like' | 'playlist' | 'flipside' } | null>(null)
 
-  // Clean up audio on unmount
-  useEffect(() => {
-    return () => {
-      if (audioRef.current) {
-        audioRef.current.pause()
-        audioRef.current.src = ""
-      }
-    }
-  }, [])
-
-  // Prefer tracks with preview URLs so they appear first
-  const withPreview = artist.topTracks.filter((t) => t.previewUrl)
-  const withoutPreview = artist.topTracks.filter((t) => !t.previewUrl)
-  const visibleTracks = [...withPreview, ...withoutPreview].slice(0, 3)
-
-  function handlePlayPause(track: Track) {
-    if (!track.previewUrl) return
-
-    if (playingTrackId === track.id) {
-      audioRef.current?.pause()
-      setPlayingTrackId(null)
-      return
-    }
-
-    if (audioRef.current) {
-      audioRef.current.pause()
-      audioRef.current.src = ""
-    }
-
-    const audio = new Audio(track.previewUrl)
-    audioRef.current = audio
-    audio.play().catch(() => {
-      toast.error("Couldn't play preview")
-    })
-    setPlayingTrackId(track.id)
-
-    audio.addEventListener("ended", () => {
-      setPlayingTrackId(null)
-    })
-  }
+  const visibleTracks = artist.topTracks.slice(0, 5)
 
   async function handleFeedback(signal: "thumbs_up" | "thumbs_down") {
     setLoadingAction(signal)
@@ -95,7 +53,6 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed, friendNames 
         body: JSON.stringify({ spotifyArtistId, signal }),
       })
       if (!res.ok) throw new Error("Failed to submit feedback")
-      audioRef.current?.pause()
       onActed(spotifyArtistId)
     } catch {
       toast.error("Couldn't save your feedback. Try again.")
@@ -104,17 +61,80 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed, friendNames 
     }
   }
 
-  async function handleAddToPlaylist(trackId: string) {
+  async function handleLikeTrack(trackId: string) {
+    if (loadingTrack) return
+    setLoadingTrack({ id: trackId, action: 'like' })
+    try {
+      const res = await fetch("/api/spotify/like", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ trackId }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (res.status === 403) {
+        toast.error("Sign out and back in to enable Liking tracks in Spotify.")
+        return
+      }
+      if (!res.ok) throw new Error(data?.error ?? "Failed")
+      toast.success("Liked in Spotify!")
+    } catch {
+      toast.error("Couldn't like track. Try again.")
+    } finally {
+      setLoadingTrack(null)
+    }
+  }
+
+  async function handleSaveToPlaylist(trackId: string) {
+    if (loadingTrack) return
+    setLoadingTrack({ id: trackId, action: 'playlist' })
+    try {
+      const res = await fetch("/api/saves", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ spotifyArtistId, spotifyTrackId: trackId, addToPlaylist: true }),
+      })
+      if (!res.ok) throw new Error("Failed")
+      toast.success("Added to Flipside Discoveries playlist!")
+    } catch {
+      toast.error("Couldn't add to playlist. Try again.")
+    } finally {
+      setLoadingTrack(null)
+    }
+  }
+
+  async function handleSaveToFlipside(trackId: string) {
+    if (loadingTrack) return
+    setLoadingTrack({ id: trackId, action: 'flipside' })
     try {
       const res = await fetch("/api/saves", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ spotifyArtistId, spotifyTrackId: trackId }),
       })
-      if (!res.ok) throw new Error("Failed to add track")
-      toast.success("Added to playlist")
+      if (!res.ok) throw new Error("Failed")
+      toast.success("Saved to Flipside!")
     } catch {
-      toast.error("Couldn't add to playlist. Try again.")
+      toast.error("Couldn't save. Try again.")
+    } finally {
+      setLoadingTrack(null)
+    }
+  }
+
+  async function handleSaveArtist() {
+    if (loadingAction) return
+    setLoadingAction('save_artist')
+    try {
+      const res = await fetch("/api/saves", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ spotifyArtistId }),
+      })
+      if (!res.ok) throw new Error("Failed")
+      toast.success("Artist saved to Flipside!")
+    } catch {
+      toast.error("Couldn't save artist. Try again.")
+    } finally {
+      setLoadingAction(null)
     }
   }
 
@@ -167,112 +187,105 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed, friendNames 
         </div>
       </div>
 
-      {/* Social proof badge */}
-      <div className="px-4 pt-3 -mb-1">
-        <GroupActivityBadge
-          spotifyArtistId={spotifyArtistId}
-          initialFriendNames={friendNames}
-        />
-      </div>
-
       {/* Card body */}
       <div className="flex flex-col gap-4 p-4">
         {/* Why section */}
-        <div className="space-y-1">
-          {whyText && (
-            <p className="text-xs font-medium text-muted-foreground">{whyText}</p>
-          )}
-          {why.friendBoost.length > 0 && (
-            <p className="text-xs text-accent">
-              ✨ {why.friendBoost[0]} also saved this
-            </p>
-          )}
-        </div>
+        {whyText && (
+          <p className="text-xs font-medium text-muted-foreground">{whyText}</p>
+        )}
 
         {/* Track list */}
         {visibleTracks.length > 0 && (
-          <div className="space-y-1">
+          <div className="space-y-2">
             {visibleTracks.map((track) => {
-              const isPlaying = playingTrackId === track.id
-              const hasPreview = !!track.previewUrl
+              const trackLoading = loadingTrack?.id === track.id
               return (
-                <div
-                  key={track.id}
-                  className={cn(
-                    "flex items-center gap-3 rounded-xl px-2 py-2 transition-colors",
-                    isPlaying ? "bg-primary/10 ring-1 ring-primary/20" : "hover:bg-muted/60"
-                  )}
-                >
-                  {/* Album art */}
-                  <div className="relative size-10 shrink-0 overflow-hidden rounded-md bg-muted">
-                    {track.albumImageUrl ? (
-                      <Image
-                        src={track.albumImageUrl}
-                        alt={track.albumName}
-                        fill
-                        className="object-cover"
-                        sizes="40px"
-                      />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center">
-                        <Music className="size-4 text-muted-foreground/40" />
-                      </div>
-                    )}
+                <div key={track.id} className="rounded-xl bg-muted/40 px-3 py-2">
+                  {/* Row 1: album art + track info */}
+                  <div className="flex items-center gap-3">
+                    <div className="relative size-10 shrink-0 overflow-hidden rounded-md bg-muted">
+                      {track.albumImageUrl ? (
+                        <Image
+                          src={track.albumImageUrl}
+                          alt={track.albumName}
+                          fill
+                          className="object-cover"
+                          sizes="40px"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center">
+                          <Music className="size-4 text-muted-foreground/40" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium leading-tight text-foreground">
+                        {track.name}
+                      </p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {track.albumName}
+                      </p>
+                    </div>
                   </div>
 
-                  {/* Track info */}
-                  <div className="min-w-0 flex-1">
-                    <p className={cn(
-                      "truncate text-sm font-medium leading-tight",
-                      isPlaying ? "text-primary" : "text-foreground"
-                    )}>
-                      {track.name}
-                    </p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {track.albumName}
-                    </p>
-                  </div>
-
-                  {/* Play preview (if available) or Open in Spotify */}
-                  {hasPreview ? (
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      onClick={() => handlePlayPause(track)}
-                      aria-label={isPlaying ? "Pause" : "Play preview"}
-                      className={cn("shrink-0", isPlaying && "text-primary hover:text-primary")}
+                  {/* Row 2: action buttons */}
+                  <div className="mt-2 flex flex-wrap gap-1.5 pl-[52px]">
+                    <button
+                      onClick={() => handleLikeTrack(track.id)}
+                      disabled={trackLoading}
+                      className={cn(
+                        "flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+                        "bg-background border border-border text-muted-foreground hover:text-pink-500 hover:border-pink-500/50",
+                        trackLoading && "opacity-50 cursor-not-allowed"
+                      )}
                     >
-                      {isPlaying ? <Pause className="size-4" /> : <Play className="size-4" />}
-                    </Button>
-                  ) : (
+                      <Heart className="size-3" />
+                      Like in Spotify
+                    </button>
+
+                    <button
+                      onClick={() => handleSaveToPlaylist(track.id)}
+                      disabled={trackLoading}
+                      className={cn(
+                        "flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+                        "bg-background border border-border text-muted-foreground hover:text-green-500 hover:border-green-500/50",
+                        trackLoading && "opacity-50 cursor-not-allowed"
+                      )}
+                    >
+                      <ListPlus className="size-3" />
+                      Add to Discoveries
+                    </button>
+
+                    <button
+                      onClick={() => handleSaveToFlipside(track.id)}
+                      disabled={trackLoading}
+                      className={cn(
+                        "flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+                        "bg-background border border-border text-muted-foreground hover:text-primary hover:border-primary/50",
+                        trackLoading && "opacity-50 cursor-not-allowed"
+                      )}
+                    >
+                      <Bookmark className="size-3" />
+                      Save to Flipside
+                    </button>
+
                     <a
                       href={`https://open.spotify.com/track/${track.id}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      aria-label="Open in Spotify"
-                      className="flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-primary"
+                      className="flex items-center gap-1 rounded-full border border-border bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground hover:border-foreground/30"
                     >
-                      <ExternalLink className="size-3.5" />
+                      <ExternalLink className="size-3" />
+                      Open in Spotify
                     </a>
-                  )}
-
-                  {/* Save track to playlist */}
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => handleAddToPlaylist(track.id)}
-                    aria-label="Add to Flipside Discoveries playlist"
-                    className="shrink-0 text-muted-foreground hover:text-primary"
-                  >
-                    <Plus className="size-4" />
-                  </Button>
+                  </div>
                 </div>
               )
             })}
           </div>
         )}
 
-        {/* Action buttons — thumbs only */}
+        {/* Action row: thumbs + save artist */}
         <div className="flex items-center justify-between gap-2 pt-1">
           <Button
             variant="ghost"
@@ -283,6 +296,17 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed, friendNames 
             className="size-11 rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
           >
             <ThumbsDown className="size-5" />
+          </Button>
+
+          <Button
+            variant="ghost"
+            onClick={handleSaveArtist}
+            disabled={loadingAction !== null}
+            aria-label="Save artist to Flipside"
+            className="flex items-center gap-1.5 rounded-full px-4 text-sm font-medium text-muted-foreground hover:bg-primary/10 hover:text-primary"
+          >
+            <Bookmark className="size-4" />
+            Save Artist
           </Button>
 
           <Button

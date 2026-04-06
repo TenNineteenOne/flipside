@@ -19,19 +19,20 @@ async function spotifyFetch(url: string, accessToken: string, options: RequestIn
 }
 
 export async function POST(request: NextRequest) {
+  console.log(`[saves] POST`)
   const session = await auth()
   if (!session?.user?.spotifyId) return apiUnauthorized()
 
   const { spotifyId } = session.user
 
-  let body: { spotifyArtistId?: string; spotifyTrackId?: string }
+  let body: { spotifyArtistId?: string; spotifyTrackId?: string; addToPlaylist?: boolean }
   try {
     body = await request.json()
   } catch {
     return apiError("Invalid JSON", 400)
   }
 
-  const { spotifyArtistId, spotifyTrackId } = body
+  const { spotifyArtistId, spotifyTrackId, addToPlaylist = false } = body
 
   if (!spotifyArtistId || !isValidSpotifyId(spotifyArtistId)) {
     return apiError("Valid spotifyArtistId is required", 400)
@@ -43,9 +44,11 @@ export async function POST(request: NextRequest) {
   const userId = await getUserId(spotifyId)
   if (!userId) return apiUnauthorized()
 
+  console.log(`[saves] start artistId=${spotifyArtistId} trackId=${spotifyTrackId ?? 'none'} addToPlaylist=${addToPlaylist}`)
+
   const supabase = createServiceClient()
 
-  // Resolve artist name from cache (needed for saves table + group_activity)
+  // Resolve artist name from cache
   let resolvedArtistName = ""
   {
     const { data: cached } = await supabase
@@ -58,6 +61,7 @@ export async function POST(request: NextRequest) {
       resolvedArtistName = cached.artist_data.name
     }
   }
+  console.log(`[saves] artistName="${resolvedArtistName || '(not found in cache)'}"`)
 
   // Upsert the artist bookmark (idempotent — unique on user_id + spotify_artist_id)
   const { error: saveError } = await supabase
@@ -73,6 +77,7 @@ export async function POST(request: NextRequest) {
     )
 
   if (saveError) return dbError(saveError, "saves/upsert")
+  console.log(`[saves] db-upsert ok`)
 
   await supabase
     .from("recommendation_cache")
@@ -80,9 +85,9 @@ export async function POST(request: NextRequest) {
     .eq("user_id", userId)
     .eq("spotify_artist_id", spotifyArtistId)
 
-  // Only add to Spotify playlist when a track ID is provided
+  // Only add to Spotify playlist when explicitly requested
   let playlistId: string | null = null
-  if (spotifyTrackId) {
+  if (spotifyTrackId && addToPlaylist) {
     const accessToken = await getAccessToken(request)
     if (accessToken) {
       const { data: user } = await supabase
@@ -93,6 +98,7 @@ export async function POST(request: NextRequest) {
 
       if (user) {
         playlistId = user.flipside_playlist_id ?? null
+        console.log(`[saves] playlist-start playlistId=${playlistId ?? 'none (will create)'}`)
 
         if (!playlistId) {
           const createRes = await spotifyFetch(
@@ -117,6 +123,7 @@ export async function POST(request: NextRequest) {
               .from("users")
               .update({ flipside_playlist_id: playlistId })
               .eq("id", userId)
+            console.log(`[saves] playlist-created id=${playlistId}`)
           }
         }
 
@@ -133,33 +140,14 @@ export async function POST(request: NextRequest) {
           if (addRes.status === 401) return apiError("Spotify token expired", 401)
           if (addRes.status === 429) {
             console.warn("[saves] Spotify rate limit hit when adding track — skipping")
+          } else if (addRes.ok) {
+            console.log(`[saves] track-added ok`)
           }
         }
       }
     }
   }
 
-  // Write group activity for all groups the user belongs to
-  const { data: memberships } = await supabase
-    .from("group_members")
-    .select("group_id")
-    .eq("user_id", userId)
-
-  const groupIds: string[] = (memberships ?? []).map((m: any) => m.group_id)
-
-  if (groupIds.length > 0) {
-    const activityRows = groupIds.map((groupId: string) => ({
-      user_id: userId,
-      group_id: groupId,
-      spotify_artist_id: spotifyArtistId,
-      artist_name: resolvedArtistName,
-      action_type: "save" as const,
-    }))
-
-    await supabase
-      .from("group_activity")
-      .upsert(activityRows, { onConflict: "user_id,group_id,spotify_artist_id", ignoreDuplicates: true })
-  }
-
+  console.log(`[saves] done`)
   return Response.json({ success: true, playlistId: playlistId ?? null })
 }

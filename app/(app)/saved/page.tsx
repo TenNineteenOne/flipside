@@ -2,7 +2,7 @@ import { redirect } from "next/navigation"
 import Image from "next/image"
 import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
-import { Music } from "lucide-react"
+import { Music, ExternalLink } from "lucide-react"
 
 interface ArtistData {
   id: string
@@ -10,6 +10,12 @@ interface ArtistData {
   genres: string[]
   imageUrl: string | null
   popularity: number
+  topTracks?: Array<{
+    id: string
+    name: string
+    albumName: string
+    albumImageUrl: string | null
+  }>
 }
 
 export default async function SavedPage() {
@@ -31,7 +37,7 @@ export default async function SavedPage() {
   // Fetch saved artists (newest first)
   const { data: saveRows } = await supabase
     .from("saves")
-    .select("spotify_artist_id, artist_name, created_at")
+    .select("spotify_artist_id, spotify_track_id, artist_name, created_at")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false })
 
@@ -72,41 +78,75 @@ export default async function SavedPage() {
         </div>
       ) : (
         <div className="flex flex-col gap-3">
-          {artistIds.map((artistId) => {
+          {(saveRows ?? []).map((row: any) => {
+            const artistId: string = row.spotify_artist_id
             const artist = cacheMap.get(artistId)
+            const savedTrack = row.spotify_track_id
+              ? artist?.topTracks?.find((t) => t.id === row.spotify_track_id) ?? null
+              : null
             return (
               <div
                 key={artistId}
-                className="flex items-center gap-3 rounded-xl border border-border bg-card p-3"
+                className="overflow-hidden rounded-xl border border-border bg-card"
               >
-                {/* Artist image */}
-                <div className="relative size-14 shrink-0 overflow-hidden rounded-lg bg-muted">
-                  {artist?.imageUrl ? (
-                    <Image
-                      src={artist.imageUrl}
-                      alt={artist.name}
-                      fill
-                      className="object-cover"
-                      sizes="56px"
-                    />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center">
-                      <Music className="size-6 text-muted-foreground/40" />
-                    </div>
-                  )}
+                {/* Artist row */}
+                <div className="flex items-center gap-3 p-3">
+                  <div className="relative size-14 shrink-0 overflow-hidden rounded-lg bg-muted">
+                    {artist?.imageUrl ? (
+                      <Image
+                        src={artist.imageUrl}
+                        alt={artist.name ?? artistId}
+                        fill
+                        className="object-cover"
+                        sizes="56px"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center">
+                        <Music className="size-6 text-muted-foreground/40" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-foreground">
+                      {artist?.name ?? savedNameMap.get(artistId) ?? artistId}
+                    </p>
+                    {artist?.genres && artist.genres.length > 0 && (
+                      <p className="truncate text-xs text-muted-foreground">
+                        {artist.genres.slice(0, 3).join(" · ")}
+                      </p>
+                    )}
+                  </div>
                 </div>
 
-                {/* Artist info */}
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-foreground">
-                    {artist?.name ?? savedNameMap.get(artistId) ?? artistId}
-                  </p>
-                  {artist?.genres && artist.genres.length > 0 && (
-                    <p className="truncate text-xs text-muted-foreground">
-                      {artist.genres.slice(0, 3).join(" · ")}
-                    </p>
-                  )}
-                </div>
+                {/* Saved track row (only when a specific track was saved) */}
+                {savedTrack && (
+                  <div className="flex items-center gap-2 border-t border-border px-3 py-2 pl-[calc(56px+24px)]">
+                    {savedTrack.albumImageUrl && (
+                      <div className="relative size-8 shrink-0 overflow-hidden rounded bg-muted">
+                        <Image
+                          src={savedTrack.albumImageUrl}
+                          alt={savedTrack.albumName}
+                          fill
+                          className="object-cover"
+                          sizes="32px"
+                        />
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-medium text-foreground">{savedTrack.name}</p>
+                      <p className="truncate text-xs text-muted-foreground">{savedTrack.albumName}</p>
+                    </div>
+                    <a
+                      href={`https://open.spotify.com/track/${row.spotify_track_id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="shrink-0 flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      <ExternalLink className="size-3" />
+                      Open in Spotify
+                    </a>
+                  </div>
+                )}
               </div>
             )
           })}
