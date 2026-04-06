@@ -328,11 +328,11 @@ export class SpotifyProvider implements MusicProvider {
       accessToken
     )
     if (!res) {
-      console.log(`[search] "${query}": 401`)
+      console.log(`[s401] "${query}"`)
       return []
     }
     if (!res.ok) {
-      console.log(`[search] "${query}": HTTP ${res.status}`)
+      console.log(`[s${res.status}] "${query}"`)
       return []
     }
 
