@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
       .select("artist_data")
       .eq("user_id", userId)
       .eq("spotify_artist_id", spotifyArtistId)
-      .single()
+      .maybeSingle()
     if (cached?.artist_data?.name) {
       resolvedArtistName = cached.artist_data.name
     }

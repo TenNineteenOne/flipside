@@ -42,14 +42,20 @@ export function FeedClient({ recommendations }: FeedClientProps) {
   const router = useRouter()
   const [actedIds, setActedIds] = useState<Set<string>>(new Set())
   const generatingRef = useRef(false)
+  const lastGenTimeRef = useRef(0)
 
-  // Auto-replenish when fewer than 5 unseen recommendations remain
+  // Auto-replenish when fewer than 5 unseen recommendations remain.
+  // 60s cooldown prevents a loop when partial generation (< 5 recs) keeps
+  // triggering re-generation and deleting the partial results.
   useEffect(() => {
     const remaining = recommendations.filter(
       (r) => !actedIds.has(r.spotify_artist_id)
     ).length
-    if (remaining < 5 && !generatingRef.current) {
+    const cooldownMs = 60_000
+    const elapsed = Date.now() - lastGenTimeRef.current
+    if (remaining < 5 && !generatingRef.current && elapsed > cooldownMs) {
       generatingRef.current = true
+      lastGenTimeRef.current = Date.now()
       fetch("/api/recommendations/generate", { method: "POST" })
         .then(() => router.refresh())
         .catch((err) => { console.error(`[feed] replenish failed:`, err) })

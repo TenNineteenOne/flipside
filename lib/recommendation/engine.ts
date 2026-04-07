@@ -42,8 +42,9 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
   }
 
   const seeds = [
-    ...pickSeeds(shortTerm, 2),
-    ...pickSeeds(mediumTerm, 1),
+    ...pickSeeds(shortTerm, 4),
+    ...pickSeeds(mediumTerm, 4),
+    ...pickSeeds(longTerm, 2),
   ]
 
   if (seeds.length === 0) {

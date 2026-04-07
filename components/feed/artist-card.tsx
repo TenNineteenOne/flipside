@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import Image from "next/image"
 import { ThumbsUp, ThumbsDown, Music, Heart, ListPlus, Bookmark, ExternalLink, RefreshCw, Loader2 } from "lucide-react"
 import { toast } from "sonner"
@@ -42,6 +42,28 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed }: ArtistCard
   const [loadingAction, setLoadingAction] = useState<'thumbs_up' | 'thumbs_down' | 'save_artist' | null>(null)
   const [loadingTrack, setLoadingTrack] = useState<{ id: string; action: 'like' | 'playlist' | 'flipside' } | null>(null)
 
+  const articleRef = useRef<HTMLElement>(null)
+  const [isInView, setIsInView] = useState(false)
+
+  // Fire track fetch only once the card enters the viewport (10% visible).
+  // With 20 cards in the DOM, this reduces simultaneous Spotify calls from
+  // 20 → 1-2 (only the cards actually on screen).
+  useEffect(() => {
+    const el = articleRef.current
+    if (!el) return
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsInView(true)
+          observer.disconnect()
+        }
+      },
+      { threshold: 0.1 }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
   const [tracks, setTracks] = useState<Track[]>(artist.topTracks ?? [])
   const [tracksStatus, setTracksStatus] = useState<'idle' | 'loading' | 'error'>(
     (artist.topTracks?.length ?? 0) > 0 ? 'idle' : 'loading'
@@ -49,6 +71,7 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed }: ArtistCard
   const [tracksAttempt, setTracksAttempt] = useState(0)
 
   useEffect(() => {
+    if (!isInView) return
     if (tracks.length > 0 && tracksStatus === 'idle') return
     let cancelled = false
     setTracksStatus('loading')
@@ -67,7 +90,7 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed }: ArtistCard
       })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [artist.id, tracksAttempt])
+  }, [artist.id, tracksAttempt, isInView])
 
   const visibleTracks = tracks.slice(0, 5)
 
@@ -178,7 +201,7 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed }: ArtistCard
         : null
 
   return (
-    <article className="w-full max-w-xl overflow-hidden rounded-2xl border border-border bg-card shadow-lg shadow-black/20">
+    <article ref={articleRef} className="w-full max-w-xl overflow-hidden rounded-2xl border border-border bg-card shadow-lg shadow-black/20">
       {/* Artist image with overlay */}
       <div className="relative aspect-square w-full max-h-[55vh] overflow-hidden">
         {artist.imageUrl ? (
