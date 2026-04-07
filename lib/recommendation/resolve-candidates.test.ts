@@ -1,15 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { resolveArtistsByName, type ResolveDeps } from "./resolve-candidates"
 import type { Artist } from "@/lib/music-provider/types"
+import type { RateLimited } from "@/lib/music-provider"
 
 function artist(id: string, name: string, popularity = 50): Artist {
   return { id, name, genres: [], imageUrl: null, popularity }
 }
 
+const rl = (sec = 1): RateLimited => ({ rateLimited: true, retryAfterSec: sec })
+
 function makeDeps(opts: {
   cache?: Map<string, Artist>
-  search?: (name: string) => Promise<Artist[] | null>
+  search?: (name: string) => Promise<Artist[] | RateLimited>
   cacheWrites?: Map<string, Artist>
+  maxAttemptsPerName?: number
+  totalBackoffBudgetMs?: number
+  maxRetryBackoffMs?: number
 } = {}): ResolveDeps {
   const cacheMap = opts.cache ?? new Map<string, Artist>()
   const writes = opts.cacheWrites ?? new Map<string, Artist>()
@@ -29,7 +35,9 @@ function makeDeps(opts: {
     },
     searchArtists: opts.search ?? (async () => []),
     delayMs: 0,
-    backoffMs: 0,
+    maxRetryBackoffMs: opts.maxRetryBackoffMs,
+    totalBackoffBudgetMs: opts.totalBackoffBudgetMs,
+    maxAttemptsPerName: opts.maxAttemptsPerName,
     sleep: async () => {},
   }
 }
@@ -51,7 +59,7 @@ describe("resolveArtistsByName", () => {
       ["khruangbin", artist("k1", "Khruangbin")],
       ["men i trust", artist("m1", "Men I Trust")],
     ])
-    const search = vi.fn(async () => [] as Artist[])
+    const search = vi.fn(async (): Promise<Artist[] | RateLimited> => [])
     const r = await resolveArtistsByName(
       ["Khruangbin", "Men I Trust"],
       makeDeps({ cache, search })
@@ -65,7 +73,7 @@ describe("resolveArtistsByName", () => {
 
   it("searches Spotify for all misses and writes them back to cache", async () => {
     const writes = new Map<string, Artist>()
-    const search = vi.fn(async (name: string) => [artist(`id-${name}`, name)])
+    const search = vi.fn(async (name: string): Promise<Artist[] | RateLimited> => [artist(`id-${name}`, name)])
     const r = await resolveArtistsByName(
       ["A", "B"],
       makeDeps({ search, cacheWrites: writes })
@@ -80,7 +88,7 @@ describe("resolveArtistsByName", () => {
 
   it("mixes cache hits and live searches", async () => {
     const cache = new Map([["cached", artist("c1", "Cached")]])
-    const search = vi.fn(async (name: string) => [artist(`id-${name}`, name)])
+    const search = vi.fn(async (name: string): Promise<Artist[] | RateLimited> => [artist(`id-${name}`, name)])
     const r = await resolveArtistsByName(
       ["Cached", "Fresh"],
       makeDeps({ cache, search })
@@ -93,7 +101,7 @@ describe("resolveArtistsByName", () => {
   })
 
   it("prefers exact case-insensitive name match over first result", async () => {
-    const search = async () => [
+    const search = async (): Promise<Artist[] | RateLimited> => [
       artist("wrong", "Khruangbin Tribute"),
       artist("right", "Khruangbin"),
     ]
@@ -102,40 +110,62 @@ describe("resolveArtistsByName", () => {
   })
 
   it("counts empty search results as searchFail", async () => {
-    const search = async () => [] as Artist[]
+    const search = async (): Promise<Artist[] | RateLimited> => []
     const r = await resolveArtistsByName(["Nope"], makeDeps({ search }))
     expect(r.searchOk).toBe(0)
     expect(r.searchFail).toBe(1)
     expect(r.resolved.size).toBe(0)
   })
 
-  it("retries once after a 429 then continues", async () => {
+  it("retries up to 3 times on 429, succeeds on third attempt", async () => {
     let call = 0
-    const search = vi.fn(async (name: string) => {
+    const search = vi.fn(async (name: string): Promise<Artist[] | RateLimited> => {
       call++
-      if (call === 1) return null // first call: 429
+      if (call < 3) return rl()
       return [artist(`id-${name}`, name)]
     })
-    const r = await resolveArtistsByName(["A", "B"], makeDeps({ search }))
+    const r = await resolveArtistsByName(["A"], makeDeps({ search }))
     expect(r.rateLimited).toBe(true)
-    // first name retried successfully, then second name searched normally
-    expect(r.searchOk).toBe(2)
+    expect(r.searchRetries).toBe(2)
+    expect(r.searchOk).toBe(1)
     expect(r.searchFail).toBe(0)
-    expect(r.resolved.size).toBe(2)
+    expect(r.resolved.get("A")?.id).toBe("id-A")
   })
 
-  it("aborts remaining searches after a second 429", async () => {
-    const search = vi.fn(async () => null)
-    const r = await resolveArtistsByName(["A", "B", "C"], makeDeps({ search }))
+  it("skips a name after exhausting retries and continues to next name", async () => {
+    const search = vi.fn(async (name: string): Promise<Artist[] | RateLimited> => {
+      if (name === "Bad") return rl()
+      return [artist(`id-${name}`, name)]
+    })
+    const r = await resolveArtistsByName(["Bad", "Good"], makeDeps({ search }))
     expect(r.rateLimited).toBe(true)
+    expect(r.searchOk).toBe(1)
+    expect(r.searchFail).toBe(1)
+    expect(r.resolved.has("Bad")).toBe(false)
+    expect(r.resolved.get("Good")?.id).toBe("id-Good")
+    // 3 attempts on Bad + 1 on Good
+    expect(search).toHaveBeenCalledTimes(4)
+  })
+
+  it("honors capped retry-after and respects total backoff budget", async () => {
+    const waits: number[] = []
+    const search = vi.fn(async (): Promise<Artist[] | RateLimited> => rl(120))
+    const deps: ResolveDeps = {
+      ...makeDeps({ search, maxRetryBackoffMs: 20_000, totalBackoffBudgetMs: 30_000 }),
+      sleep: async (ms) => { waits.push(ms) },
+    }
+    const r = await resolveArtistsByName(["A", "B"], deps)
+    expect(r.rateLimited).toBe(true)
+    // First name: retry wait clamped to 20_000 (cap), second wait clamped to 10_000 (budget left).
+    expect(waits.slice(0, 2)).toEqual([20_000, 10_000])
+    // After exhausting budget, no further sleeps for name B's retries.
+    expect(r.backoffBudgetExhausted).toBe(true)
     expect(r.resolved.size).toBe(0)
-    // first call + retry = 2, then aborts
-    expect(search).toHaveBeenCalledTimes(2)
   })
 
   it("still returns cache hits even when live search is rate-limited", async () => {
     const cache = new Map([["hit", artist("h1", "Hit")]])
-    const search = vi.fn(async () => null)
+    const search = vi.fn(async (): Promise<Artist[] | RateLimited> => rl())
     const r = await resolveArtistsByName(
       ["Hit", "Miss"],
       makeDeps({ cache, search })

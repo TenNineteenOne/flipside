@@ -1,4 +1,4 @@
-import type { MusicProvider } from "./index"
+import type { MusicProvider, RateLimited } from "./index"
 import type { Artist, PlayHistory, Track } from "./types"
 
 const SPOTIFY_BASE = "https://api.spotify.com/v1"
@@ -331,7 +331,7 @@ export class SpotifyProvider implements MusicProvider {
   // -------------------------------------------------------------------------
   // searchArtists
   // -------------------------------------------------------------------------
-  async searchArtists(accessToken: string, query: string): Promise<Artist[] | null> {
+  async searchArtists(accessToken: string, query: string): Promise<Artist[] | RateLimited> {
     const res = await spotifyFetch(
       `${SPOTIFY_BASE}/search?q=${encodeURIComponent(query)}&type=artist&limit=10`,
       accessToken
@@ -341,9 +341,11 @@ export class SpotifyProvider implements MusicProvider {
       return []
     }
     if (res.status === 429) {
-      const retryAfter = res.headers.get('retry-after') ?? '?'
-      console.log(`[s429] "${query}" retry-after=${retryAfter}s`)
-      return null
+      const raw = res.headers.get('retry-after')
+      const parsed = raw ? parseInt(raw, 10) : NaN
+      const retryAfterSec = Number.isFinite(parsed) && parsed > 0 ? parsed : 10
+      console.log(`[s429] "${query}" retry-after=${retryAfterSec}s`)
+      return { rateLimited: true, retryAfterSec }
     }
     if (!res.ok) {
       console.log(`[s${res.status}] "${query}"`)

@@ -166,7 +166,7 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
   }
 
   if (top.length === 0) {
-    console.error(`[engine] FAIL zero_top seeds=${seeds.length} lfm=${lfmTotal} uniq=${uniqueNames.length} ok=${searchOk} fail=${searchFail} filtTop=${filtTop} filtRecent=${filtRecent} cands=${candidateMap.size} scored=${scored.length} cap=${capLabel}`)
+    console.error(`[engine] FAIL zero_top seeds=${seeds.length} lfm=${lfmTotal} uniq=${uniqueNames.length} ok=${searchOk} fail=${searchFail} retries=${resolved.searchRetries} rateLimited=${resolved.rateLimited} budgetExhausted=${resolved.backoffBudgetExhausted} filtTop=${filtTop} filtRecent=${filtRecent} cands=${candidateMap.size} scored=${scored.length} cap=${capLabel}`)
     return 0
   }
 

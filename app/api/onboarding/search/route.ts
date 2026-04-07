@@ -18,12 +18,12 @@ export async function GET(req: NextRequest) {
     return apiError("Query parameter 'q' is required", 400)
   }
 
-  const artists = await musicProvider.searchArtists(accessToken, query.trim())
+  const result = await musicProvider.searchArtists(accessToken, query.trim())
 
-  if (artists === null) {
-    console.log(`[onboard-search] 429 query="${query.trim()}"`)
+  if (!Array.isArray(result)) {
+    console.log(`[onboard-search] 429 query="${query.trim()}" retry-after=${result.retryAfterSec}s`)
     return apiError("Rate limited, try again in a moment", 429)
   }
 
-  return Response.json({ artists })
+  return Response.json({ artists: result })
 }
