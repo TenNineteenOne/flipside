@@ -2,6 +2,8 @@ import { musicProvider } from '@/lib/music-provider/provider'
 import type { Artist } from '@/lib/music-provider/types'
 import { createServiceClient } from '@/lib/supabase/server'
 import type { RecommendationInput, ScoredArtist } from './types'
+import { ArtistNameCache } from './artist-name-cache'
+import { resolveArtistsByName } from './resolve-candidates'
 
 export async function buildRecommendations(input: RecommendationInput): Promise<number> {
   const { userId, accessToken } = input
@@ -79,42 +81,22 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     return 0
   }
 
-  // ── Step 5: Resolve unique names → Spotify artists ───────────────────────
-  // One search at a time, 2s apart — minimal rate limit pressure.
+  // ── Step 5: Resolve unique names → Spotify artists (cache-first) ─────────
+  // Hit the artist_search_cache table first; only live-search Spotify for misses.
   const candidateMap = new Map<string, { artist: Artist; seedArtists: string[] }>()
 
   const recentlyPlayed = await musicProvider.getRecentlyPlayed(accessToken)
   const recentIds = new Set(recentlyPlayed.map((r) => r.artistId))
 
-  let searchOk = 0, searchFail = 0, filtTop = 0, filtRecent = 0
-  let rateLimited = false
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const nameCache = new ArtistNameCache(supabase as any)
+  const resolved = await resolveArtistsByName(uniqueNames, {
+    cache: nameCache,
+    searchArtists: (name) => musicProvider.searchArtists(accessToken, name),
+  })
 
-  for (const name of uniqueNames) {
-    await new Promise(r => setTimeout(r, 2000))
-    const results = await musicProvider.searchArtists(accessToken, name)
-    if (results === null) {
-      // 429 rate limited — wait 35s and retry once, then abort remaining searches
-      searchFail++
-      if (!rateLimited) {
-        rateLimited = true
-        await new Promise(r => setTimeout(r, 35000))
-        const retry = await musicProvider.searchArtists(accessToken, name)
-        if (retry === null || !retry.length) break  // still rate limited, stop here
-        // retry succeeded — process it
-        searchOk++
-        const lower = name.toLowerCase()
-        const artist = retry.find(a => a.name.toLowerCase() === lower) ?? retry[0]
-        if (topArtistMap.has(artist.id)) { filtTop++; continue }
-        if (recentIds.has(artist.id)) { filtRecent++; continue }
-        const seedArtists = nameToSeeds.get(name) ?? []
-        if (!candidateMap.has(artist.id)) candidateMap.set(artist.id, { artist, seedArtists })
-      }
-      break  // don't keep trying after a 429
-    }
-    if (!results.length) { searchFail++; continue }
-    searchOk++
-    const lower = name.toLowerCase()
-    const artist = results.find(a => a.name.toLowerCase() === lower) ?? results[0]
+  let filtTop = 0, filtRecent = 0
+  for (const [name, artist] of resolved.resolved) {
     if (topArtistMap.has(artist.id)) { filtTop++; continue }
     if (recentIds.has(artist.id)) { filtRecent++; continue }
     const seedArtists = nameToSeeds.get(name) ?? []
@@ -127,6 +109,9 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
       candidateMap.set(artist.id, { artist, seedArtists })
     }
   }
+  const searchOk = resolved.searchOk
+  const searchFail = resolved.searchFail
+  console.log(`[cache-search] hit=${resolved.cacheHits} miss=${resolved.cacheMisses} total=${uniqueNames.length}`)
 
   // ── Step 5: Filter — thumbs-down ─────────────────────────────────────────
   const { data: thumbsDownData } = await supabase
@@ -185,37 +170,10 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     return 0
   }
 
-  // ── Step 8: Fetch top tracks — sequential to avoid Spotify 429 ───────────
-  const userMarket = await musicProvider.getUserMarket(accessToken)
-  const withTracks: ScoredArtist[] = []
-  let tracksFetched = 0, tracksFailed = 0
-
-  for (const item of top) {
-    try {
-      const tracks = await musicProvider.getArtistTopTracks(accessToken, item.artist.id, 5, userMarket)
-      withTracks.push({ ...item, artist: { ...item.artist, topTracks: tracks } })
-      if (tracks.length > 0) {
-        tracksFetched++
-      } else {
-        console.log(`[step8] empty artist="${item.artist.name}"`)
-        tracksFailed++
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      console.log(`[step8] fail artist="${item.artist.name}" err=${msg}`)
-      withTracks.push(item)
-      tracksFailed++
-      // On 429, stop fetching — remaining artists would all fail too
-      if (msg.includes('429')) {
-        console.log(`[step8] 429 hit, stopping track fetch`)
-        for (const remaining of top.slice(top.indexOf(item) + 1)) {
-          withTracks.push(remaining)
-        }
-        break
-      }
-    }
-  }
-  console.log(`[step8] ok=${tracksFetched} fail=${tracksFailed} total=${top.length}`)
+  // ── Step 8: Tracks deferred ──────────────────────────────────────────────
+  // Tracks are loaded lazily by the artist card via /api/artists/[id]/tracks
+  // when the card mounts. This keeps generation fast and avoids Spotify 429s.
+  const withTracks: ScoredArtist[] = top
 
   // ── Step 9: Write to cache ────────────────────────────────────────────────
   const { data: existingCache } = await supabase

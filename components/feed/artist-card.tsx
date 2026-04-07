@@ -1,8 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Image from "next/image"
-import { ThumbsUp, ThumbsDown, Music, Heart, ListPlus, Bookmark, ExternalLink } from "lucide-react"
+import { ThumbsUp, ThumbsDown, Music, Heart, ListPlus, Bookmark, ExternalLink, RefreshCw, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -42,7 +42,34 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed }: ArtistCard
   const [loadingAction, setLoadingAction] = useState<'thumbs_up' | 'thumbs_down' | 'save_artist' | null>(null)
   const [loadingTrack, setLoadingTrack] = useState<{ id: string; action: 'like' | 'playlist' | 'flipside' } | null>(null)
 
-  const visibleTracks = artist.topTracks.slice(0, 5)
+  const [tracks, setTracks] = useState<Track[]>(artist.topTracks ?? [])
+  const [tracksStatus, setTracksStatus] = useState<'idle' | 'loading' | 'error'>(
+    (artist.topTracks?.length ?? 0) > 0 ? 'idle' : 'loading'
+  )
+  const [tracksAttempt, setTracksAttempt] = useState(0)
+
+  useEffect(() => {
+    if (tracks.length > 0 && tracksStatus === 'idle') return
+    let cancelled = false
+    setTracksStatus('loading')
+    fetch(`/api/artists/${artist.id}/tracks`)
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`http_${r.status}`)
+        const data = (await r.json()) as { tracks: Track[] }
+        if (cancelled) return
+        setTracks(data.tracks ?? [])
+        setTracksStatus('idle')
+      })
+      .catch((err) => {
+        console.log(`[card] tracks-fail artistId=${artist.id} err=${err instanceof Error ? err.message : String(err)}`)
+        if (cancelled) return
+        setTracksStatus('error')
+      })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [artist.id, tracksAttempt])
+
+  const visibleTracks = tracks.slice(0, 5)
 
   async function handleFeedback(signal: "thumbs_up" | "thumbs_down") {
     setLoadingAction(signal)
@@ -199,7 +226,25 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed }: ArtistCard
           <p className="text-xs font-medium text-muted-foreground">{whyText}</p>
         )}
 
-        {/* Track list */}
+        {/* Track list — lazy loaded */}
+        {tracksStatus === 'loading' && visibleTracks.length === 0 && (
+          <div className="flex items-center justify-center gap-2 rounded-xl bg-muted/40 px-3 py-6 text-xs text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" />
+            Loading tracks…
+          </div>
+        )}
+        {tracksStatus === 'error' && visibleTracks.length === 0 && (
+          <div className="flex flex-col items-center gap-2 rounded-xl bg-muted/40 px-3 py-4 text-xs text-muted-foreground">
+            <span>Couldn’t load tracks.</span>
+            <button
+              onClick={() => setTracksAttempt((n) => n + 1)}
+              className="flex items-center gap-1 rounded-full border border-border bg-background px-2.5 py-1 font-medium text-foreground hover:bg-muted"
+            >
+              <RefreshCw className="size-3" />
+              Retry
+            </button>
+          </div>
+        )}
         {visibleTracks.length > 0 && (
           <div className="space-y-2">
             {visibleTracks.map((track) => {

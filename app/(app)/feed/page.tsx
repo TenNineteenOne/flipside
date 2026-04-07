@@ -53,12 +53,16 @@ export default async function FeedPage() {
     .select("id")
     .single()
 
-  if (upsertError || !user) {
+  if (upsertError) {
+    console.log(`[feed-page] upsert err="${upsertError.message}" spotifyId=${session.user.spotifyId}`)
+    throw new Error(`Failed to load your account: ${upsertError.message}`)
+  }
+  if (!user) {
     redirect("/api/auth/signin")
   }
 
   // Fetch cached recommendations
-  const { data: recs } = await supabase
+  const { data: recs, error: recsError } = await supabase
     .from("recommendation_cache")
     .select("spotify_artist_id, artist_data, score, why")
     .eq("user_id", user.id)
@@ -66,6 +70,11 @@ export default async function FeedPage() {
     .gt("expires_at", new Date().toISOString())
     .order("score", { ascending: false })
     .limit(20)
+
+  if (recsError) {
+    console.log(`[feed-page] recs err="${recsError.message}" userId=${user.id}`)
+    throw new Error(`Failed to load recommendations: ${recsError.message}`)
+  }
 
   // Filter out entries missing essential artist data
   const validRecs = (recs ?? []).filter(
