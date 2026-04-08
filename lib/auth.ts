@@ -10,16 +10,18 @@ const SPOTIFY_SCOPES = [
   "playlist-modify-public",
 ].join(" ")
 
+// Use URL string format (same as the provider default) to avoid object-vs-string
+// merge edge cases in next-auth v5 beta that cause our scopes to be dropped.
+const SPOTIFY_AUTH_URL =
+  `https://accounts.spotify.com/authorize?scope=${encodeURIComponent(SPOTIFY_SCOPES)}&show_dialog=true`
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   secret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET,
   providers: [
     Spotify({
       clientId: process.env.SPOTIFY_CLIENT_ID!,
       clientSecret: process.env.SPOTIFY_CLIENT_SECRET!,
-      authorization: {
-        url: "https://accounts.spotify.com/authorize",
-        params: { scope: SPOTIFY_SCOPES, show_dialog: true },
-      },
+      authorization: SPOTIFY_AUTH_URL,
     }),
   ],
   callbacks: {
