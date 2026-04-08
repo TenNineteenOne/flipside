@@ -16,16 +16,44 @@ export default async function SettingsPage() {
     .eq("spotify_id", session.user.spotifyId)
     .maybeSingle()
 
+  let lastfmArtistCount = 0
+  if (user?.id && user?.lastfm_username) {
+    const { count } = await supabase
+      .from("listened_artists")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .eq("source", "lastfm")
+    lastfmArtistCount = count ?? 0
+  }
+
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8">
-      <h1 className="mb-6 text-xl font-bold">Settings</h1>
-      <SettingsForm
-        displayName={user?.display_name ?? session.user.displayName ?? null}
-        avatarUrl={user?.avatar_url ?? session.user.avatarUrl ?? null}
-        initialPlayThreshold={user?.play_threshold ?? 0}
-        initialLastfmUsername={user?.lastfm_username ?? null}
-        flipsidePlaylistId={user?.flipside_playlist_id ?? null}
-      />
+    <div
+      style={{
+        background: "var(--bg-base)",
+        minHeight: "100vh",
+        padding: "32px 16px",
+      }}
+    >
+      <div style={{ maxWidth: 560, margin: "0 auto" }}>
+        <h1
+          style={{
+            fontSize: 20,
+            fontWeight: 700,
+            color: "var(--text-primary)",
+            marginBottom: 24,
+          }}
+        >
+          Settings
+        </h1>
+        <SettingsForm
+          displayName={user?.display_name ?? session.user.displayName ?? null}
+          avatarUrl={user?.avatar_url ?? session.user.avatarUrl ?? null}
+          initialPlayThreshold={user?.play_threshold ?? 5}
+          initialLastfmUsername={user?.lastfm_username ?? null}
+          initialLastfmArtistCount={lastfmArtistCount}
+          flipsidePlaylistId={user?.flipside_playlist_id ?? null}
+        />
+      </div>
     </div>
   )
 }

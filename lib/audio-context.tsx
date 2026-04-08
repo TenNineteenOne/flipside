@@ -7,11 +7,12 @@ interface AudioState {
   currentTrack: Track | null
   artistName: string
   artistImageUrl: string | null
+  artistColor: string | null
   isPlaying: boolean
 }
 
 interface AudioContextValue extends AudioState {
-  play: (track: Track, artistName: string, artistImageUrl: string | null) => void
+  play: (track: Track, artistName: string, artistImageUrl: string | null, artistColor?: string | null) => void
   pause: () => void
   resume: () => void
   stop: () => void
@@ -31,10 +32,11 @@ export function AudioProvider({ children }: { children: ReactNode }) {
     currentTrack: null,
     artistName: "",
     artistImageUrl: null,
+    artistColor: null,
     isPlaying: false,
   })
 
-  const play = useCallback((track: Track, artistName: string, artistImageUrl: string | null) => {
+  const play = useCallback((track: Track, artistName: string, artistImageUrl: string | null, artistColor?: string | null) => {
     if (!track.previewUrl) return
 
     if (audioRef.current) {
@@ -47,7 +49,7 @@ export function AudioProvider({ children }: { children: ReactNode }) {
     audio.play().catch(() => {})
     audio.onended = () => setState(prev => ({ ...prev, isPlaying: false }))
 
-    setState({ currentTrack: track, artistName, artistImageUrl, isPlaying: true })
+    setState({ currentTrack: track, artistName, artistImageUrl, artistColor: artistColor ?? null, isPlaying: true })
   }, [])
 
   const pause = useCallback(() => {
@@ -63,7 +65,7 @@ export function AudioProvider({ children }: { children: ReactNode }) {
   const stop = useCallback(() => {
     audioRef.current?.pause()
     audioRef.current = null
-    setState({ currentTrack: null, artistName: "", artistImageUrl: null, isPlaying: false })
+    setState({ currentTrack: null, artistName: "", artistImageUrl: null, artistColor: null, isPlaying: false })
   }, [])
 
   return (

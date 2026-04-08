@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, apiUnauthorized, dbError } from "@/lib/errors"
-import { getUserId } from "@/lib/groups"
+import { getUserId } from "@/lib/user"
 
 export async function PATCH(request: Request) {
   const session = await auth()

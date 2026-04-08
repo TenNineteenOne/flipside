@@ -1,7 +1,7 @@
 import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, apiUnauthorized } from "@/lib/errors"
-import { getUserId } from "@/lib/groups"
+import { getUserId } from "@/lib/user"
 
 export async function DELETE(
   _request: Request,

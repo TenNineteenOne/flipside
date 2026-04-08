@@ -1,7 +1,7 @@
 import Link from "next/link"
 import { redirect } from "next/navigation"
 import { auth } from "@/lib/auth"
-import { getUserId } from "@/lib/groups"
+import { getUserId } from "@/lib/user"
 import { hasFreshRecs } from "@/lib/recommendation/freshness"
 import { SplashClient } from "@/components/splash/splash-client"
 

@@ -5,8 +5,15 @@ import type { RecommendationInput, ScoredArtist } from './types'
 import { ArtistNameCache } from './artist-name-cache'
 import { resolveArtistsByName } from './resolve-candidates'
 
+/** Return the popularity-tier multiplier for a Spotify popularity value (0–100). */
+function tierMultiplier(popularity: number): number {
+  if (popularity <= 30) return 1.0
+  if (popularity <= 60) return 0.25
+  return 0.02
+}
+
 export async function buildRecommendations(input: RecommendationInput): Promise<number> {
-  const { userId, accessToken } = input
+  const { userId, accessToken, playThreshold } = input
   const supabase = createServiceClient()
 
   // ── Step 1: Get user's top artists (all 3 time ranges) ──────────────────
@@ -114,7 +121,26 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
   const searchFail = resolved.searchFail
   console.log(`[cache-search] hit=${resolved.cacheHits} miss=${resolved.cacheMisses} total=${uniqueNames.length}`)
 
-  // ── Step 5: Filter — thumbs-down ─────────────────────────────────────────
+  // ── Step 5a: Filter — play threshold ─────────────────────────────────────
+  // Exclude artists the user has listened to more times than playThreshold.
+  // Artists with null play_count (unknown listen history) pass through.
+  const { data: listenedData } = await supabase
+    .from('listened_artists')
+    .select('spotify_artist_id, play_count')
+    .eq('user_id', userId)
+
+  // Build a set of Spotify IDs that are over the threshold.
+  const overThresholdIds = new Set<string>()
+  for (const row of listenedData ?? []) {
+    if (!row.spotify_artist_id) continue
+    // null play_count → treat as unheard, pass through
+    if (row.play_count != null && row.play_count > playThreshold) {
+      overThresholdIds.add(row.spotify_artist_id)
+    }
+  }
+  let filtListened = 0
+
+  // ── Step 5b: Filter — thumbs-down ─────────────────────────────────────────
   const { data: thumbsDownData } = await supabase
     .from('feedback')
     .select('spotify_artist_id')
@@ -125,15 +151,21 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
   const thumbsDownIds = new Set((thumbsDownData ?? []).map((r) => r.spotify_artist_id))
 
   const filteredCandidates = [...candidateMap.entries()]
-    .filter(([id]) => !thumbsDownIds.has(id))
+    .filter(([id]) => {
+      if (thumbsDownIds.has(id)) return false
+      if (overThresholdIds.has(id)) { filtListened++; return false }
+      return true
+    })
     .map(([, val]) => val)
 
-  // ── Step 6: Score — aggressive discovery curve ───────────────────────────
-  // Power-of-2 curve crushes mid/high popularity; 80% weight on obscurity
+  // ── Step 6: Score — discovery curve + popularity tier multiplier ──────────
+  // Power-of-2 curve: 80% weight on obscurity, 20% on seed relevance.
+  // Then multiply by the tier weight to soft-rank underground artists first.
   const scored: ScoredArtist[] = filteredCandidates.map(({ artist, seedArtists }) => {
     const discoveryScore = Math.pow((100 - artist.popularity) / 100, 2)
     const seedRelevance = Math.min(seedArtists.length / 3, 1)
-    const score = discoveryScore * 0.80 + seedRelevance * 0.20
+    const baseScore = discoveryScore * 0.80 + seedRelevance * 0.20
+    const score = baseScore * tierMultiplier(artist.popularity)
 
     return {
       artist: { ...artist, topTracks: [] },
@@ -149,34 +181,17 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
 
   scored.sort((a, b) => b.score - a.score)
 
-  // ── Step 7: Tiered popularity cap — target underground (pop ≤ 55) ────────
-  let capLabel = 'none'
-  let top: ScoredArtist[]
-
-  const capped55 = scored.filter(s => s.artist.popularity <= 55)
-  const capped65 = scored.filter(s => s.artist.popularity <= 65)
-
-  if (capped55.length >= 5) {
-    top = capped55.slice(0, 20)
-    capLabel = '55'
-  } else if (capped65.length >= 5) {
-    top = capped65.slice(0, 20)
-    capLabel = '65'
-  } else {
-    top = scored.slice(0, 20)
-  }
+  // ── Step 7: Take top 20 — no hard popularity cap ──────────────────────────
+  // The tier multiplier already ensures underground artists rank first.
+  // If fewer than 20 remain, return what's available.
+  const top = scored.slice(0, 20)
 
   if (top.length === 0) {
-    console.error(`[engine] FAIL zero_top seeds=${seeds.length} lfm=${lfmTotal} uniq=${uniqueNames.length} ok=${searchOk} fail=${searchFail} retries=${resolved.searchRetries} rateLimited=${resolved.rateLimited} budgetExhausted=${resolved.backoffBudgetExhausted} filtTop=${filtTop} filtRecent=${filtRecent} cands=${candidateMap.size} scored=${scored.length} cap=${capLabel}`)
+    console.error(`[engine] FAIL zero_top seeds=${seeds.length} lfm=${lfmTotal} uniq=${uniqueNames.length} ok=${searchOk} fail=${searchFail} retries=${resolved.searchRetries} rateLimited=${resolved.rateLimited} budgetExhausted=${resolved.backoffBudgetExhausted} filtTop=${filtTop} filtRecent=${filtRecent} filtListened=${filtListened} cands=${candidateMap.size} scored=${scored.length}`)
     return 0
   }
 
-  // ── Step 8: Tracks deferred ──────────────────────────────────────────────
-  // Tracks are loaded lazily by the artist card via /api/artists/[id]/tracks
-  // when the card mounts. This keeps generation fast and avoids Spotify 429s.
-  const withTracks: ScoredArtist[] = top
-
-  // ── Step 9: Write to cache ────────────────────────────────────────────────
+  // ── Step 8: Write to cache ────────────────────────────────────────────────
   const { data: existingCache } = await supabase
     .from('recommendation_cache')
     .select('spotify_artist_id, seen_at')
@@ -191,7 +206,7 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
   const expiresAt = new Date(now)
   expiresAt.setDate(expiresAt.getDate() + 30)
 
-  const rows = withTracks
+  const rows = top
     .filter((item) => {
       const seen = existingSeenAt.get(item.artist.id)
       return seen === undefined || seen === null
@@ -214,12 +229,12 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
       .upsert(rows, { onConflict: 'user_id,spotify_artist_id' })
 
     if (error) {
-      console.error(`[engine] FAIL upsert_error seeds=${seeds.length} lfm=${lfmTotal} uniq=${uniqueNames.length} ok=${searchOk} fail=${searchFail} filtTop=${filtTop} filtRecent=${filtRecent} cands=${candidateMap.size} cap=${capLabel} top=${top.length} err=${error.message}`)
+      console.error(`[engine] FAIL upsert_error seeds=${seeds.length} lfm=${lfmTotal} uniq=${uniqueNames.length} ok=${searchOk} fail=${searchFail} filtTop=${filtTop} filtRecent=${filtRecent} filtListened=${filtListened} cands=${candidateMap.size} top=${top.length} err=${error.message}`)
     } else {
       written = rows.length
     }
   }
 
-  console.log(`[engine] OK seeds=${seeds.length} lfm=${lfmTotal} uniq=${uniqueNames.length} ok=${searchOk} fail=${searchFail} filtTop=${filtTop} filtRecent=${filtRecent} cands=${candidateMap.size} cap=${capLabel} top=${top.length} written=${written}`)
+  console.log(`[engine] OK seeds=${seeds.length} lfm=${lfmTotal} uniq=${uniqueNames.length} ok=${searchOk} fail=${searchFail} filtTop=${filtTop} filtRecent=${filtRecent} filtListened=${filtListened} cands=${candidateMap.size} top=${top.length} written=${written}`)
   return written
 }

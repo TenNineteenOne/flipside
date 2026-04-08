@@ -3,7 +3,7 @@ import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, apiUnauthorized, dbError } from "@/lib/errors"
 import { getAccessToken } from "@/lib/get-access-token"
 import { isValidSpotifyId } from "@/lib/spotify-ids"
-import { getUserId } from "@/lib/groups"
+import { getUserId } from "@/lib/user"
 import { type NextRequest } from "next/server"
 
 async function spotifyFetch(url: string, accessToken: string, options: RequestInit = {}) {
@@ -159,4 +159,36 @@ export async function POST(request: NextRequest) {
 
   console.log(`[saves] done`)
   return Response.json({ success: true, playlistId: playlistId ?? null })
+}
+
+export async function DELETE(request: NextRequest) {
+  const session = await auth()
+  if (!session?.user?.spotifyId) return apiUnauthorized()
+
+  let body: { spotifyArtistId?: string }
+  try {
+    body = await request.json()
+  } catch {
+    return apiError("Invalid JSON", 400)
+  }
+
+  const { spotifyArtistId } = body
+  if (!spotifyArtistId || !isValidSpotifyId(spotifyArtistId)) {
+    return apiError("Valid spotifyArtistId is required", 400)
+  }
+
+  const userId = await getUserId(session.user.spotifyId)
+  if (!userId) return apiUnauthorized()
+
+  const supabase = createServiceClient()
+  const { error } = await supabase
+    .from("saves")
+    .delete()
+    .eq("user_id", userId)
+    .eq("spotify_artist_id", spotifyArtistId)
+
+  if (error) return dbError(error, "saves/delete")
+
+  console.log(`[saves] DELETE artistId=${spotifyArtistId}`)
+  return Response.json({ success: true })
 }

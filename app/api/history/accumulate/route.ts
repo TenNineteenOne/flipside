@@ -37,6 +37,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       await accumulateLastFmHistory({
         userId: user.id,
         lastfmUsername: user.lastfm_username,
+        accessToken,
       })
     }
   } catch (err) {

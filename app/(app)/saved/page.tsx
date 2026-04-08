@@ -1,22 +1,8 @@
 import { redirect } from "next/navigation"
-import Image from "next/image"
 import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
-import { Music, ExternalLink } from "lucide-react"
-
-interface ArtistData {
-  id: string
-  name: string
-  genres: string[]
-  imageUrl: string | null
-  popularity: number
-  topTracks?: Array<{
-    id: string
-    name: string
-    albumName: string
-    albumImageUrl: string | null
-  }>
-}
+import { SavedClient, type SavedArtistRow, type SavedTrackRow } from "@/components/saved/saved-client"
+import type { Track } from "@/lib/music-provider/types"
 
 export default async function SavedPage() {
   const session = await auth()
@@ -26,15 +12,18 @@ export default async function SavedPage() {
 
   const supabase = createServiceClient()
 
+  // Resolve internal user id + lastfm_username
   const { data: user } = await supabase
     .from("users")
-    .select("id")
+    .select("id, lastfm_username")
     .eq("spotify_id", session.user.spotifyId)
     .single()
 
   if (!user) redirect("/api/auth/signin")
 
-  // Fetch saved artists (newest first)
+  const hasLastfm = Boolean(user.lastfm_username)
+
+  // Fetch saved rows (newest first)
   const { data: saveRows } = await supabase
     .from("saves")
     .select("spotify_artist_id, spotify_track_id, artist_name, created_at")
@@ -42,15 +31,16 @@ export default async function SavedPage() {
     .order("created_at", { ascending: false })
 
   const artistIds = (saveRows ?? []).map((r: any) => r.spotify_artist_id)
-  // Build a name fallback from saves table (populated since migration 0003)
+
+  // Name fallback map from saves table (populated since migration 0003)
   const savedNameMap = new Map<string, string>(
     (saveRows ?? [])
       .filter((r: any) => r.artist_name)
       .map((r: any) => [r.spotify_artist_id, r.artist_name as string])
   )
 
-  // Fetch richer artist data from cache (best-effort — may be missing)
-  const cacheMap = new Map<string, ArtistData>()
+  // Fetch richer artist data from recommendation_cache (best-effort)
+  const cacheMap = new Map<string, any>()
   if (artistIds.length > 0) {
     const { data: cacheRows } = await supabase
       .from("recommendation_cache")
@@ -60,98 +50,60 @@ export default async function SavedPage() {
 
     for (const row of cacheRows ?? []) {
       if (row.artist_data) {
-        cacheMap.set(row.spotify_artist_id, row.artist_data as ArtistData)
+        cacheMap.set(row.spotify_artist_id, row.artist_data)
       }
     }
   }
 
+  // Build artist rows for the Artists tab
+  const artists: SavedArtistRow[] = (saveRows ?? []).map((row: any) => {
+    const artistId: string = row.spotify_artist_id
+    const cached = cacheMap.get(artistId)
+    const topTracks: Track[] = (cached?.topTracks ?? []).map((t: any) => ({
+      id: t.id ?? t.spotifyTrackId ?? "",
+      spotifyTrackId: t.spotifyTrackId ?? null,
+      name: t.name ?? "",
+      previewUrl: t.previewUrl ?? null,
+      durationMs: t.durationMs ?? 0,
+      albumName: t.albumName ?? "",
+      albumImageUrl: t.albumImageUrl ?? null,
+      source: (t.source ?? "spotify") as Track["source"],
+    }))
+
+    return {
+      artistId,
+      name: cached?.name ?? savedNameMap.get(artistId) ?? artistId,
+      genres: cached?.genres ?? [],
+      imageUrl: cached?.imageUrl ?? null,
+      artistColor: (cached as any)?.artist_color ?? "#8b5cf6",
+      topTracks,
+    }
+  })
+
+  // Build track rows for the Tracks tab
+  // A track row exists when the save has a spotify_track_id
+  const tracks: SavedTrackRow[] = (saveRows ?? [])
+    .filter((r: any) => r.spotify_track_id)
+    .map((row: any) => {
+      const artistId: string = row.spotify_artist_id
+      const cached = cacheMap.get(artistId)
+      const matchedTrack = (cached?.topTracks ?? []).find(
+        (t: any) => t.id === row.spotify_track_id || t.spotifyTrackId === row.spotify_track_id
+      )
+      return {
+        id: row.spotify_track_id as string,
+        name: matchedTrack?.name ?? "Unknown Track",
+        artistName: cached?.name ?? savedNameMap.get(artistId) ?? artistId,
+        albumImageUrl: matchedTrack?.albumImageUrl ?? null,
+        durationMs: matchedTrack?.durationMs ?? 0,
+      }
+    })
+
   return (
-    <div className="mx-auto w-full max-w-xl px-4 pt-6">
-      <h1 className="mb-5 text-xl font-bold text-foreground">Saved Artists</h1>
-
-      {artistIds.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-3 py-20 text-center">
-          <p className="text-base font-medium text-foreground">No saved artists yet</p>
-          <p className="text-sm text-muted-foreground">
-            Save artists from your feed to find them here.
-          </p>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-3">
-          {(saveRows ?? []).map((row: any) => {
-            const artistId: string = row.spotify_artist_id
-            const artist = cacheMap.get(artistId)
-            const savedTrack = row.spotify_track_id
-              ? artist?.topTracks?.find((t) => t.id === row.spotify_track_id) ?? null
-              : null
-            return (
-              <div
-                key={artistId}
-                className="overflow-hidden rounded-xl border border-border bg-card"
-              >
-                {/* Artist row */}
-                <div className="flex items-center gap-3 p-3">
-                  <div className="relative size-14 shrink-0 overflow-hidden rounded-lg bg-muted">
-                    {artist?.imageUrl ? (
-                      <Image
-                        src={artist.imageUrl}
-                        alt={artist.name ?? artistId}
-                        fill
-                        className="object-cover"
-                        sizes="56px"
-                      />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center">
-                        <Music className="size-6 text-muted-foreground/40" />
-                      </div>
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-foreground">
-                      {artist?.name ?? savedNameMap.get(artistId) ?? artistId}
-                    </p>
-                    {artist?.genres && artist.genres.length > 0 && (
-                      <p className="truncate text-xs text-muted-foreground">
-                        {artist.genres.slice(0, 3).join(" · ")}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Saved track row (only when a specific track was saved) */}
-                {savedTrack && (
-                  <div className="flex items-center gap-2 border-t border-border px-3 py-2 pl-[calc(56px+24px)]">
-                    {savedTrack.albumImageUrl && (
-                      <div className="relative size-8 shrink-0 overflow-hidden rounded bg-muted">
-                        <Image
-                          src={savedTrack.albumImageUrl}
-                          alt={savedTrack.albumName}
-                          fill
-                          className="object-cover"
-                          sizes="32px"
-                        />
-                      </div>
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-xs font-medium text-foreground">{savedTrack.name}</p>
-                      <p className="truncate text-xs text-muted-foreground">{savedTrack.albumName}</p>
-                    </div>
-                    <a
-                      href={`https://open.spotify.com/track/${row.spotify_track_id}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="shrink-0 flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"
-                    >
-                      <ExternalLink className="size-3" />
-                      Open in Spotify
-                    </a>
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
-    </div>
+    <SavedClient
+      artists={artists}
+      tracks={tracks}
+      hasLastfm={hasLastfm}
+    />
   )
 }
