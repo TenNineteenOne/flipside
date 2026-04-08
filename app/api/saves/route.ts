@@ -115,6 +115,10 @@ export async function POST(request: NextRequest) {
             }
           )
 
+          if (createRes.status === 403) {
+            console.warn("[saves] Spotify 403 on playlist create — scope missing or app not approved")
+            return apiError("Spotify permission denied for playlist", 403)
+          }
           if (createRes.status === 429) {
             console.warn("[saves] Spotify rate limit hit when creating playlist — skipping")
           } else if (createRes.ok) {
@@ -139,6 +143,10 @@ export async function POST(request: NextRequest) {
           )
 
           if (addRes.status === 401) return apiError("Spotify token expired", 401)
+          if (addRes.status === 403) {
+            console.warn("[saves] Spotify 403 on track add — scope missing or app not approved")
+            return apiError("Spotify permission denied for playlist", 403)
+          }
           if (addRes.status === 429) {
             console.warn("[saves] Spotify rate limit hit when adding track — skipping")
           } else if (addRes.ok) {

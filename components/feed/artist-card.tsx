@@ -162,7 +162,7 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed }: ArtistCard
       })
       const data = await res.json().catch(() => ({}))
       if (res.status === 403) {
-        toast.error("Sign out and back in to enable Liking tracks in Spotify.")
+        toast.error("Couldn't like via Flipside — open the track in Spotify to like it there.")
         return
       }
       if (!res.ok) throw new Error(data?.error ?? "Failed")
@@ -190,7 +190,7 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed }: ArtistCard
         body: JSON.stringify({ spotifyArtistId, spotifyTrackId, addToPlaylist: true }),
       })
       if (!res.ok) throw new Error("Failed")
-      toast.success("Added to Flipside Discoveries playlist!")
+      toast.success("Added to your Flipside Discoveries playlist on Spotify!")
     } catch (err) {
       console.error(`[card] playlist failed trackId=${track.id}`, err)
       toast.error("Couldn't add to playlist. Try again.")
@@ -394,7 +394,7 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed }: ArtistCard
                       )}
                     >
                       <ListPlus className="size-3" />
-                      Add to Discoveries
+                      Add to Spotify Playlist
                     </button>
 
                     <button
