@@ -1,5 +1,4 @@
 import NextAuth from "next-auth"
-import Spotify from "next-auth/providers/spotify"
 
 const SPOTIFY_SCOPES = [
   "user-top-read",
@@ -10,19 +9,37 @@ const SPOTIFY_SCOPES = [
   "playlist-modify-public",
 ].join(" ")
 
-// Use URL string format (same as the provider default) to avoid object-vs-string
-// merge edge cases in next-auth v5 beta that cause our scopes to be dropped.
-const SPOTIFY_AUTH_URL =
-  `https://accounts.spotify.com/authorize?scope=${encodeURIComponent(SPOTIFY_SCOPES)}&show_dialog=true`
+// Define Spotify as a plain OAuth provider to bypass the next-auth v5 beta
+// Spotify() helper which ignores authorization overrides and only uses the
+// default "user-read-email" scope regardless of what you pass.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const SpotifyProvider: any = {
+  id: "spotify",
+  name: "Spotify",
+  type: "oauth",
+  authorization: {
+    url: "https://accounts.spotify.com/authorize",
+    params: { scope: SPOTIFY_SCOPES, show_dialog: true },
+  },
+  token: "https://accounts.spotify.com/api/token",
+  userinfo: "https://api.spotify.com/v1/me",
+  clientId: process.env.SPOTIFY_CLIENT_ID,
+  clientSecret: process.env.SPOTIFY_CLIENT_SECRET,
+  profile(profile: { id: string; display_name: string | null; email: string; images: Array<{ url: string }> | null }) {
+    return {
+      id: profile.id,
+      name: profile.display_name ?? profile.id,
+      email: profile.email,
+      image: profile.images?.[0]?.url ?? null,
+    }
+  },
+  style: { brandColor: "#1db954" },
+}
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   secret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET,
   providers: [
-    Spotify({
-      clientId: process.env.SPOTIFY_CLIENT_ID!,
-      clientSecret: process.env.SPOTIFY_CLIENT_SECRET!,
-      authorization: SPOTIFY_AUTH_URL,
-    }),
+    SpotifyProvider,
   ],
   callbacks: {
     async jwt({ token, account, profile }) {
