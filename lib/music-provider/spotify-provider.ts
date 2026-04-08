@@ -73,11 +73,13 @@ function mapArtist(a: SpotifyArtistObject): Artist {
 function mapTrack(t: SpotifyTrackObject): Track {
   return {
     id: t.id,
+    spotifyTrackId: t.id,
     name: t.name,
     previewUrl: t.preview_url,
     durationMs: t.duration_ms,
     albumName: t.album.name,
     albumImageUrl: t.album.images?.[0]?.url ?? null,
+    source: 'spotify',
   }
 }
 

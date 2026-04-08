@@ -7,11 +7,13 @@ const VALID_ID = "6eFbEFgrUMFP26JNjA02C8" // 22-char base62 (Khruangbin)
 function makeTrack(id: string, name: string): Track {
   return {
     id,
+    spotifyTrackId: id,
     name,
     previewUrl: null,
     durationMs: 200000,
     albumName: "Album",
     albumImageUrl: null,
+    source: "spotify",
   }
 }
 

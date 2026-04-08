@@ -1,17 +1,19 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
-import { useRouter } from "next/navigation"
-import { CheckCircle2 } from "lucide-react"
+import { useState } from "react"
+import Link from "next/link"
+import { CheckCircle2, Sparkles } from "lucide-react"
 import { ArtistCard } from "@/components/feed/artist-card"
 
 interface Track {
   id: string
+  spotifyTrackId: string | null
   name: string
   previewUrl: string | null
   durationMs: number
   albumName: string
   albumImageUrl: string | null
+  source: 'itunes' | 'spotify' | 'deezer'
 }
 
 interface ArtistWithTracks {
@@ -39,29 +41,10 @@ interface FeedClientProps {
 }
 
 export function FeedClient({ recommendations }: FeedClientProps) {
-  const router = useRouter()
   const [actedIds, setActedIds] = useState<Set<string>>(new Set())
-  const generatingRef = useRef(false)
-  const lastGenTimeRef = useRef(0)
 
-  // Auto-replenish when fewer than 5 unseen recommendations remain.
-  // 60s cooldown prevents a loop when partial generation (< 5 recs) keeps
-  // triggering re-generation and deleting the partial results.
-  useEffect(() => {
-    const remaining = recommendations.filter(
-      (r) => !actedIds.has(r.spotify_artist_id)
-    ).length
-    const cooldownMs = 60_000
-    const elapsed = Date.now() - lastGenTimeRef.current
-    if (remaining < 5 && !generatingRef.current && elapsed > cooldownMs) {
-      generatingRef.current = true
-      lastGenTimeRef.current = Date.now()
-      fetch("/api/recommendations/generate", { method: "POST" })
-        .then(() => router.refresh())
-        .catch((err) => { console.error(`[feed] replenish failed:`, err) })
-        .finally(() => { generatingRef.current = false })
-    }
-  }, [actedIds, recommendations, router])
+  // Generation now only happens from the splash page ("Find me music" button),
+  // so the feed is a pure display route — no auto-replenish side effects here.
 
   const visibleRecs = recommendations.filter(
     (r) => !actedIds.has(r.spotify_artist_id)
@@ -81,7 +64,14 @@ export function FeedClient({ recommendations }: FeedClientProps) {
       <p className="text-base font-semibold text-foreground">
         You&apos;re all caught up!
       </p>
-      <p className="text-sm text-muted-foreground">Check back tomorrow for new discoveries.</p>
+      <p className="text-sm text-muted-foreground">Want another batch?</p>
+      <Link
+        href="/"
+        className="mt-2 inline-flex items-center justify-center gap-2 h-11 px-5 rounded-lg bg-primary text-primary-foreground font-semibold text-sm transition-opacity hover:opacity-90"
+      >
+        <Sparkles className="size-4" />
+        Find more music
+      </Link>
     </div>
   ) : (
     <div className="flex flex-col items-center gap-5 pb-8">

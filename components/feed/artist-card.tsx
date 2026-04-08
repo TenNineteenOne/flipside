@@ -9,11 +9,13 @@ import { cn } from "@/lib/utils"
 
 interface Track {
   id: string
+  spotifyTrackId: string | null
   name: string
   previewUrl: string | null
   durationMs: number
   albumName: string
   albumImageUrl: string | null
+  source: 'itunes' | 'spotify' | 'deezer'
 }
 
 interface ArtistWithTracks {
@@ -112,14 +114,51 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed }: ArtistCard
     }
   }
 
-  async function handleLikeTrack(trackId: string) {
-    if (loadingTrack) return
-    setLoadingTrack({ id: trackId, action: 'like' })
+  /**
+   * Resolve a track's Spotify ID just-in-time. If already known (Spotify-sourced
+   * or previously resolved), returns immediately. Otherwise hits
+   * /api/spotify/resolve-track. Updates local state so subsequent clicks skip
+   * the network.
+   */
+  async function resolveSpotifyTrackId(track: Track): Promise<string | null> {
+    if (track.spotifyTrackId) return track.spotifyTrackId
     try {
+      const res = await fetch("/api/spotify/resolve-track", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          spotifyArtistId,
+          artistName: artist.name,
+          trackName: track.name,
+          localTrackId: track.id,
+        }),
+      })
+      if (!res.ok) return null
+      const data = (await res.json()) as { spotifyTrackId: string }
+      if (!data.spotifyTrackId) return null
+      setTracks((prev) =>
+        prev.map((t) => (t.id === track.id ? { ...t, spotifyTrackId: data.spotifyTrackId } : t))
+      )
+      return data.spotifyTrackId
+    } catch (err) {
+      console.error(`[card] resolve failed trackId=${track.id}`, err)
+      return null
+    }
+  }
+
+  async function handleLikeTrack(track: Track) {
+    if (loadingTrack) return
+    setLoadingTrack({ id: track.id, action: 'like' })
+    try {
+      const spotifyTrackId = await resolveSpotifyTrackId(track)
+      if (!spotifyTrackId) {
+        toast.error("Couldn't find this on Spotify.")
+        return
+      }
       const res = await fetch("/api/spotify/like", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ trackId }),
+        body: JSON.stringify({ trackId: spotifyTrackId }),
       })
       const data = await res.json().catch(() => ({}))
       if (res.status === 403) {
@@ -129,46 +168,75 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed }: ArtistCard
       if (!res.ok) throw new Error(data?.error ?? "Failed")
       toast.success("Liked in Spotify!")
     } catch (err) {
-      console.error(`[card] like failed trackId=${trackId}`, err)
+      console.error(`[card] like failed trackId=${track.id}`, err)
       toast.error("Couldn't like track. Try again.")
     } finally {
       setLoadingTrack(null)
     }
   }
 
-  async function handleSaveToPlaylist(trackId: string) {
+  async function handleSaveToPlaylist(track: Track) {
     if (loadingTrack) return
-    setLoadingTrack({ id: trackId, action: 'playlist' })
+    setLoadingTrack({ id: track.id, action: 'playlist' })
     try {
+      const spotifyTrackId = await resolveSpotifyTrackId(track)
+      if (!spotifyTrackId) {
+        toast.error("Couldn't find this on Spotify.")
+        return
+      }
       const res = await fetch("/api/saves", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ spotifyArtistId, spotifyTrackId: trackId, addToPlaylist: true }),
+        body: JSON.stringify({ spotifyArtistId, spotifyTrackId, addToPlaylist: true }),
       })
       if (!res.ok) throw new Error("Failed")
       toast.success("Added to Flipside Discoveries playlist!")
     } catch (err) {
-      console.error(`[card] playlist failed trackId=${trackId}`, err)
+      console.error(`[card] playlist failed trackId=${track.id}`, err)
       toast.error("Couldn't add to playlist. Try again.")
     } finally {
       setLoadingTrack(null)
     }
   }
 
-  async function handleSaveToFlipside(trackId: string) {
+  async function handleSaveToFlipside(track: Track) {
     if (loadingTrack) return
-    setLoadingTrack({ id: trackId, action: 'flipside' })
+    setLoadingTrack({ id: track.id, action: 'flipside' })
     try {
+      // Saving to Flipside doesn't strictly need a Spotify track id, but we
+      // resolve opportunistically so the saved row links cleanly and the
+      // Saved page can render the track card.
+      const spotifyTrackId = await resolveSpotifyTrackId(track)
       const res = await fetch("/api/saves", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ spotifyArtistId, spotifyTrackId: trackId }),
+        body: JSON.stringify({
+          spotifyArtistId,
+          spotifyTrackId: spotifyTrackId ?? undefined,
+        }),
       })
       if (!res.ok) throw new Error("Failed")
       toast.success("Saved to Flipside!")
     } catch (err) {
-      console.error(`[card] save failed trackId=${trackId}`, err)
+      console.error(`[card] save failed trackId=${track.id}`, err)
       toast.error("Couldn't save. Try again.")
+    } finally {
+      setLoadingTrack(null)
+    }
+  }
+
+  async function handleOpenInSpotify(track: Track, e: React.MouseEvent<HTMLAnchorElement>) {
+    if (track.spotifyTrackId) return // let the <a> navigate normally
+    e.preventDefault()
+    if (loadingTrack) return
+    setLoadingTrack({ id: track.id, action: 'like' })
+    try {
+      const spotifyTrackId = await resolveSpotifyTrackId(track)
+      if (!spotifyTrackId) {
+        toast.error("Couldn't find this on Spotify.")
+        return
+      }
+      window.open(`https://open.spotify.com/track/${spotifyTrackId}`, "_blank", "noopener,noreferrer")
     } finally {
       setLoadingTrack(null)
     }
@@ -304,7 +372,7 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed }: ArtistCard
                   {/* Row 2: action buttons */}
                   <div className="mt-2 flex flex-wrap gap-1.5 pl-[52px]">
                     <button
-                      onClick={() => handleLikeTrack(track.id)}
+                      onClick={() => handleLikeTrack(track)}
                       disabled={trackLoading}
                       className={cn(
                         "flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
@@ -317,7 +385,7 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed }: ArtistCard
                     </button>
 
                     <button
-                      onClick={() => handleSaveToPlaylist(track.id)}
+                      onClick={() => handleSaveToPlaylist(track)}
                       disabled={trackLoading}
                       className={cn(
                         "flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
@@ -330,7 +398,7 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed }: ArtistCard
                     </button>
 
                     <button
-                      onClick={() => handleSaveToFlipside(track.id)}
+                      onClick={() => handleSaveToFlipside(track)}
                       disabled={trackLoading}
                       className={cn(
                         "flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
@@ -343,7 +411,12 @@ export function ArtistCard({ spotifyArtistId, artist, why, onActed }: ArtistCard
                     </button>
 
                     <a
-                      href={`https://open.spotify.com/track/${track.id}`}
+                      href={
+                        track.spotifyTrackId
+                          ? `https://open.spotify.com/track/${track.spotifyTrackId}`
+                          : "#"
+                      }
+                      onClick={(e) => handleOpenInSpotify(track, e)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex items-center gap-1 rounded-full border border-border bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground hover:border-foreground/30"

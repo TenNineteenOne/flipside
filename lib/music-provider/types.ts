@@ -7,12 +7,14 @@ export interface Artist {
 }
 
 export interface Track {
-  id: string           // Spotify track ID
+  id: string                         // source-specific ID (iTunes trackId, Spotify id, …)
+  spotifyTrackId: string | null      // null until JIT-resolved; set when the track is known on Spotify
   name: string
   previewUrl: string | null
   durationMs: number
   albumName: string
   albumImageUrl: string | null
+  source: 'itunes' | 'spotify' | 'deezer'
 }
 
 export interface ArtistWithTracks extends Artist {
