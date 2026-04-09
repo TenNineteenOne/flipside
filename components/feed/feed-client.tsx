@@ -43,6 +43,16 @@ interface FeedClientProps {
   recommendations: Recommendation[]
 }
 
+// ---------------------------------------------------------------------------
+// Hex → RGBA helper for ambient aura
+// ---------------------------------------------------------------------------
+function hexToRgba(hex: string, alpha: number): string {
+  const cleaned = hex.replace(/^#/, "")
+  const full = cleaned.length === 3 ? cleaned.split("").map((c) => c + c).join("") : cleaned
+  const num = parseInt(full.slice(0, 6), 16)
+  return `rgba(${(num >> 16) & 0xff}, ${(num >> 8) & 0xff}, ${num & 0xff}, ${alpha})`
+}
+
 export function FeedClient({ recommendations }: FeedClientProps) {
   // Which artist's drawer is open (null = closed)
   const [openRecommendation, setOpenRecommendation] = useState<Recommendation | null>(null)
@@ -74,47 +84,51 @@ export function FeedClient({ recommendations }: FeedClientProps) {
 
   const allCaughtUp = visibleRecs.every(r => dismissedIds.has(r.spotify_artist_id))
 
+  // Determine top active card to drive aura color
+  const activeRec = visibleRecs.find(r => !dismissedIds.has(r.spotify_artist_id))
+  const activeAuraColor = activeRec?.artist_color ?? '#8b5cf6'
+
   return (
-    <div
-      style={{
-        maxWidth: 640,
-        margin: "0 auto",
-        padding: "16px 16px 100px 16px",
-        display: "flex",
-        flexDirection: "column",
-        gap: 16,
-      }}
-    >
-      {allCaughtUp ? (
-        <div className="flex flex-col items-center justify-center gap-3 py-20 text-center">
-          <div className="flex size-14 items-center justify-center rounded-full bg-primary/10 ring-1 ring-primary/20">
-            <CheckCircle2 className="size-7 text-primary" />
+    <div className="relative min-h-screen w-full flex flex-col items-center pt-8 pb-32">
+      {/* Option 11 Ambient Aura */}
+      <div 
+        className="fixed top-[20%] left-1/2 -translate-x-1/2 w-[700px] h-[700px] -z-10 pointer-events-none transition-all duration-1000 ease-in-out"
+        style={{ background: `radial-gradient(circle at center, ${hexToRgba(activeAuraColor, 0.45)} 0%, transparent 65%)` }}
+      />
+
+      <div className="w-full max-w-[500px] px-4 flex flex-col gap-6">
+        {allCaughtUp ? (
+          <div className="flex flex-col items-center justify-center gap-3 py-20 text-center">
+            <div className="flex size-14 items-center justify-center rounded-full bg-primary/10 ring-1 ring-primary/20 backdrop-blur-md">
+              <CheckCircle2 className="size-7 text-primary" />
+            </div>
+            <p className="text-base font-semibold text-white drop-shadow-md">
+              You&apos;re all caught up!
+            </p>
+            <p className="text-sm text-gray-400">Want another batch?</p>
+            <Link
+              href="/"
+              className="mt-2 inline-flex items-center justify-center gap-2 h-11 px-5 rounded-xl bg-primary text-black font-semibold text-sm transition-opacity hover:opacity-90 shadow-[0_0_20px_rgba(139,92,246,0.3)]"
+            >
+              <Sparkles className="size-4" />
+              Find more music
+            </Link>
           </div>
-          <p className="text-base font-semibold text-foreground">
-            You&apos;re all caught up!
-          </p>
-          <p className="text-sm text-muted-foreground">Want another batch?</p>
-          <Link
-            href="/"
-            className="mt-2 inline-flex items-center justify-center gap-2 h-11 px-5 rounded-lg bg-primary text-primary-foreground font-semibold text-sm transition-opacity hover:opacity-90"
-          >
-            <Sparkles className="size-4" />
-            Find more music
-          </Link>
-        </div>
-      ) : (
-        visibleRecs.map((rec) => (
-          <ArtistCard
-            key={rec.spotify_artist_id}
-            recommendation={rec}
-            onOpen={() => setOpenRecommendation(rec)}
-            onSave={() => handleSave(rec.spotify_artist_id)}
-            onDismiss={() =>
-              setDismissedIds((prev) => new Set(prev).add(rec.spotify_artist_id))
-            }
-          />
-        ))
-      )}
+        ) : (
+          <div className="flex flex-col gap-8 w-full">
+            {visibleRecs.map((rec) => (
+              <ArtistCard
+                key={rec.spotify_artist_id}
+                recommendation={rec}
+                onOpen={() => setOpenRecommendation(rec)}
+                onSave={() => handleSave(rec.spotify_artist_id)}
+                onDismiss={() => setDismissedIds((prev) => new Set(prev).add(rec.spotify_artist_id))}
+                isDismissed={dismissedIds.has(rec.spotify_artist_id)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
 
       <AnimatePresence>
         <ArtistDrawer

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en" class="dark h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Option 13: Neon 3D Stack</title>
+    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #000; color: #fff;}
+        .font-display { font-family: 'Space Grotesk', sans-serif; }
+        
+        .deck-card {
+            background: linear-gradient(135deg, rgba(139, 92, 246, 0.25) 0%, rgba(15,15,15,0.9) 100%);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(139, 92, 246, 0.4);
+            box-shadow: 0 -10px 30px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.1);
+            border-radius: 20px;
+            position: relative;
+            transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            cursor: pointer;
+        }
+
+        .deck-card:hover { transform: translateY(-8px) scale(1.02); }
+
+        .card-1 { z-index: 30; }
+        .card-2 { z-index: 20; margin-top: -16px; transform: scale(0.94); filter: brightness(0.7); background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(15,15,15,0.9) 100%); }
+        .card-3 { z-index: 10; margin-top: -16px; transform: scale(0.88); filter: brightness(0.5); background: linear-gradient(135deg, rgba(139, 92, 246, 0.05) 0%, rgba(15,15,15,0.9) 100%); }
+
+        .deck-container:hover .card-2 { transform: translateY(12px) scale(0.94); }
+        .deck-container:hover .card-3 { transform: translateY(24px) scale(0.88); }
+    </style>
+</head>
+<body class="min-h-full pb-20 items-center flex justify-center pt-8">
+    <div class="relative z-10 w-[460px]">
+        <div class="bg-black/60 rounded-[32px] overflow-hidden flex flex-col pb-6 border border-white/10">
+            <div class="relative h-[320px] shrink-0">
+                <img src="https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800&q=80" class="w-full h-full object-cover">
+                <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent"></div>
+                <div class="absolute bottom-10 left-0 p-6">
+                    <div class="font-display font-bold text-5xl text-white">Khruangbin</div>
+                </div>
+            </div>
+
+            <!-- Staggered Deck -->
+            <div class="deck-container relative z-20 -mt-[40px] px-6">
+                <!-- Track 1 -->
+                <div class="deck-card card-1 p-3.5 flex items-center gap-4">
+                    <img src="https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=100&q=80" class="w-14 h-14 rounded-xl object-cover shadow-[0_0_20px_rgba(139,92,246,0.3)]">
+                    <div class="flex-1 min-w-0">
+                        <div class="text-[16px] font-bold text-white drop-shadow-md">Texas Sun</div>
+                        <div class="text-[13px] text-purple-200">Leon Bridges</div>
+                    </div>
+                </div>
+                <!-- Track 2 -->
+                <div class="deck-card card-2 p-3.5 flex items-center gap-4">
+                    <div class="w-14 h-14 bg-black/40 rounded-xl flex items-center justify-center text-purple-400 font-bold text-xl backdrop-blur-md">2</div>
+                    <div class="flex-1 min-w-0">
+                        <div class="text-[15px] font-semibold text-gray-200">White Gloves</div>
+                    </div>
+                </div>
+                <!-- Track 3 -->
+                <div class="deck-card card-3 p-3.5 flex items-center gap-4">
+                    <div class="w-14 h-14 bg-black/40 rounded-xl flex items-center justify-center text-purple-400 font-bold text-xl backdrop-blur-md">3</div>
+                    <div class="flex-1 min-w-0">
+                        <div class="text-[15px] font-semibold text-gray-200">Mariella</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="p-6 mt-4 flex gap-3">
+                <button class="flex-1 border border-white/20 h-14 rounded-2xl text-gray-300 font-semibold hover:bg-white/10">Pass</button>
+                <button class="flex-1 bg-[#8b5cf6] text-black font-bold h-14 rounded-2xl">Save Artist</button>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

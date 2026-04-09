@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en" class="dark h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Option 16: Neon Accordion Fold</title>
+    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #000; color: #fff;}
+        .font-display { font-family: 'Space Grotesk', sans-serif; }
+        
+        .fold-container {
+            position: relative;
+        }
+
+        .fold-card {
+            background: linear-gradient(90deg, rgba(139, 92, 246, 0.4) 0%, rgba(20,20,20,0.95) 100%);
+            backdrop-filter: blur(40px);
+            border: 1px solid rgba(139, 92, 246, 0.6);
+            box-shadow: 0 10px 40px rgba(0,0,0,0.8);
+            border-radius: 24px;
+            transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+            cursor: pointer;
+        }
+
+        .fold-1 { z-index: 30; position: relative; }
+        .fold-2 { z-index: 20; position: absolute; width: 92%; left: 4%; top: 100%; margin-top: -30px; padding-top: 30px; padding-bottom: 12px; background: rgba(30,30,30,0.9); border: 1px solid rgba(255,255,255,0.1); border-radius: 0 0 24px 24px; box-shadow: inset 0 20px 20px -20px rgba(0,0,0,0.8); filter: brightness(0.7); }
+        .fold-3 { z-index: 10; position: absolute; width: 84%; left: 8%; top: 100%; margin-top: -15px; padding-top: 20px; padding-bottom: 12px; background: rgba(20,20,20,0.9); border: 1px solid rgba(255,255,255,0.05); border-radius: 0 0 24px 24px; box-shadow: inset 0 20px 20px -20px rgba(0,0,0,0.8); filter: brightness(0.5); }
+
+        .fold-container:hover .fold-2 { transform: translateY(35px); filter: brightness(0.9); }
+        .fold-container:hover .fold-3 { transform: translateY(70px); filter: brightness(0.8); }
+    </style>
+</head>
+<body class="min-h-full pb-20 items-center flex justify-center pt-8">
+    <div class="relative z-10 w-[460px]">
+        
+        <h1 class="font-display text-4xl mb-6 text-center tracking-tight text-white drop-shadow-md">Flipside</h1>
+        
+        <div class="bg-black/40 backdrop-blur-3xl rounded-[36px] overflow-hidden flex flex-col border border-white/10 pb-16">
+            <div class="relative h-[250px]">
+                <img src="https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800&q=80" class="w-full h-full object-cover">
+                <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent"></div>
+                <div class="absolute bottom-6 left-6">
+                    <div class="font-display font-bold text-5xl text-white">Khruangbin</div>
+                </div>
+            </div>
+
+            <!-- Fold Stack -->
+            <div class="fold-container mx-6 mt-4 relative">
+                
+                <div class="fold-card fold-1 p-4 flex items-center gap-4">
+                    <img src="https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=100&q=80" class="w-16 h-16 rounded-xl object-cover shadow-[0_0_20px_rgba(139,92,246,0.5)] border border-white/20">
+                    <div class="flex-1 min-w-0">
+                        <div class="text-[17px] font-bold text-white drop-shadow-lg">Texas Sun</div>
+                        <div class="text-[13px] text-purple-200 mt-1 uppercase tracking-widest font-semibold flex items-center gap-2">
+                             <div class="w-2 h-2 bg-[#8b5cf6] rounded-full animate-pulse"></div> Leon Bridges
+                        </div>
+                    </div>
+                    <div class="w-12 h-12 bg-white text-black rounded-full flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+                    </div>
+                </div>
+
+                <div class="fold-2 flex items-center px-6">
+                    <div class="w-8 font-bold text-gray-500">2</div>
+                    <div class="flex-1 font-semibold text-gray-300">White Gloves</div>
+                    <div class="text-xs font-bold bg-white/10 px-2 py-1 rounded-md text-gray-300">3:14</div>
+                </div>
+
+                <div class="fold-3 flex items-center px-6">
+                    <div class="w-8 font-bold text-gray-600">3</div>
+                    <div class="flex-1 font-semibold text-gray-400">Mariella</div>
+                    <div class="text-xs font-bold bg-white/5 px-2 py-1 rounded-md text-gray-500">5:22</div>
+                </div>
+            </div>
+            
+            <div class="px-6 mt-20 flex gap-4">
+                <button class="bg-transparent border border-white/20 w-16 h-16 rounded-2xl flex items-center justify-center text-gray-400 hover:text-white transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+                <button class="flex-1 bg-[#8b5cf6] text-black font-extrabold text-[17px] h-16 rounded-2xl shadow-[0_10px_30px_rgba(139,92,246,0.3)] border-b-4 border-purple-800 active:border-b-0 active:translate-y-1 transition-all">Save to Collection</button>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

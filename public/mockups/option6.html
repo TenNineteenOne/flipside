@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en" class="dark h-[100dvh]">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Option 6: Immersive Canvas</title>
+    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #000; color: #fff; overflow-x: hidden; height: 100dvh;}
+        .font-display { font-family: 'Space Grotesk', sans-serif; }
+    </style>
+</head>
+<body class="flex items-end justify-center relative">
+    
+    <!-- Canvas Background Video/Image simulation -->
+    <div class="fixed inset-0 z-0">
+        <img src="https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=1200&q=80" class="w-full h-full object-cover">
+        <!-- Intense vignette -->
+        <div class="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/90"></div>
+    </div>
+
+    <!-- UI Overlay -->
+    <div class="relative z-10 w-full max-w-[600px] flex flex-col pointer-events-none h-full">
+        
+        <!-- Header -->
+        <div class="flex justify-between items-center p-6 shrink-0 pt-12 pointer-events-auto">
+            <h1 class="font-display text-3xl font-bold tracking-tight drop-shadow-md">Flipside</h1>
+        </div>
+
+        <div class="flex-1"></div>
+
+        <!-- Lower Third Content -->
+        <div class="p-6 pb-12 flex flex-col gap-6 pointer-events-auto">
+            
+            <div>
+                <div class="inline-flex items-center gap-2 bg-black/40 backdrop-blur-md border border-white/10 px-3 py-1.5 rounded-full mb-3">
+                    <span class="w-2 h-2 rounded-full bg-[#8b5cf6] animate-pulse"></span>
+                    <span class="text-[10px] font-bold uppercase tracking-widest text-white/80">Similar to Leon Bridges</span>
+                </div>
+                <h2 class="font-display font-bold text-6xl text-white drop-shadow-lg tracking-tight">Khruangbin</h2>
+            </div>
+            
+            <!-- Compact Track Strip -->
+            <div class="bg-black/60 backdrop-blur-2xl border border-white/20 rounded-2xl p-2 pr-4 flex items-center gap-4 hover:bg-black/80 transition-colors cursor-pointer w-full max-w-sm">
+                <img src="https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=100&q=80" class="w-14 h-14 rounded-xl object-cover border border-white/10">
+                <div class="flex-1 min-w-0">
+                    <div class="text-[16px] font-bold text-white truncate">Texas Sun</div>
+                    <div class="text-[13px] text-gray-400 font-medium">Khruangbin & Leon Bridges</div>
+                </div>
+                <button class="w-12 h-12 rounded-full bg-white text-black flex items-center justify-center shrink-0 shadow-[0_0_20px_rgba(255,255,255,0.4)]">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+                </button>
+            </div>
+
+            <!-- Action buttons -->
+            <div class="flex gap-4 w-full">
+                <button class="flex-1 bg-white/10 border border-white/20 text-white text-sm font-semibold h-14 rounded-2xl backdrop-blur-lg hover:bg-white/20 transition-colors">Skip</button>
+                <button class="flex-1 bg-[#8b5cf6] text-black text-sm font-bold h-14 rounded-2xl shadow-[0_0_30px_rgba(139,92,246,0.5)] hover:scale-[1.02] transition-transform">Add to Library</button>
+            </div>
+            
+        </div>
+    </div>
+</body>
+</html>

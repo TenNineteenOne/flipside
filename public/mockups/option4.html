@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en" class="dark h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Option 4: Editorial Brutalism</title>
+    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@700;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #050505; color: #fff; overflow-x: hidden;}
+        .font-display { font-family: 'Space Grotesk', sans-serif; }
+        
+        .huge-title {
+            font-size: clamp(3rem, 10vw, 6rem);
+            line-height: 0.9;
+            letter-spacing: -0.04em;
+        }
+
+        .outline-text {
+            color: transparent;
+            -webkit-text-stroke: 1px rgba(255,255,255,0.4);
+        }
+    </style>
+</head>
+<body class="min-h-full">
+    
+    <div class="max-w-[700px] mx-auto pt-10">
+        
+        <!-- Artist Card Full Bleed -->
+        <div class="relative w-full border-t border-b border-white/10 mt-10 flex flex-col">
+            
+            <div class="p-4 z-10 flex justify-between items-end mb-[-40px]">
+                <div class="text-[#8b5cf6] text-xs font-bold uppercase tracking-[0.2em] mix-blend-screen">Artist Profile</div>
+            </div>
+
+            <!-- Overlapping Typography -->
+            <div class="z-20 px-4 pointer-events-none">
+                <h2 class="font-display font-extrabold huge-title text-white drop-shadow-[0_4px_20px_rgba(0,0,0,0.8)]">KHRUANG</h2>
+                <h2 class="font-display font-extrabold huge-title outline-text drop-shadow-[0_4px_20px_rgba(0,0,0,0.8)]">BIN</h2>
+            </div>
+
+            <div class="relative h-[500px] -mt-20">
+                <img src="https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=1000&q=80" class="w-full h-full object-cover">
+                <div class="absolute inset-0 bg-gradient-to-t from-[#050505] via-[#050505]/40 to-transparent"></div>
+            </div>
+
+            <div class="p-6 flex flex-col gap-6 -mt-32 relative z-20">
+                
+                <div class="border-l-2 border-[#8b5cf6] pl-4 max-w-sm">
+                    <p class="text-sm text-gray-300 uppercase tracking-widest leading-relaxed">Because you listen to Men I Trust and Leon Bridges</p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                    <!-- Track Strip Editorial -->
+                    <div class="bg-black/40 backdrop-blur-xl border border-white/10 p-3 flex items-center justify-between group cursor-pointer hover:bg-white/5 transition-colors">
+                        <div class="flex items-center gap-4">
+                            <span class="font-display text-2xl font-bold text-gray-500 group-hover:text-[#8b5cf6] transition-colors">01</span>
+                            <img src="https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=100&q=80" class="w-10 h-10 object-cover grayscale group-hover:grayscale-0 transition-all">
+                            <span class="text-sm font-semibold tracking-wide">Texas Sun</span>
+                        </div>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-gray-500"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                    </div>
+                </div>
+
+                <div class="flex gap-4 mt-8">
+                    <button class="flex-1 border border-white/20 text-white text-xs uppercase tracking-widest font-bold h-14 hover:bg-white hover:text-black transition-colors">Pass</button>
+                    <button class="flex-1 bg-[#8b5cf6] text-black text-xs uppercase tracking-widest font-bold h-14 hover:bg-[#a78bfa] transition-colors">Save Artist</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</body>
+</html>
