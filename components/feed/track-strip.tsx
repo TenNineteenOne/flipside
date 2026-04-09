@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import Image from "next/image"
 import { Play } from "lucide-react"
 import type { Track } from "@/lib/music-provider/types"
@@ -49,6 +50,8 @@ export function TrackStrip({
   onPlay,
   onOpen,
 }: TrackStripProps) {
+  const [isExpanded, setIsExpanded] = useState(false)
+
   if (tracks.length === 0) return null
 
   // Option 11 CSS classes for hover states
@@ -60,8 +63,8 @@ export function TrackStrip({
     onOpen?.()
   }
 
-  // Define how many tracks show. In feed, maybe show 3 maximum to prevent overwhelming the card.
-  const displayTracks = compact ? tracks.slice(0, 1) : tracks.slice(0, 3)
+  // Define how many tracks show. In feed, maybe show 3 maximum normally
+  const displayTracks = compact ? tracks.slice(0, 1) : (isExpanded ? tracks : tracks.slice(0, 3))
   const remainingCount = tracks.length - displayTracks.length
 
   return (
@@ -157,7 +160,7 @@ export function TrackStrip({
         )
       })}
 
-      {/* Overflow tracking "+ X tracks" */}
+      {/* Overflow tracking "+ X tracks" expanding button */}
       {remainingCount > 0 && !compact && (
         <div
           className="rounded-r-2xl p-2.5 flex items-center gap-4 cursor-pointer transition-transform hover:translate-x-1"
@@ -165,7 +168,10 @@ export function TrackStrip({
             background: baseTintFlow,
             borderLeft: `3px solid ${artistColor}`
           }}
-          onClick={(e) => { e.stopPropagation(); onOpen?.() }}
+          onClick={(e) => { 
+            e.stopPropagation()
+            setIsExpanded(true)
+          }}
         >
           <div className="w-10 h-10 bg-black/30 rounded-lg flex items-center justify-center border border-white/5 opacity-80 text-gray-400 font-semibold text-xs">
             +{remainingCount}

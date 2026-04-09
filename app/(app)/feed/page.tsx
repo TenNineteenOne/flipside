@@ -25,6 +25,7 @@ interface Rec {
   }
   score: number
   why: { sourceArtists: string[]; genres: string[]; friendBoost: string[] }
+  artist_color?: string | null
 }
 
 /** Round-robin interleave by primary source artist so results aren't clustered. */
@@ -117,6 +118,8 @@ export default async function FeedPage() {
 
   for (const rec of validRecs) {
     rec.artist_data.topTracks = tracksMap.get(rec.spotify_artist_id) ?? []
+    // Explicitly elevate artist_color so that it feeds into the FeedClient styling dynamically
+    rec.artist_color = (rec.artist_data as any).artist_color ?? null
   }
 
   return <FeedClient recommendations={interleave(validRecs)} />

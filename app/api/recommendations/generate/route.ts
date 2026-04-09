@@ -144,7 +144,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
       const staleArtists = cachedRecs.filter(
         (r) => !freshTrackIds.has(r.spotify_artist_id)
-      )
+      ).slice(0, 8) // Limit to top 8 explicitly strictly to prevent Vercel Free-Tier 10s Serverless timeout
 
       if (staleArtists.length > 0) {
         const tasks = staleArtists.map((r) => async () => {
