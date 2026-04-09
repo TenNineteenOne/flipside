@@ -161,6 +161,7 @@ export function TrackStrip({
                 </div>
               </div>
               <div className="flex shrink-0 items-center justify-center gap-1">
+                {/* TEMPORARILY DISABLED: Track Saving 
                 {artistId && (
                   <button
                     onClick={(e) => handleSaveTrack(e, track)}
@@ -180,6 +181,7 @@ export function TrackStrip({
                     )}
                   </button>
                 )}
+                */}
                 <button
                   onClick={(e) => handlePlayClick(e, track)}
                   className="w-10 h-10 rounded-full text-black flex items-center justify-center shrink-0 border-none transition-transform hover:scale-105"
@@ -224,6 +226,7 @@ export function TrackStrip({
               </div>
             </div>
             <div className="flex shrink-0 items-center justify-center gap-1">
+              {/* TEMPORARILY DISABLED: Track Saving
               {artistId && (
                 <button
                   onClick={(e) => handleSaveTrack(e, track)}
@@ -243,6 +246,7 @@ export function TrackStrip({
                   )}
                 </button>
               )}
+              */}
               <button
                   onClick={(e) => handlePlayClick(e, track)}
                   className="w-8 h-8 rounded-full text-white flex items-center justify-center shrink-0 border border-white/20 transition-colors hover:bg-white hover:text-black"

@@ -132,6 +132,8 @@ export function MiniPlayer() {
 
             {/* Controls */}
             <div className="flex shrink-0 items-center gap-2 pr-1">
+              
+              {/* TEMPORARILY DISABLED: Track Saving
               <button
                 onClick={handleLike}
                 className="flex size-9 items-center justify-center rounded-full transition-colors hover:bg-white/10"
@@ -145,6 +147,7 @@ export function MiniPlayer() {
                    <Heart className="size-4 text-gray-300" strokeWidth={2} />
                 )}
               </button>
+              */}
 
               <button
                 onClick={isPlaying ? pause : resume}
