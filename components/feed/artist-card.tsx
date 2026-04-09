@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { motion } from "framer-motion"
 import { TrackStrip } from "@/components/feed/track-strip"
 import { useAudio } from "@/lib/audio-context"
@@ -42,11 +42,47 @@ export interface ArtistCardProps {
 // Component
 // ---------------------------------------------------------------------------
 
+// Deterministic Color Hashing Fallback
+function stringToVibrantHex(str: string): string {
+  let hash = 0
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash)
+  }
+  const hue = Math.abs(hash) % 360
+  
+  // Convert HSL (hue, 70%, 65%) to Hex
+  const s = 0.70
+  const l = 0.65
+  const c = (1 - Math.abs(2 * l - 1)) * s
+  const x = c * (1 - Math.abs((hue / 60) % 2 - 1))
+  const m = l - c / 2
+  
+  let r = 0, g = 0, b = 0
+  if (0 <= hue && hue < 60) { r = c; g = x; b = 0 }
+  else if (60 <= hue && hue < 120) { r = x; g = c; b = 0 }
+  else if (120 <= hue && hue < 180) { r = 0; g = c; b = x }
+  else if (180 <= hue && hue < 240) { r = 0; g = x; b = c }
+  else if (240 <= hue && hue < 300) { r = x; g = 0; b = c }
+  else if (300 <= hue && hue < 360) { r = c; g = 0; b = x }
+  
+  const toHex = (n: number) => {
+    const hex = Math.round((n + m) * 255).toString(16)
+    return hex.length === 1 ? '0' + hex : hex
+  }
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`
+}
+
 export function ArtistCard({ recommendation, onSave, onDismiss, isDismissed = false }: ArtistCardProps) {
   const { artist_data, why, artist_color } = recommendation
-  const artistColor = artist_color ?? "#8b5cf6"
+  const artistColor = useMemo(() => {
+    const c = artist_color ?? "#8b5cf6"
+    if (c.toLowerCase() === "#8b5cf6") return stringToVibrantHex(artist_data.name)
+    return c
+  }, [artist_color, artist_data.name])
 
   const { play } = useAudio()
+  
+  const [isSaved, setIsSaved] = useState(false)
   
   // Track Loading State Fallback
   const [localTracks, setLocalTracks] = useState<Track[]>(artist_data.topTracks)
@@ -86,6 +122,7 @@ export function ArtistCard({ recommendation, onSave, onDismiss, isDismissed = fa
 
   function handleSave(e: React.MouseEvent) {
     e.stopPropagation()
+    setIsSaved(true)
     onSave()
   }
 
@@ -181,6 +218,7 @@ export function ArtistCard({ recommendation, onSave, onDismiss, isDismissed = fa
           <div onClick={(e) => e.stopPropagation()}>
             <TrackStrip
               tracks={localTracks}
+              artistId={recommendation.spotify_artist_id}
               artistColor={artistColor}
               onPlay={handlePlay}
             />
@@ -197,7 +235,7 @@ export function ArtistCard({ recommendation, onSave, onDismiss, isDismissed = fa
       </div>
 
       {/* Details & Actions Footer */}
-      <div className="px-5 pt-4 pb-2 flex flex-col gap-5 w-full">
+      <div className="px-5 pt-4 pb-4 flex flex-col gap-4 w-full">
         {/* Reason text container */}
         {reasonText && (
           <div className="text-[13px] text-gray-300 bg-white/5 p-3 rounded-xl border border-white/5 text-center font-medium shadow-inner">
@@ -205,38 +243,42 @@ export function ArtistCard({ recommendation, onSave, onDismiss, isDismissed = fa
           </div>
         )}
 
-        {/* Anchor link bridging to Spotify */}
-        <div className="flex w-full justify-center">
+        {/* Vertical Actions Block */}
+        <div className="flex flex-col gap-3 w-full">
+          {/* New Solid Spotify Block */}
           <a
             href={`https://open.spotify.com/artist/${recommendation.spotify_artist_id}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-[6px] text-[12px] font-semibold text-gray-400 hover:text-white transition-colors"
+            className="w-full flex items-center justify-center gap-2 bg-[#1db954] text-black font-bold h-12 rounded-2xl hover:brightness-110 transition-colors shadow-lg"
+            onClick={(e) => e.stopPropagation()}
           >
-            <span className="size-2 rounded-full bg-[#1db954]" />
+            <span className="size-2 rounded-full bg-black/50" />
             Open in Spotify
           </a>
-        </div>
 
-        {/* Large Accessible Action Buttons */}
-        <div className="flex gap-3 w-full">
-          <button
-            onClick={handleDismiss}
-            className="flex-1 bg-white/5 border border-white/10 text-gray-300 text-[15px] font-semibold h-14 rounded-2xl hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
-          >
-            👎 Pass
-          </button>
+          {/* Core Decision Strip */}
+          <div className="flex gap-3 w-full">
+            <button
+              onClick={handleDismiss}
+              className="flex-1 bg-white/5 border border-white/10 text-gray-300 text-[15px] font-semibold h-14 rounded-2xl hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
+            >
+              👎 Pass
+            </button>
 
-          <button
-            onClick={handleSave}
-            className="flex-1 text-black text-[15px] font-bold h-14 rounded-2xl cursor-pointer hover:brightness-110 transition-all border-none"
-            style={{
-              backgroundColor: artistColor,
-              boxShadow: `0 0 20px ${artistColor}60` // dynamic hex glow
-            }}
-          >
-            + Save
-          </button>
+            <button
+              onClick={isSaved ? undefined : handleSave}
+              disabled={isSaved}
+              className={`flex-[1.5] text-[15px] font-bold h-14 rounded-2xl transition-all border-none flex items-center justify-center gap-2 ${isSaved ? "cursor-default" : "cursor-pointer hover:brightness-110"}`}
+              style={{
+                backgroundColor: isSaved ? "rgba(255,255,255,0.05)" : artistColor,
+                color: isSaved ? "#888" : "#000",
+                boxShadow: isSaved ? "none" : `0 0 20px ${artistColor}60`
+              }}
+            >
+              {isSaved ? "✓ Saved" : "+ Save to Flipside"}
+            </button>
+          </div>
         </div>
       </div>
     </motion.div>

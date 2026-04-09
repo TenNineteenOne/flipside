@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import Image from "next/image"
-import { Play } from "lucide-react"
+import { Play, Plus, Check } from "lucide-react"
 import type { Track } from "@/lib/music-provider/types"
 
 // ---------------------------------------------------------------------------
@@ -33,6 +33,7 @@ function hexToRgba(hex: string, alpha: number): string {
 
 export interface TrackStripProps {
   tracks: Track[]
+  artistId?: string          // Used to save track to Spotify Playlist
   artistColor?: string       // hex, defaults to '#8b5cf6'
   compact?: boolean          // Optional for dense UI views like Saved screen
   onPlay?: (track: Track) => void
@@ -44,11 +45,13 @@ export interface TrackStripProps {
 
 export function TrackStrip({
   tracks,
+  artistId,
   artistColor = "#8b5cf6",
   compact = false,
   onPlay,
 }: TrackStripProps) {
   const [isExpanded, setIsExpanded] = useState(false)
+  const [savedTrackIds, setSavedTrackIds] = useState<Set<string>>(new Set())
 
   if (tracks.length === 0) return null
 
@@ -58,6 +61,28 @@ export function TrackStrip({
   const handlePlayClick = (e: React.MouseEvent, track: Track) => {
     e.stopPropagation()
     onPlay?.(track)
+  }
+
+  const handleSaveTrack = async (e: React.MouseEvent, track: Track) => {
+    e.stopPropagation()
+    if (!artistId || !track.spotifyTrackId || savedTrackIds.has(track.spotifyTrackId)) return
+    
+    // Optimistic cache
+    setSavedTrackIds(prev => new Set(prev).add(track.spotifyTrackId!))
+
+    try {
+      await fetch("/api/saves", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          spotifyArtistId: artistId, 
+          spotifyTrackId: track.spotifyTrackId,
+          addToPlaylist: true 
+        })
+      })
+    } catch(err) {
+       console.error("Failed to save track", err)
+    }
   }
 
   // Define how many tracks show. In feed, maybe show 3 maximum normally
@@ -104,14 +129,29 @@ export function TrackStrip({
                   {track.albumName}
                 </div>
               </div>
-              <button
-                onClick={(e) => handlePlayClick(e, track)}
-                className="w-10 h-10 rounded-full text-black flex items-center justify-center shrink-0 border-none transition-transform hover:scale-105"
-                style={{ backgroundColor: artistColor }}
-                aria-label={`Play ${track.name}`}
-              >
-                <Play size={16} fill="currentColor" strokeWidth={0} />
-              </button>
+              <div className="flex shrink-0 items-center justify-center gap-1">
+                {artistId && track.spotifyTrackId && (
+                  <button
+                    onClick={(e) => handleSaveTrack(e, track)}
+                    className="w-10 h-10 rounded-full text-white/50 flex items-center justify-center shrink-0 border-none transition-all hover:text-white hover:bg-white/10"
+                    aria-label={`Save ${track.name}`}
+                  >
+                    {savedTrackIds.has(track.spotifyTrackId) ? (
+                      <Check size={16} className="text-[#1db954]" strokeWidth={3} />
+                    ) : (
+                      <Plus size={18} strokeWidth={2.5} />
+                    )}
+                  </button>
+                )}
+                <button
+                  onClick={(e) => handlePlayClick(e, track)}
+                  className="w-10 h-10 rounded-full text-black flex items-center justify-center shrink-0 border-none transition-transform hover:scale-105"
+                  style={{ backgroundColor: artistColor }}
+                  aria-label={`Play ${track.name}`}
+                >
+                  <Play size={16} fill="currentColor" strokeWidth={0} />
+                </button>
+              </div>
             </div>
           )
         }
@@ -146,13 +186,28 @@ export function TrackStrip({
                 {track.name}
               </div>
             </div>
-            <button
-                onClick={(e) => handlePlayClick(e, track)}
-                className="w-8 h-8 rounded-full text-white flex items-center justify-center shrink-0 border border-white/20 transition-colors hover:bg-white hover:text-black"
-                aria-label={`Play ${track.name}`}
-              >
-                <Play size={12} fill="currentColor" strokeWidth={0} />
+            <div className="flex shrink-0 items-center justify-center gap-1">
+              {artistId && track.spotifyTrackId && (
+                <button
+                  onClick={(e) => handleSaveTrack(e, track)}
+                  className="w-8 h-8 rounded-full text-white/40 flex items-center justify-center shrink-0 border-none transition-all hover:text-white hover:bg-white/10"
+                  aria-label={`Save ${track.name}`}
+                >
+                  {savedTrackIds.has(track.spotifyTrackId) ? (
+                    <Check size={14} className="text-[#1db954]" strokeWidth={3} />
+                  ) : (
+                    <Plus size={16} strokeWidth={2.5} />
+                  )}
+                </button>
+              )}
+              <button
+                  onClick={(e) => handlePlayClick(e, track)}
+                  className="w-8 h-8 rounded-full text-white flex items-center justify-center shrink-0 border border-white/20 transition-colors hover:bg-white hover:text-black"
+                  aria-label={`Play ${track.name}`}
+                >
+                  <Play size={12} fill="currentColor" strokeWidth={0} />
               </button>
+            </div>
           </div>
         )
       })}

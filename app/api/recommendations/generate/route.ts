@@ -88,10 +88,11 @@ export async function POST(req: NextRequest): Promise<Response> {
         colorMap.set(row.spotify_artist_id, row.artist_color ?? null)
       }
 
-      // Identify artists missing a colour.
-      const needsColor = cachedRecs.filter(
-        (r) => !colorMap.has(r.spotify_artist_id) || colorMap.get(r.spotify_artist_id) == null
-      )
+      // Identify artists missing a colour, OR stuck with the broken legacy purple fallback "#8b5cf6"
+      const needsColor = cachedRecs.filter((r) => {
+        const c = colorMap.get(r.spotify_artist_id)
+        return !c || c.toLowerCase() === "#8b5cf6"
+      })
 
       if (needsColor.length > 0) {
         await Promise.all(
