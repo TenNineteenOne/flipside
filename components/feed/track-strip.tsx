@@ -60,7 +60,6 @@ export function TrackStrip({
   const handlePlayClick = (e: React.MouseEvent, track: Track) => {
     e.stopPropagation()
     onPlay?.(track)
-    onOpen?.()
   }
 
   // Define how many tracks show. In feed, maybe show 3 maximum normally
@@ -68,7 +67,7 @@ export function TrackStrip({
   const remainingCount = tracks.length - displayTracks.length
 
   return (
-    <div className="flex flex-col gap-[3px] mt-2 mb-2 px-1 w-full" onClick={onOpen}>
+    <div className="flex flex-col gap-[3px] mt-2 mb-2 px-1 w-full">
       {displayTracks.map((track, index) => {
         const isFeatured = index === 0 && !compact
 
@@ -77,7 +76,7 @@ export function TrackStrip({
           return (
             <div
               key={track.id}
-              onClick={(e) => { e.stopPropagation(); onOpen?.() }}
+              onClick={(e) => handlePlayClick(e, track)}
               className="rounded-r-2xl p-3 flex items-center gap-4 cursor-pointer transition-transform hover:translate-x-1"
               style={{
                 background: baseTintFlow,
@@ -123,7 +122,7 @@ export function TrackStrip({
         return (
           <div
             key={track.id}
-            onClick={(e) => { e.stopPropagation(); onOpen?.() }}
+            onClick={(e) => handlePlayClick(e, track)}
             className="rounded-r-2xl p-2.5 flex items-center gap-4 cursor-pointer transition-transform hover:translate-x-1"
             style={{
               background: baseTintFlow,

@@ -109,10 +109,16 @@ function lightenToContrast(hex: string): string {
  */
 export async function extractArtistColor(imageUrl: string): Promise<string> {
   try {
+    // Pre-fetch via node undici to bypass Spotify's legacy strict http header requirements that node-vibrant fails on
+    const res = await fetch(imageUrl, { headers: { "User-Agent": "Mozilla/5.0" } })
+    if (!res.ok) throw new Error(`Fetch failed with status ${res.status}`)
+    const arrayBuffer = await res.arrayBuffer()
+    const buffer = Buffer.from(arrayBuffer)
+
     // Dynamic import keeps node-vibrant out of the client bundle.
     // Must use the /node subpath — the default export throws on import.
     const { Vibrant } = await import('node-vibrant/node')
-    const palette = await Vibrant.from(imageUrl).getPalette()
+    const palette = await Vibrant.from(buffer).getPalette()
 
     const swatch =
       palette.Vibrant ??

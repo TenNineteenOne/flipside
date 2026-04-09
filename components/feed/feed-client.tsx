@@ -89,7 +89,7 @@ export function FeedClient({ recommendations }: FeedClientProps) {
   const activeAuraColor = activeRec?.artist_color ?? '#8b5cf6'
 
   return (
-    <div className="relative min-h-screen w-full flex flex-col items-center pt-8 pb-32">
+    <div className="relative min-h-screen w-full flex flex-col items-center pt-8 pb-[200px]">
       {/* Option 11 Ambient Aura */}
       <div 
         className="fixed top-[20%] left-1/2 -translate-x-1/2 w-[700px] h-[700px] -z-10 pointer-events-none transition-all duration-1000 ease-in-out"
