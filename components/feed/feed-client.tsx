@@ -165,6 +165,21 @@ export function FeedClient({ recommendations }: FeedClientProps) {
                 isDismissed={dismissedIds.has(rec.spotify_artist_id)}
               />
             ))}
+
+            {/* Inline Generate More Button */}
+            <div className="flex justify-center mt-6 mb-12">
+              <button
+                onClick={handleGenerateMore}
+                disabled={isGenerating}
+                className="inline-flex items-center justify-center gap-2 h-12 px-6 rounded-2xl bg-white/5 border border-white/10 text-white font-semibold text-[15px] transition-all hover:bg-white/10 hover:shadow-[0_0_20px_rgba(255,255,255,0.1)] disabled:opacity-50"
+              >
+                {isGenerating ? (
+                    <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Generating Artists...</>
+                ) : (
+                    <><Sparkles className="size-4" /> Load More Artists</>
+                )}
+              </button>
+            </div>
           </div>
         )}
       </div>

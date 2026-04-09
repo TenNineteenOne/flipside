@@ -50,7 +50,8 @@ export async function POST(req: NextRequest): Promise<Response> {
   // Default to 5 if the column is null (pre-migration rows)
   const playThreshold: number = user.play_threshold ?? 5
 
-  // ── [SECURITY PATCH] Algorithmic Empty-Queue DoS limit ──
+  // ── [SECURITY PATCH] Algorithmic Queue Capacity DoS limit ──
+  // Restricts bad actors from infinitely looping the background engine, but allows up to 60 unseen artists to queue
   const { count, error: countErr } = await supabase
     .from("recommendation_cache")
     .select("id", { count: "exact", head: true })
@@ -61,18 +62,13 @@ export async function POST(req: NextRequest): Promise<Response> {
     console.error("[generate] failed to check queue limit", countErr)
   }
 
-  if (count && count > 0) {
-    return apiError("Please review all existing recommendations before generating more.", 429)
+  if (count && count >= 60) {
+    return apiError("Your discovery queue is full. Please review some artists before generating more.", 429)
   }
 
   try {
-    // Clear all unseen cache entries before regenerating (now functions strictly as a safe reset if bypassing the UI)
-    const { error: deleteError } = await supabase
-      .from("recommendation_cache")
-      .delete()
-      .eq("user_id", user.id)
-      .is("seen_at", null)
-    if (deleteError) console.log(`[generate] cache-delete err=${deleteError.message}`)
+    // Note: We no longer delete the unseen cache entries. 
+    // This allows users to request "more" natively and gracefully append them to their existing batch.
 
     const count = await buildRecommendations({
       userId: user.id,
