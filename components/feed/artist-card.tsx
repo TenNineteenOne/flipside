@@ -36,6 +36,7 @@ export interface ArtistCardProps {
   onSave: () => void
   onDismiss: () => void
   isDismissed?: boolean
+  isSaved?: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -72,7 +73,14 @@ function stringToVibrantHex(str: string): string {
   return `#${toHex(r)}${toHex(g)}${toHex(b)}`
 }
 
-export function ArtistCard({ recommendation, onSave, onDismiss, isDismissed = false }: ArtistCardProps) {
+function hexToRgba(hex: string, alpha: number): string {
+  const cleaned = hex.replace(/^#/, "")
+  const full = cleaned.length === 3 ? cleaned.split("").map((c) => c + c).join("") : cleaned
+  const num = parseInt(full.slice(0, 6), 16)
+  return `rgba(${(num >> 16) & 0xff}, ${(num >> 8) & 0xff}, ${num & 0xff}, ${alpha})`
+}
+
+export function ArtistCard({ recommendation, onSave, onDismiss, isDismissed = false, isSaved = false }: ArtistCardProps) {
   const { artist_data, why, artist_color } = recommendation
   const artistColor = useMemo(() => {
     const c = artist_color ?? "#8b5cf6"
@@ -81,8 +89,6 @@ export function ArtistCard({ recommendation, onSave, onDismiss, isDismissed = fa
   }, [artist_color, artist_data.name])
 
   const { play } = useAudio()
-  
-  const [isSaved, setIsSaved] = useState(false)
   
   // Track Loading State Fallback
   const [localTracks, setLocalTracks] = useState<Track[]>(artist_data.topTracks)
@@ -122,7 +128,6 @@ export function ArtistCard({ recommendation, onSave, onDismiss, isDismissed = fa
 
   function handleSave(e: React.MouseEvent) {
     e.stopPropagation()
-    setIsSaved(true)
     onSave()
   }
 
@@ -267,16 +272,15 @@ export function ArtistCard({ recommendation, onSave, onDismiss, isDismissed = fa
             </button>
 
             <button
-              onClick={isSaved ? undefined : handleSave}
-              disabled={isSaved}
-              className={`flex-[1.5] text-[15px] font-bold h-14 rounded-2xl transition-all border-none flex items-center justify-center gap-2 ${isSaved ? "cursor-default" : "cursor-pointer hover:brightness-110"}`}
+              onClick={handleSave}
+              className="flex-[1.5] text-[15px] font-bold h-14 rounded-2xl transition-all border outline-none cursor-pointer hover:brightness-125 flex items-center justify-center gap-2"
               style={{
-                backgroundColor: isSaved ? "rgba(255,255,255,0.05)" : artistColor,
-                color: isSaved ? "#888" : "#000",
-                boxShadow: isSaved ? "none" : `0 0 20px ${artistColor}60`
+                backgroundColor: isSaved ? "rgba(255,255,255,0.05)" : hexToRgba(artistColor, 0.15),
+                borderColor: isSaved ? "rgba(255,255,255,0.1)" : hexToRgba(artistColor, 0.3),
+                color: isSaved ? "#888" : "#fff"
               }}
             >
-              {isSaved ? "✓ Saved" : "+ Save to Flipside"}
+              {isSaved ? "✓ Bookmarked" : "🔖 Bookmark in Flipside"}
             </button>
           </div>
         </div>

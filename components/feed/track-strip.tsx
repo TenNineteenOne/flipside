@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import Image from "next/image"
-import { Play, Plus, Check } from "lucide-react"
+import { Play, Plus, Check, Heart } from "lucide-react"
 import type { Track } from "@/lib/music-provider/types"
 
 // ---------------------------------------------------------------------------
@@ -71,14 +71,10 @@ export function TrackStrip({
     setSavedTrackIds(prev => new Set(prev).add(track.spotifyTrackId!))
 
     try {
-      await fetch("/api/saves", {
+      await fetch("/api/spotify/like", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          spotifyArtistId: artistId, 
-          spotifyTrackId: track.spotifyTrackId,
-          addToPlaylist: true 
-        })
+        body: JSON.stringify({ trackId: track.spotifyTrackId })
       })
     } catch(err) {
        console.error("Failed to save track", err)
@@ -133,13 +129,17 @@ export function TrackStrip({
                 {artistId && track.spotifyTrackId && (
                   <button
                     onClick={(e) => handleSaveTrack(e, track)}
-                    className="w-10 h-10 rounded-full text-white/50 flex items-center justify-center shrink-0 border-none transition-all hover:text-white hover:bg-white/10"
+                    className={`px-3 h-9 rounded-full flex items-center justify-center gap-1.5 transition-all font-semibold text-[13px] border ${
+                      savedTrackIds.has(track.spotifyTrackId) 
+                        ? 'bg-[#1db954]/20 border-[#1db954]/30 text-[#1db954]' 
+                        : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10 hover:text-white'
+                    }`}
                     aria-label={`Save ${track.name}`}
                   >
                     {savedTrackIds.has(track.spotifyTrackId) ? (
-                      <Check size={16} className="text-[#1db954]" strokeWidth={3} />
+                      <><Check size={14} strokeWidth={3}/> Saved</>
                     ) : (
-                      <Plus size={18} strokeWidth={2.5} />
+                      <><Heart size={14} fill="currentColor" strokeWidth={0}/> Spotify</>
                     )}
                   </button>
                 )}
@@ -190,13 +190,17 @@ export function TrackStrip({
               {artistId && track.spotifyTrackId && (
                 <button
                   onClick={(e) => handleSaveTrack(e, track)}
-                  className="w-8 h-8 rounded-full text-white/40 flex items-center justify-center shrink-0 border-none transition-all hover:text-white hover:bg-white/10"
+                  className={`px-3 h-9 rounded-full flex items-center justify-center gap-1.5 transition-all font-semibold text-[12px] border ${
+                    savedTrackIds.has(track.spotifyTrackId) 
+                      ? 'bg-[#1db954]/20 border-[#1db954]/30 text-[#1db954]' 
+                      : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10 hover:text-white'
+                  }`}
                   aria-label={`Save ${track.name}`}
                 >
                   {savedTrackIds.has(track.spotifyTrackId) ? (
-                    <Check size={14} className="text-[#1db954]" strokeWidth={3} />
+                    <><Check size={13} strokeWidth={3}/> Saved</>
                   ) : (
-                    <Plus size={16} strokeWidth={2.5} />
+                    <><Heart size={13} fill="currentColor" strokeWidth={0}/> Spotify</>
                   )}
                 </button>
               )}

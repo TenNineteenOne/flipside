@@ -61,23 +61,35 @@ export function FeedClient({ recommendations }: FeedClientProps) {
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set())
 
   async function handleSave(artistId: string) {
-    setSavedIds((prev) => new Set(prev).add(artistId))
-    try {
-      await fetch("/api/saves", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ spotifyArtistId: artistId }),
+    if (savedIds.has(artistId)) {
+      setSavedIds((prev) => {
+        const next = new Set(prev)
+        next.delete(artistId)
+        return next
       })
-    } catch (err) {
-      console.error("[feed-client] save failed", err)
+      try {
+        await fetch("/api/saves", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ spotifyArtistId: artistId }),
+        })
+      } catch (err) {}
+    } else {
+      setSavedIds((prev) => new Set(prev).add(artistId))
+      try {
+        await fetch("/api/saves", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ spotifyArtistId: artistId }),
+        })
+      } catch (err) {
+        console.error("[feed-client] save failed", err)
+      }
     }
   }
 
-  // Saved cards are permanently removed; dismissed cards stay in DOM for
-  // collapse animation and Undo to work
-  const visibleRecs = recommendations.filter(
-    (r) => !savedIds.has(r.spotify_artist_id)
-  )
+  // Saved and dismissed cards stay in DOM for collapse animation and Undo to work
+  const visibleRecs = recommendations
 
   const allCaughtUp = visibleRecs.every(r => dismissedIds.has(r.spotify_artist_id))
 
@@ -118,6 +130,7 @@ export function FeedClient({ recommendations }: FeedClientProps) {
                 key={rec.spotify_artist_id}
                 recommendation={rec}
                 onSave={() => handleSave(rec.spotify_artist_id)}
+                isSaved={savedIds.has(rec.spotify_artist_id)}
                 onDismiss={() => setDismissedIds((prev) => new Set(prev).add(rec.spotify_artist_id))}
                 isDismissed={dismissedIds.has(rec.spotify_artist_id)}
               />
