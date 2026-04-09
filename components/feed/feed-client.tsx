@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { CheckCircle2, Sparkles } from "lucide-react"
 import { ArtistCard } from "@/components/feed/artist-card"
 
@@ -60,6 +60,32 @@ export function FeedClient({ recommendations }: FeedClientProps) {
   // Permanently saved artists — removed from the feed
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set())
 
+  const router = useRouter()
+  const [isGenerating, setIsGenerating] = useState(false)
+
+  async function handleFeedback(artistId: string, signal: string) {
+    setDismissedIds((prev) => new Set(prev).add(artistId))
+    try {
+      await fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ spotifyArtistId: artistId, signal }),
+      })
+    } catch (err) {
+      console.error("[feed-client] feedback failed", err)
+    }
+  }
+
+  async function handleGenerateMore() {
+    setIsGenerating(true)
+    try {
+      await fetch("/api/recommendations/generate", { method: "POST" })
+    } catch (err) {}
+    
+    router.refresh()
+    setTimeout(() => setIsGenerating(false), 2000)
+  }
+
   async function handleSave(artistId: string) {
     if (savedIds.has(artistId)) {
       setSavedIds((prev) => {
@@ -115,13 +141,17 @@ export function FeedClient({ recommendations }: FeedClientProps) {
               You&apos;re all caught up!
             </p>
             <p className="text-sm text-gray-400">Want another batch?</p>
-            <Link
-              href="/"
-              className="mt-2 inline-flex items-center justify-center gap-2 h-11 px-5 rounded-xl bg-primary text-black font-semibold text-sm transition-opacity hover:opacity-90 shadow-[0_0_20px_rgba(139,92,246,0.3)]"
+            <button
+              onClick={handleGenerateMore}
+              disabled={isGenerating}
+              className="mt-2 inline-flex items-center justify-center gap-2 h-11 px-6 rounded-xl bg-primary text-black font-semibold text-sm transition-all hover:opacity-90 shadow-[0_0_20px_rgba(139,92,246,0.3)] disabled:opacity-50"
             >
-              <Sparkles className="size-4" />
-              Find more music
-            </Link>
+              {isGenerating ? (
+                  <><div className="w-4 h-4 border-2 border-black/20 border-t-black rounded-full animate-spin" /> Generating...</>
+              ) : (
+                  <><Sparkles className="size-4" /> Generate More Artists</>
+              )}
+            </button>
           </div>
         ) : (
           <div className="flex flex-col gap-8 w-full">
@@ -131,7 +161,7 @@ export function FeedClient({ recommendations }: FeedClientProps) {
                 recommendation={rec}
                 onSave={() => handleSave(rec.spotify_artist_id)}
                 isSaved={savedIds.has(rec.spotify_artist_id)}
-                onDismiss={() => setDismissedIds((prev) => new Set(prev).add(rec.spotify_artist_id))}
+                onFeedback={(signal) => handleFeedback(rec.spotify_artist_id, signal)}
                 isDismissed={dismissedIds.has(rec.spotify_artist_id)}
               />
             ))}

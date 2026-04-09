@@ -21,22 +21,24 @@ export async function POST(request: Request): Promise<Response> {
   const { spotifyArtistId, signal } = body
   if (!spotifyArtistId || !isValidSpotifyId(spotifyArtistId))
     return apiError("Valid spotifyArtistId is required", 400)
-  if (signal !== "thumbs_up" && signal !== "thumbs_down")
-    return apiError("signal must be thumbs_up or thumbs_down", 400)
+  if (signal !== "thumbs_up" && signal !== "thumbs_down" && signal !== "skip")
+    return apiError("signal must be thumbs_up, thumbs_down, or skip", 400)
 
   console.log(`[feedback] ${signal} artistId=${spotifyArtistId}`)
 
   const supabase = createServiceClient()
 
-  // Upsert feedback
-  const { error: feedbackError } = await supabase
-    .from("feedback")
-    .upsert(
-      { user_id: userId, spotify_artist_id: spotifyArtistId, signal, deleted_at: null },
-      { onConflict: "user_id,spotify_artist_id" }
-    )
+  // Upsert feedback only if it's an actionable algorithm signal
+  if (signal !== "skip") {
+    const { error: feedbackError } = await supabase
+      .from("feedback")
+      .upsert(
+        { user_id: userId, spotify_artist_id: spotifyArtistId, signal, deleted_at: null },
+        { onConflict: "user_id,spotify_artist_id" }
+      )
 
-  if (feedbackError) return dbError(feedbackError, "feedback/upsert")
+    if (feedbackError) return dbError(feedbackError, "feedback/upsert")
+  }
 
   // Update seen_at in recommendation_cache
   const { error: cacheError } = await supabase

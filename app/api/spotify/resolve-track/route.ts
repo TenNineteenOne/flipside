@@ -45,7 +45,42 @@ export async function POST(req: NextRequest): Promise<Response> {
     return apiError("Invalid JSON", 400)
   }
 
-  const { spotifyArtistId, artistName, trackName, localTrackId } = body
+  let { artistName, trackName } = body
+  const { spotifyArtistId, localTrackId } = body
+
+  const supabase = createServiceClient()
+
+  // ── [SECURITY PATCH] Validate against payload spoofing poisoning if caching occurs ──
+  if (spotifyArtistId && localTrackId) {
+    const { data: cached } = await supabase
+      .from("artist_tracks_cache")
+      .select("tracks")
+      .eq("spotify_artist_id", spotifyArtistId)
+      .maybeSingle()
+
+    if (!cached || !cached.tracks) {
+      return apiError("Invalid local cache mapping for security verification", 400)
+    }
+
+    const tracks = cached.tracks as Track[]
+    const targetTrack = tracks.find(t => t.id === localTrackId)
+
+    if (!targetTrack) {
+      return apiError("Local track not verified in database bounds", 400)
+    }
+
+    // Force secure overrides derived strictly natively from DB
+    trackName = targetTrack.name
+
+    const artistReq = await fetch(`${SPOTIFY_BASE}/artists/${spotifyArtistId}`, {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    })
+    if (artistReq.ok) {
+        const aData = await artistReq.json()
+        artistName = aData.name
+    }
+  }
+
   if (!artistName || !trackName) {
     return apiError("artistName and trackName required", 400)
   }
@@ -83,7 +118,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   // ── Persist back into the cached track row, if we can locate it ─────────
   if (spotifyArtistId && localTrackId) {
-    const supabase = createServiceClient()
+    // Supabase client is already instatiated above
     const { data: cached } = await supabase
       .from("artist_tracks_cache")
       .select("tracks, source")

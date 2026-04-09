@@ -50,8 +50,23 @@ export async function POST(req: NextRequest): Promise<Response> {
   // Default to 5 if the column is null (pre-migration rows)
   const playThreshold: number = user.play_threshold ?? 5
 
+  // ── [SECURITY PATCH] Algorithmic Empty-Queue DoS limit ──
+  const { count, error: countErr } = await supabase
+    .from("recommendation_cache")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", user.id)
+    .is("seen_at", null)
+
+  if (countErr) {
+    console.error("[generate] failed to check queue limit", countErr)
+  }
+
+  if (count && count > 0) {
+    return apiError("Please review all existing recommendations before generating more.", 429)
+  }
+
   try {
-    // Clear all unseen cache entries before regenerating
+    // Clear all unseen cache entries before regenerating (now functions strictly as a safe reset if bypassing the UI)
     const { error: deleteError } = await supabase
       .from("recommendation_cache")
       .delete()

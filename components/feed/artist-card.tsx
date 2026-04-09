@@ -34,7 +34,7 @@ interface Recommendation {
 export interface ArtistCardProps {
   recommendation: Recommendation
   onSave: () => void
-  onDismiss: () => void
+  onFeedback: (signal: string) => void
   isDismissed?: boolean
   isSaved?: boolean
 }
@@ -80,7 +80,7 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${(num >> 16) & 0xff}, ${(num >> 8) & 0xff}, ${num & 0xff}, ${alpha})`
 }
 
-export function ArtistCard({ recommendation, onSave, onDismiss, isDismissed = false, isSaved = false }: ArtistCardProps) {
+export function ArtistCard({ recommendation, onSave, onFeedback, isDismissed = false, isSaved = false }: ArtistCardProps) {
   const { artist_data, why, artist_color } = recommendation
   const artistColor = useMemo(() => {
     const c = artist_color ?? "#8b5cf6"
@@ -109,10 +109,7 @@ export function ArtistCard({ recommendation, onSave, onDismiss, isDismissed = fa
     }
   }, [artist_data.topTracks.length, artist_data.name, recommendation.spotify_artist_id])
 
-  function handleDismiss(e: React.MouseEvent) {
-    e.stopPropagation()
-    onDismiss()
-  }
+  // handleDismiss removed in favor of inline onFeedback bindings
 
   function handleUndo(e: React.MouseEvent) {
     e.stopPropagation()
@@ -264,17 +261,10 @@ export function ArtistCard({ recommendation, onSave, onDismiss, isDismissed = fa
           </a>
 
           {/* Core Decision Strip */}
-          <div className="flex gap-3 w-full">
-            <button
-              onClick={handleDismiss}
-              className="flex-1 bg-white/5 border border-white/10 text-gray-300 text-[15px] font-semibold h-14 rounded-2xl hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
-            >
-              👎 Pass
-            </button>
-
+          <div className="flex flex-col gap-3">
             <button
               onClick={handleSave}
-              className="flex-[1.5] text-[15px] font-bold h-14 rounded-2xl transition-all border outline-none cursor-pointer hover:brightness-125 flex items-center justify-center gap-2"
+              className="text-[15px] font-bold h-14 rounded-2xl transition-all border outline-none cursor-pointer hover:brightness-125 flex items-center justify-center gap-2"
               style={{
                 backgroundColor: isSaved ? "rgba(255,255,255,0.05)" : hexToRgba(artistColor, 0.15),
                 borderColor: isSaved ? "rgba(255,255,255,0.1)" : hexToRgba(artistColor, 0.3),
@@ -283,6 +273,21 @@ export function ArtistCard({ recommendation, onSave, onDismiss, isDismissed = fa
             >
               {isSaved ? "✓ Bookmarked" : "🔖 Bookmark in Flipside"}
             </button>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => onFeedback("thumbs_down")}
+                className="flex-1 h-14 bg-white/5 border border-white/10 rounded-2xl font-semibold text-[15px] text-[#ff4b4b]/80 hover:text-[#ff4b4b] hover:bg-white/10 transition-colors"
+              >
+                👎 Dislike
+              </button>
+              <button
+                onClick={() => onFeedback("skip")}
+                className="flex-[1.2] h-14 bg-white/5 border border-white/10 rounded-2xl font-semibold text-[15px] text-gray-300 hover:text-white hover:bg-white/10 transition-colors"
+              >
+                ⏱️ Maybe later
+              </button>
+            </div>
           </div>
         </div>
       </div>
