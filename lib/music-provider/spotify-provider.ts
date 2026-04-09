@@ -420,9 +420,8 @@ export class SpotifyProvider implements MusicProvider {
   // likeTrack
   // -------------------------------------------------------------------------
   async likeTrack(accessToken: string, trackId: string): Promise<void> {
-    const res = await spotifyFetch(`${SPOTIFY_BASE}/me/tracks`, accessToken, {
-      method: 'PUT',
-      body: JSON.stringify({ ids: [trackId] }),
+    const res = await spotifyFetch(`${SPOTIFY_BASE}/me/tracks?ids=${trackId}`, accessToken, {
+      method: 'PUT'
     })
     if (!res) throw new Error('auth_expired')
     if (res.status === 403) throw new Error('scope_missing')
