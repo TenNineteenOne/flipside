@@ -37,6 +37,7 @@ export interface ArtistCardProps {
   onFeedback: (signal: string) => void
   isDismissed?: boolean
   isSaved?: boolean
+  dismissSignal?: string | null
 }
 
 // ---------------------------------------------------------------------------
@@ -80,7 +81,7 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${(num >> 16) & 0xff}, ${(num >> 8) & 0xff}, ${num & 0xff}, ${alpha})`
 }
 
-export function ArtistCard({ recommendation, onSave, onFeedback, isDismissed = false, isSaved = false }: ArtistCardProps) {
+export function ArtistCard({ recommendation, onSave, onFeedback, isDismissed = false, isSaved = false, dismissSignal = null }: ArtistCardProps) {
   const { artist_data, why, artist_color } = recommendation
   const artistColor = useMemo(() => {
     const c = artist_color ?? "#8b5cf6"
@@ -142,6 +143,15 @@ export function ArtistCard({ recommendation, onSave, onFeedback, isDismissed = f
   // Collapsed (slim bar) state
   // ------------------------------------------------------------------
   if (isDismissed) {
+    const signalLabel =
+      dismissSignal === "thumbs_up" ? "👍 Liked"
+      : dismissSignal === "thumbs_down" ? "👎 Disliked"
+      : "⏱️ Skipped"
+    const signalColor =
+      dismissSignal === "thumbs_up" ? "#22c55e"
+      : dismissSignal === "thumbs_down" ? "#ff4b4b"
+      : "#666"
+
     return (
       <motion.div
         layout
@@ -155,8 +165,8 @@ export function ArtistCard({ recommendation, onSave, onFeedback, isDismissed = f
           <span className="text-sm font-semibold text-gray-400 block truncate">
             {artist_data.name}
           </span>
-          <span className="text-[11px] font-medium text-gray-500">
-            Dismissed
+          <span className="text-[11px] font-semibold" style={{ color: signalColor }}>
+            {signalLabel}
           </span>
         </div>
       </motion.div>
@@ -277,15 +287,21 @@ export function ArtistCard({ recommendation, onSave, onFeedback, isDismissed = f
             <div className="flex gap-3">
               <button
                 onClick={() => onFeedback("thumbs_down")}
-                className="flex-1 h-14 bg-white/5 border border-white/10 rounded-2xl font-semibold text-[15px] text-[#ff4b4b]/80 hover:text-[#ff4b4b] hover:bg-white/10 transition-colors"
+                className="flex-1 h-14 bg-white/5 border border-white/10 rounded-2xl font-semibold text-[15px] text-[#ff4b4b]/80 hover:text-[#ff4b4b] hover:bg-white/10 transition-colors cursor-pointer"
               >
                 👎 Dislike
               </button>
               <button
                 onClick={() => onFeedback("skip")}
-                className="flex-[1.2] h-14 bg-white/5 border border-white/10 rounded-2xl font-semibold text-[15px] text-gray-300 hover:text-white hover:bg-white/10 transition-colors"
+                className="flex-1 h-14 bg-white/5 border border-white/10 rounded-2xl font-semibold text-[15px] text-gray-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
               >
                 ⏱️ Maybe later
+              </button>
+              <button
+                onClick={() => onFeedback("thumbs_up")}
+                className="flex-1 h-14 bg-[#22c55e]/10 border border-[#22c55e]/20 rounded-2xl font-semibold text-[15px] text-[#22c55e]/80 hover:text-[#22c55e] hover:bg-[#22c55e]/15 transition-colors cursor-pointer"
+              >
+                👍 Like
               </button>
             </div>
           </div>

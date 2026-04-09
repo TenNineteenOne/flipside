@@ -2,11 +2,12 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Music2, Bookmark, Settings } from "lucide-react"
+import { Music2, Bookmark, Settings, Clock } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const navLinks = [
   { href: "/feed",     label: "Feed",     icon: Music2    },
+  { href: "/history",  label: "History",  icon: Clock     },
   { href: "/saved",    label: "Saved",    icon: Bookmark  },
   { href: "/settings", label: "Settings", icon: Settings  },
 ]

@@ -54,8 +54,8 @@ function hexToRgba(hex: string, alpha: number): string {
 export function FeedClient({ recommendations }: FeedClientProps) {
 
 
-  // In-memory dismissed cards — resets on mount (page refresh restores all)
-  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set())
+  // In-memory dismissed cards — tracks which signal was used
+  const [dismissedSignals, setDismissedSignals] = useState<Map<string, string>>(new Map())
 
   // Permanently saved artists — removed from the feed
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set())
@@ -64,7 +64,7 @@ export function FeedClient({ recommendations }: FeedClientProps) {
   const [isGenerating, setIsGenerating] = useState(false)
 
   async function handleFeedback(artistId: string, signal: string) {
-    setDismissedIds((prev) => new Set(prev).add(artistId))
+    setDismissedSignals((prev) => new Map(prev).set(artistId, signal))
     try {
       await fetch("/api/feedback", {
         method: "POST",
@@ -117,10 +117,10 @@ export function FeedClient({ recommendations }: FeedClientProps) {
   // Saved and dismissed cards stay in DOM for collapse animation and Undo to work
   const visibleRecs = recommendations
 
-  const allCaughtUp = visibleRecs.every(r => dismissedIds.has(r.spotify_artist_id))
+  const allCaughtUp = visibleRecs.every(r => dismissedSignals.has(r.spotify_artist_id))
 
   // Determine top active card to drive aura color
-  const activeRec = visibleRecs.find(r => !dismissedIds.has(r.spotify_artist_id))
+  const activeRec = visibleRecs.find(r => !dismissedSignals.has(r.spotify_artist_id))
   const activeAuraColor = activeRec?.artist_color ?? '#8b5cf6'
 
   return (
@@ -162,7 +162,8 @@ export function FeedClient({ recommendations }: FeedClientProps) {
                 onSave={() => handleSave(rec.spotify_artist_id)}
                 isSaved={savedIds.has(rec.spotify_artist_id)}
                 onFeedback={(signal) => handleFeedback(rec.spotify_artist_id, signal)}
-                isDismissed={dismissedIds.has(rec.spotify_artist_id)}
+                isDismissed={dismissedSignals.has(rec.spotify_artist_id)}
+                dismissSignal={dismissedSignals.get(rec.spotify_artist_id) ?? null}
               />
             ))}
 
