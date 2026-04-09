@@ -79,11 +79,22 @@ export function FeedClient({ recommendations }: FeedClientProps) {
   async function handleGenerateMore() {
     setIsGenerating(true)
     try {
-      await fetch("/api/recommendations/generate", { method: "POST" })
-    } catch (err) {}
-    
+      const res = await fetch("/api/recommendations/generate", { method: "POST" })
+      if (res.status === 401) {
+        // Token expired — redirect to re-auth
+        window.location.href = "/api/auth/signin"
+        return
+      }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        console.warn("[feed] generate failed:", (data as { error?: string }).error)
+      }
+    } catch (err) {
+      console.error("[feed-client] generate failed", err)
+    }
     router.refresh()
-    setTimeout(() => setIsGenerating(false), 2000)
+    // Give the server component time to re-render with new data
+    setTimeout(() => setIsGenerating(false), 3000)
   }
 
   async function handleSave(artistId: string) {

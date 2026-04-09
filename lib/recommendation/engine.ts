@@ -208,8 +208,13 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
 
   const rows = top
     .filter((item) => {
-      const seen = existingSeenAt.get(item.artist.id)
-      return seen === undefined || seen === null
+      const seenAt = existingSeenAt.get(item.artist.id)
+      if (seenAt === undefined) return true   // never cached → fresh
+      if (seenAt === null) return true         // cached but unseen → fresh
+      // Allow re-recommendation after 7-day cooldown
+      const seenDate = new Date(seenAt)
+      const daysSinceSeen = (now.getTime() - seenDate.getTime()) / (1000 * 60 * 60 * 24)
+      return daysSinceSeen >= 7
     })
     .map((item) => ({
       user_id: userId,
