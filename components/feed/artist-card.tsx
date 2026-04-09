@@ -1,5 +1,6 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
 import { TrackStrip } from "@/components/feed/track-strip"
 import { useAudio } from "@/lib/audio-context"
@@ -47,6 +48,25 @@ export function ArtistCard({ recommendation, onOpen, onSave, onDismiss, isDismis
   const artistColor = artist_color ?? "#8b5cf6"
 
   const { play } = useAudio()
+  
+  // Track Loading State Fallback
+  const [localTracks, setLocalTracks] = useState<Track[]>(artist_data.topTracks)
+  const [isFetchingTracks, setIsFetchingTracks] = useState(false)
+
+  // Lazy-load missing tracks if prewarm failed
+  useEffect(() => {
+    if (artist_data.topTracks.length === 0 && localTracks.length === 0 && !isFetchingTracks) {
+      setIsFetchingTracks(true)
+      fetch(`/api/artists/${recommendation.spotify_artist_id}/tracks?name=${encodeURIComponent(artist_data.name)}`)
+        .then(r => r.json())
+        .then(data => {
+           if (data.tracks && data.tracks.length > 0) {
+             setLocalTracks(data.tracks)
+           }
+        })
+        .finally(() => setIsFetchingTracks(false))
+    }
+  }, [artist_data.topTracks.length, artist_data.name, recommendation.spotify_artist_id])
 
   function handleDismiss(e: React.MouseEvent) {
     e.stopPropagation()
@@ -159,14 +179,22 @@ export function ArtistCard({ recommendation, onOpen, onSave, onDismiss, isDismis
 
       {/* TrackStrip (Inline stacked gradient rows) */}
       <div className="px-4 mt-2 z-20 flex flex-col w-full">
-        {artist_data.topTracks.length > 0 && (
+        {localTracks.length > 0 ? (
           <div onClick={(e) => e.stopPropagation()}>
             <TrackStrip
-              tracks={artist_data.topTracks}
+              tracks={localTracks}
               artistColor={artistColor}
               onOpen={onOpen}
               onPlay={handlePlay}
             />
+          </div>
+        ) : (
+          <div className="h-16 w-full flex items-center justify-center my-2 text-xs font-semibold text-gray-500 bg-black/20 rounded-2xl border border-white/5 shadow-inner">
+            {isFetchingTracks ? (
+               <span className="animate-pulse">Loading tracks...</span>
+            ) : (
+               <span>No tracks available right now</span>
+            )}
           </div>
         )}
       </div>
