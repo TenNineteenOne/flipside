@@ -224,6 +224,7 @@ export function ArtistCard({ recommendation, onSave, onDismiss, isDismissed = fa
             <TrackStrip
               tracks={localTracks}
               artistId={recommendation.spotify_artist_id}
+              artistName={artist_data.name}
               artistColor={artistColor}
               onPlay={handlePlay}
             />

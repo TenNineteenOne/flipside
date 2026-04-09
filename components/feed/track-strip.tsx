@@ -34,6 +34,7 @@ function hexToRgba(hex: string, alpha: number): string {
 export interface TrackStripProps {
   tracks: Track[]
   artistId?: string          // Used to save track to Spotify Playlist
+  artistName?: string        // Used for JIT Spotify resolution
   artistColor?: string       // hex, defaults to '#8b5cf6'
   compact?: boolean          // Optional for dense UI views like Saved screen
   onPlay?: (track: Track) => void
@@ -46,12 +47,14 @@ export interface TrackStripProps {
 export function TrackStrip({
   tracks,
   artistId,
+  artistName,
   artistColor = "#8b5cf6",
   compact = false,
   onPlay,
 }: TrackStripProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [savedTrackIds, setSavedTrackIds] = useState<Set<string>>(new Set())
+  const [resolvingIds, setResolvingIds] = useState<Set<string>>(new Set())
 
   if (tracks.length === 0) return null
 
@@ -65,16 +68,48 @@ export function TrackStrip({
 
   const handleSaveTrack = async (e: React.MouseEvent, track: Track) => {
     e.stopPropagation()
-    if (!artistId || !track.spotifyTrackId || savedTrackIds.has(track.spotifyTrackId)) return
+    if (!artistId || savedTrackIds.has(track.id) || resolvingIds.has(track.id)) return
     
+    let targetId = track.spotifyTrackId
+
+    // 1. JIT Resolution if missing
+    if (!targetId && artistName) {
+      setResolvingIds(prev => new Set(prev).add(track.id))
+      try {
+         const res = await fetch("/api/spotify/resolve-track", {
+           method: "POST",
+           headers: { "Content-Type": "application/json" },
+           body: JSON.stringify({ 
+             spotifyArtistId: artistId, 
+             artistName: artistName, 
+             trackName: track.name, 
+             localTrackId: track.id 
+           })
+         })
+         const data = await res.json()
+         if (data.spotifyTrackId) {
+            targetId = data.spotifyTrackId
+         } else {
+            setResolvingIds(prev => { const n = new Set(prev); n.delete(track.id); return n; })
+            return
+         }
+      } catch(err) {
+         setResolvingIds(prev => { const n = new Set(prev); n.delete(track.id); return n; })
+         return
+      }
+      setResolvingIds(prev => { const n = new Set(prev); n.delete(track.id); return n; })
+    }
+
+    if (!targetId) return
+
     // Optimistic cache
-    setSavedTrackIds(prev => new Set(prev).add(track.spotifyTrackId!))
+    setSavedTrackIds(prev => new Set(prev).add(track.id))
 
     try {
       await fetch("/api/spotify/like", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ trackId: track.spotifyTrackId })
+        body: JSON.stringify({ trackId: targetId })
       })
     } catch(err) {
        console.error("Failed to save track", err)
@@ -126,17 +161,19 @@ export function TrackStrip({
                 </div>
               </div>
               <div className="flex shrink-0 items-center justify-center gap-1">
-                {artistId && track.spotifyTrackId && (
+                {artistId && (
                   <button
                     onClick={(e) => handleSaveTrack(e, track)}
                     className={`px-3 h-9 rounded-full flex items-center justify-center gap-1.5 transition-all font-semibold text-[13px] border ${
-                      savedTrackIds.has(track.spotifyTrackId) 
+                      savedTrackIds.has(track.id) 
                         ? 'bg-[#1db954]/20 border-[#1db954]/30 text-[#1db954]' 
                         : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10 hover:text-white'
                     }`}
                     aria-label={`Save ${track.name}`}
                   >
-                    {savedTrackIds.has(track.spotifyTrackId) ? (
+                    {resolvingIds.has(track.id) ? (
+                      <><div className="w-3.5 h-3.5 border-2 border-white/20 border-t-white rounded-full animate-spin" /> Resolving...</>
+                    ) : savedTrackIds.has(track.id) ? (
                       <><Check size={14} strokeWidth={3}/> Saved</>
                     ) : (
                       <><Heart size={14} fill="currentColor" strokeWidth={0}/> Spotify</>
@@ -187,17 +224,19 @@ export function TrackStrip({
               </div>
             </div>
             <div className="flex shrink-0 items-center justify-center gap-1">
-              {artistId && track.spotifyTrackId && (
+              {artistId && (
                 <button
                   onClick={(e) => handleSaveTrack(e, track)}
                   className={`px-3 h-9 rounded-full flex items-center justify-center gap-1.5 transition-all font-semibold text-[12px] border ${
-                    savedTrackIds.has(track.spotifyTrackId) 
+                    savedTrackIds.has(track.id) 
                       ? 'bg-[#1db954]/20 border-[#1db954]/30 text-[#1db954]' 
                       : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10 hover:text-white'
                   }`}
                   aria-label={`Save ${track.name}`}
                 >
-                  {savedTrackIds.has(track.spotifyTrackId) ? (
+                  {resolvingIds.has(track.id) ? (
+                    <><div className="w-3 h-3 border-2 border-white/20 border-t-white rounded-full animate-spin" /> ...</>
+                  ) : savedTrackIds.has(track.id) ? (
                     <><Check size={13} strokeWidth={3}/> Saved</>
                   ) : (
                     <><Heart size={13} fill="currentColor" strokeWidth={0}/> Spotify</>
