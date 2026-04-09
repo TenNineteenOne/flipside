@@ -33,7 +33,6 @@ interface Recommendation {
 
 export interface ArtistCardProps {
   recommendation: Recommendation
-  onOpen: () => void
   onSave: () => void
   onDismiss: () => void
   isDismissed?: boolean
@@ -43,7 +42,7 @@ export interface ArtistCardProps {
 // Component
 // ---------------------------------------------------------------------------
 
-export function ArtistCard({ recommendation, onOpen, onSave, onDismiss, isDismissed = false }: ArtistCardProps) {
+export function ArtistCard({ recommendation, onSave, onDismiss, isDismissed = false }: ArtistCardProps) {
   const { artist_data, why, artist_color } = recommendation
   const artistColor = artist_color ?? "#8b5cf6"
 
@@ -134,8 +133,7 @@ export function ArtistCard({ recommendation, onOpen, onSave, onDismiss, isDismis
       initial={{ opacity: 0, y: 20 }}
       animate={{ height: "auto", opacity: 1, y: 0 }}
       transition={{ type: "spring", stiffness: 400, damping: 40 }}
-      onClick={onOpen}
-      className="w-full overflow-hidden cursor-pointer flex flex-col pb-4 relative transition-transform"
+      className="w-full overflow-hidden flex flex-col pb-4 relative transition-transform"
       style={{
         background: 'rgba(15, 15, 15, 0.6)',
         backdropFilter: 'blur(30px)',
@@ -184,7 +182,6 @@ export function ArtistCard({ recommendation, onOpen, onSave, onDismiss, isDismis
             <TrackStrip
               tracks={localTracks}
               artistColor={artistColor}
-              onOpen={onOpen}
               onPlay={handlePlay}
             />
           </div>
@@ -207,6 +204,19 @@ export function ArtistCard({ recommendation, onOpen, onSave, onDismiss, isDismis
             {reasonText}
           </div>
         )}
+
+        {/* Anchor link bridging to Spotify */}
+        <div className="flex w-full justify-center">
+          <a
+            href={`https://open.spotify.com/artist/${recommendation.spotify_artist_id}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-[6px] text-[12px] font-semibold text-gray-400 hover:text-white transition-colors"
+          >
+            <span className="size-2 rounded-full bg-[#1db954]" />
+            Open in Spotify
+          </a>
+        </div>
 
         {/* Large Accessible Action Buttons */}
         <div className="flex gap-3 w-full">

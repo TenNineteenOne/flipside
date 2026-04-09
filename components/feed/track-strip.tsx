@@ -36,7 +36,6 @@ export interface TrackStripProps {
   artistColor?: string       // hex, defaults to '#8b5cf6'
   compact?: boolean          // Optional for dense UI views like Saved screen
   onPlay?: (track: Track) => void
-  onOpen?: () => void        // tapping the strip opens the drawer
 }
 
 // ---------------------------------------------------------------------------
@@ -48,7 +47,6 @@ export function TrackStrip({
   artistColor = "#8b5cf6",
   compact = false,
   onPlay,
-  onOpen,
 }: TrackStripProps) {
   const [isExpanded, setIsExpanded] = useState(false)
 

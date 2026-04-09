@@ -2,10 +2,8 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { AnimatePresence } from "framer-motion"
 import { CheckCircle2, Sparkles } from "lucide-react"
 import { ArtistCard } from "@/components/feed/artist-card"
-import { ArtistDrawer } from "@/components/feed/artist-drawer"
 
 interface Track {
   id: string
@@ -54,8 +52,7 @@ function hexToRgba(hex: string, alpha: number): string {
 }
 
 export function FeedClient({ recommendations }: FeedClientProps) {
-  // Which artist's drawer is open (null = closed)
-  const [openRecommendation, setOpenRecommendation] = useState<Recommendation | null>(null)
+
 
   // In-memory dismissed cards — resets on mount (page refresh restores all)
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set())
@@ -120,7 +117,6 @@ export function FeedClient({ recommendations }: FeedClientProps) {
               <ArtistCard
                 key={rec.spotify_artist_id}
                 recommendation={rec}
-                onOpen={() => setOpenRecommendation(rec)}
                 onSave={() => handleSave(rec.spotify_artist_id)}
                 onDismiss={() => setDismissedIds((prev) => new Set(prev).add(rec.spotify_artist_id))}
                 isDismissed={dismissedIds.has(rec.spotify_artist_id)}
@@ -130,25 +126,7 @@ export function FeedClient({ recommendations }: FeedClientProps) {
         )}
       </div>
 
-      <AnimatePresence>
-        <ArtistDrawer
-          recommendation={openRecommendation}
-          artistColor={openRecommendation?.artist_color ?? '#8b5cf6'}
-          isOpen={openRecommendation !== null}
-          onDismiss={() => setOpenRecommendation(null)}
-          onDismissAndCollapse={() => {
-            if (openRecommendation) {
-              setDismissedIds((prev) =>
-                new Set(prev).add(openRecommendation.spotify_artist_id)
-              )
-            }
-            setOpenRecommendation(null)
-          }}
-          onSave={() =>
-            openRecommendation && handleSave(openRecommendation.spotify_artist_id)
-          }
-        />
-      </AnimatePresence>
+
     </div>
   )
 }
