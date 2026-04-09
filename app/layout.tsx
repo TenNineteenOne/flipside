@@ -21,7 +21,7 @@ const spaceGrotesk = Space_Grotesk({
 
 export const metadata: Metadata = {
   title: "Flipside",
-  description: "Discover music your friends are into.",
+  description: "Flip your taste. Discover underground music.",
 };
 
 export default function RootLayout({

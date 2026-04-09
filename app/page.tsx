@@ -18,7 +18,7 @@ export default async function LandingPage() {
               flipside
             </h1>
             <p className="text-lg text-muted-foreground">
-              Discover music your friends are into.
+              Flip your taste. Discover underground music.
             </p>
           </div>
           <div className="space-y-3">
@@ -29,7 +29,7 @@ export default async function LandingPage() {
               Connect Spotify
             </Link>
             <p className="text-xs text-muted-foreground">
-              A private feed for small groups. No algorithm, just friends.
+              Your personal discovery engine, powered by your listening history.
             </p>
           </div>
         </div>
