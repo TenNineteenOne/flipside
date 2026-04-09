@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flipside — More Font Options</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,700&family=EB+Garamond:wght@700&family=Cinzel:wght@700&family=Spectral:wght@700&family=Syne:wght@700;800&family=Bebas+Neue&family=Unbounded:wght@700;900&family=Big+Shoulders+Display:wght@700;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #080808;
+    font-family: 'Inter', sans-serif;
+    color: #fff;
+    padding: 40px 20px 100px;
+  }
+
+  .page-header {
+    text-align: center;
+    margin-bottom: 48px;
+  }
+  .page-header .eyebrow { font-size: 10px; font-weight: 500; letter-spacing: 0.25em; text-transform: uppercase; color: #8b5cf6; margin-bottom: 8px; }
+  .page-header h1 { font-size: 20px; font-weight: 600; color: #fff; margin-bottom: 4px; }
+  .page-header p { font-size: 12px; color: #444; }
+
+  /* ---- section header ---- */
+  .section-header {
+    display: flex; align-items: center; gap: 12px;
+    max-width: 1100px; margin: 0 auto 20px;
+  }
+  .section-header-line { flex: 1; height: 1px; background: #1a1a1a; }
+  .section-header-label {
+    font-size: 9px; font-weight: 600; letter-spacing: 0.2em;
+    text-transform: uppercase; color: #333; white-space: nowrap;
+  }
+  .section-tag {
+    font-size: 9px; font-weight: 600; letter-spacing: 0.12em;
+    text-transform: uppercase; padding: 3px 10px; border-radius: 99px; white-space: nowrap;
+  }
+  .tag-thin { background: #0e1a2e; color: #60a5fa; border: 1px solid #60a5fa30; }
+  .tag-bold { background: #1a0e28; color: #c084fc; border: 1px solid #c084fc30; }
+
+  /* ---- grid ---- */
+  .font-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    max-width: 1100px;
+    margin: 0 auto 48px;
+  }
+
+  .font-option {
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1.5px solid #161616;
+    background: #0c0c0c;
+  }
+
+  /* mini card preview */
+  .preview {
+    position: relative;
+    height: 200px;
+    overflow: hidden;
+    background: #0a0a0a;
+  }
+
+  /* artist image area */
+  .art {
+    position: absolute; inset: 0;
+    background: linear-gradient(145deg, #2d1f00 0%, #6b4800 40%, #3a2800 70%, #0d0900 100%);
+  }
+  .art-figure {
+    position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);
+    width: 80px; height: 110px; border-radius: 50% 50% 0 0;
+    background: linear-gradient(180deg, #e8a020, #a06010 60%, transparent);
+    opacity: 0.25; filter: blur(4px);
+  }
+  .art-overlay {
+    position: absolute; inset: 0;
+    background: linear-gradient(to top, #0c0c0c 0%, rgba(12,12,12,0.1) 50%, transparent 100%);
+  }
+  .art-content {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    padding: 8px 12px 6px;
+  }
+  .art-genre {
+    font-size: 7px; font-weight: 600; letter-spacing: 0.18em;
+    text-transform: uppercase; color: #d4a017; margin-bottom: 2px;
+    font-family: 'Inter', sans-serif;
+  }
+  .art-name {
+    line-height: 1.0; color: #fff;
+  }
+
+  /* track strip */
+  .strip {
+    margin: 5px 7px 7px;
+    border-radius: 8px; padding: 6px 9px;
+    display: flex; align-items: center; gap: 7px;
+    background: rgba(212,160,23,0.09);
+    border: 1px solid rgba(212,160,23,0.2);
+  }
+  .strip-thumbs { display: flex; }
+  .strip-thumb { width: 18px; height: 18px; border-radius: 3px; border: 1.5px solid #080808; flex-shrink: 0; }
+  .strip-thumb:not(:first-child) { margin-left: -5px; }
+  .strip-center { flex: 1; }
+  .strip-track { font-size: 9px; font-weight: 500; color: #ccc; font-family: 'Inter', sans-serif; margin-bottom: 1px; }
+  .strip-count { font-size: 7px; color: #3a3a3a; font-family: 'Inter', sans-serif; }
+  .strip-play { width: 20px; height: 20px; border-radius: 50%; background: #d4a017; color: #000; display: flex; align-items: center; justify-content: center; font-size: 7px; font-weight: 700; }
+
+  /* info */
+  .info { padding: 12px 14px 14px; border-top: 1px solid #141414; }
+  .info-name { font-size: 12px; font-weight: 600; color: #bbb; margin-bottom: 2px; }
+  .info-specimen { line-height: 1; color: #fff; margin-bottom: 6px; }
+  .info-desc { font-size: 10px; color: #3a3a3a; line-height: 1.45; }
+
+  /* font classes */
+  .f-bodoni       { font-family: 'Bodoni Moda', serif; font-optical-sizing: auto; font-weight: 700; }
+  .f-garamond     { font-family: 'EB Garamond', serif; font-weight: 700; }
+  .f-cinzel       { font-family: 'Cinzel', serif; font-weight: 700; }
+  .f-spectral     { font-family: 'Spectral', serif; font-weight: 700; }
+  .f-syne         { font-family: 'Syne', sans-serif; font-weight: 800; }
+  .f-bebas        { font-family: 'Bebas Neue', sans-serif; font-weight: 400; letter-spacing: 0.02em; }
+  .f-unbounded    { font-family: 'Unbounded', sans-serif; font-weight: 900; }
+  .f-bigshoulders { font-family: 'Big Shoulders Display', sans-serif; font-weight: 900; }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <div class="eyebrow">Typography · Round 2</div>
+  <h1>More options — thin luxury & bold geometric</h1>
+  <p>Leaning into what you liked about Cormorant and Space Grotesk</p>
+</div>
+
+<!-- ===== THIN / ELEGANT SERIFS ===== -->
+<div class="section-header">
+  <div class="section-header-line"></div>
+  <div class="section-tag tag-thin">Thin · Elegant · Luxury serifs</div>
+  <div class="section-header-line"></div>
+</div>
+
+<div class="font-grid">
+
+  <!-- Bodoni Moda -->
+  <div class="font-option">
+    <div class="preview">
+      <div class="art"><div class="art-figure"></div><div class="art-overlay"></div>
+        <div class="art-content">
+          <div class="art-genre">Indie Folk</div>
+          <div class="art-name f-bodoni" style="font-size:28px;">Bon Iver</div>
+        </div>
+      </div>
+      <div class="strip">
+        <div class="strip-thumbs">
+          <div class="strip-thumb" style="background:linear-gradient(135deg,#7c5400,#3d2a00);"></div>
+          <div class="strip-thumb" style="background:linear-gradient(135deg,#5c4000,#2a1c00);"></div>
+        </div>
+        <div class="strip-center"><div class="strip-track">▶ Holocene</div><div class="strip-count">+ 4 more</div></div>
+        <div class="strip-play">▶</div>
+      </div>
+    </div>
+    <div class="info">
+      <div class="info-name">Bodoni Moda</div>
+      <div class="info-specimen f-bodoni" style="font-size:32px;">Holocene</div>
+      <div class="info-desc">Ultra high-contrast Bodoni — thick stems, razor-thin hairlines. Bold and delicate at once. Very Vogue.</div>
+    </div>
+  </div>
+
+  <!-- EB Garamond -->
+  <div class="font-option">
+    <div class="preview">
+      <div class="art"><div class="art-figure"></div><div class="art-overlay"></div>
+        <div class="art-content">
+          <div class="art-genre">Indie Folk</div>
+          <div class="art-name f-garamond" style="font-size:30px;">Bon Iver</div>
+        </div>
+      </div>
+      <div class="strip">
+        <div class="strip-thumbs">
+          <div class="strip-thumb" style="background:linear-gradient(135deg,#7c5400,#3d2a00);"></div>
+          <div class="strip-thumb" style="background:linear-gradient(135deg,#5c4000,#2a1c00);"></div>
+        </div>
+        <div class="strip-center"><div class="strip-track">▶ Holocene</div><div class="strip-count">+ 4 more</div></div>
+        <div class="strip-play">▶</div>
+      </div>
+    </div>
+    <div class="info">
+      <div class="info-name">EB Garamond</div>
+      <div class="info-specimen f-garamond" style="font-size:34px;">Holocene</div>
+      <div class="info-desc">16th-century inspired, warm and bookish. Old-soul personality — literary rather than fashiony.</div>
+    </div>
+  </div>
+
+  <!-- Cinzel -->
+  <div class="font-option">
+    <div class="preview">
+      <div class="art"><div class="art-figure"></div><div class="art-overlay"></div>
+        <div class="art-content">
+          <div class="art-genre">Indie Folk</div>
+          <div class="art-name f-cinzel" style="font-size:22px;">BON IVER</div>
+        </div>
+      </div>
+      <div class="strip">
+        <div class="strip-thumbs">
+          <div class="strip-thumb" style="background:linear-gradient(135deg,#7c5400,#3d2a00);"></div>
+          <div class="strip-thumb" style="background:linear-gradient(135deg,#5c4000,#2a1c00);"></div>
+        </div>
+        <div class="strip-center"><div class="strip-track">▶ Holocene</div><div class="strip-count">+ 4 more</div></div>
+        <div class="strip-play">▶</div>
+      </div>
+    </div>
+    <div class="info">
+      <div class="info-name">Cinzel</div>
+      <div class="info-specimen f-cinzel" style="font-size:28px;">HOLOCENE</div>
+      <div class="info-desc">All-caps Roman stone inscriptions. Architectural, ceremonial, timeless. Renders every artist name like a monument.</div>
+    </div>
+  </div>
+
+  <!-- Spectral -->
+  <div class="font-option">
+    <div class="preview">
+      <div class="art"><div class="art-figure"></div><div class="art-overlay"></div>
+        <div class="art-content">
+          <div class="art-genre">Indie Folk</div>
+          <div class="art-name f-spectral" style="font-size:28px;">Bon Iver</div>
+        </div>
+      </div>
+      <div class="strip">
+        <div class="strip-thumbs">
+          <div class="strip-thumb" style="background:linear-gradient(135deg,#7c5400,#3d2a00);"></div>
+          <div class="strip-thumb" style="background:linear-gradient(135deg,#5c4000,#2a1c00);"></div>
+        </div>
+        <div class="strip-center"><div class="strip-track">▶ Holocene</div><div class="strip-count">+ 4 more</div></div>
+        <div class="strip-play">▶</div>
+      </div>
+    </div>
+    <div class="info">
+      <div class="info-name">Spectral</div>
+      <div class="info-specimen f-spectral" style="font-size:32px;">Holocene</div>
+      <div class="info-desc">Screen-optimised literary serif. Refined without being dramatic — feels like a quality long-read publication.</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ===== BOLD / GEOMETRIC SANS ===== -->
+<div class="section-header">
+  <div class="section-header-line"></div>
+  <div class="section-tag tag-bold">Bold · Geometric · Display sans</div>
+  <div class="section-header-line"></div>
+</div>
+
+<div class="font-grid">
+
+  <!-- Syne -->
+  <div class="font-option">
+    <div class="preview">
+      <div class="art"><div class="art-figure"></div><div class="art-overlay"></div>
+        <div class="art-content">
+          <div class="art-genre">Indie Folk</div>
+          <div class="art-name f-syne" style="font-size:25px;letter-spacing:-0.01em;">Bon Iver</div>
+        </div>
+      </div>
+      <div class="strip">
+        <div class="strip-thumbs">
+          <div class="strip-thumb" style="background:linear-gradient(135deg,#7c5400,#3d2a00);"></div>
+          <div class="strip-thumb" style="background:linear-gradient(135deg,#5c4000,#2a1c00);"></div>
+        </div>
+        <div class="strip-center"><div class="strip-track">▶ Holocene</div><div class="strip-count">+ 4 more</div></div>
+        <div class="strip-play">▶</div>
+      </div>
+    </div>
+    <div class="info">
+      <div class="info-name">Syne</div>
+      <div class="info-specimen f-syne" style="font-size:34px;letter-spacing:-0.02em;">Holocene</div>
+      <div class="info-desc">Irregular letterforms with deliberate quirks — designed for art & music contexts. Contemporary, cultured, slightly offbeat.</div>
+    </div>
+  </div>
+
+  <!-- Bebas Neue -->
+  <div class="font-option">
+    <div class="preview">
+      <div class="art"><div class="art-figure"></div><div class="art-overlay"></div>
+        <div class="art-content">
+          <div class="art-genre">Indie Folk</div>
+          <div class="art-name f-bebas" style="font-size:38px;letter-spacing:0.04em;">Bon Iver</div>
+        </div>
+      </div>
+      <div class="strip">
+        <div class="strip-thumbs">
+          <div class="strip-thumb" style="background:linear-gradient(135deg,#7c5400,#3d2a00);"></div>
+          <div class="strip-thumb" style="background:linear-gradient(135deg,#5c4000,#2a1c00);"></div>
+        </div>
+        <div class="strip-center"><div class="strip-track">▶ Holocene</div><div class="strip-count">+ 4 more</div></div>
+        <div class="strip-play">▶</div>
+      </div>
+    </div>
+    <div class="info">
+      <div class="info-name">Bebas Neue</div>
+      <div class="info-specimen f-bebas" style="font-size:44px;letter-spacing:0.04em;">Holocene</div>
+      <div class="info-desc">Tall, tight, condensed all-caps. Maximum impact, zero fuss. Poster energy — bold and unpretentious.</div>
+    </div>
+  </div>
+
+  <!-- Unbounded -->
+  <div class="font-option">
+    <div class="preview">
+      <div class="art"><div class="art-figure"></div><div class="art-overlay"></div>
+        <div class="art-content">
+          <div class="art-genre">Indie Folk</div>
+          <div class="art-name f-unbounded" style="font-size:18px;letter-spacing:-0.02em;line-height:1.1;">Bon<br>Iver</div>
+        </div>
+      </div>
+      <div class="strip">
+        <div class="strip-thumbs">
+          <div class="strip-thumb" style="background:linear-gradient(135deg,#7c5400,#3d2a00);"></div>
+          <div class="strip-thumb" style="background:linear-gradient(135deg,#5c4000,#2a1c00);"></div>
+        </div>
+        <div class="strip-center"><div class="strip-track">▶ Holocene</div><div class="strip-count">+ 4 more</div></div>
+        <div class="strip-play">▶</div>
+      </div>
+    </div>
+    <div class="info">
+      <div class="info-name">Unbounded</div>
+      <div class="info-specimen f-unbounded" style="font-size:28px;letter-spacing:-0.02em;">Holocene</div>
+      <div class="info-desc">Heavy, geometric, extended. Takes up space intentionally — almost architectural. Wraps to two lines naturally, which works well on cards.</div>
+    </div>
+  </div>
+
+  <!-- Big Shoulders Display -->
+  <div class="font-option">
+    <div class="preview">
+      <div class="art"><div class="art-figure"></div><div class="art-overlay"></div>
+        <div class="art-content">
+          <div class="art-genre">Indie Folk</div>
+          <div class="art-name f-bigshoulders" style="font-size:38px;letter-spacing:0.01em;">Bon Iver</div>
+        </div>
+      </div>
+      <div class="strip">
+        <div class="strip-thumbs">
+          <div class="strip-thumb" style="background:linear-gradient(135deg,#7c5400,#3d2a00);"></div>
+          <div class="strip-thumb" style="background:linear-gradient(135deg,#5c4000,#2a1c00);"></div>
+        </div>
+        <div class="strip-center"><div class="strip-track">▶ Holocene</div><div class="strip-count">+ 4 more</div></div>
+        <div class="strip-play">▶</div>
+      </div>
+    </div>
+    <div class="info">
+      <div class="info-name">Big Shoulders Display</div>
+      <div class="info-specimen f-bigshoulders" style="font-size:38px;">Holocene</div>
+      <div class="info-desc">Tall condensed industrial sans. Confident and functional — like a sports jersey or concert poster. Unpretentious energy.</div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

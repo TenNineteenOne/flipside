@@ -7,7 +7,7 @@ import { useAudio } from "@/lib/audio-context"
 const ACCENT = "#8b5cf6"
 
 export function MiniPlayer() {
-  const { currentTrack, artistName, artistImageUrl, artistColor, isPlaying, pause, resume, stop } = useAudio()
+  const { currentTrack, artistName, artistColor, isPlaying, pause, resume, stop } = useAudio()
 
   const dynamicColor = artistColor ?? ACCENT
 

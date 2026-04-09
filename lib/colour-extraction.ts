@@ -85,7 +85,8 @@ function hslToRgb(h: number, s: number, l: number): [number, number, number] {
  */
 function lightenToContrast(hex: string): string {
   let [r, g, b] = hexToRgb(hex)
-  let [h, s, l] = rgbToHsl(r, g, b)
+  const [h, s] = rgbToHsl(r, g, b)
+  let l = rgbToHsl(r, g, b)[2]
 
   while (l <= 1.0) {
     if (contrastAgainstBlack(r, g, b) >= 4.5) {
@@ -123,9 +124,9 @@ export async function extractArtistColor(imageUrl: string): Promise<string> {
 
     if (!swatch) return FALLBACK
 
-    const r = Math.round(swatch.r)
-    const g = Math.round(swatch.g)
-    const b = Math.round(swatch.b)
+    const r = Math.round(swatch.rgb[0])
+    const g = Math.round(swatch.rgb[1])
+    const b = Math.round(swatch.rgb[2])
     const hex = rgbToHex(r, g, b)
 
     if (contrastAgainstBlack(r, g, b) >= 4.5) {

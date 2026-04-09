@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flipside — Final Design Direction</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0a0a0a;
+    font-family: 'Inter', sans-serif;
+    color: #fff;
+    min-height: 100vh;
+    padding: 48px 24px 100px;
+  }
+
+  .page-header {
+    text-align: center;
+    margin-bottom: 60px;
+  }
+  .page-header .eyebrow { font-size: 10px; font-weight: 500; letter-spacing: 0.25em; text-transform: uppercase; color: #8b5cf6; margin-bottom: 10px; }
+  .page-header h1 { font-family: 'DM Serif Display', serif; font-size: 42px; color: #fff; line-height: 1.1; margin-bottom: 10px; }
+  .page-header .sub { font-size: 14px; color: #444; }
+
+  /* ---- layout ---- */
+  .screens {
+    display: flex;
+    gap: 28px;
+    justify-content: center;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    margin-bottom: 64px;
+  }
+
+  .screen-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .screen-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: #444;
+  }
+
+  /* ---- phone ---- */
+  .phone {
+    width: 300px;
+    border-radius: 36px;
+    overflow: hidden;
+    border: 1.5px solid #1e1e1e;
+    background: #080808;
+    position: relative;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.8), 0 0 0 1px rgba(139,92,246,0.08);
+    flex-shrink: 0;
+  }
+
+  /* nav */
+  .nav {
+    height: 50px;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 18px;
+    background: rgba(8,8,8,0.92);
+    backdrop-filter: blur(16px);
+    border-bottom: 1px solid #141414;
+  }
+  .nav-logo { font-size: 14px; font-weight: 700; letter-spacing: -0.01em; color: #fff; }
+  .nav-avatar { width: 27px; height: 27px; border-radius: 50%; background: #1a1428; border: 1px solid #8b5cf630; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; color: #8b5cf6; }
+
+  /* ---- PHONE 1: FEED ---- */
+  .feed-phone { height: 640px; }
+
+  .feed {
+    position: absolute;
+    top: 50px; bottom: 54px; left: 0; right: 0;
+    overflow: hidden;
+    padding: 12px 10px;
+    display: flex; flex-direction: column; gap: 9px;
+  }
+
+  .card {
+    border-radius: 14px;
+    overflow: hidden;
+    background: #0f0f0f;
+    border: 1px solid #181818;
+    flex-shrink: 0;
+  }
+
+  .card-hero { position: relative; height: 148px; overflow: hidden; }
+  .card-img { position: absolute; inset: 0; }
+  .card-overlay { position: absolute; inset: 0; background: linear-gradient(to top, #0f0f0f 0%, rgba(15,15,15,0.2) 55%, transparent 100%); }
+  .card-hero-content { position: absolute; bottom: 0; left: 0; right: 0; padding: 10px 13px 8px; }
+  .card-genre { font-size: 8px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; margin-bottom: 2px; }
+  .card-name { font-family: 'DM Serif Display', serif; font-size: 24px; line-height: 1.0; color: #fff; }
+
+  .card-body { padding: 8px 13px 0; }
+  .card-reason { font-size: 10px; color: #4a4a4a; line-height: 1.45; margin-bottom: 6px; }
+  .card-tags { display: flex; gap: 4px; flex-wrap: wrap; }
+  .card-tag { font-size: 8px; font-weight: 500; color: #333; background: #141414; border: 1px solid #1c1c1c; border-radius: 4px; padding: 2px 5px; letter-spacing: 0.05em; text-transform: uppercase; }
+
+  .track-strip {
+    margin: 7px 9px 9px;
+    border-radius: 10px;
+    padding: 9px 11px;
+    display: flex; align-items: center; gap: 9px;
+    cursor: pointer;
+    border: 1px solid;
+  }
+  .track-thumbs { display: flex; }
+  .track-thumb { width: 26px; height: 26px; border-radius: 5px; border: 2px solid #080808; flex-shrink: 0; }
+  .track-thumb:not(:first-child) { margin-left: -7px; }
+  .strip-center { flex: 1; min-width: 0; }
+  .strip-track-name { font-size: 11px; font-weight: 500; color: #ddd; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 1px; }
+  .strip-count { font-size: 9px; color: #444; }
+  .strip-play { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; flex-shrink: 0; }
+
+  .card-actions { border-top: 1px solid #141414; padding: 7px 10px; display: flex; gap: 6px; }
+  .action-btn { height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; gap: 4px; font-size: 10px; font-weight: 500; flex: 1; }
+  .action-btn.skip { background: #131313; border: 1px solid #1c1c1c; color: #333; }
+
+  .card.dim { opacity: 0.4; pointer-events: none; }
+
+  .bottom-nav {
+    position: absolute; bottom: 0; left: 0; right: 0; height: 54px;
+    background: rgba(8,8,8,0.97); backdrop-filter: blur(20px);
+    border-top: 1px solid #141414;
+    display: flex; align-items: center; justify-content: space-around;
+    padding: 0 20px 6px;
+  }
+  .bnav-item { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 8px; color: #2a2a2a; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; }
+  .bnav-icon { font-size: 15px; line-height: 1; }
+  .bnav-item.active { color: #8b5cf6; }
+
+  /* ---- PHONE 2: DRAWER ---- */
+  .drawer-phone { height: 640px; }
+
+  .peek {
+    position: absolute;
+    top: 0; left: 0; right: 0; height: 220px;
+    overflow: hidden;
+  }
+  .peek-img {
+    position: absolute; inset: 0;
+    background: linear-gradient(145deg, #2d1f00 0%, #7c5400 40%, #3a2800 70%, #0d0900 100%);
+  }
+  .peek-figure {
+    position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);
+    width: 110px; height: 150px; border-radius: 50% 50% 0 0;
+    background: linear-gradient(180deg, #e8a020, #a06010 60%, transparent);
+    opacity: 0.3; filter: blur(5px);
+  }
+  .peek-grad {
+    position: absolute; inset: 0;
+    background: linear-gradient(to top, rgba(0,0,0,0.7) 0%, transparent 60%);
+  }
+  .peek-content { position: absolute; bottom: 12px; left: 16px; }
+  .peek-genre { font-size: 8px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; color: #d4a017; margin-bottom: 2px; }
+  .peek-name { font-family: 'DM Serif Display', serif; font-size: 26px; color: #fff; line-height: 1; }
+
+  .drawer-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.55); z-index: 4; }
+
+  .drawer {
+    position: absolute;
+    top: 205px; left: 0; right: 0; bottom: 0;
+    background: #0f0f0f;
+    border-radius: 18px 18px 0 0;
+    border-top: 1px solid #1e1e1e;
+    z-index: 10;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+
+  .drawer-handle { width: 30px; height: 3px; background: #222; border-radius: 999px; margin: 9px auto 0; flex-shrink: 0; }
+
+  .drawer-head { padding: 12px 15px 10px; border-bottom: 1px solid #141414; flex-shrink: 0; }
+  .drawer-head-row { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 6px; }
+  .drawer-artist { font-size: 13px; font-weight: 600; color: #ddd; margin-bottom: 1px; }
+  .drawer-listeners { font-size: 10px; color: #383838; }
+  .drawer-save { height: 28px; padding: 0 12px; border-radius: 8px; background: #8b5cf6; color: #fff; font-size: 10px; font-weight: 700; display: flex; align-items: center; gap: 4px; }
+  .drawer-reason { font-size: 10px; color: #3a3a3a; line-height: 1.4; margin-bottom: 7px; }
+  .drawer-tags { display: flex; gap: 4px; }
+  .drawer-tag { font-size: 8px; font-weight: 500; color: #333; background: #141414; border: 1px solid #1c1c1c; border-radius: 4px; padding: 2px 5px; letter-spacing: 0.05em; text-transform: uppercase; }
+
+  .tracks-label { padding: 10px 15px 5px; font-size: 9px; font-weight: 600; letter-spacing: 0.15em; text-transform: uppercase; color: #2a2a2a; flex-shrink: 0; }
+
+  .tracks { flex: 1; overflow: hidden; padding: 0 9px; display: flex; flex-direction: column; gap: 1px; }
+
+  .track-row { display: flex; align-items: center; gap: 9px; padding: 7px 6px; border-radius: 8px; }
+  .track-row.playing { background: #161616; }
+  .track-num { font-size: 10px; color: #2a2a2a; width: 14px; text-align: center; flex-shrink: 0; }
+  .track-row.playing .track-num { color: #8b5cf6; }
+  .track-art { width: 30px; height: 30px; border-radius: 6px; flex-shrink: 0; }
+  .track-info { flex: 1; min-width: 0; }
+  .track-name { font-size: 11px; font-weight: 500; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 1px; }
+  .track-row.playing .track-name { color: #eee; }
+  .track-dur { font-size: 9px; color: #2c2c2c; }
+  .track-play { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 8px; flex-shrink: 0; }
+  .track-play.active { background: #8b5cf6; color: #fff; }
+  .track-play.idle { background: #141414; border: 1px solid #1e1e1e; color: #333; }
+
+  .drawer-foot {
+    padding: 8px 15px 14px; border-top: 1px solid #141414; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .spotify-btn { display: flex; align-items: center; gap: 6px; font-size: 10px; color: #383838; font-weight: 500; }
+  .spotify-icon { width: 16px; height: 16px; border-radius: 50%; background: #1DB954; display: flex; align-items: center; justify-content: center; font-size: 7px; color: #000; font-weight: 700; }
+  .not-for-me { font-size: 10px; color: #222; display: flex; align-items: center; gap: 3px; }
+
+  /* ---- PHONE 3: SAVED ---- */
+  .saved-phone { height: 640px; }
+
+  .saved-content {
+    position: absolute;
+    top: 50px; bottom: 54px; left: 0; right: 0;
+    overflow: hidden;
+  }
+
+  .saved-tabs {
+    display: flex; gap: 2px;
+    background: #0c0c0c; border-bottom: 1px solid #141414;
+    padding: 8px 12px 0;
+  }
+  .saved-tab {
+    flex: 1; height: 30px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 500; color: #2e2e2e;
+    border-bottom: 2px solid transparent;
+    letter-spacing: 0.02em;
+  }
+  .saved-tab.active { color: #8b5cf6; border-bottom-color: #8b5cf6; }
+
+  .saved-list { padding: 10px 10px; display: flex; flex-direction: column; gap: 6px; }
+
+  .saved-card {
+    border-radius: 12px; overflow: hidden;
+    background: #0f0f0f; border: 1px solid #181818;
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px;
+  }
+
+  .saved-img { width: 46px; height: 46px; border-radius: 9px; flex-shrink: 0; }
+  .saved-info { flex: 1; min-width: 0; }
+  .saved-name { font-family: 'DM Serif Display', serif; font-size: 16px; color: #eee; line-height: 1.1; margin-bottom: 2px; }
+  .saved-sub { font-size: 9px; color: #333; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 5px; }
+  .saved-track-strip {
+    display: flex; align-items: center; gap: 5px;
+    padding: 5px 7px; border-radius: 7px;
+    border: 1px solid;
+  }
+  .saved-track-thumbs { display: flex; }
+  .saved-track-thumb { width: 16px; height: 16px; border-radius: 3px; border: 1.5px solid #080808; flex-shrink: 0; }
+  .saved-track-thumb:not(:first-child) { margin-left: -5px; }
+  .saved-strip-text { font-size: 9px; flex: 1; font-weight: 500; }
+  .saved-strip-play { width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 7px; font-weight: 700; }
+  .saved-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
+  .saved-heart { width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 13px; }
+
+  /* ---- design summary ---- */
+  .summary {
+    max-width: 780px; margin: 0 auto;
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .summary-item {
+    background: #111; border: 1px solid #1a1a1a;
+    border-radius: 10px; padding: 14px 16px;
+    display: flex; gap: 10px;
+  }
+  .summary-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+  .summary-text { font-size: 12px; color: #555; line-height: 1.5; }
+  .summary-text strong { color: #aaa; display: block; margin-bottom: 2px; }
+
+  /* color dots */
+  .color-row { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+  .color-dot { width: 20px; height: 20px; border-radius: 50%; }
+  .color-label { font-size: 9px; color: #333; }
+
+  .section-title {
+    text-align: center; margin-bottom: 28px;
+  }
+  .section-title h2 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+  .section-title p { font-size: 12px; color: #444; }
+  .section-title .badge { display: inline-block; font-size: 9px; font-weight: 600; letter-spacing: 0.15em; text-transform: uppercase; padding: 3px 10px; border-radius: 999px; margin-bottom: 10px; background: #1a1428; color: #8b5cf6; border: 1px solid #8b5cf630; }
+
+  hr { border: none; border-top: 1px solid #141414; max-width: 700px; margin: 64px auto; }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <div class="eyebrow">Final direction</div>
+  <h1>Flipside</h1>
+  <div class="sub">Editorial dark · Per-artist colors · Purple fallback · Tap-to-expand tracks</div>
+</div>
+
+<!-- ===== THREE SCREENS ===== -->
+
+<div class="section-title">
+  <div class="badge">Three key screens</div>
+  <h2>Feed · Artist detail · Saved</h2>
+  <p>No groups · Tracks always accessible · Per-artist color identity</p>
+</div>
+
+<div class="screens">
+
+  <!-- SCREEN 1: FEED -->
+  <div class="screen-col">
+    <div class="screen-label">Feed</div>
+    <div class="phone feed-phone">
+      <div class="nav">
+        <div class="nav-logo">flipside</div>
+        <div class="nav-avatar">J</div>
+      </div>
+      <div class="feed">
+
+        <!-- Bon Iver — warm gold -->
+        <div class="card">
+          <div class="card-hero">
+            <div class="card-img" style="background:linear-gradient(145deg,#2d1f00,#6b4800,#3a2800,#0d0900);"></div>
+            <div class="card-overlay"></div>
+            <div class="card-hero-content">
+              <div class="card-genre" style="color:#d4a017;">Indie Folk · New for you</div>
+              <div class="card-name">Bon Iver</div>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="card-reason">Because you listen to Sufjan Stevens and The National — orchestral and introspective.</div>
+            <div class="card-tags"><div class="card-tag">Folk</div><div class="card-tag">Indie</div><div class="card-tag">Electronic</div></div>
+          </div>
+          <div class="track-strip" style="background:rgba(212,160,23,0.09);border-color:rgba(212,160,23,0.22);">
+            <div class="track-thumbs">
+              <div class="track-thumb" style="background:linear-gradient(135deg,#7c5400,#3d2a00);"></div>
+              <div class="track-thumb" style="background:linear-gradient(135deg,#5c4000,#2a1c00);"></div>
+              <div class="track-thumb" style="background:linear-gradient(135deg,#4a3500,#221800);"></div>
+            </div>
+            <div class="strip-center">
+              <div class="strip-track-name">▶ Holocene</div>
+              <div class="strip-count">+ 4 more tracks</div>
+            </div>
+            <div class="strip-play" style="background:#d4a017;color:#000;">▶</div>
+          </div>
+          <div class="card-actions">
+            <div class="action-btn skip">👎 Not for me</div>
+            <div class="action-btn" style="background:#d4a017;color:#000;font-weight:600;">＋ Save</div>
+          </div>
+        </div>
+
+        <!-- Arooj Aftab — teal -->
+        <div class="card">
+          <div class="card-hero" style="height:100px;">
+            <div class="card-img" style="background:linear-gradient(145deg,#00282d,#005c6b,#001f26,#000a0d);"></div>
+            <div class="card-overlay"></div>
+            <div class="card-hero-content">
+              <div class="card-genre" style="color:#2dd4bf;">Jazz · Sufi</div>
+              <div class="card-name" style="font-size:20px;">Arooj Aftab</div>
+            </div>
+          </div>
+          <div class="track-strip" style="background:rgba(45,212,191,0.07);border-color:rgba(45,212,191,0.2);">
+            <div class="track-thumbs">
+              <div class="track-thumb" style="background:linear-gradient(135deg,#005c6b,#001f26);"></div>
+              <div class="track-thumb" style="background:linear-gradient(135deg,#004455,#001520);"></div>
+            </div>
+            <div class="strip-center">
+              <div class="strip-track-name">▶ Mohabbat</div>
+              <div class="strip-count">+ 3 more tracks</div>
+            </div>
+            <div class="strip-play" style="background:#2dd4bf;color:#000;">▶</div>
+          </div>
+          <div class="card-actions">
+            <div class="action-btn skip">👎 Not for me</div>
+            <div class="action-btn" style="background:#2dd4bf;color:#000;font-weight:600;">＋ Save</div>
+          </div>
+        </div>
+
+        <!-- Weyes Blood — violet (purple fallback showing) -->
+        <div class="card dim">
+          <div class="card-hero" style="height:70px;">
+            <div class="card-img" style="background:linear-gradient(145deg,#1a0a2e,#4a1d8a,#200d40,#08040f);"></div>
+            <div class="card-overlay"></div>
+            <div class="card-hero-content">
+              <div class="card-genre" style="color:#8b5cf6;">Chamber Pop</div>
+              <div class="card-name" style="font-size:18px;">Weyes Blood</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+      <div class="bottom-nav">
+        <div class="bnav-item active"><div class="bnav-icon">⚡</div>Feed</div>
+        <div class="bnav-item"><div class="bnav-icon">♡</div>Saved</div>
+        <div class="bnav-item"><div class="bnav-icon">⚙</div>Settings</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN 2: DRAWER -->
+  <div class="screen-col">
+    <div class="screen-label">Tap to expand</div>
+    <div class="phone drawer-phone">
+      <div class="nav">
+        <div class="nav-logo">flipside</div>
+        <div class="nav-avatar">J</div>
+      </div>
+
+      <div class="peek">
+        <div class="peek-img"><div class="peek-figure"></div></div>
+        <div class="peek-grad"></div>
+        <div class="peek-content">
+          <div class="peek-genre">Indie Folk · New for you</div>
+          <div class="peek-name">Bon Iver</div>
+        </div>
+      </div>
+
+      <div class="drawer-backdrop"></div>
+
+      <div class="drawer">
+        <div class="drawer-handle"></div>
+        <div class="drawer-head">
+          <div class="drawer-head-row">
+            <div>
+              <div class="drawer-artist">Bon Iver</div>
+              <div class="drawer-listeners">4.2M monthly listeners</div>
+            </div>
+            <div class="drawer-save">＋ Save artist</div>
+          </div>
+          <div class="drawer-reason">Because you listen to Sufjan Stevens and The National — orchestral, introspective, layered songwriting.</div>
+          <div class="drawer-tags">
+            <div class="drawer-tag">Folk</div>
+            <div class="drawer-tag">Indie</div>
+            <div class="drawer-tag">Electronic</div>
+          </div>
+        </div>
+
+        <div class="tracks-label">Top tracks</div>
+
+        <div class="tracks">
+          <div class="track-row playing">
+            <div class="track-num">▶</div>
+            <div class="track-art" style="background:linear-gradient(135deg,#7c5400,#3d2a00);"></div>
+            <div class="track-info"><div class="track-name">Holocene</div><div class="track-dur">5:37</div></div>
+            <div class="track-play active">▶</div>
+          </div>
+          <div class="track-row">
+            <div class="track-num">2</div>
+            <div class="track-art" style="background:linear-gradient(135deg,#5c4000,#2a1c00);"></div>
+            <div class="track-info"><div class="track-name">Skinny Love</div><div class="track-dur">3:59</div></div>
+            <div class="track-play idle">▶</div>
+          </div>
+          <div class="track-row">
+            <div class="track-num">3</div>
+            <div class="track-art" style="background:linear-gradient(135deg,#4a3500,#221800);"></div>
+            <div class="track-info"><div class="track-name">Towers</div><div class="track-dur">4:04</div></div>
+            <div class="track-play idle">▶</div>
+          </div>
+          <div class="track-row">
+            <div class="track-num">4</div>
+            <div class="track-art" style="background:linear-gradient(135deg,#3a2a00,#181000);"></div>
+            <div class="track-info"><div class="track-name">Michicant</div><div class="track-dur">4:03</div></div>
+            <div class="track-play idle">▶</div>
+          </div>
+          <div class="track-row">
+            <div class="track-num">5</div>
+            <div class="track-art" style="background:linear-gradient(135deg,#2a1f00,#100c00);"></div>
+            <div class="track-info"><div class="track-name">Calgary</div><div class="track-dur">4:04</div></div>
+            <div class="track-play idle">▶</div>
+          </div>
+        </div>
+
+        <div class="drawer-foot">
+          <div class="spotify-btn"><div class="spotify-icon">♫</div>Open in Spotify</div>
+          <div class="not-for-me">👎 Not for me</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN 3: SAVED -->
+  <div class="screen-col">
+    <div class="screen-label">Saved</div>
+    <div class="phone saved-phone">
+      <div class="nav">
+        <div class="nav-logo">flipside</div>
+        <div class="nav-avatar">J</div>
+      </div>
+      <div class="saved-content">
+        <div class="saved-tabs">
+          <div class="saved-tab active">Artists</div>
+          <div class="saved-tab">Tracks</div>
+        </div>
+        <div class="saved-list">
+
+          <!-- Bon Iver -->
+          <div class="saved-card">
+            <div class="saved-img" style="background:linear-gradient(135deg,#7c5400,#2d1f00);border-radius:9px;"></div>
+            <div class="saved-info">
+              <div class="saved-name">Bon Iver</div>
+              <div class="saved-sub">Folk · Indie</div>
+              <div class="saved-track-strip" style="background:rgba(212,160,23,0.08);border-color:rgba(212,160,23,0.2);">
+                <div class="saved-track-thumbs">
+                  <div class="saved-track-thumb" style="background:linear-gradient(135deg,#7c5400,#3d2a00);"></div>
+                  <div class="saved-track-thumb" style="background:linear-gradient(135deg,#5c4000,#2a1c00);"></div>
+                </div>
+                <div class="saved-strip-text" style="color:#d4a017;">▶ Holocene · +4</div>
+                <div class="saved-strip-play" style="background:#d4a017;color:#000;">▶</div>
+              </div>
+            </div>
+            <div class="saved-right">
+              <div class="saved-heart" style="background:#1a1428;color:#8b5cf6;border:1px solid #8b5cf630;">♥</div>
+            </div>
+          </div>
+
+          <!-- Arooj Aftab -->
+          <div class="saved-card">
+            <div class="saved-img" style="background:linear-gradient(135deg,#005c6b,#00282d);border-radius:9px;"></div>
+            <div class="saved-info">
+              <div class="saved-name">Arooj Aftab</div>
+              <div class="saved-sub">Jazz · Sufi</div>
+              <div class="saved-track-strip" style="background:rgba(45,212,191,0.07);border-color:rgba(45,212,191,0.2);">
+                <div class="saved-track-thumbs">
+                  <div class="saved-track-thumb" style="background:linear-gradient(135deg,#005c6b,#001f26);"></div>
+                  <div class="saved-track-thumb" style="background:linear-gradient(135deg,#004455,#001520);"></div>
+                </div>
+                <div class="saved-strip-text" style="color:#2dd4bf;">▶ Mohabbat · +3</div>
+                <div class="saved-strip-play" style="background:#2dd4bf;color:#000;">▶</div>
+              </div>
+            </div>
+            <div class="saved-right">
+              <div class="saved-heart" style="background:#1a1428;color:#8b5cf6;border:1px solid #8b5cf630;">♥</div>
+            </div>
+          </div>
+
+          <!-- Weyes Blood — purple fallback (no image color yet) -->
+          <div class="saved-card">
+            <div class="saved-img" style="background:linear-gradient(135deg,#3a1570,#1a0a2e);border-radius:9px;"></div>
+            <div class="saved-info">
+              <div class="saved-name">Weyes Blood</div>
+              <div class="saved-sub">Chamber Pop</div>
+              <div class="saved-track-strip" style="background:rgba(139,92,246,0.08);border-color:rgba(139,92,246,0.2);">
+                <div class="saved-track-thumbs">
+                  <div class="saved-track-thumb" style="background:linear-gradient(135deg,#4a1d8a,#200d40);"></div>
+                  <div class="saved-track-thumb" style="background:linear-gradient(135deg,#3a1570,#180a30);"></div>
+                </div>
+                <div class="saved-strip-text" style="color:#8b5cf6;">▶ Andromeda · +4</div>
+                <div class="saved-strip-play" style="background:#8b5cf6;color:#fff;">▶</div>
+              </div>
+            </div>
+            <div class="saved-right">
+              <div class="saved-heart" style="background:#1a1428;color:#8b5cf6;border:1px solid #8b5cf630;">♥</div>
+            </div>
+          </div>
+
+          <!-- Sudan Archives -->
+          <div class="saved-card">
+            <div class="saved-img" style="background:linear-gradient(135deg,#7c2020,#2a0808);border-radius:9px;"></div>
+            <div class="saved-info">
+              <div class="saved-name">Sudan Archives</div>
+              <div class="saved-sub">R&amp;B · Experimental</div>
+              <div class="saved-track-strip" style="background:rgba(251,113,133,0.07);border-color:rgba(251,113,133,0.18);">
+                <div class="saved-track-thumbs">
+                  <div class="saved-track-thumb" style="background:linear-gradient(135deg,#7c2020,#3a0a0a);"></div>
+                  <div class="saved-track-thumb" style="background:linear-gradient(135deg,#5c1818,#2a0808);"></div>
+                </div>
+                <div class="saved-strip-text" style="color:#fb7185;">▶ Limitless · +3</div>
+                <div class="saved-strip-play" style="background:#fb7185;color:#000;">▶</div>
+              </div>
+            </div>
+            <div class="saved-right">
+              <div class="saved-heart" style="background:#1a1428;color:#8b5cf6;border:1px solid #8b5cf630;">♥</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+      <div class="bottom-nav">
+        <div class="bnav-item"><div class="bnav-icon">⚡</div>Feed</div>
+        <div class="bnav-item active"><div class="bnav-icon">♥</div>Saved</div>
+        <div class="bnav-item"><div class="bnav-icon">⚙</div>Settings</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<hr>
+
+<!-- ===== DESIGN SUMMARY ===== -->
+<div class="section-title" style="margin-bottom:24px;">
+  <div class="badge">Design system</div>
+  <h2>What's changing, what's staying</h2>
+</div>
+
+<div class="summary">
+  <div class="summary-item">
+    <div class="summary-icon">🖋</div>
+    <div class="summary-text">
+      <strong>Typography</strong>
+      DM Serif Display for artist names. Inter for all UI text. Big, expressive headings on near-black backgrounds.
+    </div>
+  </div>
+  <div class="summary-item">
+    <div class="summary-icon">🎨</div>
+    <div class="summary-text">
+      <strong>Per-artist color extraction</strong>
+      Each artist gets a color derived from their image. Flows through genre tag, track strip, play button, save button.
+      <div class="color-row">
+        <div class="color-dot" style="background:#d4a017;"></div>
+        <div class="color-dot" style="background:#2dd4bf;"></div>
+        <div class="color-dot" style="background:#a78bfa;"></div>
+        <div class="color-dot" style="background:#fb7185;"></div>
+        <div class="color-label">examples</div>
+      </div>
+    </div>
+  </div>
+  <div class="summary-item">
+    <div class="summary-icon">💜</div>
+    <div class="summary-text">
+      <strong>Purple fallback accent (#8b5cf6)</strong>
+      Used for nav active state, saved hearts, drawer save button, and any element where no artist color is loaded yet.
+      <div class="color-row">
+        <div class="color-dot" style="background:#8b5cf6;"></div>
+        <div class="color-dot" style="background:#1a1428;"></div>
+        <div class="color-dot" style="background:#080808;"></div>
+        <div class="color-label">purple · dark purple · base black</div>
+      </div>
+    </div>
+  </div>
+  <div class="summary-item">
+    <div class="summary-icon">🎵</div>
+    <div class="summary-text">
+      <strong>Track strip (prominent)</strong>
+      First track name shown inline. Stacked album art thumbnails. Tinted border + bg using artist color. Circular play button.
+    </div>
+  </div>
+  <div class="summary-item">
+    <div class="summary-icon">🪟</div>
+    <div class="summary-text">
+      <strong>Tap-to-expand drawer</strong>
+      Card image peeks behind. Drawer slides up with full track list, reason text, genre tags, and Spotify link.
+    </div>
+  </div>
+  <div class="summary-item">
+    <div class="summary-icon">🖼</div>
+    <div class="summary-text">
+      <strong>Full-bleed editorial images</strong>
+      No rounded card images — artist photos bleed edge to edge. Gradient overlay fades to card background.
+    </div>
+  </div>
+  <div class="summary-item">
+    <div class="summary-icon">📱</div>
+    <div class="summary-text">
+      <strong>Nav: Feed · Saved · Settings</strong>
+      Groups removed. Three clean destinations. Bottom tab on mobile, top bar on desktop.
+    </div>
+  </div>
+  <div class="summary-item">
+    <div class="summary-icon">🖤</div>
+    <div class="summary-text">
+      <strong>Base palette</strong>
+      Near-black (#080808) base. Card surfaces (#0f0f0f). Borders at 8–10% opacity. No navy — cleaner, more confident dark.
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

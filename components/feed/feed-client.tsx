@@ -72,7 +72,7 @@ export function FeedClient({ recommendations }: FeedClientProps) {
     (r) => !savedIds.has(r.spotify_artist_id)
   )
 
-  const allCaughtUp = visibleRecs.length === 0
+  const allCaughtUp = visibleRecs.every(r => dismissedIds.has(r.spotify_artist_id))
 
   return (
     <div

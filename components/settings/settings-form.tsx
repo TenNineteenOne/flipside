@@ -95,7 +95,7 @@ export function SettingsForm({
   const [lastfmUsername, setLastfmUsername] = useState(
     initialLastfmUsername ?? ""
   )
-  const [lastfmCount, setLastfmCount] = useState(initialLastfmArtistCount)
+  const [lastfmCount] = useState(initialLastfmArtistCount)
   const [isSyncing, setIsSyncing] = useState(false)
 
   async function handleLastfmBlur() {

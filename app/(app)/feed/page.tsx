@@ -6,7 +6,23 @@ import { RecommendationsLoader } from "@/components/feed/recommendations-loader"
 
 interface Rec {
   spotify_artist_id: string
-  artist_data: any
+  artist_data: { 
+    id: string; 
+    name: string; 
+    genres: string[]; 
+    imageUrl: string | null; 
+    popularity: number; 
+    topTracks: Array<{
+      id: string;
+      spotifyTrackId: string | null;
+      name: string;
+      previewUrl: string | null;
+      durationMs: number;
+      albumName: string;
+      albumImageUrl: string | null;
+      source: 'itunes' | 'spotify' | 'deezer';
+    }>;
+  }
   score: number
   why: { sourceArtists: string[]; genres: string[]; friendBoost: string[] }
 }
@@ -78,13 +94,30 @@ export default async function FeedPage() {
 
   // Filter out entries missing essential artist data
   const validRecs = (recs ?? []).filter(
-    (r: any) => r.artist_data?.id && r.artist_data?.name
-  )
+    (r: { artist_data?: { id?: string; name?: string } }) => r.artist_data?.id && r.artist_data?.name
+  ) as Rec[]
 
   // No valid recommendations — client component triggers generation and refreshes
   if (validRecs.length === 0) {
     return <RecommendationsLoader />
   }
 
-  return <FeedClient recommendations={interleave(validRecs as Rec[])} />
+  // Fetch tracks for the recommendations
+  const artistIds = validRecs.map((r) => r.spotify_artist_id)
+  
+  const { data: tracksCache } = await supabase
+    .from("artist_tracks_cache")
+    .select("spotify_artist_id, tracks")
+    .in("spotify_artist_id", artistIds)
+
+  const tracksMap = new Map<string, Rec["artist_data"]["topTracks"]>()
+  for (const row of tracksCache ?? []) {
+    tracksMap.set(row.spotify_artist_id, (row.tracks as Rec["artist_data"]["topTracks"]) ?? [])
+  }
+
+  for (const rec of validRecs) {
+    rec.artist_data.topTracks = tracksMap.get(rec.spotify_artist_id) ?? []
+  }
+
+  return <FeedClient recommendations={interleave(validRecs)} />
 }

@@ -37,7 +37,7 @@ function makeFakeClient(opts: {
             },
           }
         },
-        upsert: async (row: FakeRow, _opts: { onConflict: string }) => {
+        upsert: async (row: FakeRow) => {
           if (opts.writeThrows) throw new Error("write blew up")
           if (opts.writeError) return { error: { message: opts.writeError } }
           const idx = rows.findIndex((r) => r.name_lower === row.name_lower)

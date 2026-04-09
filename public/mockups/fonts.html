@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flipside — Font Options</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Fraunces:opsz,wght@9..144,700;9..144,900&family=Cormorant:wght@600;700&family=Space+Grotesk:wght@700&family=DM+Serif+Display&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #080808;
+    font-family: 'Inter', sans-serif;
+    color: #fff;
+    padding: 48px 24px 100px;
+  }
+
+  .page-header {
+    text-align: center;
+    margin-bottom: 56px;
+  }
+  .page-header .eyebrow { font-size: 10px; font-weight: 500; letter-spacing: 0.25em; text-transform: uppercase; color: #8b5cf6; margin-bottom: 10px; }
+  .page-header h1 { font-size: 22px; font-weight: 600; color: #fff; margin-bottom: 6px; }
+  .page-header p { font-size: 13px; color: #444; }
+
+  /* grid of font options */
+  .font-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 24px;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+
+  .font-option {
+    border-radius: 18px;
+    overflow: hidden;
+    border: 1.5px solid #1a1a1a;
+    background: #0c0c0c;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* mini phone mockup inside each card */
+  .mini-phone {
+    height: 320px;
+    position: relative;
+    overflow: hidden;
+    background: #0a0a0a;
+    border-bottom: 1px solid #141414;
+  }
+
+  /* nav */
+  .m-nav {
+    height: 42px;
+    background: rgba(8,8,8,0.95);
+    border-bottom: 1px solid #141414;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 16px;
+    position: relative; z-index: 2;
+  }
+  .m-logo { font-family: 'Inter', sans-serif; font-size: 13px; font-weight: 700; color: #fff; }
+  .m-avatar { width: 24px; height: 24px; border-radius: 50%; background: #1a1428; border: 1px solid #8b5cf630; display: flex; align-items: center; justify-content: center; font-size: 9px; color: #8b5cf6; font-weight: 600; }
+
+  /* card */
+  .m-card {
+    margin: 10px;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #111;
+    border: 1px solid #1a1a1a;
+  }
+
+  .m-hero {
+    height: 140px;
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(145deg, #2d1f00 0%, #6b4800 40%, #3a2800 70%, #0d0900 100%);
+  }
+
+  .m-hero-figure {
+    position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);
+    width: 100px; height: 130px; border-radius: 50% 50% 0 0;
+    background: linear-gradient(180deg, #e8a020, #a06010 60%, transparent);
+    opacity: 0.28; filter: blur(5px);
+  }
+
+  .m-hero-overlay {
+    position: absolute; inset: 0;
+    background: linear-gradient(to top, #111 0%, rgba(17,17,17,0.15) 55%, transparent 100%);
+  }
+
+  .m-hero-content {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    padding: 10px 12px 8px;
+  }
+
+  .m-genre {
+    font-size: 8px; font-weight: 600; letter-spacing: 0.18em;
+    text-transform: uppercase; color: #d4a017; margin-bottom: 3px;
+    font-family: 'Inter', sans-serif;
+  }
+
+  /* each font class */
+  .font-playfair { font-family: 'Playfair Display', serif; font-weight: 700; }
+  .font-fraunces { font-family: 'Fraunces', serif; font-weight: 700; font-optical-sizing: auto; }
+  .font-cormorant { font-family: 'Cormorant', serif; font-weight: 700; }
+  .font-spacegrotesk { font-family: 'Space Grotesk', sans-serif; font-weight: 700; }
+  .font-dm { font-family: 'DM Serif Display', serif; font-weight: 400; }
+
+  .m-artist-name {
+    font-size: 30px;
+    line-height: 1.0;
+    color: #fff;
+  }
+
+  /* track strip */
+  .m-strip {
+    margin: 7px 8px 8px;
+    border-radius: 9px;
+    padding: 8px 10px;
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(212,160,23,0.09);
+    border: 1px solid rgba(212,160,23,0.22);
+  }
+  .m-strip-thumbs { display: flex; }
+  .m-strip-thumb { width: 22px; height: 22px; border-radius: 4px; border: 2px solid #080808; flex-shrink: 0; }
+  .m-strip-thumb:not(:first-child) { margin-left: -6px; }
+  .m-strip-center { flex: 1; }
+  .m-strip-track { font-size: 10px; font-weight: 500; color: #ddd; margin-bottom: 1px; font-family: 'Inter', sans-serif; }
+  .m-strip-count { font-size: 8px; color: #444; font-family: 'Inter', sans-serif; }
+  .m-strip-play { width: 24px; height: 24px; border-radius: 50%; background: #d4a017; color: #000; display: flex; align-items: center; justify-content: center; font-size: 8px; font-weight: 700; }
+
+  /* font info section */
+  .font-info {
+    padding: 16px 18px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .font-name-row {
+    display: flex; align-items: center; justify-content: space-between;
+  }
+
+  .font-name {
+    font-size: 13px; font-weight: 600; color: #ccc;
+  }
+
+  .font-tag {
+    font-size: 9px; font-weight: 600; letter-spacing: 0.12em;
+    text-transform: uppercase; padding: 3px 8px; border-radius: 99px;
+  }
+
+  .tag-serif { background: #1a1a2e; color: #818cf8; border: 1px solid #818cf830; }
+  .tag-sans { background: #0a2010; color: #4ade80; border: 1px solid #4ade8030; }
+  .tag-current { background: #1a1a1a; color: #555; border: 1px solid #252525; }
+
+  .font-specimen {
+    font-size: 36px;
+    line-height: 1.0;
+    color: #fff;
+    letter-spacing: -0.01em;
+  }
+
+  .font-desc { font-size: 11px; color: #444; line-height: 1.5; }
+
+  .font-pair { font-size: 10px; color: #333; }
+  .font-pair span { color: #555; }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <div class="eyebrow">Typography</div>
+  <h1>Display font options</h1>
+  <p>Same card, same layout — just the artist name typeface changes</p>
+</div>
+
+<div class="font-grid">
+
+  <!-- ===== OPTION 1: PLAYFAIR DISPLAY ===== -->
+  <div class="font-option">
+    <div class="mini-phone">
+      <div class="m-nav">
+        <div class="m-logo">flipside</div>
+        <div class="m-avatar">J</div>
+      </div>
+      <div class="m-card">
+        <div class="m-hero">
+          <div class="m-hero-figure"></div>
+          <div class="m-hero-overlay"></div>
+          <div class="m-hero-content">
+            <div class="m-genre">Indie Folk · New for you</div>
+            <div class="m-artist-name font-playfair">Bon Iver</div>
+          </div>
+        </div>
+        <div class="m-strip">
+          <div class="m-strip-thumbs">
+            <div class="m-strip-thumb" style="background:linear-gradient(135deg,#7c5400,#3d2a00);"></div>
+            <div class="m-strip-thumb" style="background:linear-gradient(135deg,#5c4000,#2a1c00);"></div>
+            <div class="m-strip-thumb" style="background:linear-gradient(135deg,#4a3500,#221800);"></div>
+          </div>
+          <div class="m-strip-center">
+            <div class="m-strip-track">▶ Holocene</div>
+            <div class="m-strip-count">+ 4 more tracks</div>
+          </div>
+          <div class="m-strip-play">▶</div>
+        </div>
+      </div>
+    </div>
+    <div class="font-info">
+      <div class="font-name-row">
+        <div class="font-name">Playfair Display</div>
+        <div class="font-tag tag-serif">High-contrast serif</div>
+      </div>
+      <div class="font-specimen font-playfair">Holocene</div>
+      <div class="font-desc">Dramatic, high-contrast strokes — the classic editorial choice. Feels like a premium magazine. Very legible at large sizes, unmistakably elegant.</div>
+    </div>
+  </div>
+
+  <!-- ===== OPTION 2: FRAUNCES ===== -->
+  <div class="font-option">
+    <div class="mini-phone">
+      <div class="m-nav">
+        <div class="m-logo">flipside</div>
+        <div class="m-avatar">J</div>
+      </div>
+      <div class="m-card">
+        <div class="m-hero">
+          <div class="m-hero-figure"></div>
+          <div class="m-hero-overlay"></div>
+          <div class="m-hero-content">
+            <div class="m-genre">Indie Folk · New for you</div>
+            <div class="m-artist-name font-fraunces">Bon Iver</div>
+          </div>
+        </div>
+        <div class="m-strip">
+          <div class="m-strip-thumbs">
+            <div class="m-strip-thumb" style="background:linear-gradient(135deg,#7c5400,#3d2a00);"></div>
+            <div class="m-strip-thumb" style="background:linear-gradient(135deg,#5c4000,#2a1c00);"></div>
+            <div class="m-strip-thumb" style="background:linear-gradient(135deg,#4a3500,#221800);"></div>
+          </div>
+          <div class="m-strip-center">
+            <div class="m-strip-track">▶ Holocene</div>
+            <div class="m-strip-count">+ 4 more tracks</div>
+          </div>
+          <div class="m-strip-play">▶</div>
+        </div>
+      </div>
+    </div>
+    <div class="font-info">
+      <div class="font-name-row">
+        <div class="font-name">Fraunces</div>
+        <div class="font-tag tag-serif">Optical serif</div>
+      </div>
+      <div class="font-specimen font-fraunces">Holocene</div>
+      <div class="font-desc">A quirky, warm optical serif with personality. Feels indie and handcrafted — closer to a record shop or music zine than a magazine. Has character without being loud.</div>
+    </div>
+  </div>
+
+  <!-- ===== OPTION 3: CORMORANT ===== -->
+  <div class="font-option">
+    <div class="mini-phone">
+      <div class="m-nav">
+        <div class="m-logo">flipside</div>
+        <div class="m-avatar">J</div>
+      </div>
+      <div class="m-card">
+        <div class="m-hero">
+          <div class="m-hero-figure"></div>
+          <div class="m-hero-overlay"></div>
+          <div class="m-hero-content">
+            <div class="m-genre">Indie Folk · New for you</div>
+            <div class="m-artist-name font-cormorant" style="font-size:34px;">Bon Iver</div>
+          </div>
+        </div>
+        <div class="m-strip">
+          <div class="m-strip-thumbs">
+            <div class="m-strip-thumb" style="background:linear-gradient(135deg,#7c5400,#3d2a00);"></div>
+            <div class="m-strip-thumb" style="background:linear-gradient(135deg,#5c4000,#2a1c00);"></div>
+            <div class="m-strip-thumb" style="background:linear-gradient(135deg,#4a3500,#221800);"></div>
+          </div>
+          <div class="m-strip-center">
+            <div class="m-strip-track">▶ Holocene</div>
+            <div class="m-strip-count">+ 4 more tracks</div>
+          </div>
+          <div class="m-strip-play">▶</div>
+        </div>
+      </div>
+    </div>
+    <div class="font-info">
+      <div class="font-name-row">
+        <div class="font-name">Cormorant</div>
+        <div class="font-tag tag-serif">Luxury serif</div>
+      </div>
+      <div class="font-specimen font-cormorant" style="font-size:42px;">Holocene</div>
+      <div class="font-desc">Razor-thin strokes, extremely refined. Feels like a luxury fashion brand or poetry collection. Strikingly beautiful at large sizes — delicate, almost fragile. Very different energy.</div>
+    </div>
+  </div>
+
+  <!-- ===== OPTION 4: SPACE GROTESK ===== -->
+  <div class="font-option">
+    <div class="mini-phone">
+      <div class="m-nav">
+        <div class="m-logo">flipside</div>
+        <div class="m-avatar">J</div>
+      </div>
+      <div class="m-card">
+        <div class="m-hero">
+          <div class="m-hero-figure"></div>
+          <div class="m-hero-overlay"></div>
+          <div class="m-hero-content">
+            <div class="m-genre">Indie Folk · New for you</div>
+            <div class="m-artist-name font-spacegrotesk" style="font-size:27px;letter-spacing:-0.02em;">Bon Iver</div>
+          </div>
+        </div>
+        <div class="m-strip">
+          <div class="m-strip-thumbs">
+            <div class="m-strip-thumb" style="background:linear-gradient(135deg,#7c5400,#3d2a00);"></div>
+            <div class="m-strip-thumb" style="background:linear-gradient(135deg,#5c4000,#2a1c00);"></div>
+            <div class="m-strip-thumb" style="background:linear-gradient(135deg,#4a3500,#221800);"></div>
+          </div>
+          <div class="m-strip-center">
+            <div class="m-strip-track">▶ Holocene</div>
+            <div class="m-strip-count">+ 4 more tracks</div>
+          </div>
+          <div class="m-strip-play">▶</div>
+        </div>
+      </div>
+    </div>
+    <div class="font-info">
+      <div class="font-name-row">
+        <div class="font-name">Space Grotesk</div>
+        <div class="font-tag tag-sans">Geometric sans</div>
+      </div>
+      <div class="font-specimen font-spacegrotesk" style="font-size:38px;letter-spacing:-0.02em;">Holocene</div>
+      <div class="font-desc">Bold, modern, no serifs. Feels contemporary and product-forward rather than editorial. Pairs naturally with Inter (already used in the UI). Clean and confident — a very different mood from the serif options.</div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

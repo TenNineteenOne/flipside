@@ -30,17 +30,17 @@ export default async function SavedPage() {
     .eq("user_id", user.id)
     .order("created_at", { ascending: false })
 
-  const artistIds = (saveRows ?? []).map((r: any) => r.spotify_artist_id)
+  const artistIds = (saveRows ?? []).map((r: { spotify_artist_id: string }) => r.spotify_artist_id)
 
   // Name fallback map from saves table (populated since migration 0003)
   const savedNameMap = new Map<string, string>(
     (saveRows ?? [])
-      .filter((r: any) => r.artist_name)
-      .map((r: any) => [r.spotify_artist_id, r.artist_name as string])
+      .filter((r: { artist_name?: string }) => r.artist_name)
+      .map((r: { spotify_artist_id: string; artist_name: string }) => [r.spotify_artist_id, r.artist_name])
   )
 
   // Fetch richer artist data from recommendation_cache (best-effort)
-  const cacheMap = new Map<string, any>()
+  const cacheMap = new Map<string, Record<string, unknown>>()
   if (artistIds.length > 0) {
     const { data: cacheRows } = await supabase
       .from("recommendation_cache")
@@ -56,10 +56,25 @@ export default async function SavedPage() {
   }
 
   // Build artist rows for the Artists tab
-  const artists: SavedArtistRow[] = (saveRows ?? []).map((row: any) => {
-    const artistId: string = row.spotify_artist_id
-    const cached = cacheMap.get(artistId)
-    const topTracks: Track[] = (cached?.topTracks ?? []).map((t: any) => ({
+  const artists: SavedArtistRow[] = (saveRows ?? []).map((row: { spotify_artist_id: string }) => {
+    const artistId = row.spotify_artist_id
+    const cached = cacheMap.get(artistId) as { 
+      name?: string; 
+      genres?: string[]; 
+      imageUrl?: string; 
+      artist_color?: string; 
+      topTracks?: Array<{ 
+        id?: string; 
+        spotifyTrackId?: string; 
+        name?: string; 
+        previewUrl?: string; 
+        durationMs?: number; 
+        albumName?: string; 
+        albumImageUrl?: string; 
+        source?: string 
+      }>
+    } | undefined
+    const topTracks: Track[] = (cached?.topTracks ?? []).map((t) => ({
       id: t.id ?? t.spotifyTrackId ?? "",
       spotifyTrackId: t.spotifyTrackId ?? null,
       name: t.name ?? "",
@@ -75,7 +90,7 @@ export default async function SavedPage() {
       name: cached?.name ?? savedNameMap.get(artistId) ?? artistId,
       genres: cached?.genres ?? [],
       imageUrl: cached?.imageUrl ?? null,
-      artistColor: (cached as any)?.artist_color ?? "#8b5cf6",
+      artistColor: cached?.artist_color ?? "#8b5cf6",
       topTracks,
     }
   })
@@ -83,12 +98,15 @@ export default async function SavedPage() {
   // Build track rows for the Tracks tab
   // A track row exists when the save has a spotify_track_id
   const tracks: SavedTrackRow[] = (saveRows ?? [])
-    .filter((r: any) => r.spotify_track_id)
-    .map((row: any) => {
-      const artistId: string = row.spotify_artist_id
-      const cached = cacheMap.get(artistId)
+    .filter((r: { spotify_track_id?: string }) => r.spotify_track_id)
+    .map((row: { spotify_artist_id: string; spotify_track_id: string }) => {
+      const artistId = row.spotify_artist_id
+      const cached = cacheMap.get(artistId) as {
+        name?: string;
+        topTracks?: Array<{ id?: string; spotifyTrackId?: string; name?: string; albumImageUrl?: string; durationMs?: number }>
+      } | undefined
       const matchedTrack = (cached?.topTracks ?? []).find(
-        (t: any) => t.id === row.spotify_track_id || t.spotifyTrackId === row.spotify_track_id
+        (t) => t.id === row.spotify_track_id || t.spotifyTrackId === row.spotify_track_id
       )
       return {
         id: row.spotify_track_id as string,

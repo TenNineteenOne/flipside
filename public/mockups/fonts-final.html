@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flipside — Final Font Decision</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@700;900&family=Space+Grotesk:wght@700&family=Manrope:wght@700;800&family=Plus+Jakarta+Sans:wght@700;800&family=Inter:wght@700&display=swap" rel="stylesheet">
+<!-- Satoshi + Cabinet Grotesk via Fontshare -->
+<link href="https://api.fontshare.com/v2/css?f[]=satoshi@700,900&f[]=cabinet-grotesk@800,900&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #080808;
+    font-family: 'Inter', sans-serif;
+    color: #fff;
+    padding: 40px 24px 100px;
+  }
+
+  .page-header { text-align: center; margin-bottom: 52px; }
+  .page-header .eyebrow { font-size: 10px; font-weight: 500; letter-spacing: 0.25em; text-transform: uppercase; color: #8b5cf6; margin-bottom: 8px; }
+  .page-header h1 { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
+  .page-header p { font-size: 12px; color: #444; }
+
+  /* section header */
+  .sh {
+    display: flex; align-items: center; gap: 14px;
+    max-width: 1060px; margin: 0 auto 20px;
+  }
+  .sh-line { flex: 1; height: 1px; background: #181818; }
+  .sh-badge {
+    font-size: 9px; font-weight: 700; letter-spacing: 0.18em;
+    text-transform: uppercase; padding: 5px 14px; border-radius: 99px;
+    white-space: nowrap;
+  }
+  .yours { background: #141428; color: #818cf8; border: 1px solid #818cf828; }
+  .mine  { background: #141e14; color: #4ade80; border: 1px solid #4ade8028; }
+
+  /* grid */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    max-width: 1060px;
+    margin: 0 auto 52px;
+  }
+
+  /* card */
+  .fc {
+    border-radius: 16px;
+    overflow: hidden;
+    border: 1.5px solid #161616;
+    background: #0c0c0c;
+    display: flex; flex-direction: column;
+  }
+
+  /* phone mockup */
+  .phone-wrap {
+    position: relative;
+    height: 240px;
+    overflow: hidden;
+    background: #0a0a0a;
+    border-bottom: 1px solid #141414;
+  }
+
+  /* nav bar */
+  .p-nav {
+    height: 40px; display: flex; align-items: center; justify-content: space-between;
+    padding: 0 14px;
+    background: rgba(8,8,8,0.95); border-bottom: 1px solid #141414;
+    position: relative; z-index: 2;
+  }
+  .p-logo { font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 700; color: #fff; }
+  .p-avatar { width: 22px; height: 22px; border-radius: 50%; background: #1a1428; border: 1px solid #8b5cf630; display: flex; align-items: center; justify-content: center; font-size: 8px; color: #8b5cf6; font-weight: 700; }
+
+  /* artist card inside phone */
+  .p-card {
+    margin: 8px 8px 0;
+    border-radius: 11px;
+    overflow: hidden;
+    background: #111;
+    border: 1px solid #1a1a1a;
+  }
+
+  .p-hero {
+    height: 120px; position: relative; overflow: hidden;
+    background: linear-gradient(145deg, #2d1f00 0%, #6b4800 40%, #3a2800 70%, #0d0900 100%);
+  }
+  .p-fig {
+    position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);
+    width: 70px; height: 95px; border-radius: 50% 50% 0 0;
+    background: linear-gradient(180deg, #e8a020, #a06010 60%, transparent);
+    opacity: 0.22; filter: blur(4px);
+  }
+  .p-ov {
+    position: absolute; inset: 0;
+    background: linear-gradient(to top, #111 0%, rgba(17,17,17,0.05) 50%, transparent 100%);
+  }
+  .p-content { position: absolute; bottom: 0; left: 0; right: 0; padding: 7px 11px 6px; }
+  .p-genre {
+    font-size: 7px; font-weight: 600; letter-spacing: 0.18em;
+    text-transform: uppercase; color: #d4a017; margin-bottom: 2px;
+    font-family: 'Inter', sans-serif !important;
+  }
+  .p-name { line-height: 1.0; color: #fff; }
+
+  /* track strip */
+  .p-strip {
+    margin: 5px 6px 6px; border-radius: 7px; padding: 6px 8px;
+    display: flex; align-items: center; gap: 6px;
+    background: rgba(212,160,23,0.09); border: 1px solid rgba(212,160,23,0.2);
+  }
+  .p-thumbs { display: flex; }
+  .p-thumb { width: 17px; height: 17px; border-radius: 3px; border: 1.5px solid #080808; flex-shrink: 0; }
+  .p-thumb + .p-thumb { margin-left: -5px; }
+  .p-sc { flex: 1; }
+  .p-tname { font-size: 9px; font-weight: 500; color: #ccc; font-family: 'Inter', sans-serif !important; margin-bottom: 1px; }
+  .p-tcount { font-size: 7px; color: #3a3a3a; font-family: 'Inter', sans-serif !important; }
+  .p-play { width: 19px; height: 19px; border-radius: 50%; background: #d4a017; color: #000; display: flex; align-items: center; justify-content: center; font-size: 7px; font-weight: 700; }
+
+  /* card info area */
+  .fc-info { padding: 14px 16px 16px; flex: 1; display: flex; flex-direction: column; gap: 8px; }
+
+  .fc-name-row { display: flex; align-items: center; justify-content: space-between; }
+  .fc-name { font-size: 13px; font-weight: 700; color: #ccc; }
+  .fc-source { font-size: 9px; color: #2e2e2e; font-weight: 500; }
+
+  .fc-specimen { line-height: 1; color: #fff; }
+
+  .fc-desc { font-size: 11px; color: #383838; line-height: 1.5; }
+
+  /* font classes - applied ONLY to artist name and specimen */
+  .f-satoshi      { font-family: 'Satoshi', sans-serif; font-weight: 900; letter-spacing: -0.03em; }
+  .f-roboto       { font-family: 'Roboto', sans-serif; font-weight: 900; letter-spacing: -0.025em; }
+  .f-spacegrotesk { font-family: 'Space Grotesk', sans-serif; font-weight: 700; letter-spacing: -0.02em; }
+  .f-manrope      { font-family: 'Manrope', sans-serif; font-weight: 800; letter-spacing: -0.03em; }
+  .f-cabinet      { font-family: 'Cabinet Grotesk', sans-serif; font-weight: 900; letter-spacing: -0.03em; }
+  .f-jakarta      { font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 800; letter-spacing: -0.03em; }
+
+  /* recommended dot */
+  .rec-dot {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 9px; font-weight: 600; color: #4ade80; letter-spacing: 0.05em;
+  }
+  .rec-dot::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: #4ade80; flex-shrink: 0; }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <div class="eyebrow">Typography · Final Round</div>
+  <h1>Your favourites + 3 recommendations</h1>
+  <p>Geometric, technical, clean with edges — pick one and we lock it in</p>
+</div>
+
+<!-- YOUR PICKS -->
+<div class="sh">
+  <div class="sh-line"></div>
+  <div class="sh-badge yours">Your picks</div>
+  <div class="sh-line"></div>
+</div>
+
+<div class="grid">
+
+  <!-- Satoshi -->
+  <div class="fc">
+    <div class="phone-wrap">
+      <div class="p-nav"><div class="p-logo">flipside</div><div class="p-avatar">J</div></div>
+      <div class="p-card">
+        <div class="p-hero"><div class="p-fig"></div><div class="p-ov"></div>
+          <div class="p-content">
+            <div class="p-genre">Indie Folk · New</div>
+            <div class="p-name f-satoshi" style="font-size:26px;">Bon Iver</div>
+          </div>
+        </div>
+        <div class="p-strip">
+          <div class="p-thumbs"><div class="p-thumb" style="background:linear-gradient(135deg,#7c5400,#3d2a00);"></div><div class="p-thumb" style="background:linear-gradient(135deg,#5c4000,#2a1c00);"></div><div class="p-thumb" style="background:linear-gradient(135deg,#4a3500,#221800);"></div></div>
+          <div class="p-sc"><div class="p-tname">▶ Holocene</div><div class="p-tcount">+ 4 more tracks</div></div>
+          <div class="p-play">▶</div>
+        </div>
+      </div>
+    </div>
+    <div class="fc-info">
+      <div class="fc-name-row"><div class="fc-name">Satoshi</div><div class="fc-source">Fontshare · Free</div></div>
+      <div class="fc-specimen f-satoshi" style="font-size:38px;">Holocene</div>
+      <div class="fc-desc">Sharp, modernist, geometric. Premium dark-mode energy — slightly more character than Inter but just as clean. Strong at heavy weights.</div>
+    </div>
+  </div>
+
+  <!-- Roboto -->
+  <div class="fc">
+    <div class="phone-wrap">
+      <div class="p-nav"><div class="p-logo">flipside</div><div class="p-avatar">J</div></div>
+      <div class="p-card">
+        <div class="p-hero"><div class="p-fig"></div><div class="p-ov"></div>
+          <div class="p-content">
+            <div class="p-genre">Indie Folk · New</div>
+            <div class="p-name f-roboto" style="font-size:26px;">Bon Iver</div>
+          </div>
+        </div>
+        <div class="p-strip">
+          <div class="p-thumbs"><div class="p-thumb" style="background:linear-gradient(135deg,#7c5400,#3d2a00);"></div><div class="p-thumb" style="background:linear-gradient(135deg,#5c4000,#2a1c00);"></div><div class="p-thumb" style="background:linear-gradient(135deg,#4a3500,#221800);"></div></div>
+          <div class="p-sc"><div class="p-tname">▶ Holocene</div><div class="p-tcount">+ 4 more tracks</div></div>
+          <div class="p-play">▶</div>
+        </div>
+      </div>
+    </div>
+    <div class="fc-info">
+      <div class="fc-name-row"><div class="fc-name">Roboto</div><div class="fc-source">Google Fonts · Free</div></div>
+      <div class="fc-specimen f-roboto" style="font-size:38px;">Holocene</div>
+      <div class="fc-desc">Mechanical and precise. Extremely battle-tested on screens. Sturdy without much personality — the most "just works" option here.</div>
+    </div>
+  </div>
+
+  <!-- Space Grotesk -->
+  <div class="fc">
+    <div class="phone-wrap">
+      <div class="p-nav"><div class="p-logo">flipside</div><div class="p-avatar">J</div></div>
+      <div class="p-card">
+        <div class="p-hero"><div class="p-fig"></div><div class="p-ov"></div>
+          <div class="p-content">
+            <div class="p-genre">Indie Folk · New</div>
+            <div class="p-name f-spacegrotesk" style="font-size:24px;">Bon Iver</div>
+          </div>
+        </div>
+        <div class="p-strip">
+          <div class="p-thumbs"><div class="p-thumb" style="background:linear-gradient(135deg,#7c5400,#3d2a00);"></div><div class="p-thumb" style="background:linear-gradient(135deg,#5c4000,#2a1c00);"></div><div class="p-thumb" style="background:linear-gradient(135deg,#4a3500,#221800);"></div></div>
+          <div class="p-sc"><div class="p-tname">▶ Holocene</div><div class="p-tcount">+ 4 more tracks</div></div>
+          <div class="p-play">▶</div>
+        </div>
+      </div>
+    </div>
+    <div class="fc-info">
+      <div class="fc-name-row"><div class="fc-name">Space Grotesk</div><div class="fc-source">Google Fonts · Free</div></div>
+      <div class="fc-specimen f-spacegrotesk" style="font-size:36px;">Holocene</div>
+      <div class="fc-desc">Retro-futuristic with subtly irregular terminals — a grotesk with personality. Technical and indie. Slightly narrower than the others.</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- MY PICKS -->
+<div class="sh">
+  <div class="sh-line"></div>
+  <div class="sh-badge mine">Recommended · same territory</div>
+  <div class="sh-line"></div>
+</div>
+
+<div class="grid">
+
+  <!-- Manrope -->
+  <div class="fc">
+    <div class="phone-wrap">
+      <div class="p-nav"><div class="p-logo">flipside</div><div class="p-avatar">J</div></div>
+      <div class="p-card">
+        <div class="p-hero"><div class="p-fig"></div><div class="p-ov"></div>
+          <div class="p-content">
+            <div class="p-genre">Indie Folk · New</div>
+            <div class="p-name f-manrope" style="font-size:25px;">Bon Iver</div>
+          </div>
+        </div>
+        <div class="p-strip">
+          <div class="p-thumbs"><div class="p-thumb" style="background:linear-gradient(135deg,#7c5400,#3d2a00);"></div><div class="p-thumb" style="background:linear-gradient(135deg,#5c4000,#2a1c00);"></div><div class="p-thumb" style="background:linear-gradient(135deg,#4a3500,#221800);"></div></div>
+          <div class="p-sc"><div class="p-tname">▶ Holocene</div><div class="p-tcount">+ 4 more tracks</div></div>
+          <div class="p-play">▶</div>
+        </div>
+      </div>
+    </div>
+    <div class="fc-info">
+      <div class="fc-name-row">
+        <div class="fc-name">Manrope</div>
+        <div class="rec-dot">Rec #1</div>
+      </div>
+      <div class="fc-source" style="margin-top:-4px;margin-bottom:2px;">Google Fonts · Free</div>
+      <div class="fc-specimen f-manrope" style="font-size:37px;">Holocene</div>
+      <div class="fc-desc">Geometric sans with optical corrections that make it feel more refined than Roboto, less quirky than Space Grotesk. The sweet spot between clinical and characterful.</div>
+    </div>
+  </div>
+
+  <!-- Cabinet Grotesk -->
+  <div class="fc">
+    <div class="phone-wrap">
+      <div class="p-nav"><div class="p-logo">flipside</div><div class="p-avatar">J</div></div>
+      <div class="p-card">
+        <div class="p-hero"><div class="p-fig"></div><div class="p-ov"></div>
+          <div class="p-content">
+            <div class="p-genre">Indie Folk · New</div>
+            <div class="p-name f-cabinet" style="font-size:25px;">Bon Iver</div>
+          </div>
+        </div>
+        <div class="p-strip">
+          <div class="p-thumbs"><div class="p-thumb" style="background:linear-gradient(135deg,#7c5400,#3d2a00);"></div><div class="p-thumb" style="background:linear-gradient(135deg,#5c4000,#2a1c00);"></div><div class="p-thumb" style="background:linear-gradient(135deg,#4a3500,#221800);"></div></div>
+          <div class="p-sc"><div class="p-tname">▶ Holocene</div><div class="p-tcount">+ 4 more tracks</div></div>
+          <div class="p-play">▶</div>
+        </div>
+      </div>
+    </div>
+    <div class="fc-info">
+      <div class="fc-name-row">
+        <div class="fc-name">Cabinet Grotesk</div>
+        <div class="rec-dot">Rec #2</div>
+      </div>
+      <div class="fc-source" style="margin-top:-4px;margin-bottom:2px;">Fontshare · Free</div>
+      <div class="fc-specimen f-cabinet" style="font-size:37px;">Holocene</div>
+      <div class="fc-desc">Confident, slightly condensed at heavy weights. Very popular in music and creative apps right now. Similar energy to Satoshi but a touch more aggressive.</div>
+    </div>
+  </div>
+
+  <!-- Plus Jakarta Sans -->
+  <div class="fc">
+    <div class="phone-wrap">
+      <div class="p-nav"><div class="p-logo">flipside</div><div class="p-avatar">J</div></div>
+      <div class="p-card">
+        <div class="p-hero"><div class="p-fig"></div><div class="p-ov"></div>
+          <div class="p-content">
+            <div class="p-genre">Indie Folk · New</div>
+            <div class="p-name f-jakarta" style="font-size:24px;">Bon Iver</div>
+          </div>
+        </div>
+        <div class="p-strip">
+          <div class="p-thumbs"><div class="p-thumb" style="background:linear-gradient(135deg,#7c5400,#3d2a00);"></div><div class="p-thumb" style="background:linear-gradient(135deg,#5c4000,#2a1c00);"></div><div class="p-thumb" style="background:linear-gradient(135deg,#4a3500,#221800);"></div></div>
+          <div class="p-sc"><div class="p-tname">▶ Holocene</div><div class="p-tcount">+ 4 more tracks</div></div>
+          <div class="p-play">▶</div>
+        </div>
+      </div>
+    </div>
+    <div class="fc-info">
+      <div class="fc-name-row">
+        <div class="fc-name">Plus Jakarta Sans</div>
+        <div class="rec-dot">Rec #3</div>
+      </div>
+      <div class="fc-source" style="margin-top:-4px;margin-bottom:2px;">Google Fonts · Free</div>
+      <div class="fc-specimen f-jakarta" style="font-size:37px;">Holocene</div>
+      <div class="fc-desc">Sharp and contemporary, sits between Satoshi and Space Grotesk. Clean diagonals, tight tracking at heavy weights. Feels premium without being recognisable.</div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

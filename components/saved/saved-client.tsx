@@ -193,6 +193,7 @@ function ArtistsTab({
         >
           {/* Artist photo */}
           {artist.imageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={artist.imageUrl}
               alt={artist.name}
@@ -333,6 +334,7 @@ function TracksTab({ tracks }: { tracks: SavedTrackRow[] }) {
         >
           {/* Album art */}
           {track.albumImageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={track.albumImageUrl}
               alt={track.name}

@@ -51,8 +51,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           accessToken: account.access_token,
           refreshToken: account.refresh_token,
           expiresAt: account.expires_at,
-          displayName: (profile as any).display_name,
-          avatarUrl: (profile as any).images?.[0]?.url ?? null,
+          displayName: (profile as { display_name?: string }).display_name,
+          avatarUrl: (profile as { images?: Array<{ url: string }> }).images?.[0]?.url ?? null,
         }
       }
       // No refresh token = no session, return as-is
@@ -73,14 +73,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
 })
 
-async function refreshSpotifyToken(token: any) {
+async function refreshSpotifyToken(token: import("next-auth/jwt").JWT) {
   try {
     const res = await fetch("https://accounts.spotify.com/api/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
         grant_type: "refresh_token",
-        refresh_token: token.refreshToken,
+        refresh_token: token.refreshToken as string,
         client_id: process.env.SPOTIFY_CLIENT_ID!,
         client_secret: process.env.SPOTIFY_CLIENT_SECRET!,
       }),

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { motion, AnimatePresence } from "framer-motion"
+import { motion } from "framer-motion"
 import { TrackStrip } from "@/components/feed/track-strip"
 import { useAudio } from "@/lib/audio-context"
 import type { Track } from "@/lib/music-provider/types"

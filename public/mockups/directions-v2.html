@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flipside — A+C Hybrid</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #111;
+    font-family: 'Inter', sans-serif;
+    color: #fff;
+    min-height: 100vh;
+    padding: 48px 24px 80px;
+  }
+
+  .page-header {
+    text-align: center;
+    margin-bottom: 56px;
+  }
+  .page-header h1 {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: #555;
+    margin-bottom: 10px;
+  }
+  .page-header p {
+    font-size: 26px;
+    font-weight: 600;
+    color: #fff;
+  }
+  .page-header .sub {
+    font-size: 13px;
+    color: #555;
+    font-weight: 400;
+    margin-top: 6px;
+  }
+
+  /* ---- layout ---- */
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 40px;
+    max-width: 820px;
+    margin: 0 auto;
+    align-items: start;
+  }
+
+  .col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+  }
+
+  .col-label {
+    text-align: center;
+  }
+
+  .col-label .badge {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    padding: 3px 10px;
+    border-radius: 999px;
+    margin-bottom: 10px;
+    background: #f59e0b22;
+    color: #f59e0b;
+    border: 1px solid #f59e0b44;
+  }
+
+  .col-label h2 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  .col-label p {
+    font-size: 12px;
+    color: #555;
+    line-height: 1.5;
+  }
+
+  /* ---- phone ---- */
+  .phone {
+    width: 320px;
+    height: 660px;
+    border-radius: 38px;
+    overflow: hidden;
+    border: 1.5px solid #2a2a2a;
+    background: #0a0a0a;
+    position: relative;
+    box-shadow: 0 32px 80px rgba(0,0,0,0.7);
+    flex-shrink: 0;
+  }
+
+  /* ===================================================
+     PHONE 1 — FEED (collapsed cards)
+     =================================================== */
+
+  /* Top nav */
+  .nav {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 54px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 18px;
+    z-index: 20;
+    background: rgba(10,10,10,0.85);
+    backdrop-filter: blur(16px);
+    border-bottom: 1px solid #151515;
+  }
+
+  .nav-logo {
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: #f59e0b;
+  }
+
+  .nav-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .nav-avatar {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: #f59e0b22;
+    border: 1px solid #f59e0b44;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; color: #f59e0b; font-weight: 600;
+  }
+
+  /* Feed scroll area */
+  .feed {
+    position: absolute;
+    top: 54px; bottom: 58px; left: 0; right: 0;
+    overflow: hidden;
+    padding: 14px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  /* Artist card — collapsed */
+  .artist-card {
+    border-radius: 16px;
+    overflow: hidden;
+    background: #111;
+    border: 1px solid #1c1c1c;
+    flex-shrink: 0;
+  }
+
+  /* Hero image area */
+  .card-hero {
+    position: relative;
+    height: 156px;
+    overflow: hidden;
+  }
+
+  .card-img {
+    position: absolute;
+    inset: 0;
+  }
+
+  .card-img-1 { background: linear-gradient(145deg, #2d1f00 0%, #7c5400 40%, #3a2800 70%, #110d00 100%); }
+  .card-img-2 { background: linear-gradient(145deg, #001a2d 0%, #003d6b 40%, #001830 70%, #000810 100%); }
+  .card-img-3 { background: linear-gradient(145deg, #1a0028 0%, #4a0072 40%, #200035 70%, #080010 100%); }
+
+  /* Simulated figure in image */
+  .card-img-figure {
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    border-radius: 50% 50% 0 0;
+    opacity: 0.35;
+    filter: blur(4px);
+  }
+
+  .card-img-1 .card-img-figure {
+    width: 110px; height: 130px;
+    background: linear-gradient(180deg, #e8a020, #a06010 60%, transparent);
+  }
+
+  .card-img-2 .card-img-figure {
+    width: 100px; height: 120px;
+    background: linear-gradient(180deg, #4db8ff, #1a78cc 60%, transparent);
+  }
+
+  .card-img-3 .card-img-figure {
+    width: 120px; height: 140px;
+    background: linear-gradient(180deg, #c084fc, #7c3aed 60%, transparent);
+  }
+
+  .card-img-overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top, #111 0%, rgba(17,17,17,0.4) 50%, transparent 100%);
+  }
+
+  /* Genre + name over image */
+  .card-hero-content {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    padding: 12px 14px 10px;
+  }
+
+  .card-genre {
+    font-size: 8px;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #f59e0b;
+    margin-bottom: 3px;
+  }
+
+  .card-name {
+    font-family: 'DM Serif Display', serif;
+    font-size: 26px;
+    line-height: 1.0;
+    color: #fff;
+  }
+
+  /* Card body */
+  .card-body {
+    padding: 10px 14px 0;
+  }
+
+  .card-reason {
+    font-size: 10px;
+    color: #555;
+    line-height: 1.45;
+    margin-bottom: 8px;
+  }
+
+  .card-tags {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+  }
+
+  .card-tag {
+    font-size: 8px;
+    font-weight: 500;
+    color: #444;
+    background: #161616;
+    border: 1px solid #1f1f1f;
+    border-radius: 4px;
+    padding: 2px 6px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  /* Track preview strip — THE KEY VISUAL CUE */
+  .track-strip {
+    border-top: 1px solid #161616;
+    padding: 8px 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+  }
+
+  .track-thumbs {
+    display: flex;
+    gap: -4px;
+  }
+
+  .track-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    border: 1px solid #0a0a0a;
+    flex-shrink: 0;
+  }
+
+  .track-thumb:not(:first-child) {
+    margin-left: -6px;
+  }
+
+  .track-strip-label {
+    flex: 1;
+    font-size: 10px;
+    color: #444;
+  }
+
+  .track-strip-label strong {
+    color: #666;
+    font-weight: 500;
+  }
+
+  .track-strip-arrow {
+    font-size: 10px;
+    color: #333;
+  }
+
+  /* Card actions row */
+  .card-actions {
+    border-top: 1px solid #141414;
+    padding: 8px 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .action-btn {
+    height: 30px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    font-size: 10px;
+    font-weight: 500;
+    flex: 1;
+    cursor: pointer;
+  }
+
+  .action-btn.save {
+    background: #f59e0b;
+    color: #000;
+    font-weight: 600;
+  }
+
+  .action-btn.dislike {
+    background: #161616;
+    border: 1px solid #1f1f1f;
+    color: #444;
+  }
+
+  /* Second card — partially visible */
+  .artist-card.partial {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+
+  /* Bottom nav */
+  .bottom-nav {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 58px;
+    background: rgba(10,10,10,0.95);
+    backdrop-filter: blur(20px);
+    border-top: 1px solid #161616;
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    padding: 0 20px 8px;
+  }
+
+  .bnav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    font-size: 8px;
+    color: #333;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .bnav-item.active { color: #f59e0b; }
+  .bnav-icon { font-size: 15px; line-height: 1; }
+
+
+  /* ===================================================
+     PHONE 2 — EXPANDED card / detail drawer
+     =================================================== */
+
+  .phone-expanded {
+    background: #0a0a0a;
+  }
+
+  /* Dim backdrop behind drawer */
+  .drawer-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 5;
+  }
+
+  /* The collapsed card peeking at the top */
+  .peek-card {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 220px;
+    z-index: 4;
+  }
+
+  .peek-img {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(145deg, #2d1f00 0%, #7c5400 40%, #3a2800 70%, #110d00 100%);
+  }
+
+  .peek-img-figure {
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 110px; height: 150px;
+    border-radius: 50% 50% 0 0;
+    opacity: 0.35;
+    filter: blur(4px);
+    background: linear-gradient(180deg, #e8a020, #a06010 60%, transparent);
+  }
+
+  .peek-overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, transparent 60%);
+  }
+
+  .peek-content {
+    position: absolute;
+    bottom: 12px;
+    left: 16px;
+    right: 16px;
+  }
+
+  .peek-genre {
+    font-size: 8px;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #f59e0b;
+    margin-bottom: 2px;
+  }
+
+  .peek-name {
+    font-family: 'DM Serif Display', serif;
+    font-size: 28px;
+    color: #fff;
+    line-height: 1.0;
+  }
+
+  /* The detail drawer */
+  .drawer {
+    position: absolute;
+    top: 200px;
+    left: 0; right: 0; bottom: 0;
+    background: #0f0f0f;
+    border-radius: 20px 20px 0 0;
+    border-top: 1px solid #1e1e1e;
+    z-index: 10;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .drawer-handle {
+    width: 32px; height: 3px;
+    background: #2a2a2a;
+    border-radius: 999px;
+    margin: 10px auto 0;
+    flex-shrink: 0;
+  }
+
+  .drawer-header {
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid #161616;
+    flex-shrink: 0;
+  }
+
+  .drawer-header-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+
+  .drawer-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #ccc;
+  }
+
+  .drawer-meta {
+    font-size: 10px;
+    color: #444;
+  }
+
+  .drawer-save-btn {
+    height: 28px;
+    padding: 0 12px;
+    border-radius: 8px;
+    background: #f59e0b;
+    color: #000;
+    font-size: 10px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .drawer-reason {
+    font-size: 10px;
+    color: #444;
+    line-height: 1.45;
+    margin-bottom: 8px;
+  }
+
+  .drawer-tags {
+    display: flex;
+    gap: 4px;
+  }
+
+  .drawer-tag {
+    font-size: 8px;
+    font-weight: 500;
+    color: #444;
+    background: #161616;
+    border: 1px solid #1e1e1e;
+    border-radius: 4px;
+    padding: 2px 6px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  /* Track list */
+  .drawer-tracks-label {
+    padding: 12px 16px 6px;
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: #333;
+    flex-shrink: 0;
+  }
+
+  .drawer-tracks {
+    flex: 1;
+    overflow: hidden;
+    padding: 0 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .track-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 6px;
+    border-radius: 8px;
+    background: transparent;
+  }
+
+  .track-row:nth-child(1) {
+    background: #161616;
+  }
+
+  .track-num {
+    font-size: 10px;
+    color: #333;
+    width: 14px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+
+  .track-row:nth-child(1) .track-num {
+    color: #f59e0b;
+    font-size: 11px;
+  }
+
+  .track-art {
+    width: 32px; height: 32px;
+    border-radius: 6px;
+    flex-shrink: 0;
+  }
+
+  .track-art-1 { background: linear-gradient(135deg, #7c5400, #3d2a00); }
+  .track-art-2 { background: linear-gradient(135deg, #5c4000, #2a1c00); }
+  .track-art-3 { background: linear-gradient(135deg, #4a3500, #221800); }
+  .track-art-4 { background: linear-gradient(135deg, #3a2a00, #181000); }
+  .track-art-5 { background: linear-gradient(135deg, #2a1f00, #100c00); }
+
+  .track-info { flex: 1; min-width: 0; }
+
+  .track-name {
+    font-size: 11px;
+    font-weight: 500;
+    color: #ddd;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 1px;
+  }
+
+  .track-row:nth-child(1) .track-name { color: #fff; }
+
+  .track-duration {
+    font-size: 9px;
+    color: #383838;
+  }
+
+  .track-play-btn {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px;
+  }
+
+  .track-row:nth-child(1) .track-play-btn {
+    background: #f59e0b;
+    color: #000;
+  }
+
+  .track-play-btn.inactive {
+    background: #161616;
+    color: #444;
+    border: 1px solid #1e1e1e;
+  }
+
+  /* Spotify link */
+  .drawer-footer {
+    padding: 10px 16px 14px;
+    border-top: 1px solid #141414;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .spotify-link {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    color: #444;
+    font-weight: 500;
+  }
+
+  .spotify-dot {
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: #1DB954;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 7px;
+    color: #000;
+    font-weight: 700;
+  }
+
+  .dislike-link {
+    font-size: 10px;
+    color: #2a2a2a;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  /* ---- traits ---- */
+  .traits {
+    width: 320px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .trait {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    background: #161616;
+    border: 1px solid #1f1f1f;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 11px;
+    color: #666;
+    line-height: 1.4;
+  }
+
+  .trait-icon { font-size: 13px; flex-shrink: 0; }
+  .trait strong { color: #bbb; }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>A + C Hybrid — Refined Directions</h1>
+  <p>Editorial meets intelligent list</p>
+  <div class="sub">No groups · Tracks behind tap · Visual track cue in feed</div>
+</div>
+
+<div class="layout">
+
+  <!-- ============ COL 1: FEED ============ -->
+  <div class="col">
+    <div class="col-label">
+      <div class="badge">Feed view</div>
+      <h2>Collapsed cards</h2>
+      <p>Editorial image, smart reason text, genre tags — and a track strip hinting at what's inside.</p>
+    </div>
+
+    <div class="phone">
+
+      <!-- Nav -->
+      <div class="nav">
+        <div class="nav-logo">flipside</div>
+        <div class="nav-right">
+          <div class="nav-avatar">J</div>
+        </div>
+      </div>
+
+      <!-- Feed -->
+      <div class="feed">
+
+        <!-- Card 1 — Bon Iver -->
+        <div class="artist-card">
+          <div class="card-hero">
+            <div class="card-img card-img-1">
+              <div class="card-img-figure"></div>
+            </div>
+            <div class="card-img-overlay"></div>
+            <div class="card-hero-content">
+              <div class="card-genre">Indie Folk · New for you</div>
+              <div class="card-name">Bon Iver</div>
+            </div>
+          </div>
+
+          <div class="card-body">
+            <div class="card-reason">Because you listen to Sufjan Stevens and The National — orchestral, introspective, layered.</div>
+            <div class="card-tags">
+              <div class="card-tag">Folk</div>
+              <div class="card-tag">Indie</div>
+              <div class="card-tag">Electronic</div>
+            </div>
+          </div>
+
+          <!-- Track strip -->
+          <div class="track-strip">
+            <div class="track-thumbs">
+              <div class="track-thumb" style="background: linear-gradient(135deg,#7c5400,#3d2a00);"></div>
+              <div class="track-thumb" style="background: linear-gradient(135deg,#5c4000,#2a1c00);"></div>
+              <div class="track-thumb" style="background: linear-gradient(135deg,#4a3500,#221800);"></div>
+            </div>
+            <div class="track-strip-label"><strong>5 tracks</strong> · tap to listen</div>
+            <div class="track-strip-arrow">›</div>
+          </div>
+
+          <div class="card-actions">
+            <div class="action-btn dislike">👎 Not for me</div>
+            <div class="action-btn save">＋ Save artist</div>
+          </div>
+        </div>
+
+        <!-- Card 2 — partially visible -->
+        <div class="artist-card partial">
+          <div class="card-hero" style="height: 80px;">
+            <div class="card-img card-img-2">
+              <div class="card-img-figure"></div>
+            </div>
+            <div class="card-img-overlay"></div>
+            <div class="card-hero-content">
+              <div class="card-genre">Jazz Fusion</div>
+              <div class="card-name" style="font-size: 20px;">Arooj Aftab</div>
+            </div>
+          </div>
+          <div class="track-strip">
+            <div class="track-thumbs">
+              <div class="track-thumb" style="background: linear-gradient(135deg,#003d6b,#001830);"></div>
+              <div class="track-thumb" style="background: linear-gradient(135deg,#002a4a,#001020);"></div>
+            </div>
+            <div class="track-strip-label"><strong>4 tracks</strong> · tap to listen</div>
+            <div class="track-strip-arrow">›</div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Bottom Nav -->
+      <div class="bottom-nav">
+        <div class="bnav-item active">
+          <div class="bnav-icon">⚡</div>
+          Feed
+        </div>
+        <div class="bnav-item">
+          <div class="bnav-icon">♡</div>
+          Saved
+        </div>
+        <div class="bnav-item">
+          <div class="bnav-icon">⚙</div>
+          Settings
+        </div>
+      </div>
+    </div>
+
+    <div class="traits">
+      <div class="trait"><span class="trait-icon">🎨</span><div><strong>Editorial hero image</strong> — A's full-bleed feel, DM Serif Display for artist names</div></div>
+      <div class="trait"><span class="trait-icon">💬</span><div><strong>"Why you'd like this"</strong> reason from C — makes it feel smart, not random</div></div>
+      <div class="trait"><span class="trait-icon">🎵</span><div><strong>Track strip cue</strong> — stacked album art thumbnails + "5 tracks · tap to listen" hint</div></div>
+      <div class="trait"><span class="trait-icon">🏷</span><div><strong>Genre tags</strong> from C — quick scannable context before you decide</div></div>
+    </div>
+  </div>
+
+  <!-- ============ COL 2: EXPANDED ============ -->
+  <div class="col">
+    <div class="col-label">
+      <div class="badge">Tap to expand</div>
+      <h2>Artist detail drawer</h2>
+      <p>Slides up over the card. Full track list, reason, Spotify integration — without leaving the feed.</p>
+    </div>
+
+    <div class="phone phone-expanded">
+
+      <!-- Peeking collapsed card behind drawer -->
+      <div class="peek-card">
+        <div class="peek-img">
+          <div class="peek-img-figure"></div>
+        </div>
+        <div class="peek-overlay"></div>
+        <div class="peek-content">
+          <div class="peek-genre">Indie Folk · New for you</div>
+          <div class="peek-name">Bon Iver</div>
+        </div>
+      </div>
+
+      <!-- Dim backdrop -->
+      <div class="drawer-backdrop"></div>
+
+      <!-- Drawer -->
+      <div class="drawer">
+        <div class="drawer-handle"></div>
+
+        <div class="drawer-header">
+          <div class="drawer-header-top">
+            <div>
+              <div class="drawer-title">Bon Iver</div>
+              <div class="drawer-meta">4.2M monthly listeners</div>
+            </div>
+            <div class="drawer-save-btn">＋ Save artist</div>
+          </div>
+          <div class="drawer-reason">Because you listen to Sufjan Stevens and The National — orchestral, introspective, layered songwriting.</div>
+          <div class="drawer-tags">
+            <div class="drawer-tag">Folk</div>
+            <div class="drawer-tag">Indie</div>
+            <div class="drawer-tag">Electronic</div>
+          </div>
+        </div>
+
+        <div class="drawer-tracks-label">Top tracks</div>
+
+        <div class="drawer-tracks">
+
+          <div class="track-row">
+            <div class="track-num">▶</div>
+            <div class="track-art track-art-1"></div>
+            <div class="track-info">
+              <div class="track-name">Holocene</div>
+              <div class="track-duration">5:37</div>
+            </div>
+            <div class="track-play-btn">▶</div>
+          </div>
+
+          <div class="track-row">
+            <div class="track-num">2</div>
+            <div class="track-art track-art-2"></div>
+            <div class="track-info">
+              <div class="track-name">Skinny Love</div>
+              <div class="track-duration">3:59</div>
+            </div>
+            <div class="track-play-btn inactive">▶</div>
+          </div>
+
+          <div class="track-row">
+            <div class="track-num">3</div>
+            <div class="track-art track-art-3"></div>
+            <div class="track-info">
+              <div class="track-name">Towers</div>
+              <div class="track-duration">4:04</div>
+            </div>
+            <div class="track-play-btn inactive">▶</div>
+          </div>
+
+          <div class="track-row">
+            <div class="track-num">4</div>
+            <div class="track-art track-art-4"></div>
+            <div class="track-info">
+              <div class="track-name">Michicant</div>
+              <div class="track-duration">4:03</div>
+            </div>
+            <div class="track-play-btn inactive">▶</div>
+          </div>
+
+          <div class="track-row">
+            <div class="track-num">5</div>
+            <div class="track-art track-art-5"></div>
+            <div class="track-info">
+              <div class="track-name">Calgary</div>
+              <div class="track-duration">4:04</div>
+            </div>
+            <div class="track-play-btn inactive">▶</div>
+          </div>
+
+        </div>
+
+        <div class="drawer-footer">
+          <div class="spotify-link">
+            <div class="spotify-dot">♫</div>
+            Open in Spotify
+          </div>
+          <div class="dislike-link">👎 Not for me</div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="traits">
+      <div class="trait"><span class="trait-icon">🪟</span><div><strong>Drawer slides up</strong> over the feed card — card still visible behind it, easy to dismiss</div></div>
+      <div class="trait"><span class="trait-icon">▶</span><div><strong>Top track auto-highlighted</strong> — immediately actionable, no hunting required</div></div>
+      <div class="trait"><span class="trait-icon">🟢</span><div><strong>"Open in Spotify"</strong> at the bottom — integrates naturally without dominating</div></div>
+      <div class="trait"><span class="trait-icon">👎</span><div><strong>Dislike lives here too</strong> — keep or skip lives in the same place as the detail</div></div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>
