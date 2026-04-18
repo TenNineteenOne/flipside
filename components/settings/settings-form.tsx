@@ -33,6 +33,8 @@ export function SettingsForm({
   const [threshold, setThreshold] = useState(initialPlayThreshold)
   const [lastfmUsername, setLastfmUsername] = useState(initialLastfmUsername ?? "")
   const [isSyncing, setIsSyncing] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState(false)
 
   const isConnected = lastfmUsername.trim().length > 0
 
@@ -70,6 +72,22 @@ export function SettingsForm({
       toast.success("Last.fm username saved")
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save Last.fm username")
+    }
+  }
+
+  async function handleDeleteAccount() {
+    if (!deleteConfirm) {
+      setDeleteConfirm(true)
+      return
+    }
+    setIsDeleting(true)
+    try {
+      await fetch("/api/account", { method: "DELETE" })
+      window.location.href = "/"
+    } catch {
+      toast.error("Failed to delete account")
+      setIsDeleting(false)
+      setDeleteConfirm(false)
     }
   }
 
@@ -291,9 +309,15 @@ export function SettingsForm({
               </form>
               <button
                 className="btn"
+                onClick={handleDeleteAccount}
+                disabled={isDeleting}
                 style={{ color: "#ff7b7b", borderColor: "rgba(255,75,75,0.2)" }}
               >
-                Forget my account permanently
+                {isDeleting
+                  ? "Deleting…"
+                  : deleteConfirm
+                  ? "Are you sure? Tap again to confirm"
+                  : "Forget my account permanently"}
               </button>
               <div className="muted" style={{ fontSize: 11.5, lineHeight: 1.5 }}>
                 No email. No password. If you forget your username, your account is gone.
