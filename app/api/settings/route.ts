@@ -1,16 +1,14 @@
 import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, apiUnauthorized, dbError } from "@/lib/errors"
-import { getUserId } from "@/lib/user"
 
 export async function PATCH(request: Request) {
   const session = await auth()
-  if (!session?.user?.spotifyId) return apiUnauthorized()
+  if (!session?.user?.id) return apiUnauthorized()
 
-  const userId = await getUserId(session.user.spotifyId)
-  if (!userId) return apiUnauthorized()
+  const userId = session.user.id
 
-  let body: { playThreshold?: number; lastfmUsername?: string }
+  let body: { playThreshold?: number; lastfmUsername?: string; selectedGenres?: string[]; undergroundMode?: boolean }
   try {
     body = await request.json()
   } catch {
@@ -33,6 +31,17 @@ export async function PATCH(request: Request) {
       return apiError("Invalid Last.fm username format", 400)
     }
     update.lastfm_username = lfmUsername || null
+  }
+
+  if (body.selectedGenres !== undefined) {
+    if (!Array.isArray(body.selectedGenres) || body.selectedGenres.length > 20) {
+      return apiError("selectedGenres must be an array of up to 20 tags", 400)
+    }
+    update.selected_genres = body.selectedGenres.filter((g) => typeof g === "string" && g.length <= 80)
+  }
+
+  if (body.undergroundMode !== undefined) {
+    update.underground_mode = !!body.undergroundMode
   }
 
   if (Object.keys(update).length === 0) {

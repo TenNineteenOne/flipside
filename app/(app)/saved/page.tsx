@@ -1,25 +1,24 @@
 import { redirect } from "next/navigation"
 import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
-import { SavedClient, type SavedArtistRow, type SavedTrackRow } from "@/components/saved/saved-client"
-import type { Track } from "@/lib/music-provider/types"
+import { SavedClient, type SavedArtistRow } from "@/components/saved/saved-client"
 
 export default async function SavedPage() {
   const session = await auth()
-  if (!session?.user?.spotifyId) {
-    redirect("/api/auth/signin")
+  if (!session?.user?.id) {
+    redirect("/sign-in")
   }
 
+  const userId = session.user.id
   const supabase = createServiceClient()
 
-  // Resolve internal user id + lastfm_username
   const { data: user } = await supabase
     .from("users")
     .select("id, lastfm_username")
-    .eq("spotify_id", session.user.spotifyId)
-    .single()
+    .eq("id", userId)
+    .maybeSingle()
 
-  if (!user) redirect("/api/auth/signin")
+  if (!user) redirect("/sign-in")
 
   const hasLastfm = Boolean(user.lastfm_username)
 
@@ -58,32 +57,12 @@ export default async function SavedPage() {
   // Build artist rows for the Artists tab
   const artists: SavedArtistRow[] = (saveRows ?? []).map((row: { spotify_artist_id: string }) => {
     const artistId = row.spotify_artist_id
-    const cached = cacheMap.get(artistId) as { 
-      name?: string; 
-      genres?: string[]; 
-      imageUrl?: string; 
-      artist_color?: string; 
-      topTracks?: Array<{ 
-        id?: string; 
-        spotifyTrackId?: string; 
-        name?: string; 
-        previewUrl?: string; 
-        durationMs?: number; 
-        albumName?: string; 
-        albumImageUrl?: string; 
-        source?: string 
-      }>
+    const cached = cacheMap.get(artistId) as {
+      name?: string;
+      genres?: string[];
+      imageUrl?: string;
+      artist_color?: string;
     } | undefined
-    const topTracks: Track[] = (cached?.topTracks ?? []).map((t) => ({
-      id: t.id ?? t.spotifyTrackId ?? "",
-      spotifyTrackId: t.spotifyTrackId ?? null,
-      name: t.name ?? "",
-      previewUrl: t.previewUrl ?? null,
-      durationMs: t.durationMs ?? 0,
-      albumName: t.albumName ?? "",
-      albumImageUrl: t.albumImageUrl ?? null,
-      source: (t.source ?? "spotify") as Track["source"],
-    }))
 
     return {
       artistId,
@@ -91,36 +70,12 @@ export default async function SavedPage() {
       genres: cached?.genres ?? [],
       imageUrl: cached?.imageUrl ?? null,
       artistColor: cached?.artist_color ?? "#8b5cf6",
-      topTracks,
     }
   })
-
-  // Build track rows for the Tracks tab
-  // A track row exists when the save has a spotify_track_id
-  const tracks: SavedTrackRow[] = (saveRows ?? [])
-    .filter((r: { spotify_track_id?: string }) => r.spotify_track_id)
-    .map((row: { spotify_artist_id: string; spotify_track_id: string }) => {
-      const artistId = row.spotify_artist_id
-      const cached = cacheMap.get(artistId) as {
-        name?: string;
-        topTracks?: Array<{ id?: string; spotifyTrackId?: string; name?: string; albumImageUrl?: string; durationMs?: number }>
-      } | undefined
-      const matchedTrack = (cached?.topTracks ?? []).find(
-        (t) => t.id === row.spotify_track_id || t.spotifyTrackId === row.spotify_track_id
-      )
-      return {
-        id: row.spotify_track_id as string,
-        name: matchedTrack?.name ?? "Unknown Track",
-        artistName: cached?.name ?? savedNameMap.get(artistId) ?? artistId,
-        albumImageUrl: matchedTrack?.albumImageUrl ?? null,
-        durationMs: matchedTrack?.durationMs ?? 0,
-      }
-    })
 
   return (
     <SavedClient
       artists={artists}
-      tracks={tracks}
       hasLastfm={hasLastfm}
     />
   )

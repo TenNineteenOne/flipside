@@ -25,7 +25,6 @@ interface Rec {
   }
   score: number
   why: { sourceArtists: string[]; genres: string[]; friendBoost: string[] }
-  artist_color?: string | null
 }
 
 /** Round-robin interleave by primary source artist so results aren't clustered. */
@@ -50,32 +49,26 @@ function interleave(recs: Rec[]): Rec[] {
 
 export default async function FeedPage() {
   const session = await auth()
-  if (!session?.user?.spotifyId) {
-    redirect("/api/auth/signin")
+  if (!session?.user?.id) {
+    redirect("/sign-in")
   }
 
+  const userId = session.user.id
   const supabase = createServiceClient()
 
-  // Upsert user on every login — creates row on first visit, updates profile on subsequent
-  const { data: user, error: upsertError } = await supabase
+  // Look up user row (created during sign-in via credentials provider)
+  const { data: user, error: userError } = await supabase
     .from("users")
-    .upsert(
-      {
-        spotify_id: session.user.spotifyId,
-        display_name: session.user.displayName ?? null,
-        avatar_url: session.user.avatarUrl ?? null,
-      },
-      { onConflict: "spotify_id" }
-    )
     .select("id")
-    .single()
+    .eq("id", userId)
+    .maybeSingle()
 
-  if (upsertError) {
-    console.log(`[feed-page] upsert err="${upsertError.message}" spotifyId=${session.user.spotifyId}`)
-    throw new Error(`Failed to load your account: ${upsertError.message}`)
+  if (userError) {
+    console.log(`[feed-page] user lookup err="${userError.message}" userId=${userId}`)
+    throw new Error(`Failed to load your account: ${userError.message}`)
   }
   if (!user) {
-    redirect("/api/auth/signin")
+    redirect("/sign-in")
   }
 
   // Fetch cached recommendations
@@ -116,11 +109,11 @@ export default async function FeedPage() {
     tracksMap.set(row.spotify_artist_id, (row.tracks as Rec["artist_data"]["topTracks"]) ?? [])
   }
 
-  for (const rec of validRecs) {
+  const recsWithColor = validRecs.map((rec) => {
     rec.artist_data.topTracks = tracksMap.get(rec.spotify_artist_id) ?? []
-    // Explicitly elevate artist_color so that it feeds into the FeedClient styling dynamically
-    rec.artist_color = (rec.artist_data as any).artist_color ?? null
-  }
+    const artist_color = (rec.artist_data as Record<string, unknown>).artist_color as string | null ?? null
+    return { ...rec, artist_color }
+  })
 
-  return <FeedClient recommendations={interleave(validRecs)} />
+  return <FeedClient recommendations={interleave(recsWithColor)} />
 }

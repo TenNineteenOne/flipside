@@ -1,4 +1,5 @@
 import { createServiceClient } from "@/lib/supabase/server"
+import { createHmac, timingSafeEqual } from "crypto"
 import { NextRequest } from "next/server"
 
 export async function GET(req: NextRequest) {
@@ -7,8 +8,11 @@ export async function GET(req: NextRequest) {
     console.error("[cron] CRON_SECRET is not set — refusing request")
     return Response.json({ error: "Server misconfigured" }, { status: 500 })
   }
-  const authHeader = req.headers.get("authorization")
-  if (authHeader !== `Bearer ${cronSecret}`) {
+  const authHeader = req.headers.get("authorization") ?? ""
+  const expected = `Bearer ${cronSecret}`
+  // HMAC both values to fixed-length digests — prevents length-leak from direct comparison
+  const hmac = (v: string) => createHmac("sha256", "cron-compare").update(v).digest()
+  if (!timingSafeEqual(hmac(authHeader), hmac(expected))) {
     return Response.json({ error: "Unauthorized" }, { status: 401 })
   }
 

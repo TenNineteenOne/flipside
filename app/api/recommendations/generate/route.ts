@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, apiUnauthorized } from "@/lib/errors"
 import { getAccessToken } from "@/lib/get-access-token"
+import { getSpotifyClientToken } from "@/lib/spotify-client-token"
 import { buildRecommendations } from "@/lib/recommendation/engine"
 import { extractArtistColor } from "@/lib/colour-extraction"
 import { searchTracksByArtist } from "@/lib/music-provider/itunes"
@@ -20,7 +21,11 @@ async function pLimit<T>(
   const workers = Array.from({ length: Math.min(limit, tasks.length) }, async () => {
     while (index < tasks.length) {
       const i = index++
-      results[i] = await tasks[i]()
+      try {
+        results[i] = await tasks[i]()
+      } catch (err) {
+        console.error(`[pLimit] task ${i} failed:`, err instanceof Error ? err.message : err)
+      }
     }
   })
 
@@ -31,24 +36,37 @@ async function pLimit<T>(
 export async function POST(req: NextRequest): Promise<Response> {
   console.log(`[generate] POST`)
   const session = await auth()
-  if (!session?.user?.spotifyId) return apiUnauthorized()
+  if (!session?.user?.id) return apiUnauthorized()
 
-  const accessToken = await getAccessToken(req)
-  if (!accessToken) return apiUnauthorized()
+  const userId = session.user.id
+
+  // User-level Spotify token (only available for spotify_authorized users)
+  const userAccessToken = await getAccessToken(req)
 
   const supabase = createServiceClient()
 
   // Read user row including play_threshold
   const { data: user, error: userError } = await supabase
     .from("users")
-    .select("id, play_threshold")
-    .eq("spotify_id", session.user.spotifyId)
+    .select("id, play_threshold, underground_mode, last_generated_at")
+    .eq("id", userId)
     .maybeSingle()
 
   if (userError || !user) return apiError("User not found", 404)
 
   // Default to 5 if the column is null (pre-migration rows)
   const playThreshold: number = user.play_threshold ?? 5
+
+  // Per-user cooldown: 30 seconds between generate requests
+  if (user.last_generated_at) {
+    const elapsed = Date.now() - new Date(user.last_generated_at).getTime()
+    if (elapsed < 30_000) {
+      return apiError("Please wait before generating more recommendations", 429)
+    }
+  }
+
+  // Update cooldown timestamp
+  await supabase.from("users").update({ last_generated_at: new Date().toISOString() }).eq("id", userId)
 
   // ── [SECURITY PATCH] Algorithmic Queue Capacity DoS limit ──
   // Restricts bad actors from infinitely looping the background engine, but allows up to 60 unseen artists to queue
@@ -67,14 +85,22 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   try {
-    // Note: We no longer delete the unseen cache entries. 
+    // Note: We no longer delete the unseen cache entries.
     // This allows users to request "more" natively and gracefully append them to their existing batch.
 
-    const count = await buildRecommendations({
+    // Use user's Spotify token if available, otherwise fall back to client credentials
+    const accessToken = userAccessToken ?? await getSpotifyClientToken() ?? ""
+
+    // Optional genre filter from query params
+    const rawGenre = req.nextUrl.searchParams.get("genre")
+    const genre = rawGenre && rawGenre.length <= 80 ? rawGenre : undefined
+
+    const recCount = await buildRecommendations({
       userId: user.id,
       accessToken,
-      spotifyId: session.user.spotifyId,
       playThreshold,
+      genre,
+      undergroundMode: user.underground_mode ?? false,
     })
 
     // ── Colour extraction ──────────────────────────────────────────────────
@@ -106,26 +132,25 @@ export async function POST(req: NextRequest): Promise<Response> {
       })
 
       if (needsColor.length > 0) {
-        await Promise.all(
-          needsColor.map(async (r) => {
-            const artistData = r.artist_data as Artist | null
-            const imageUrl = artistData?.imageUrl
-            if (!imageUrl) return
+        const colorTasks = needsColor.map((r) => async () => {
+          const artistData = r.artist_data as Artist | null
+          const imageUrl = artistData?.imageUrl
+          if (!imageUrl) return
 
-            const color = await extractArtistColor(imageUrl)
-            colorMap.set(r.spotify_artist_id, color)
+          const color = await extractArtistColor(imageUrl)
+          colorMap.set(r.spotify_artist_id, color)
 
-            // Write back to artist_search_cache (keyed by spotify_artist_id)
-            const { error: colorErr } = await supabase
-              .from("artist_search_cache")
-              .update({ artist_color: color })
-              .eq("spotify_artist_id", r.spotify_artist_id)
+          // Write back to artist_search_cache (keyed by spotify_artist_id)
+          const { error: colorErr } = await supabase
+            .from("artist_search_cache")
+            .update({ artist_color: color })
+            .eq("spotify_artist_id", r.spotify_artist_id)
 
-            if (colorErr) {
-              console.log(`[generate] color-update-fail id=${r.spotify_artist_id} err=${colorErr.message}`)
-            }
-          })
-        )
+          if (colorErr) {
+            console.log(`[generate] color-update-fail id=${r.spotify_artist_id} err=${colorErr.message}`)
+          }
+        })
+        await pLimit(colorTasks, 5)
       }
 
       // Write artist_color into recommendation_cache rows.
@@ -210,7 +235,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       }
     }
 
-    return Response.json({ success: true, count })
+    return Response.json({ success: true, count: recCount })
   } catch (err) {
     console.log(`[generate] fail err=${err instanceof Error ? err.message : err}`)
     return apiError("Recommendation generation failed", 500)

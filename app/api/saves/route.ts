@@ -3,7 +3,6 @@ import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, apiUnauthorized, dbError } from "@/lib/errors"
 import { getAccessToken } from "@/lib/get-access-token"
 import { isValidSpotifyId } from "@/lib/spotify-ids"
-import { getUserId } from "@/lib/user"
 import { type NextRequest } from "next/server"
 
 async function spotifyFetch(url: string, accessToken: string, options: RequestInit = {}) {
@@ -21,9 +20,9 @@ async function spotifyFetch(url: string, accessToken: string, options: RequestIn
 export async function POST(request: NextRequest) {
   console.log(`[saves] POST`)
   const session = await auth()
-  if (!session?.user?.spotifyId) return apiUnauthorized()
+  if (!session?.user?.id) return apiUnauthorized()
 
-  const { spotifyId } = session.user
+  const userId = session.user.id
 
   let body: { spotifyArtistId?: string; spotifyTrackId?: string; addToPlaylist?: boolean }
   try {
@@ -40,9 +39,6 @@ export async function POST(request: NextRequest) {
   if (spotifyTrackId !== undefined && !isValidSpotifyId(spotifyTrackId)) {
     return apiError("Invalid spotifyTrackId format", 400)
   }
-
-  const userId = await getUserId(spotifyId)
-  if (!userId) return apiUnauthorized()
 
   console.log(`[saves] start artistId=${spotifyArtistId} trackId=${spotifyTrackId ?? 'none'} addToPlaylist=${addToPlaylist}`)
 
@@ -86,7 +82,7 @@ export async function POST(request: NextRequest) {
     .eq("spotify_artist_id", spotifyArtistId)
   if (seenError) console.log(`[saves] seen_at err=${seenError.message}`)
 
-  // Only add to Spotify playlist when explicitly requested
+  // Only add to Spotify playlist when explicitly requested and user has Spotify access
   let playlistId: string | null = null
   if (spotifyTrackId && addToPlaylist) {
     const accessToken = await getAccessToken(request)
@@ -95,9 +91,9 @@ export async function POST(request: NextRequest) {
         .from("users")
         .select("id, spotify_id, flipside_playlist_id")
         .eq("id", userId)
-        .single()
+        .maybeSingle()
 
-      if (user) {
+      if (user?.spotify_id) {
         playlistId = user.flipside_playlist_id ?? null
         console.log(`[saves] playlist-start playlistId=${playlistId ?? 'none (will create)'}`)
 
@@ -142,13 +138,20 @@ export async function POST(request: NextRequest) {
             }
           )
 
-          if (addRes.status === 401) return apiError("Spotify token expired", 401)
+          if (addRes.status === 401) {
+            console.warn("[saves] Spotify 401 on track add — token expired")
+            console.log(`[saves] done (saved, playlist failed)`)
+            return Response.json({ success: true, saved: true, playlistError: "Spotify token expired" })
+          }
           if (addRes.status === 403) {
             console.warn("[saves] Spotify 403 on track add — scope missing or app not approved")
-            return apiError("Spotify permission denied for playlist", 403)
+            console.log(`[saves] done (saved, playlist failed)`)
+            return Response.json({ success: true, saved: true, playlistError: "Spotify permission denied for playlist" })
           }
           if (addRes.status === 429) {
             console.warn("[saves] Spotify rate limit hit when adding track — skipping")
+            console.log(`[saves] done (saved, playlist rate-limited)`)
+            return Response.json({ success: true, saved: true, playlistError: "Spotify rate limit — try again later" })
           } else if (addRes.ok) {
             console.log(`[saves] track-added ok`)
           }
@@ -158,12 +161,14 @@ export async function POST(request: NextRequest) {
   }
 
   console.log(`[saves] done`)
-  return Response.json({ success: true, playlistId: playlistId ?? null })
+  return Response.json({ success: true, saved: true, playlistId: playlistId ?? null })
 }
 
 export async function DELETE(request: NextRequest) {
   const session = await auth()
-  if (!session?.user?.spotifyId) return apiUnauthorized()
+  if (!session?.user?.id) return apiUnauthorized()
+
+  const userId = session.user.id
 
   let body: { spotifyArtistId?: string }
   try {
@@ -176,9 +181,6 @@ export async function DELETE(request: NextRequest) {
   if (!spotifyArtistId || !isValidSpotifyId(spotifyArtistId)) {
     return apiError("Valid spotifyArtistId is required", 400)
   }
-
-  const userId = await getUserId(session.user.spotifyId)
-  if (!userId) return apiUnauthorized()
 
   const supabase = createServiceClient()
   const { error } = await supabase

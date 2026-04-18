@@ -2,112 +2,62 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Music2, Bookmark, Settings, Clock } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { Music2, Bookmark, Settings, Clock, BarChart3 } from "lucide-react"
+import { IdenticonAvatar } from "@/components/ui/identicon-avatar"
 
 const navLinks = [
   { href: "/feed",     label: "Feed",     icon: Music2    },
   { href: "/history",  label: "History",  icon: Clock     },
   { href: "/saved",    label: "Saved",    icon: Bookmark  },
+  { href: "/stats",    label: "Stats",    icon: BarChart3 },
   { href: "/settings", label: "Settings", icon: Settings  },
 ]
 
 interface AppNavProps {
-  userName?: string
-  userImage?: string | null
+  userSeed?: string
 }
 
-export function AppNav({ userName = "User", userImage = null }: AppNavProps) {
+export function AppNav({ userSeed = "user" }: AppNavProps) {
   const pathname = usePathname()
-
   const isActive = (href: string) =>
     pathname === href || pathname.startsWith(href + "/")
 
-  /* ── shared inline style objects ── */
-  const navBg: React.CSSProperties = {
-    background: "rgba(8,8,8,0.92)",
-    backdropFilter: "blur(16px)",
-    WebkitBackdropFilter: "blur(16px)",
-  }
-
-  const avatar =
-    userImage ? (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={userImage}
-        alt={userName}
-        className="size-8 rounded-full object-cover"
-        style={{ border: "1px solid var(--accent-border)" }}
-      />
-    ) : (
-      <div
-        className="flex size-8 items-center justify-center rounded-full text-xs font-semibold"
-        style={{
-          background: "var(--accent-subtle)",
-          border: "1px solid var(--accent-border)",
-          color: "var(--accent)",
-        }}
-      >
-        {userName.charAt(0).toUpperCase()}
-      </div>
-    )
-
   return (
     <>
-      {/* ── Desktop top nav (≥ 768px) ── */}
-      <header
-        className="sticky top-0 z-50 hidden h-14 w-full md:flex items-center"
-        style={{
-          ...navBg,
-          borderBottom: "1px solid rgba(255,255,255,0.06)",
-        }}
-      >
-        <div className="flex w-full items-center justify-between px-6">
-          {/* Logo */}
-          <span
-            className="select-none text-lg"
-            style={{ fontWeight: 700, color: "#ffffff", fontFamily: "Inter, var(--font-sans), sans-serif" }}
-          >
-            flipside
-          </span>
+      {/* ── Desktop top nav (≥ 900px) ── */}
+      <header className="topnav">
+        {/* Brand mark */}
+        <span className="topnav-brand">
+          <span className="dot" />
+          <span>flipside</span>
+        </span>
 
-          {/* Nav links */}
-          <nav className="flex items-center gap-6">
-            {navLinks.map(({ href, label }) => (
-              <Link
-                key={href}
-                href={href}
-                className="text-sm font-medium transition-colors"
-                style={{ color: isActive(href) ? "var(--accent)" : "var(--text-muted)" }}
-              >
-                {label}
-              </Link>
-            ))}
-          </nav>
+        {/* Nav links */}
+        <nav className="topnav-links">
+          {navLinks.map(({ href, label }) => (
+            <Link
+              key={href}
+              href={href}
+              className={isActive(href) ? "active" : ""}
+            >
+              {label}
+            </Link>
+          ))}
+        </nav>
 
-          {/* Avatar */}
-          {avatar}
-        </div>
+        {/* Avatar */}
+        <IdenticonAvatar seed={userSeed} size={32} />
       </header>
 
-      {/* ── Mobile bottom tab bar (< 768px) ── */}
-      <nav
-        className="fixed inset-x-0 bottom-0 z-50 flex h-16 items-stretch md:hidden"
-        style={{
-          ...navBg,
-          borderTop: "1px solid rgba(255,255,255,0.06)",
-        }}
-      >
+      {/* ── Mobile bottom tab bar (< 900px) ── */}
+      <nav className="tabbar">
         {navLinks.map(({ href, label, icon: Icon }) => (
           <Link
             key={href}
             href={href}
-            className={cn(
-              "flex flex-1 flex-col items-center justify-center gap-1 text-xs font-medium transition-colors"
-            )}
-            style={{ color: isActive(href) ? "var(--accent)" : "#444444" }}
+            className={isActive(href) ? "active" : ""}
           >
-            <Icon className="size-5" />
+            <Icon size={22} />
             <span>{label}</span>
           </Link>
         ))}

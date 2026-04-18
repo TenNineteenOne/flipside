@@ -1,25 +1,29 @@
-import { type NextRequest } from "next/server"
 import { auth } from "@/lib/auth"
 import { apiUnauthorized } from "@/lib/errors"
-import { getAccessToken } from "@/lib/get-access-token"
-import { musicProvider } from "@/lib/music-provider/provider"
+import { createServiceClient } from "@/lib/supabase/server"
 
-export async function GET(req: NextRequest) {
+// After the auth pivot, onboarding is always needed for new users.
+// A user is considered onboarded once they have at least one seed_artist OR lastfm_username set.
+export async function GET() {
   const session = await auth()
-  if (!session?.user?.spotifyId) {
-    return apiUnauthorized()
-  }
+  if (!session?.user?.id) return apiUnauthorized()
 
-  const accessToken = await getAccessToken(req)
-  if (!accessToken) return apiUnauthorized()
+  const userId = session.user.id
+  const supabase = createServiceClient()
 
-  const artists = await musicProvider.getTopArtists(
-    accessToken,
-    "short_term"
-  )
+  const { count: seedCount } = await supabase
+    .from("seed_artists")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
 
-  const topArtistCount = artists.length
-  const needsOnboarding = topArtistCount < 5
+  const { data: user } = await supabase
+    .from("users")
+    .select("lastfm_username")
+    .eq("id", userId)
+    .maybeSingle()
 
-  return Response.json({ needsOnboarding, topArtistCount })
+  const hasSeeds = (seedCount ?? 0) > 0
+  const hasLastfm = !!user?.lastfm_username
+
+  return Response.json({ needsOnboarding: !hasSeeds && !hasLastfm })
 }

@@ -2,7 +2,7 @@ import type { MusicProvider, RateLimited } from "./index"
 import type { Artist, PlayHistory, Track } from "./types"
 
 const SPOTIFY_BASE = "https://api.spotify.com/v1"
-const LASTFM_BASE = "http://ws.audioscrobbler.com/2.0"
+const LASTFM_BASE = "https://ws.audioscrobbler.com/2.0"
 
 // ---------------------------------------------------------------------------
 // Internal Spotify API response shapes
@@ -94,14 +94,25 @@ async function spotifyFetch(
   accessToken: string,
   options: RequestInit = {},
 ): Promise<Response | null> {
-  const res = await fetch(url, {
-    ...options,
-    headers: {
-      "Authorization": `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-      ...(options.headers ? (options.headers as Record<string, string>) : {}),
-    },
-  })
+  let res: Response
+  try {
+    res = await fetch(url, {
+      ...options,
+      signal: AbortSignal.timeout(8000),
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        ...(options.headers ? (options.headers as Record<string, string>) : {}),
+      },
+    })
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      console.error(`[spotify] fetch timed out after 8s url=${url}`)
+    } else {
+      console.error(`[spotify] fetch failed url=${url} err=${err instanceof Error ? err.message : err}`)
+    }
+    return null
+  }
 
   if (res.status === 401) {
     return null
@@ -182,19 +193,23 @@ export class SpotifyProvider implements MusicProvider {
         `&format=json` +
         `&limit=50`
 
-      const res = await fetch(url)
+      const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
       if (!res.ok) { console.log(`[lfm] ${res.status} artist="${artistName}"`); return [] }
 
       const data = (await res.json()) as LastFmSimilarArtistsResponse
       if (data.error || !data.similarartists?.artist?.length) return []
 
       const all = data.similarartists.artist.map((a) => a.name)
-      // Skip top-5 obvious matches, take the next 3.
-      // Clamp start so short lists still produce names.
-      const start = Math.min(5, Math.max(0, all.length - 1))
-      return all.slice(start, start + 3)
+      // Skip top-3 obvious matches, take next 15 for a wider candidate pool.
+      // For niche artists with few results, return whatever we have.
+      if (all.length <= 3) return all
+      return all.slice(3, 18)
     } catch (err) {
-      console.log(`[lfm] fail artist="${artistName}" err=${err instanceof Error ? err.message : err}`)
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        console.error(`[lfm] getSimilarArtistNames timed out after 8s artist="${artistName}"`)
+      } else {
+        console.log(`[lfm] fail artist="${artistName}" err=${err instanceof Error ? err.message : err}`)
+      }
       return []
     }
   }

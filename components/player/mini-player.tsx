@@ -1,71 +1,13 @@
 "use client"
 
-import { useEffect, useState } from "react"
 import { AnimatePresence, motion } from "framer-motion"
-import { Pause, Play, X, Heart, Check } from "lucide-react"
+import { Pause, Play, X } from "lucide-react"
 import { useAudio } from "@/lib/audio-context"
 
 export function MiniPlayer() {
-  const { currentTrack, artistName, artistColor, isPlaying, pause, resume, stop } = useAudio()
+  const { currentTrack, artistName, artistColor, isPlaying, progress, pause, resume, stop } = useAudio()
 
-  const dynamicColor = artistColor ?? "#8b5cf6"
-
-  const [isLiking, setIsLiking] = useState(false)
-  const [isLiked, setIsLiked] = useState(false)
-
-  useEffect(() => {
-    setIsLiked(false)
-    setIsLiking(false)
-  }, [currentTrack?.id])
-
-  async function handleLike(e: React.MouseEvent) {
-    e.stopPropagation()
-    if (!currentTrack || isLiked || isLiking) return
-    setIsLiking(true)
-
-    let targetId = currentTrack.spotifyTrackId
-
-    if (!targetId && artistName) {
-      try {
-         const res = await fetch("/api/spotify/resolve-track", {
-           method: "POST",
-           headers: { "Content-Type": "application/json" },
-           body: JSON.stringify({ 
-             artistName: artistName, 
-             trackName: currentTrack.name 
-           })
-         })
-         const data = await res.json()
-         if (data.spotifyTrackId) {
-            targetId = data.spotifyTrackId
-         } else {
-            setIsLiking(false)
-            return
-         }
-      } catch(err) {
-         setIsLiking(false)
-         return
-      }
-    }
-
-    if (!targetId) {
-      setIsLiking(false)
-      return
-    }
-
-    setIsLiked(true)
-    setIsLiking(false)
-
-    try {
-      await fetch("/api/spotify/like", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ trackId: targetId })
-      })
-    } catch(err) {
-       console.error("Failed to save track", err)
-    }
-  }
+  const dynamicColor = artistColor && /^#[0-9a-fA-F]{6}$/.test(artistColor) ? artistColor : "#8b5cf6"
 
   return (
     <AnimatePresence>
@@ -90,7 +32,7 @@ export function MiniPlayer() {
           <div className="h-[3px] w-full bg-white/5 relative top-0">
             <div
               className="h-full absolute left-0"
-              style={{ width: "40%", background: dynamicColor, boxShadow: `0 0 10px ${dynamicColor}` }}
+              style={{ width: `${(progress * 100).toFixed(1)}%`, background: dynamicColor, boxShadow: `0 0 10px ${dynamicColor}` }}
             />
           </div>
 
@@ -132,23 +74,6 @@ export function MiniPlayer() {
 
             {/* Controls */}
             <div className="flex shrink-0 items-center gap-2 pr-1">
-              
-              {/* TEMPORARILY DISABLED: Track Saving
-              <button
-                onClick={handleLike}
-                className="flex size-9 items-center justify-center rounded-full transition-colors hover:bg-white/10"
-                aria-label="Like Track"
-              >
-                {isLiking ? (
-                   <div className="w-3.5 h-3.5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                ) : isLiked ? (
-                   <Check className="size-4 text-[#1db954]" strokeWidth={3} />
-                ) : (
-                   <Heart className="size-4 text-gray-300" strokeWidth={2} />
-                )}
-              </button>
-              */}
-
               <button
                 onClick={isPlaying ? pause : resume}
                 aria-label={isPlaying ? "Pause" : "Play"}

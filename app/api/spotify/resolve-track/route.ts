@@ -28,7 +28,7 @@ interface SpotifyTrackSearch {
  */
 export async function POST(req: NextRequest): Promise<Response> {
   const session = await auth()
-  if (!session?.user?.spotifyId) return apiUnauthorized()
+  if (!session?.user?.id) return apiUnauthorized()
 
   const accessToken = await getAccessToken(req)
   if (!accessToken) return apiUnauthorized()
