@@ -1,0 +1,2598 @@
+{
+  "generated": "2026-04-18T16:09:39.953Z",
+  "source": "wikidata",
+  "nodes": [
+    {
+      "id": "Q69596",
+      "label": "Thumri",
+      "lastfmTag": "thumri",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q70076",
+      "label": "tappa",
+      "lastfmTag": "tappa",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q81105",
+      "label": "ca trù",
+      "lastfmTag": "ca-trù",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q82469",
+      "label": "Gstanzl",
+      "lastfmTag": "gstanzl",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q83390",
+      "label": "acclamatio",
+      "lastfmTag": "acclamatio",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q83440",
+      "label": "country music",
+      "lastfmTag": "country-music",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q213714",
+          "label": "bluegrass music",
+          "lastfmTag": "bluegrass-music",
+          "parentId": "Q83440",
+          "children": []
+        },
+        {
+          "id": "Q438476",
+          "label": "alternative country",
+          "lastfmTag": "alternative-country",
+          "parentId": "Q83440",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q85477",
+      "label": "oratorio",
+      "lastfmTag": "oratorio",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q118120",
+      "label": "reel",
+      "lastfmTag": "reel",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q122772",
+      "label": "Austrian hip hop",
+      "lastfmTag": "austrian-hip-hop",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q131272",
+      "label": "soul",
+      "lastfmTag": "soul",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q268253",
+          "label": "neo soul",
+          "lastfmTag": "neo-soul",
+          "parentId": "Q131272",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q131510",
+      "label": "mantra",
+      "lastfmTag": "mantra",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q131578",
+      "label": "J-pop",
+      "lastfmTag": "j-pop",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q135637",
+      "label": "chiptune",
+      "lastfmTag": "chiptune",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q138020",
+      "label": "French hip-hop",
+      "lastfmTag": "french-hip-hop",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q140222",
+      "label": "zajal",
+      "lastfmTag": "zajal",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q145594",
+      "label": "Igbo music",
+      "lastfmTag": "igbo-music",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q155119",
+      "label": "cuarteto",
+      "lastfmTag": "cuarteto",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q155858",
+      "label": "music of Ukraine",
+      "lastfmTag": "music-of-ukraine",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q163775",
+      "label": "medieval music",
+      "lastfmTag": "medieval-music",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q163491",
+          "label": "ars antiqua",
+          "lastfmTag": "ars-antiqua",
+          "parentId": "Q163775",
+          "children": []
+        },
+        {
+          "id": "Q210854",
+          "label": "ars nova",
+          "lastfmTag": "ars-nova",
+          "parentId": "Q163775",
+          "children": []
+        },
+        {
+          "id": "Q471194",
+          "label": "troubadoric poetry",
+          "lastfmTag": "troubadoric-poetry",
+          "parentId": "Q163775",
+          "children": []
+        },
+        {
+          "id": "Q577996",
+          "label": "descant",
+          "lastfmTag": "descant",
+          "parentId": "Q163775",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q164444",
+      "label": "funk",
+      "lastfmTag": "funk",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q170435",
+      "label": "trance",
+      "lastfmTag": "trance",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q481900",
+          "label": "acid trance",
+          "lastfmTag": "acid-trance",
+          "parentId": "Q170435",
+          "children": []
+        },
+        {
+          "id": "Q622871",
+          "label": "psychedelic trance",
+          "lastfmTag": "psychedelic-trance",
+          "parentId": "Q170435",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q170611",
+      "label": "techno",
+      "lastfmTag": "techno",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q526463",
+          "label": "Detroit techno",
+          "lastfmTag": "detroit-techno",
+          "parentId": "Q170611",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q2743",
+      "label": "musical",
+      "lastfmTag": "musical",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q253137",
+          "label": "rock opera",
+          "lastfmTag": "rock-opera",
+          "parentId": "Q2743",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q3071",
+      "label": "punk rock",
+      "lastfmTag": "punk-rock",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q10922",
+          "label": "hardcore punk",
+          "lastfmTag": "hardcore-punk",
+          "parentId": "Q3071",
+          "children": [
+            {
+              "id": "Q183862",
+              "label": "metalcore",
+              "lastfmTag": "metalcore",
+              "parentId": "Q10922",
+              "children": [
+                {
+                  "id": "Q475221",
+                  "label": "deathcore",
+                  "lastfmTag": "deathcore",
+                  "parentId": "Q183862",
+                  "children": []
+                },
+                {
+                  "id": "Q616679",
+                  "label": "mathcore",
+                  "lastfmTag": "mathcore",
+                  "parentId": "Q183862",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "id": "Q188534",
+              "label": "grindcore",
+              "lastfmTag": "grindcore",
+              "parentId": "Q10922",
+              "children": []
+            },
+            {
+              "id": "Q542703",
+              "label": "melodic hardcore",
+              "lastfmTag": "melodic-hardcore",
+              "parentId": "Q10922",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "Q274401",
+          "label": "oi!",
+          "lastfmTag": "oi!",
+          "parentId": "Q3071",
+          "children": []
+        },
+        {
+          "id": "Q302401",
+          "label": "punkabilly",
+          "lastfmTag": "punkabilly",
+          "parentId": "Q3071",
+          "children": []
+        },
+        {
+          "id": "Q460674",
+          "label": "ska punk",
+          "lastfmTag": "ska-punk",
+          "parentId": "Q3071",
+          "children": []
+        },
+        {
+          "id": "Q486365",
+          "label": "anarcho-punk",
+          "lastfmTag": "anarcho-punk",
+          "parentId": "Q3071",
+          "children": []
+        },
+        {
+          "id": "Q487914",
+          "label": "pop-punk",
+          "lastfmTag": "pop-punk",
+          "parentId": "Q3071",
+          "children": []
+        },
+        {
+          "id": "Q602498",
+          "label": "nazi punk",
+          "lastfmTag": "nazi-punk",
+          "parentId": "Q3071",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q3858",
+      "label": "music of Israel",
+      "lastfmTag": "music-of-israel",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q4797",
+      "label": "conjunto",
+      "lastfmTag": "conjunto",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q8341",
+      "label": "jazz",
+      "lastfmTag": "jazz",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q105513",
+          "label": "bebop",
+          "lastfmTag": "bebop",
+          "parentId": "Q8341",
+          "children": [
+            {
+              "id": "Q181010",
+              "label": "hard bop",
+              "lastfmTag": "hard-bop",
+              "parentId": "Q105513",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "Q105527",
+          "label": "jazz fusion",
+          "lastfmTag": "jazz-fusion",
+          "parentId": "Q8341",
+          "children": []
+        },
+        {
+          "id": "Q166813",
+          "label": "Kansas City jazz",
+          "lastfmTag": "kansas-city-jazz",
+          "parentId": "Q8341",
+          "children": []
+        },
+        {
+          "id": "Q181897",
+          "label": "stride piano",
+          "lastfmTag": "stride-piano",
+          "parentId": "Q8341",
+          "children": []
+        },
+        {
+          "id": "Q183016",
+          "label": "ska jazz",
+          "lastfmTag": "ska-jazz",
+          "parentId": "Q8341",
+          "children": []
+        },
+        {
+          "id": "Q203775",
+          "label": "swing",
+          "lastfmTag": "swing",
+          "parentId": "Q8341",
+          "children": [
+            {
+              "id": "Q447962",
+              "label": "swing revival",
+              "lastfmTag": "swing-revival",
+              "parentId": "Q203775",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "Q280955",
+          "label": "German jazz",
+          "lastfmTag": "german-jazz",
+          "parentId": "Q8341",
+          "children": []
+        },
+        {
+          "id": "Q492643",
+          "label": "trad jazz",
+          "lastfmTag": "trad-jazz",
+          "parentId": "Q8341",
+          "children": []
+        },
+        {
+          "id": "Q539089",
+          "label": "third stream",
+          "lastfmTag": "third-stream",
+          "parentId": "Q8341",
+          "children": []
+        },
+        {
+          "id": "Q591990",
+          "label": "jazz standard",
+          "lastfmTag": "jazz-standard",
+          "parentId": "Q8341",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q9730",
+      "label": "classical music",
+      "lastfmTag": "classical-music",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q131269",
+          "label": "sonata",
+          "lastfmTag": "sonata",
+          "parentId": "Q9730",
+          "children": []
+        },
+        {
+          "id": "Q140544",
+          "label": "toccata",
+          "lastfmTag": "toccata",
+          "parentId": "Q9730",
+          "children": []
+        },
+        {
+          "id": "Q174873",
+          "label": "cantata",
+          "lastfmTag": "cantata",
+          "parentId": "Q9730",
+          "children": []
+        },
+        {
+          "id": "Q1344",
+          "label": "opera",
+          "lastfmTag": "opera",
+          "parentId": "Q9730",
+          "children": []
+        },
+        {
+          "id": "Q8361",
+          "label": "Baroque music",
+          "lastfmTag": "baroque-music",
+          "parentId": "Q9730",
+          "children": [
+            {
+              "id": "Q208593",
+              "label": "sarabande",
+              "lastfmTag": "sarabande",
+              "parentId": "Q8361",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "Q17723",
+          "label": "Classical period",
+          "lastfmTag": "classical-period",
+          "parentId": "Q9730",
+          "children": []
+        },
+        {
+          "id": "Q181014",
+          "label": "fugue",
+          "lastfmTag": "fugue",
+          "parentId": "Q9730",
+          "children": []
+        },
+        {
+          "id": "Q188285",
+          "label": "motet",
+          "lastfmTag": "motet",
+          "parentId": "Q9730",
+          "children": []
+        },
+        {
+          "id": "Q189201",
+          "label": "chamber music",
+          "lastfmTag": "chamber-music",
+          "parentId": "Q9730",
+          "children": []
+        },
+        {
+          "id": "Q193217",
+          "label": "madrigal",
+          "lastfmTag": "madrigal",
+          "parentId": "Q9730",
+          "children": []
+        },
+        {
+          "id": "Q194172",
+          "label": "nocturne",
+          "lastfmTag": "nocturne",
+          "parentId": "Q9730",
+          "children": []
+        },
+        {
+          "id": "Q201405",
+          "label": "Renaissance music",
+          "lastfmTag": "renaissance-music",
+          "parentId": "Q9730",
+          "children": [
+            {
+              "id": "Q185858",
+              "label": "Franco-Flemish School",
+              "lastfmTag": "franco-flemish-school",
+              "parentId": "Q201405",
+              "children": []
+            },
+            {
+              "id": "Q288824",
+              "label": "galliard",
+              "lastfmTag": "galliard",
+              "parentId": "Q201405",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "Q202287",
+          "label": "overture",
+          "lastfmTag": "overture",
+          "parentId": "Q9730",
+          "children": []
+        },
+        {
+          "id": "Q207591",
+          "label": "Romantic music",
+          "lastfmTag": "romantic-music",
+          "parentId": "Q9730",
+          "children": []
+        },
+        {
+          "id": "Q207683",
+          "label": "canzona",
+          "lastfmTag": "canzona",
+          "parentId": "Q9730",
+          "children": []
+        },
+        {
+          "id": "Q207841",
+          "label": "étude",
+          "lastfmTag": "étude",
+          "parentId": "Q9730",
+          "children": []
+        },
+        {
+          "id": "Q212148",
+          "label": "prelude",
+          "lastfmTag": "prelude",
+          "parentId": "Q9730",
+          "children": []
+        },
+        {
+          "id": "Q214981",
+          "label": "theme and variation",
+          "lastfmTag": "theme-and-variation",
+          "parentId": "Q9730",
+          "children": []
+        },
+        {
+          "id": "Q215911",
+          "label": "serenade",
+          "lastfmTag": "serenade",
+          "parentId": "Q9730",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q9734",
+      "label": "symphony",
+      "lastfmTag": "symphony",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q9748",
+      "label": "concerto",
+      "lastfmTag": "concerto",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q210216",
+          "label": "concerto grosso",
+          "lastfmTag": "concerto-grosso",
+          "parentId": "Q9748",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q9759",
+      "label": "blues",
+      "lastfmTag": "blues",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q177447",
+          "label": "West Coast blues",
+          "lastfmTag": "west-coast-blues",
+          "parentId": "Q9759",
+          "children": []
+        },
+        {
+          "id": "Q212952",
+          "label": "boogie-woogie",
+          "lastfmTag": "boogie-woogie",
+          "parentId": "Q9759",
+          "children": []
+        },
+        {
+          "id": "Q515074",
+          "label": "Louisiana blues",
+          "lastfmTag": "louisiana-blues",
+          "parentId": "Q9759",
+          "children": [
+            {
+              "id": "Q516568",
+              "label": "New Orleans blues",
+              "lastfmTag": "new-orleans-blues",
+              "parentId": "Q515074",
+              "children": []
+            },
+            {
+              "id": "Q534606",
+              "label": "swamp blues",
+              "lastfmTag": "swamp-blues",
+              "parentId": "Q515074",
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "Q9764",
+      "label": "flamenco",
+      "lastfmTag": "flamenco",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q9778",
+      "label": "electronic music",
+      "lastfmTag": "electronic-music",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q181999",
+          "label": "minimal electro",
+          "lastfmTag": "minimal-electro",
+          "parentId": "Q9778",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q11399",
+      "label": "rock music",
+      "lastfmTag": "rock-music",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q76092",
+          "label": "glam rock",
+          "lastfmTag": "glam-rock",
+          "parentId": "Q11399",
+          "children": []
+        },
+        {
+          "id": "Q83270",
+          "label": "hard rock",
+          "lastfmTag": "hard-rock",
+          "parentId": "Q11399",
+          "children": [
+            {
+              "id": "Q188539",
+              "label": "glam metal",
+              "lastfmTag": "glam-metal",
+              "parentId": "Q83270",
+              "children": []
+            },
+            {
+              "id": "Q617240",
+              "label": "stoner rock",
+              "lastfmTag": "stoner-rock",
+              "parentId": "Q83270",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "Q145980",
+          "label": "Zamrock",
+          "lastfmTag": "zamrock",
+          "parentId": "Q11399",
+          "children": []
+        },
+        {
+          "id": "Q7749",
+          "label": "rock and roll",
+          "lastfmTag": "rock-and-roll",
+          "parentId": "Q11399",
+          "children": [
+            {
+              "id": "Q203720",
+              "label": "rockabilly",
+              "lastfmTag": "rockabilly",
+              "parentId": "Q7749",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "Q11366",
+          "label": "alternative rock",
+          "lastfmTag": "alternative-rock",
+          "parentId": "Q11399",
+          "children": [
+            {
+              "id": "Q10926",
+              "label": "emo",
+              "lastfmTag": "emo",
+              "parentId": "Q11366",
+              "children": [
+                {
+                  "id": "Q11363",
+                  "label": "screamo",
+                  "lastfmTag": "screamo",
+                  "parentId": "Q10926",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "id": "Q11365",
+              "label": "grunge",
+              "lastfmTag": "grunge",
+              "parentId": "Q11366",
+              "children": []
+            },
+            {
+              "id": "Q183504",
+              "label": "indie rock",
+              "lastfmTag": "indie-rock",
+              "parentId": "Q11366",
+              "children": [
+                {
+                  "id": "Q267287",
+                  "label": "Dunedin sound",
+                  "lastfmTag": "dunedin-sound",
+                  "parentId": "Q183504",
+                  "children": []
+                },
+                {
+                  "id": "Q592330",
+                  "label": "dream pop",
+                  "lastfmTag": "dream-pop",
+                  "parentId": "Q183504",
+                  "children": []
+                }
+              ]
+            },
+            {
+              "id": "Q189045",
+              "label": "Britpop",
+              "lastfmTag": "britpop",
+              "parentId": "Q11366",
+              "children": []
+            },
+            {
+              "id": "Q272167",
+              "label": "shoegaze",
+              "lastfmTag": "shoegaze",
+              "parentId": "Q11366",
+              "children": []
+            },
+            {
+              "id": "Q485395",
+              "label": "gothic rock",
+              "lastfmTag": "gothic-rock",
+              "parentId": "Q11366",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "Q181861",
+          "label": "noise rock",
+          "lastfmTag": "noise-rock",
+          "parentId": "Q11399",
+          "children": []
+        },
+        {
+          "id": "Q185162",
+          "label": "Latin rock",
+          "lastfmTag": "latin-rock",
+          "parentId": "Q11399",
+          "children": []
+        },
+        {
+          "id": "Q186472",
+          "label": "folk rock",
+          "lastfmTag": "folk-rock",
+          "parentId": "Q11399",
+          "children": []
+        },
+        {
+          "id": "Q187760",
+          "label": "new wave",
+          "lastfmTag": "new-wave",
+          "parentId": "Q11399",
+          "children": [
+            {
+              "id": "Q597240",
+              "label": "New Romantic",
+              "lastfmTag": "new-romantic",
+              "parentId": "Q187760",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "Q193355",
+          "label": "blues rock",
+          "lastfmTag": "blues-rock",
+          "parentId": "Q11399",
+          "children": []
+        },
+        {
+          "id": "Q206159",
+          "label": "psychedelic rock",
+          "lastfmTag": "psychedelic-rock",
+          "parentId": "Q11399",
+          "children": [
+            {
+              "id": "Q236913",
+              "label": "space rock",
+              "lastfmTag": "space-rock",
+              "parentId": "Q206159",
+              "children": []
+            },
+            {
+              "id": "Q236932",
+              "label": "acid rock",
+              "lastfmTag": "acid-rock",
+              "parentId": "Q206159",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "Q211573",
+          "label": "garage rock",
+          "lastfmTag": "garage-rock",
+          "parentId": "Q11399",
+          "children": []
+        },
+        {
+          "id": "Q217467",
+          "label": "art rock",
+          "lastfmTag": "art-rock",
+          "parentId": "Q11399",
+          "children": []
+        },
+        {
+          "id": "Q220830",
+          "label": "surf music",
+          "lastfmTag": "surf-music",
+          "parentId": "Q11399",
+          "children": []
+        },
+        {
+          "id": "Q239459",
+          "label": "trip rock",
+          "lastfmTag": "trip-rock",
+          "parentId": "Q11399",
+          "children": []
+        },
+        {
+          "id": "Q484641",
+          "label": "pop rock",
+          "lastfmTag": "pop-rock",
+          "parentId": "Q11399",
+          "children": [
+            {
+              "id": "Q217191",
+              "label": "soft rock",
+              "lastfmTag": "soft-rock",
+              "parentId": "Q484641",
+              "children": []
+            },
+            {
+              "id": "Q546264",
+              "label": "beat music",
+              "lastfmTag": "beat-music",
+              "parentId": "Q484641",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "Q613408",
+          "label": "country rock",
+          "lastfmTag": "country-rock",
+          "parentId": "Q11399",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q11403",
+      "label": "samba",
+      "lastfmTag": "samba",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q19816",
+          "label": "batucada",
+          "lastfmTag": "batucada",
+          "parentId": "Q11403",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q11401",
+      "label": "hip-hop",
+      "lastfmTag": "hip-hop",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q6010",
+          "label": "rapping",
+          "lastfmTag": "rapping",
+          "parentId": "Q11401",
+          "children": [
+            {
+              "id": "Q141459",
+              "label": "conscious hip-hop",
+              "lastfmTag": "conscious-hip-hop",
+              "parentId": "Q6010",
+              "children": []
+            },
+            {
+              "id": "Q438503",
+              "label": "alternative hip-hop",
+              "lastfmTag": "alternative-hip-hop",
+              "parentId": "Q6010",
+              "children": []
+            },
+            {
+              "id": "Q601235",
+              "label": "hip house",
+              "lastfmTag": "hip-house",
+              "parentId": "Q6010",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "Q255406",
+          "label": "jazz rap",
+          "lastfmTag": "jazz-rap",
+          "parentId": "Q11401",
+          "children": []
+        },
+        {
+          "id": "Q469630",
+          "label": "Canadian hip-hop",
+          "lastfmTag": "canadian-hip-hop",
+          "parentId": "Q11401",
+          "children": []
+        },
+        {
+          "id": "Q529742",
+          "label": "boom bap",
+          "lastfmTag": "boom-bap",
+          "parentId": "Q11401",
+          "children": []
+        },
+        {
+          "id": "Q546206",
+          "label": "Miami bass",
+          "lastfmTag": "miami-bass",
+          "parentId": "Q11401",
+          "children": []
+        },
+        {
+          "id": "Q602646",
+          "label": "comedy hip-hop",
+          "lastfmTag": "comedy-hip-hop",
+          "parentId": "Q11401",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q12302",
+      "label": "bagad",
+      "lastfmTag": "bagad",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q18846",
+      "label": "ancient music",
+      "lastfmTag": "ancient-music",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q512359",
+          "label": "music of ancient Egypt",
+          "lastfmTag": "music-of-ancient-egypt",
+          "parentId": "Q18846",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q20378",
+      "label": "alternative metal",
+      "lastfmTag": "alternative-metal",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q213572",
+          "label": "Neue Deutsche Härte",
+          "lastfmTag": "neue-deutsche-härte",
+          "parentId": "Q20378",
+          "children": []
+        },
+        {
+          "id": "Q263734",
+          "label": "nu metal",
+          "lastfmTag": "nu-metal",
+          "parentId": "Q20378",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q20474",
+      "label": "dubstep",
+      "lastfmTag": "dubstep",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q20903",
+          "label": "brostep",
+          "lastfmTag": "brostep",
+          "parentId": "Q20474",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q20502",
+      "label": "house music",
+      "lastfmTag": "house-music",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q173844",
+          "label": "vocal house",
+          "lastfmTag": "vocal-house",
+          "parentId": "Q20502",
+          "children": []
+        },
+        {
+          "id": "Q202925",
+          "label": "tribal house",
+          "lastfmTag": "tribal-house",
+          "parentId": "Q20502",
+          "children": []
+        },
+        {
+          "id": "Q598593",
+          "label": "tech house",
+          "lastfmTag": "tech-house",
+          "parentId": "Q20502",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q21092",
+      "label": "moombahton",
+      "lastfmTag": "moombahton",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q178145",
+      "label": "gothic metal",
+      "lastfmTag": "gothic-metal",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q179465",
+      "label": "polyphony",
+      "lastfmTag": "polyphony",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q442133",
+          "label": "old classical vocal polyphony",
+          "lastfmTag": "old-classical-vocal-polyphony",
+          "parentId": "Q179465",
+          "children": []
+        },
+        {
+          "id": "Q448738",
+          "label": "ensalada",
+          "lastfmTag": "ensalada",
+          "parentId": "Q179465",
+          "children": []
+        },
+        {
+          "id": "Q599877",
+          "label": "organum",
+          "lastfmTag": "organum",
+          "parentId": "Q179465",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q180268",
+      "label": "gospel music",
+      "lastfmTag": "gospel-music",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q180853",
+      "label": "pavane",
+      "lastfmTag": "pavane",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q185298",
+      "label": "a cappella",
+      "lastfmTag": "a-cappella",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q185652",
+      "label": "ragtime",
+      "lastfmTag": "ragtime",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q185676",
+      "label": "fado",
+      "lastfmTag": "fado",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q186017",
+      "label": "contemporary vocal music",
+      "lastfmTag": "contemporary-vocal-music",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q188237",
+      "label": "music of Cape Verde",
+      "lastfmTag": "music-of-cape-verde",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q502535",
+          "label": "morna",
+          "lastfmTag": "morna",
+          "parentId": "Q188237",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q188450",
+      "label": "electropop",
+      "lastfmTag": "electropop",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q188994",
+      "label": "drum and bass",
+      "lastfmTag": "drum-and-bass",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q193207",
+      "label": "ambient music",
+      "lastfmTag": "ambient-music",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q193605",
+      "label": "lullaby",
+      "lastfmTag": "lullaby",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q194492",
+      "label": "gamelan",
+      "lastfmTag": "gamelan",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q196999",
+      "label": "Zeuhl",
+      "lastfmTag": "zeuhl",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q199415",
+      "label": "ziglibithy",
+      "lastfmTag": "ziglibithy",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q202919",
+      "label": "berceuse",
+      "lastfmTag": "berceuse",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q202930",
+      "label": "reggaeton",
+      "lastfmTag": "reggaeton",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q204067",
+      "label": "Swedish hip hop",
+      "lastfmTag": "swedish-hip-hop",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q205049",
+      "label": "world music",
+      "lastfmTag": "world-music",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q205978",
+      "label": "circus music",
+      "lastfmTag": "circus-music",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q208239",
+      "label": "salsa",
+      "lastfmTag": "salsa",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q208494",
+      "label": "industrial metal",
+      "lastfmTag": "industrial-metal",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q209137",
+      "label": "post-rock",
+      "lastfmTag": "post-rock",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q209498",
+      "label": "2 tone",
+      "lastfmTag": "2-tone",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q209741",
+      "label": "programme music",
+      "lastfmTag": "programme-music",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q271802",
+          "label": "symphonic poem",
+          "lastfmTag": "symphonic-poem",
+          "parentId": "Q209741",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q211025",
+      "label": "march",
+      "lastfmTag": "march",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q208341",
+          "label": "pasodoble",
+          "lastfmTag": "pasodoble",
+          "parentId": "Q211025",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q211418",
+      "label": "British Invasion",
+      "lastfmTag": "british-invasion",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q211723",
+      "label": "speed metal",
+      "lastfmTag": "speed-metal",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q211745",
+      "label": "atonality",
+      "lastfmTag": "atonality",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q211756",
+      "label": "dance-pop",
+      "lastfmTag": "dance-pop",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q211781",
+      "label": "free jazz",
+      "lastfmTag": "free-jazz",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q212024",
+      "label": "spirituals",
+      "lastfmTag": "spirituals",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q212112",
+      "label": "bel canto",
+      "lastfmTag": "bel-canto",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q212688",
+      "label": "dub music",
+      "lastfmTag": "dub-music",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q212944",
+      "label": "klezmer",
+      "lastfmTag": "klezmer",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q213121",
+      "label": "new age music",
+      "lastfmTag": "new-age-music",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q613874",
+          "label": "neoclassical new-age music",
+          "lastfmTag": "neoclassical-new-age-music",
+          "parentId": "Q213121",
+          "children": []
+        },
+        {
+          "id": "Q622688",
+          "label": "Andean new age music",
+          "lastfmTag": "andean-new-age-music",
+          "parentId": "Q213121",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q213608",
+      "label": "beatboxing",
+      "lastfmTag": "beatboxing",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q213665",
+      "label": "K-pop",
+      "lastfmTag": "k-pop",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q216860",
+      "label": "Lied",
+      "lastfmTag": "lied",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q216926",
+      "label": "raga",
+      "lastfmTag": "raga",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q216961",
+      "label": "Eurodance",
+      "lastfmTag": "eurodance",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q217295",
+      "label": "mass",
+      "lastfmTag": "mass",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q217597",
+      "label": "electro",
+      "lastfmTag": "electro",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q220528",
+      "label": "Rebetiko",
+      "lastfmTag": "rebetiko",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q220535",
+      "label": "verbunkos",
+      "lastfmTag": "verbunkos",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q221686",
+      "label": "twelve-tone technique",
+      "lastfmTag": "twelve-tone-technique",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q221772",
+      "label": "acid jazz",
+      "lastfmTag": "acid-jazz",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q221934",
+      "label": "narcocorrido",
+      "lastfmTag": "narcocorrido",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q222445",
+      "label": "marinera",
+      "lastfmTag": "marinera",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q223840",
+      "label": "hardstyle",
+      "lastfmTag": "hardstyle",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q224694",
+      "label": "white power music",
+      "lastfmTag": "white-power-music",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q227036",
+      "label": "zouglou",
+      "lastfmTag": "zouglou",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q513357",
+          "label": "coupé-décalé",
+          "lastfmTag": "coupé-décalé",
+          "parentId": "Q227036",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q227045",
+      "label": "zouk",
+      "lastfmTag": "zouk",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q235858",
+      "label": "traditional folk music",
+      "lastfmTag": "traditional-folk-music",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q127624",
+          "label": "white voice",
+          "lastfmTag": "white-voice",
+          "parentId": "Q235858",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q245296",
+      "label": "zydeco",
+      "lastfmTag": "zydeco",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q245931",
+      "label": "music of Cyprus",
+      "lastfmTag": "music-of-cyprus",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q250090",
+      "label": "Ruba'i",
+      "lastfmTag": "ruba'i",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q251192",
+      "label": "downtempo",
+      "lastfmTag": "downtempo",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q205560",
+          "label": "trip hop",
+          "lastfmTag": "trip-hop",
+          "parentId": "Q251192",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q252626",
+      "label": "jota",
+      "lastfmTag": "jota",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q252821",
+      "label": "Viennese couplet",
+      "lastfmTag": "viennese-couplet",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q252833",
+      "label": "Alpine folk music",
+      "lastfmTag": "alpine-folk-music",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q254866",
+      "label": "Schuhplattler",
+      "lastfmTag": "schuhplattler",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q254890",
+      "label": "nova cançó",
+      "lastfmTag": "nova-cançó",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q257533",
+      "label": "music of Japan",
+      "lastfmTag": "music-of-japan",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q131425",
+          "label": "visual kei",
+          "lastfmTag": "visual-kei",
+          "parentId": "Q257533",
+          "children": [
+            {
+              "id": "Q278357",
+              "label": "oshare kei",
+              "lastfmTag": "oshare-kei",
+              "parentId": "Q131425",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "Q226887",
+          "label": "noh",
+          "lastfmTag": "noh",
+          "parentId": "Q257533",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q260095",
+      "label": "ultra",
+      "lastfmTag": "ultra",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q262533",
+      "label": "dithyramb",
+      "lastfmTag": "dithyramb",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q263524",
+      "label": "Tswana music",
+      "lastfmTag": "tswana-music",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q264289",
+      "label": "sophisti-pop",
+      "lastfmTag": "sophisti-pop",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q264922",
+      "label": "jingle",
+      "lastfmTag": "jingle",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q268673",
+      "label": "music of the United Kingdom",
+      "lastfmTag": "music-of-the-united-kingdom",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q461406",
+          "label": "change ringing",
+          "lastfmTag": "change-ringing",
+          "parentId": "Q268673",
+          "children": []
+        },
+        {
+          "id": "Q469343",
+          "label": "UK rap",
+          "lastfmTag": "uk-rap",
+          "parentId": "Q268673",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q277393",
+      "label": "music of China",
+      "lastfmTag": "music-of-china",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q278409",
+      "label": "Hokkien pop",
+      "lastfmTag": "hokkien-pop",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q281111",
+      "label": "ghazal",
+      "lastfmTag": "ghazal",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q282131",
+      "label": "merengue",
+      "lastfmTag": "merengue",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q283405",
+      "label": "punta",
+      "lastfmTag": "punta",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q286080",
+      "label": "acoustic music",
+      "lastfmTag": "acoustic-music",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q288901",
+      "label": "Jarana Yucateca",
+      "lastfmTag": "jarana-yucateca",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q290869",
+      "label": "son montuno",
+      "lastfmTag": "son-montuno",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q444340",
+      "label": "crab canon",
+      "lastfmTag": "crab-canon",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q446241",
+      "label": "neo-medieval music",
+      "lastfmTag": "neo-medieval-music",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q454071",
+      "label": "German hip-hop",
+      "lastfmTag": "german-hip-hop",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q455686",
+      "label": "samba reggae",
+      "lastfmTag": "samba-reggae",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q458480",
+      "label": "neotraditional country",
+      "lastfmTag": "neotraditional-country",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q461064",
+      "label": "music in advertising",
+      "lastfmTag": "music-in-advertising",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q464129",
+      "label": "mariachi",
+      "lastfmTag": "mariachi",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q465978",
+      "label": "extreme metal",
+      "lastfmTag": "extreme-metal",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q132438",
+          "label": "black metal",
+          "lastfmTag": "black-metal",
+          "parentId": "Q465978",
+          "children": [
+            {
+              "id": "Q213149",
+              "label": "viking metal",
+              "lastfmTag": "viking-metal",
+              "parentId": "Q132438",
+              "children": []
+            },
+            {
+              "id": "Q533914",
+              "label": "National Socialist black metal",
+              "lastfmTag": "national-socialist-black-metal",
+              "parentId": "Q132438",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "Q186170",
+          "label": "doom metal",
+          "lastfmTag": "doom-metal",
+          "parentId": "Q465978",
+          "children": []
+        },
+        {
+          "id": "Q241662",
+          "label": "groove metal",
+          "lastfmTag": "groove-metal",
+          "parentId": "Q465978",
+          "children": []
+        },
+        {
+          "id": "Q483251",
+          "label": "death metal",
+          "lastfmTag": "death-metal",
+          "parentId": "Q465978",
+          "children": [
+            {
+              "id": "Q253918",
+              "label": "melodic death metal",
+              "lastfmTag": "melodic-death-metal",
+              "parentId": "Q483251",
+              "children": []
+            },
+            {
+              "id": "Q542971",
+              "label": "progressive death metal",
+              "lastfmTag": "progressive-death-metal",
+              "parentId": "Q483251",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "Q483352",
+          "label": "thrash metal",
+          "lastfmTag": "thrash-metal",
+          "parentId": "Q465978",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q466445",
+      "label": "American primitive guitar",
+      "lastfmTag": "american-primitive-guitar",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q470611",
+      "label": "Italian hip-hop",
+      "lastfmTag": "italian-hip-hop",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q473602",
+      "label": "music of Poland",
+      "lastfmTag": "music-of-poland",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q151942",
+          "label": "mazurka",
+          "lastfmTag": "mazurka",
+          "parentId": "Q473602",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q476091",
+      "label": "slow jam",
+      "lastfmTag": "slow-jam",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q476983",
+      "label": "synth-punk",
+      "lastfmTag": "synth-punk",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q478176",
+      "label": "piphat",
+      "lastfmTag": "piphat",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q482981",
+      "label": "pansori",
+      "lastfmTag": "pansori",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q483740",
+      "label": "Anatolian rock",
+      "lastfmTag": "anatolian-rock",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q484179",
+      "label": "folk metal",
+      "lastfmTag": "folk-metal",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q484344",
+      "label": "progressive metal",
+      "lastfmTag": "progressive-metal",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q484692",
+      "label": "hymn",
+      "lastfmTag": "hymn",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q177771",
+          "label": "threnody",
+          "lastfmTag": "threnody",
+          "parentId": "Q484692",
+          "children": []
+        },
+        {
+          "id": "Q541947",
+          "label": "anthem",
+          "lastfmTag": "anthem",
+          "parentId": "Q484692",
+          "children": []
+        },
+        {
+          "id": "Q574784",
+          "label": "lauda",
+          "lastfmTag": "lauda",
+          "parentId": "Q484692",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q485915",
+      "label": "trot",
+      "lastfmTag": "trot",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q486263",
+      "label": "bossa nova",
+      "lastfmTag": "bossa-nova",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q486415",
+      "label": "symphonic metal",
+      "lastfmTag": "symphonic-metal",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q487965",
+      "label": "industrial music",
+      "lastfmTag": "industrial-music",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q489913",
+      "label": "bolero",
+      "lastfmTag": "bolero",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q491621",
+      "label": "tusch",
+      "lastfmTag": "tusch",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q492067",
+      "label": "Buddhist music",
+      "lastfmTag": "buddhist-music",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q492096",
+      "label": "Andean music",
+      "lastfmTag": "andean-music",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q492264",
+      "label": "film score",
+      "lastfmTag": "film-score",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q496929",
+      "label": "maloya",
+      "lastfmTag": "maloya",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q497674",
+      "label": "pungmul",
+      "lastfmTag": "pungmul",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q497957",
+      "label": "nueva trova",
+      "lastfmTag": "nueva-trova",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q502448",
+      "label": "coco",
+      "lastfmTag": "coco",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q504476",
+          "label": "Ciranda",
+          "lastfmTag": "ciranda",
+          "parentId": "Q502448",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q502658",
+      "label": "work song",
+      "lastfmTag": "work-song",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q502808",
+      "label": "xote",
+      "lastfmTag": "xote",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q503354",
+      "label": "Christmas carol",
+      "lastfmTag": "christmas-carol",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q504635",
+      "label": "crossover",
+      "lastfmTag": "crossover",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q505343",
+      "label": "jongo",
+      "lastfmTag": "jongo",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q507246",
+      "label": "serialism",
+      "lastfmTag": "serialism",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q508790",
+      "label": "chastushka",
+      "lastfmTag": "chastushka",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q509901",
+      "label": "Memphis blues",
+      "lastfmTag": "memphis-blues",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q517415",
+      "label": "Europop",
+      "lastfmTag": "europop",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q523896",
+      "label": "regional hymn",
+      "lastfmTag": "regional-hymn",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q525073",
+      "label": "music of Asia",
+      "lastfmTag": "music-of-asia",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q130572",
+          "label": "music of the Soviet Union",
+          "lastfmTag": "music-of-the-soviet-union",
+          "parentId": "Q525073",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q527675",
+      "label": "bambuco",
+      "lastfmTag": "bambuco",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q530750",
+      "label": "Berlin School of electronic music",
+      "lastfmTag": "berlin-school-of-electronic-music",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q531426",
+      "label": "music of India",
+      "lastfmTag": "music-of-india",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q289505",
+          "label": "music of Rajasthan",
+          "lastfmTag": "music-of-rajasthan",
+          "parentId": "Q531426",
+          "children": []
+        },
+        {
+          "id": "Q512410",
+          "label": "qawwali",
+          "lastfmTag": "qawwali",
+          "parentId": "Q531426",
+          "children": []
+        },
+        {
+          "id": "Q544440",
+          "label": "filmi music",
+          "lastfmTag": "filmi-music",
+          "parentId": "Q531426",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q533946",
+      "label": "lambada",
+      "lastfmTag": "lambada",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q535328",
+      "label": "gaita zuliana",
+      "lastfmTag": "gaita-zuliana",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q546359",
+      "label": "doo-wop",
+      "lastfmTag": "doo-wop",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q547137",
+      "label": "Latin pop",
+      "lastfmTag": "latin-pop",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q535402",
+          "label": "tropipop",
+          "lastfmTag": "tropipop",
+          "parentId": "Q547137",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q556959",
+      "label": "mbalax",
+      "lastfmTag": "mbalax",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q564848",
+      "label": "aria di sorbetto",
+      "lastfmTag": "aria-di-sorbetto",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q567915",
+      "label": "gigue",
+      "lastfmTag": "gigue",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q572717",
+      "label": "music of Jamaica",
+      "lastfmTag": "music-of-jamaica",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q9794",
+          "label": "reggae",
+          "lastfmTag": "reggae",
+          "parentId": "Q572717",
+          "children": [
+            {
+              "id": "Q474027",
+              "label": "dancehall",
+              "lastfmTag": "dancehall",
+              "parentId": "Q9794",
+              "children": []
+            },
+            {
+              "id": "Q500879",
+              "label": "reggae en Español",
+              "lastfmTag": "reggae-en-español",
+              "parentId": "Q9794",
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "Q573484",
+          "label": "rocksteady",
+          "lastfmTag": "rocksteady",
+          "parentId": "Q572717",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q572901",
+      "label": "minimalist music",
+      "lastfmTag": "minimalist-music",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q574651",
+      "label": "anti-folk",
+      "lastfmTag": "anti-folk",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q577080",
+      "label": "P-Funk",
+      "lastfmTag": "p-funk",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q579955",
+      "label": "regueifa",
+      "lastfmTag": "regueifa",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q582093",
+      "label": "antiphon",
+      "lastfmTag": "antiphon",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q584752",
+      "label": "pornogrind",
+      "lastfmTag": "pornogrind",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q585588",
+      "label": "Khaliji",
+      "lastfmTag": "khaliji",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q586110",
+      "label": "forró",
+      "lastfmTag": "forró",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q590662",
+      "label": "bend-skin",
+      "lastfmTag": "bend-skin",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q592060",
+      "label": "free improvisation",
+      "lastfmTag": "free-improvisation",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q592807",
+      "label": "music of Bhutan",
+      "lastfmTag": "music-of-bhutan",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q597493",
+      "label": "chacarera",
+      "lastfmTag": "chacarera",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q598929",
+      "label": "post-punk",
+      "lastfmTag": "post-punk",
+      "parentId": null,
+      "children": [
+        {
+          "id": "Q284543",
+          "label": "ethereal wave",
+          "lastfmTag": "ethereal-wave",
+          "parentId": "Q598929",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Q599510",
+      "label": "romance",
+      "lastfmTag": "romance",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q600094",
+      "label": "paean",
+      "lastfmTag": "paean",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q602561",
+      "label": "electro swing",
+      "lastfmTag": "electro-swing",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q602859",
+      "label": "Lamentations of Jeremiah the Prophet",
+      "lastfmTag": "lamentations-of-jeremiah-the-prophet",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q604748",
+      "label": "responsory",
+      "lastfmTag": "responsory",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q606089",
+      "label": "skiffle",
+      "lastfmTag": "skiffle",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q606393",
+      "label": "Hi-NRG",
+      "lastfmTag": "hi-nrg",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q608490",
+      "label": "music of Namibia",
+      "lastfmTag": "music-of-namibia",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q608862",
+      "label": "anime song",
+      "lastfmTag": "anime-song",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q610022",
+      "label": "kaseko",
+      "lastfmTag": "kaseko",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q612024",
+      "label": "contemporary classical music",
+      "lastfmTag": "contemporary-classical-music",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q613707",
+      "label": "expressionist music",
+      "lastfmTag": "expressionist-music",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q615418",
+      "label": "sonorism",
+      "lastfmTag": "sonorism",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q615455",
+      "label": "lhamo",
+      "lastfmTag": "lhamo",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q616425",
+      "label": "pirekua",
+      "lastfmTag": "pirekua",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q617338",
+      "label": "apala",
+      "lastfmTag": "apala",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q620979",
+      "label": "Appenzeller string music",
+      "lastfmTag": "appenzeller-string-music",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q623715",
+      "label": "aleatoric music",
+      "lastfmTag": "aleatoric-music",
+      "parentId": null,
+      "children": []
+    },
+    {
+      "id": "Q623823",
+      "label": "arabesque",
+      "lastfmTag": "arabesque",
+      "parentId": null,
+      "children": []
+    }
+  ]
+}
