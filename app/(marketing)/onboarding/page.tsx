@@ -59,8 +59,17 @@ export default function OnboardingPage() {
   const artistDebounceRef = useRef<NodeJS.Timeout | null>(null)
 
   // Genre state
-  const [genreQuery, setGenreQuery] = useState("")
   const [selectedGenres, setSelectedGenres] = useState<GenreNode[]>([])
+  const [openAnchors, setOpenAnchors] = useState<Set<string>>(new Set())
+
+  const toggleAnchor = (id: string) => {
+    setOpenAnchors((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   // Last.fm state
   const [lastfmUsername, setLastfmUsername] = useState("")
@@ -94,12 +103,6 @@ export default function OnboardingPage() {
 
     return () => { if (artistDebounceRef.current) clearTimeout(artistDebounceRef.current) }
   }, [artistQuery])
-
-  const filteredGenres = genreQuery.trim().length >= 1
-    ? ALL_GENRES.filter((g) =>
-        g.label.toLowerCase().includes(genreQuery.trim().toLowerCase())
-      ).slice(0, 30)
-    : ALL_GENRES.slice(0, 30)
 
   const selectedArtistIds = new Set(selectedArtists.map((a) => a.id))
   const selectedGenreIds = new Set(selectedGenres.map((g) => g.id))
@@ -324,57 +327,25 @@ export default function OnboardingPage() {
           <PathCard
             icon={<span style={{ fontSize: 15 }}>♫</span>}
             title="Genres I love"
-            subtitle="Pick from 200+ genre tags"
+            subtitle="Start broad, drill into niche"
             open={openPaths.has("genres")}
             onToggle={() => togglePath("genres")}
             chipCount={selectedGenres.length}
           >
-            <div className="col gap-10">
-              {selectedGenres.length > 0 && (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  {selectedGenres.map((g) => (
-                    <Chip key={g.id} label={g.label} onRemove={() => removeGenre(g.id)} />
-                  ))}
-                </div>
-              )}
-              <div className="field" style={{ height: 40, position: "relative" }}>
-                <Search
-                  size={14}
-                  style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)", pointerEvents: "none" }}
+            <div className="col gap-6">
+              {ALL_GENRES.map((anchor) => (
+                <GenreAnchor
+                  key={anchor.id}
+                  anchor={anchor}
+                  expanded={openAnchors.has(anchor.id)}
+                  onToggleExpand={() => toggleAnchor(anchor.id)}
+                  selectedIds={selectedGenreIds}
+                  atCap={selectedGenres.length >= 20}
+                  onToggleSelect={(node) =>
+                    selectedGenreIds.has(node.id) ? removeGenre(node.id) : addGenre(node)
+                  }
                 />
-                <input
-                  type="text"
-                  placeholder="Filter genres…"
-                  value={genreQuery}
-                  onChange={(e) => setGenreQuery(e.target.value)}
-                  style={{ paddingLeft: 32 }}
-                />
-              </div>
-              <div
-                style={{
-                  maxHeight: 200,
-                  overflowY: "auto",
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: 6,
-                  padding: "4px 0",
-                }}
-              >
-                {filteredGenres.map((genre) => {
-                  const already = selectedGenreIds.has(genre.id)
-                  return (
-                    <button
-                      key={genre.id}
-                      type="button"
-                      onClick={() => already ? removeGenre(genre.id) : addGenre(genre)}
-                      className={"chip" + (already ? " selected" : "")}
-                      style={{ fontSize: 12 }}
-                    >
-                      {genre.label}
-                    </button>
-                  )
-                })}
-              </div>
+              ))}
             </div>
           </PathCard>
 
@@ -549,5 +520,162 @@ function PathCard({
         </div>
       )}
     </div>
+  )
+}
+
+// ── GenreAnchor ───────────────────────────────────────────────────────────────
+
+function GenreAnchor({
+  anchor,
+  expanded,
+  onToggleExpand,
+  selectedIds,
+  atCap,
+  onToggleSelect,
+}: {
+  anchor: GenreNode
+  expanded: boolean
+  onToggleExpand: () => void
+  selectedIds: Set<string>
+  atCap: boolean
+  onToggleSelect: (node: GenreNode) => void
+}) {
+  const parentSelected = selectedIds.has(anchor.id)
+  const childSelectedCount = anchor.children.reduce(
+    (n, c) => (selectedIds.has(c.id) ? n + 1 : n),
+    0
+  )
+  const totalSelected = (parentSelected ? 1 : 0) + childSelectedCount
+
+  return (
+    <div
+      style={{
+        borderRadius: 10,
+        border: "1px solid var(--border)",
+        background: expanded ? "rgba(255,255,255,0.02)" : "transparent",
+        overflow: "hidden",
+        transition: "background 0.15s",
+      }}
+    >
+      <button
+        type="button"
+        onClick={onToggleExpand}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          width: "100%",
+          padding: "10px 12px",
+          background: "none",
+          border: 0,
+          cursor: "pointer",
+          textAlign: "left",
+        }}
+      >
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13.5, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
+            {anchor.label}
+            {totalSelected > 0 && (
+              <span
+                className="mono"
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  padding: "1px 6px",
+                  borderRadius: 4,
+                  background: "rgba(139,92,246,0.2)",
+                  color: "var(--accent)",
+                }}
+              >
+                {totalSelected}
+              </span>
+            )}
+          </div>
+          <div className="mono" style={{ fontSize: 10.5, color: "var(--text-muted)", marginTop: 2 }}>
+            {anchor.children.length} sub-genres
+          </div>
+        </div>
+        <div style={{ color: "var(--text-faint)", flexShrink: 0 }}>
+          {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </div>
+      </button>
+
+      {expanded && (
+        <div style={{ padding: "6px 8px 10px", borderTop: "1px solid var(--border)" }}>
+          <GenreRow
+            label={`Select all of ${anchor.label}`}
+            selected={parentSelected}
+            disabled={!parentSelected && atCap}
+            onClick={() => onToggleSelect(anchor)}
+            emphasis
+          />
+          {anchor.children.map((child) => {
+            const sel = selectedIds.has(child.id)
+            return (
+              <GenreRow
+                key={child.id}
+                label={child.label}
+                selected={sel}
+                disabled={!sel && atCap}
+                onClick={() => onToggleSelect(child)}
+              />
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── GenreRow ──────────────────────────────────────────────────────────────────
+
+function GenreRow({
+  label,
+  selected,
+  disabled,
+  onClick,
+  emphasis,
+}: {
+  label: string
+  selected: boolean
+  disabled?: boolean
+  onClick: () => void
+  emphasis?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        width: "100%",
+        padding: "8px 10px",
+        background: selected ? "var(--accent-soft)" : "transparent",
+        border: 0,
+        borderRadius: 8,
+        cursor: disabled ? "not-allowed" : "pointer",
+        textAlign: "left",
+        color: disabled ? "var(--text-faint)" : "var(--text-primary)",
+        opacity: disabled ? 0.5 : 1,
+      }}
+    >
+      <span
+        aria-hidden
+        style={{
+          width: 14,
+          height: 14,
+          borderRadius: "50%",
+          border: `1.5px solid ${selected ? "var(--accent)" : "var(--border-strong)"}`,
+          background: selected ? "var(--accent)" : "transparent",
+          flexShrink: 0,
+          boxShadow: selected ? "0 0 8px var(--accent-glow)" : "none",
+          transition: "all 0.12s",
+        }}
+      />
+      <span style={{ fontSize: 13, fontWeight: emphasis ? 600 : 500 }}>{label}</span>
+    </button>
   )
 }
