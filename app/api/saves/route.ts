@@ -91,7 +91,7 @@ export async function POST(request: NextRequest) {
         .from("users")
         .select("id, spotify_id, flipside_playlist_id")
         .eq("id", userId)
-        .single()
+        .maybeSingle()
 
       if (user?.spotify_id) {
         playlistId = user.flipside_playlist_id ?? null
@@ -138,13 +138,20 @@ export async function POST(request: NextRequest) {
             }
           )
 
-          if (addRes.status === 401) return apiError("Spotify token expired", 401)
+          if (addRes.status === 401) {
+            console.warn("[saves] Spotify 401 on track add — token expired")
+            console.log(`[saves] done (saved, playlist failed)`)
+            return Response.json({ success: true, saved: true, playlistError: "Spotify token expired" })
+          }
           if (addRes.status === 403) {
             console.warn("[saves] Spotify 403 on track add — scope missing or app not approved")
-            return apiError("Spotify permission denied for playlist", 403)
+            console.log(`[saves] done (saved, playlist failed)`)
+            return Response.json({ success: true, saved: true, playlistError: "Spotify permission denied for playlist" })
           }
           if (addRes.status === 429) {
             console.warn("[saves] Spotify rate limit hit when adding track — skipping")
+            console.log(`[saves] done (saved, playlist rate-limited)`)
+            return Response.json({ success: true, saved: true, playlistError: "Spotify rate limit — try again later" })
           } else if (addRes.ok) {
             console.log(`[saves] track-added ok`)
           }
@@ -154,7 +161,7 @@ export async function POST(request: NextRequest) {
   }
 
   console.log(`[saves] done`)
-  return Response.json({ success: true, playlistId: playlistId ?? null })
+  return Response.json({ success: true, saved: true, playlistId: playlistId ?? null })
 }
 
 export async function DELETE(request: NextRequest) {

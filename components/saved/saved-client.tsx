@@ -2,8 +2,9 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { X, Bookmark } from "lucide-react"
-import type { Track } from "@/lib/music-provider/types"
+import { X, Bookmark, ExternalLink, Share2 } from "lucide-react"
+import { toast } from "sonner"
+import { stringToVibrantHex, sanitizeHex } from "@/lib/color-utils"
 
 export interface SavedArtistRow {
   artistId: string
@@ -11,46 +12,14 @@ export interface SavedArtistRow {
   genres: string[]
   imageUrl: string | null
   artistColor: string
-  topTracks: Track[]
-}
-
-export interface SavedTrackRow {
-  id: string
-  name: string
-  artistName: string
-  albumImageUrl: string | null
-  durationMs: number
 }
 
 interface SavedClientProps {
   artists: SavedArtistRow[]
-  tracks: SavedTrackRow[]
   hasLastfm: boolean
 }
 
-function stringToVibrantHex(str: string): string {
-  let hash = 0
-  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash)
-  const hue = Math.abs(hash) % 360
-  const s = 0.70, l = 0.65
-  const c = (1 - Math.abs(2 * l - 1)) * s
-  const x = c * (1 - Math.abs((hue / 60) % 2 - 1))
-  const m = l - c / 2
-  let r = 0, g = 0, b = 0
-  if (hue < 60)       { r = c; g = x; b = 0 }
-  else if (hue < 120) { r = x; g = c; b = 0 }
-  else if (hue < 180) { r = 0; g = c; b = x }
-  else if (hue < 240) { r = 0; g = x; b = c }
-  else if (hue < 300) { r = x; g = 0; b = c }
-  else                { r = c; g = 0; b = x }
-  const toHex = (n: number) => {
-    const hex = Math.round((n + m) * 255).toString(16)
-    return hex.length === 1 ? "0" + hex : hex
-  }
-  return `#${toHex(r)}${toHex(g)}${toHex(b)}`
-}
-
-export function SavedClient({ artists, tracks: _tracks, hasLastfm }: SavedClientProps) {
+export function SavedClient({ artists, hasLastfm }: SavedClientProps) {
   const router = useRouter()
   const [removedIds, setRemovedIds] = useState<Set<string>>(new Set())
 
@@ -59,19 +28,21 @@ export function SavedClient({ artists, tracks: _tracks, hasLastfm }: SavedClient
   async function handleUnsave(artistId: string) {
     setRemovedIds((prev) => new Set(prev).add(artistId))
     try {
-      await fetch("/api/saves", {
+      const res = await fetch("/api/saves", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ spotifyArtistId: artistId }),
       })
+      if (!res.ok) throw new Error("Server error")
+      router.refresh()
     } catch {
       setRemovedIds((prev) => {
         const next = new Set(prev)
         next.delete(artistId)
         return next
       })
+      toast.error("Couldn't unsave — try again")
     }
-    router.refresh()
   }
 
   return (
@@ -114,8 +85,8 @@ export function SavedClient({ artists, tracks: _tracks, hasLastfm }: SavedClient
           }}
         >
           {visible.map((artist) => {
-            const color = artist.artistColor !== "#8b5cf6"
-              ? artist.artistColor
+            const color = sanitizeHex(artist.artistColor) !== "#8b5cf6"
+              ? sanitizeHex(artist.artistColor)
               : stringToVibrantHex(artist.name)
             return (
               <div
@@ -190,6 +161,36 @@ export function SavedClient({ artists, tracks: _tracks, hasLastfm }: SavedClient
                       {artist.genres[0]}
                     </div>
                   )}
+                  <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                    <a
+                      href={`https://open.spotify.com/artist/${artist.artistId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        width: 28, height: 28, borderRadius: 8,
+                        background: "rgba(255,255,255,0.05)", border: "1px solid var(--border)",
+                        display: "grid", placeItems: "center", color: "var(--text-muted)",
+                      }}
+                      title="Open in Spotify"
+                    >
+                      <ExternalLink size={12} />
+                    </a>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(`https://open.spotify.com/artist/${artist.artistId}`)
+                          .then(() => toast.success("Link copied!"))
+                          .catch(() => toast.error("Couldn't copy link"))
+                      }}
+                      style={{
+                        width: 28, height: 28, borderRadius: 8,
+                        background: "rgba(255,255,255,0.05)", border: "1px solid var(--border)",
+                        display: "grid", placeItems: "center", color: "var(--text-muted)", cursor: "pointer",
+                      }}
+                      title="Copy link"
+                    >
+                      <Share2 size={12} />
+                    </button>
+                  </div>
                 </div>
               </div>
             )

@@ -9,15 +9,7 @@ export async function DELETE(): Promise<Response> {
   const userId = session.user.id
   const supabase = createServiceClient()
 
-  // Delete all user data in dependency order
-  await Promise.all([
-    supabase.from("recommendation_cache").delete().eq("user_id", userId),
-    supabase.from("feedback").delete().eq("user_id", userId),
-    supabase.from("saves").delete().eq("user_id", userId),
-    supabase.from("listened_artists").delete().eq("user_id", userId),
-    supabase.from("seed_artists").delete().eq("user_id", userId),
-  ])
-
+  // All child tables have ON DELETE CASCADE — deleting the user row cascades to all data
   const { error } = await supabase.from("users").delete().eq("id", userId)
   if (error) {
     console.error("[account/delete] failed:", error.message)
@@ -26,12 +18,9 @@ export async function DELETE(): Promise<Response> {
 
   console.log(`[account/delete] deleted userId=${userId}`)
 
-  try {
-    await signOut({ redirectTo: "/" })
-  } catch (err: unknown) {
-    const digest = (err as { digest?: string })?.digest ?? ""
-    if (digest.startsWith("NEXT_REDIRECT")) throw err
-  }
+  // signOut() throws NEXT_REDIRECT internally — let it propagate for the redirect to work.
+  await signOut({ redirectTo: "/" })
 
+  // Unreachable — signOut always throws NEXT_REDIRECT. Satisfies TypeScript return type.
   return new Response(null, { status: 204 })
 }

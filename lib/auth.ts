@@ -2,6 +2,7 @@ import NextAuth from "next-auth"
 import Credentials from "next-auth/providers/credentials"
 import { createHmac } from "crypto"
 import { createServiceClient } from "@/lib/supabase/server"
+import { isRateLimited } from "@/lib/rate-limiter"
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   secret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET,
@@ -9,9 +10,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
     Credentials({
       credentials: { username: { type: "text" } },
-      async authorize(credentials) {
-        const username = (credentials?.username as string | undefined)?.trim()
-        if (!username || username.length < 1) return null
+      async authorize(credentials, request) {
+        // Rate limit by IP
+        // Prefer x-real-ip (set by Vercel, not spoofable) over x-forwarded-for (client-controllable leftmost value)
+        const headers = request?.headers as Headers | undefined
+        const ip = headers?.get?.("x-real-ip")?.trim()
+          ?? headers?.get?.("x-forwarded-for")?.split(",").pop()?.trim()
+          ?? "unknown"
+        if (await isRateLimited(ip)) return null
+
+        const username = (credentials?.username as string | undefined)?.trim()?.toLowerCase()
+        if (!username || username.length < 2 || username.length > 30) return null
+        if (!/^[a-z0-9._-]+$/.test(username)) return null
 
         const secret = process.env.USERNAME_HMAC_SECRET
         if (!secret) {

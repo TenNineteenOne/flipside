@@ -6,13 +6,11 @@ import { ArtistNameCache } from './artist-name-cache'
 import { resolveArtistsByName } from './resolve-candidates'
 import coldStartData from '@/data/cold-start-seeds.json'
 
-const LASTFM_BASE = "http://ws.audioscrobbler.com/2.0"
+const LASTFM_BASE = "https://ws.audioscrobbler.com/2.0"
 
 /** Return the popularity-tier multiplier for a Spotify popularity value (0–100). */
-function tierMultiplier(popularity: number): number {
-  if (popularity <= 30) return 1.0
-  if (popularity <= 60) return 0.25
-  return 0.02
+export function tierMultiplier(popularity: number): number {
+  return Math.pow(0.95, popularity)
 }
 
 /** Fetch artist names for a Last.fm genre tag. */
@@ -23,7 +21,7 @@ async function getTagArtistNames(tag: string): Promise<string[]> {
     const url =
       `${LASTFM_BASE}/?method=tag.gettopartists` +
       `&tag=${encodeURIComponent(tag)}&api_key=${apiKey}&format=json&limit=20`
-    const res = await fetch(url)
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
     if (!res.ok) return []
     const data = await res.json()
     const artists = data?.topartists?.artist
@@ -78,8 +76,8 @@ async function gatherSeedNames(userId: string, supabase: SupabaseClient): Promis
     }
   }
 
-  // Gather genre tag artists from Last.fm
-  const genres = (userRow?.selected_genres as string[] | null) ?? []
+  // Gather genre tag artists from Last.fm (cap at 5 to avoid rate limiting)
+  const genres = ((userRow?.selected_genres as string[] | null) ?? []).slice(0, 5)
   if (genres.length > 0) {
     const genreResults = await Promise.all(genres.map(getTagArtistNames))
     for (const batch of genreResults) names.push(...batch)
@@ -97,7 +95,9 @@ async function runPipeline(
   userId: string,
   playThreshold: number,
   supabase: SupabaseClient,
-  source: string
+  source: string,
+  genre?: string,
+  undergroundMode?: boolean
 ): Promise<number> {
   const capSeedNames = seedNames.slice(0, 10)
 
@@ -119,7 +119,8 @@ async function runPipeline(
     }
   }
 
-  const uniqueNames = [...nameToSeeds.keys()]
+  // Cap to 50 to prevent excessive sequential Spotify API calls on cold caches
+  const uniqueNames = [...nameToSeeds.keys()].slice(0, 50)
   const lfmTotal = lfmResults.reduce((sum, r) => sum + r.names.length, 0)
 
   if (uniqueNames.length === 0) {
@@ -151,11 +152,19 @@ async function runPipeline(
     }
   }
 
-  // Step C: Filter — play threshold
-  const { data: listenedData } = await supabase
-    .from('listened_artists')
-    .select('spotify_artist_id, play_count')
-    .eq('user_id', userId)
+  // Step C: Filter — play threshold + thumbs-down (parallel)
+  const [{ data: listenedData }, { data: thumbsDownData }] = await Promise.all([
+    supabase
+      .from('listened_artists')
+      .select('spotify_artist_id, play_count')
+      .eq('user_id', userId),
+    supabase
+      .from('feedback')
+      .select('spotify_artist_id')
+      .eq('user_id', userId)
+      .eq('signal', 'thumbs_down')
+      .is('deleted_at', null),
+  ])
 
   const overThresholdIds = new Set<string>()
   for (const row of listenedData ?? []) {
@@ -165,31 +174,29 @@ async function runPipeline(
     }
   }
 
-  // Step C2: Filter — thumbs-down
-  const { data: thumbsDownData } = await supabase
-    .from('feedback')
-    .select('spotify_artist_id')
-    .eq('user_id', userId)
-    .eq('signal', 'thumbs_down')
-    .is('deleted_at', null)
-
   const thumbsDownIds = new Set((thumbsDownData ?? []).map((r) => r.spotify_artist_id))
   let filtListened = 0
 
   const filteredCandidates = [...candidateMap.entries()]
-    .filter(([id]) => {
+    .filter(([id, val]) => {
       if (thumbsDownIds.has(id)) return false
       if (overThresholdIds.has(id)) { filtListened++; return false }
+      // Genre filter: only include artists matching the requested genre
+      if (genre && !val.artist.genres.some((g) => g.toLowerCase().includes(genre.toLowerCase()))) return false
       return true
     })
     .map(([, val]) => val)
 
   // Step D: Score
   const scored: ScoredArtist[] = filteredCandidates.map(({ artist, seedArtists }) => {
-    const discoveryScore = Math.pow((100 - artist.popularity) / 100, 2)
     const seedRelevance = Math.min(seedArtists.length / 3, 1)
-    const baseScore = discoveryScore * 0.80 + seedRelevance * 0.20
-    const score = baseScore * tierMultiplier(artist.popularity)
+    const tier = tierMultiplier(artist.popularity)
+    // Underground mode: apply additional discoveryScore penalty for extra obscurity
+    const discoveryPenalty = undergroundMode
+      ? Math.pow((100 - artist.popularity) / 100, 2)
+      : 1
+    const baseScore = tier * 0.80 + seedRelevance * 0.20
+    const score = baseScore * discoveryPenalty
 
     return {
       artist: { ...artist, topTracks: [] },
@@ -215,11 +222,13 @@ async function runPipeline(
     return 0
   }
 
-  // Step E: Write to cache
+  // Step E: Write to cache — only check cooldown for artists we're about to write
+  const topIds = top.map((item) => item.artist.id)
   const { data: existingCache } = await supabase
     .from('recommendation_cache')
     .select('spotify_artist_id, seen_at')
     .eq('user_id', userId)
+    .in('spotify_artist_id', topIds)
 
   const existingSeenAt = new Map<string, string | null>()
   for (const row of existingCache ?? []) {
@@ -239,16 +248,20 @@ async function runPipeline(
       const daysSinceSeen = (now.getTime() - new Date(seenAt).getTime()) / (1000 * 60 * 60 * 24)
       return daysSinceSeen >= 7
     })
-    .map((item) => ({
-      user_id: userId,
-      spotify_artist_id: item.artist.id,
-      artist_data: item.artist,
-      score: item.score,
-      why: item.why,
-      source: item.source,
-      expires_at: expiresAt.toISOString(),
-      seen_at: null,
-    }))
+    .map((item) => {
+      const previousSeenAt = existingSeenAt.get(item.artist.id)
+      return {
+        user_id: userId,
+        spotify_artist_id: item.artist.id,
+        artist_data: item.artist,
+        score: item.score,
+        why: item.why,
+        source: item.source,
+        expires_at: expiresAt.toISOString(),
+        // Preserve existing seen_at to maintain 7-day cooldown integrity
+        ...(previousSeenAt !== undefined ? { seen_at: previousSeenAt } : { seen_at: null }),
+      }
+    })
 
   if (rows.length === 0) return 0
 
@@ -272,15 +285,15 @@ async function runPipeline(
 // ── Main entry point ────────────────────────────────────────────────────────
 
 export async function buildRecommendations(input: RecommendationInput): Promise<number> {
-  const { userId, accessToken, playThreshold } = input
+  const { userId, accessToken, playThreshold, genre, undergroundMode } = input
   const supabase = createServiceClient()
 
   // Gather seeds from all configured sources
   const seedNames = await gatherSeedNames(userId, supabase)
 
   if (seedNames.length > 0) {
-    console.log(`[engine] start userId=${userId} seeds=${seedNames.length}`)
-    return runPipeline(seedNames, accessToken, userId, playThreshold, supabase, 'multi_source')
+    console.log(`[engine] start userId=${userId} seeds=${seedNames.length}${genre ? ` genre=${genre}` : ""}`)
+    return runPipeline(seedNames, accessToken, userId, playThreshold, supabase, 'multi_source', genre, undergroundMode)
   }
 
   // Cold-start: no seeds configured — pick random artists from curated list
@@ -292,5 +305,5 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     ;[pool[i], pool[j]] = [pool[j], pool[i]]
   }
   const coldSeeds = pool.slice(0, 5).map((s) => s.name)
-  return runPipeline(coldSeeds, accessToken, userId, playThreshold, supabase, 'cold_start')
+  return runPipeline(coldSeeds, accessToken, userId, playThreshold, supabase, 'cold_start', genre, undergroundMode)
 }

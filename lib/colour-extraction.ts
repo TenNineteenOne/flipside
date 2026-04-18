@@ -107,8 +107,17 @@ function lightenToContrast(hex: string): string {
  * Extract dominant vibrant accent colour from `imageUrl`.
  * Ensures WCAG AA contrast against #000000. Falls back to #8b5cf6 on any error.
  */
+const ALLOWED_IMAGE_HOSTS = ["i.scdn.co", "mosaic.scdn.co", "is1-ssl.mzstatic.com", "is2-ssl.mzstatic.com", "is3-ssl.mzstatic.com", "is4-ssl.mzstatic.com", "is5-ssl.mzstatic.com"]
+
 export async function extractArtistColor(imageUrl: string): Promise<string> {
   try {
+    // SSRF guard: only fetch from known CDN domains
+    const host = new URL(imageUrl).hostname
+    if (!ALLOWED_IMAGE_HOSTS.some((h) => host === h || host.endsWith(`.${h}`))) {
+      console.warn(`[colour] blocked fetch to untrusted host: ${host}`)
+      return FALLBACK
+    }
+
     // Pre-fetch via node undici to bypass Spotify's legacy strict http header requirements that node-vibrant fails on
     const res = await fetch(imageUrl, { headers: { "User-Agent": "Mozilla/5.0" } })
     if (!res.ok) throw new Error(`Fetch failed with status ${res.status}`)

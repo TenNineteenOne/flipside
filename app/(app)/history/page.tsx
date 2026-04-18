@@ -15,31 +15,39 @@ export default async function HistoryPage() {
   // 1. All seen recommendations
   const { data: seen } = await supabase
     .from("recommendation_cache")
-    .select("spotify_artist_id, artist_data, score, why, artist_color, seen_at")
+    .select("spotify_artist_id, artist_data, score, why, seen_at")
     .eq("user_id", userId)
     .not("seen_at", "is", null)
     .order("seen_at", { ascending: false })
-    .limit(100)
+    .limit(50)
 
-  // 2. All feedback rows
-  const { data: feedback } = await supabase
-    .from("feedback")
-    .select("spotify_artist_id, signal")
-    .eq("user_id", userId)
-    .is("deleted_at", null)
+  const seenArtistIds = (seen ?? []).map((r) => r.spotify_artist_id)
+
+  // 2. Feedback and saves scoped to the seen artist IDs
+  const [feedbackRes, savesRes] = await Promise.all([
+    seenArtistIds.length > 0
+      ? supabase
+          .from("feedback")
+          .select("spotify_artist_id, signal")
+          .eq("user_id", userId)
+          .is("deleted_at", null)
+          .in("spotify_artist_id", seenArtistIds)
+      : Promise.resolve({ data: [] }),
+    seenArtistIds.length > 0
+      ? supabase
+          .from("saves")
+          .select("spotify_artist_id")
+          .eq("user_id", userId)
+          .in("spotify_artist_id", seenArtistIds)
+      : Promise.resolve({ data: [] }),
+  ])
 
   const feedbackMap = new Map<string, string>()
-  for (const f of feedback ?? []) {
+  for (const f of (feedbackRes.data ?? []) as { spotify_artist_id: string; signal: string }[]) {
     feedbackMap.set(f.spotify_artist_id, f.signal)
   }
 
-  // 3. All saved/bookmarked
-  const { data: saves } = await supabase
-    .from("saves")
-    .select("spotify_artist_id")
-    .eq("user_id", userId)
-
-  const savedSet = new Set((saves ?? []).map((s) => s.spotify_artist_id))
+  const savedSet = new Set(((savesRes.data ?? []) as { spotify_artist_id: string }[]).map((s) => s.spotify_artist_id))
 
   const history = (seen ?? []).map((rec) => ({
     spotify_artist_id: rec.spotify_artist_id,
@@ -52,11 +60,13 @@ export default async function HistoryPage() {
     },
     score: rec.score as number,
     why: rec.why as { sourceArtists: string[]; genres: string[]; friendBoost: string[] },
-    artist_color: rec.artist_color as string | null,
+    artist_color: (rec.artist_data as Record<string, unknown>).artist_color as string | null ?? null,
     seen_at: rec.seen_at as string,
     signal: feedbackMap.get(rec.spotify_artist_id) ?? "skip",
     bookmarked: savedSet.has(rec.spotify_artist_id),
   }))
 
-  return <HistoryClient history={history} />
+  const hasMore = (seen ?? []).length === 50
+
+  return <HistoryClient history={history} hasMore={hasMore} />
 }

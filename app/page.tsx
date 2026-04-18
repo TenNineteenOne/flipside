@@ -92,7 +92,7 @@ export default async function LandingPage() {
 
       {/* CTA */}
       <Link
-        href="/api/auth/signin"
+        href="/sign-in"
         className="btn btn-primary btn-lg"
         style={{ paddingLeft: 24, paddingRight: 24 }}
       >

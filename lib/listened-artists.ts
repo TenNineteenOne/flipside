@@ -64,10 +64,8 @@ export async function accumulateSpotifyHistory(params: {
     topArtistIds.add(artist.id)
   }
 
-  // Upsert top artists
-  for (const spotifyArtistId of topArtistIds) {
-    await upsertSpotifyArtist(supabase, userId, spotifyArtistId, "spotify_top")
-  }
+  // Upsert top artists in batch
+  await batchUpsertSpotifyArtists(supabase, userId, [...topArtistIds], "spotify_top")
 
   // Deduplicate recently played artists by ID
   const recentArtistIds = new Set<string>()
@@ -75,78 +73,88 @@ export async function accumulateSpotifyHistory(params: {
     recentArtistIds.add(play.artistId)
   }
 
-  // Upsert recently played artists
-  for (const spotifyArtistId of recentArtistIds) {
-    await upsertSpotifyArtist(
-      supabase,
-      userId,
-      spotifyArtistId,
-      "spotify_recent"
-    )
-  }
+  // Upsert recently played artists in batch
+  await batchUpsertSpotifyArtists(supabase, userId, [...recentArtistIds], "spotify_recent")
 }
 
-async function upsertSpotifyArtist(
+async function batchUpsertSpotifyArtists(
   supabase: ReturnType<typeof createServiceClient>,
   userId: string,
-  spotifyArtistId: string,
+  spotifyArtistIds: string[],
   source: "spotify_top" | "spotify_recent"
 ): Promise<void> {
-  // The unique constraint is (user_id, spotify_artist_id).
-  // We use a raw SQL upsert via from().upsert() with ignoreDuplicates: false,
-  // but the JS client can't increment on conflict — so we select first, then insert/update.
-  const { data: existing, error: selectError } = await supabase
+  if (spotifyArtistIds.length === 0) return
+
+  const now = new Date().toISOString()
+
+  // Batch SELECT: find all existing rows for these artist IDs
+  const { data: existingRows, error: selectError } = await supabase
     .from("listened_artists")
-    .select("id, play_count")
+    .select("id, spotify_artist_id, play_count")
     .eq("user_id", userId)
-    .eq("spotify_artist_id", spotifyArtistId)
-    .maybeSingle()
+    .in("spotify_artist_id", spotifyArtistIds)
 
   if (selectError) {
-    console.error(
-      "[accumulateSpotifyHistory] Select error for artist:",
-      spotifyArtistId,
-      selectError.message
-    )
+    console.error("[accumulateSpotifyHistory] Batch select error:", selectError.message)
     return
   }
 
-  if (existing) {
-    const { error: updateError } = await supabase
-      .from("listened_artists")
-      .update({
-        play_count: existing.play_count + 1,
-        last_seen_at: new Date().toISOString(),
-      })
-      .eq("id", existing.id)
-
-    if (updateError) {
-      console.error(
-        "[accumulateSpotifyHistory] Update error for artist:",
-        spotifyArtistId,
-        updateError.message
-      )
+  const existingMap = new Map<string, { id: string; play_count: number }>()
+  for (const row of existingRows ?? []) {
+    if (row.spotify_artist_id) {
+      existingMap.set(row.spotify_artist_id, { id: row.id, play_count: row.play_count })
     }
-  } else {
-    const { error: insertError } = await supabase
-      .from("listened_artists")
-      .insert({
+  }
+
+  // Partition into new inserts vs existing updates
+  const toInsert: Array<{
+    user_id: string
+    spotify_artist_id: string
+    lastfm_artist_name: null
+    source: string
+    play_count: number
+    last_seen_at: string
+  }> = []
+
+  const toUpdate: Array<{ id: string; play_count: number; last_seen_at: string }> = []
+
+  for (const artistId of spotifyArtistIds) {
+    const existing = existingMap.get(artistId)
+    if (existing) {
+      toUpdate.push({ id: existing.id, play_count: existing.play_count + 1, last_seen_at: now })
+    } else {
+      toInsert.push({
         user_id: userId,
-        spotify_artist_id: spotifyArtistId,
+        spotify_artist_id: artistId,
         lastfm_artist_name: null,
         source,
         play_count: 1,
-        last_seen_at: new Date().toISOString(),
+        last_seen_at: now,
       })
-
-    if (insertError) {
-      console.error(
-        "[accumulateSpotifyHistory] Insert error for artist:",
-        spotifyArtistId,
-        insertError.message
-      )
     }
   }
+
+  // Batch INSERT new rows
+  if (toInsert.length > 0) {
+    const { error: insertError } = await supabase
+      .from("listened_artists")
+      .insert(toInsert)
+    if (insertError) {
+      console.error("[accumulateSpotifyHistory] Batch insert error:", insertError.message)
+    }
+  }
+
+  // Batch UPDATE existing rows (Supabase upsert with onConflict on id)
+  if (toUpdate.length > 0) {
+    const { error: updateError } = await supabase
+      .from("listened_artists")
+      .upsert(toUpdate, { onConflict: "id" })
+    if (updateError) {
+      console.error("[accumulateSpotifyHistory] Batch update error:", updateError.message)
+    }
+  }
+
+  console.log(`[accumulateSpotifyHistory] batch source=${source} insert=${toInsert.length} update=${toUpdate.length}`)
 }
 
 // ── Last.fm → Spotify ID resolution ──────────────────────────────────────────
@@ -164,7 +172,7 @@ interface UnresolvedRow {
  *
  * - Cache hit  → write spotify_artist_id, update id_resolution_attempted_at
  * - Search hit → write spotify_artist_id, upsert artist_search_cache, update timestamp
- * - No match   → write sentinel 'NOT_FOUND', update timestamp (skipped for 7 days)
+ * - No match   → leave spotify_artist_id as null, update timestamp (retry after 7 days)
  *
  * Processed in batches of RESOLUTION_BATCH_SIZE to stay within Spotify rate limits.
  * Never throws — all errors are logged so the parent sync call is not disrupted.
@@ -326,7 +334,7 @@ async function resolveLastFmBatch(params: {
           )
         } else {
           console.log(
-            `[resolveLastFmArtistIds] low-similarity name="${row.lastfm_artist_name}" best="${best.name}" sim=${similarity.toFixed(2)} → NOT_FOUND`
+            `[resolveLastFmArtistIds] low-similarity name="${row.lastfm_artist_name}" best="${best.name}" sim=${similarity.toFixed(2)} → unresolved`
           )
         }
       }
@@ -337,11 +345,11 @@ async function resolveLastFmBatch(params: {
       )
     }
 
-    // Write result (resolved ID or NOT_FOUND sentinel) + update timestamp
+    // Write result (resolved ID or null) + update timestamp
     const { error: updateErr } = await supabase
       .from("listened_artists")
       .update({
-        spotify_artist_id: resolvedId ?? "NOT_FOUND",
+        spotify_artist_id: resolvedId,  // null stays null — retry via id_resolution_attempted_at window
         id_resolution_attempted_at: now,
       })
       .eq("id", row.id)
@@ -390,15 +398,17 @@ export async function accumulateLastFmHistory(params: {
     throw new Error("Last.fm API key is not configured")
   }
 
-  const baseUrl = "http://ws.audioscrobbler.com/2.0/"
+  const baseUrl = "https://ws.audioscrobbler.com/2.0/"
 
   // Fetch top artists and recent tracks in parallel
   const [topArtistsRes, recentTracksRes] = await Promise.all([
     fetch(
-      `${baseUrl}?method=user.getTopArtists&user=${encodeURIComponent(lastfmUsername)}&api_key=${apiKey}&format=json&limit=200`
+      `${baseUrl}?method=user.getTopArtists&user=${encodeURIComponent(lastfmUsername)}&api_key=${apiKey}&format=json&limit=200`,
+      { signal: AbortSignal.timeout(8000) }
     ),
     fetch(
-      `${baseUrl}?method=user.getRecentTracks&user=${encodeURIComponent(lastfmUsername)}&api_key=${apiKey}&format=json&limit=200`
+      `${baseUrl}?method=user.getRecentTracks&user=${encodeURIComponent(lastfmUsername)}&api_key=${apiKey}&format=json&limit=200`,
+      { signal: AbortSignal.timeout(8000) }
     ),
   ])
 
@@ -451,11 +461,8 @@ export async function accumulateLastFmHistory(params: {
 
   const supabase = createServiceClient()
 
-  // Upsert each artist — no unique constraint on (user_id, lastfm_artist_name),
-  // so we do select-then-insert/update
-  for (const artistName of artistNames) {
-    await upsertLastFmArtist(supabase, userId, artistName)
-  }
+  // Batch upsert all Last.fm artists
+  await batchUpsertLastFmArtists(supabase, userId, [...artistNames])
 
   // ── Resolution pass ────────────────────────────────────────────────────────
   // After upserting, attempt to resolve spotify_artist_id for any Last.fm rows
@@ -471,62 +478,78 @@ export async function accumulateLastFmHistory(params: {
   }
 }
 
-async function upsertLastFmArtist(
+async function batchUpsertLastFmArtists(
   supabase: ReturnType<typeof createServiceClient>,
   userId: string,
-  artistName: string
+  artistNames: string[]
 ): Promise<void> {
-  const { data: existing, error: selectError } = await supabase
+  if (artistNames.length === 0) return
+
+  const now = new Date().toISOString()
+
+  // Batch SELECT: find existing Last.fm rows (both resolved and unresolved)
+  const { data: existingRows, error: selectError } = await supabase
     .from("listened_artists")
-    .select("id, play_count")
+    .select("id, lastfm_artist_name, play_count")
     .eq("user_id", userId)
-    .eq("lastfm_artist_name", artistName)
-    .is("spotify_artist_id", null)
-    .maybeSingle()
+    .in("lastfm_artist_name", artistNames)
 
   if (selectError) {
-    console.error(
-      "[accumulateLastFmHistory] Select error for artist:",
-      artistName,
-      selectError.message
-    )
+    console.error("[accumulateLastFmHistory] Batch select error:", selectError.message)
     return
   }
 
-  if (existing) {
-    const { error: updateError } = await supabase
-      .from("listened_artists")
-      .update({
-        play_count: existing.play_count + 1,
-        last_seen_at: new Date().toISOString(),
-      })
-      .eq("id", existing.id)
-
-    if (updateError) {
-      console.error(
-        "[accumulateLastFmHistory] Update error for artist:",
-        artistName,
-        updateError.message
-      )
-    }
-  } else {
-    const { error: insertError } = await supabase
-      .from("listened_artists")
-      .insert({
-        user_id: userId,
-        spotify_artist_id: null,
-        lastfm_artist_name: artistName,
-        source: "lastfm",
-        play_count: 1,
-        last_seen_at: new Date().toISOString(),
-      })
-
-    if (insertError) {
-      console.error(
-        "[accumulateLastFmHistory] Insert error for artist:",
-        artistName,
-        insertError.message
-      )
+  const existingMap = new Map<string, { id: string; play_count: number }>()
+  for (const row of existingRows ?? []) {
+    if (row.lastfm_artist_name) {
+      existingMap.set(row.lastfm_artist_name, { id: row.id, play_count: row.play_count })
     }
   }
+
+  const toInsert: Array<{
+    user_id: string
+    spotify_artist_id: null
+    lastfm_artist_name: string
+    source: string
+    play_count: number
+    last_seen_at: string
+  }> = []
+
+  const toUpdate: Array<{ id: string; play_count: number; last_seen_at: string }> = []
+
+  for (const name of artistNames) {
+    const existing = existingMap.get(name)
+    if (existing) {
+      toUpdate.push({ id: existing.id, play_count: existing.play_count + 1, last_seen_at: now })
+    } else {
+      toInsert.push({
+        user_id: userId,
+        spotify_artist_id: null,
+        lastfm_artist_name: name,
+        source: "lastfm",
+        play_count: 1,
+        last_seen_at: now,
+      })
+    }
+  }
+
+  if (toInsert.length > 0) {
+    const { error: insertError } = await supabase
+      .from("listened_artists")
+      .insert(toInsert)
+    if (insertError) {
+      console.error("[accumulateLastFmHistory] Batch insert error:", insertError.message)
+    }
+  }
+
+  if (toUpdate.length > 0) {
+    const { error: updateError } = await supabase
+      .from("listened_artists")
+      .upsert(toUpdate, { onConflict: "id" })
+    if (updateError) {
+      console.error("[accumulateLastFmHistory] Batch update error:", updateError.message)
+    }
+  }
+
+  console.log(`[accumulateLastFmHistory] batch insert=${toInsert.length} update=${toUpdate.length}`)
 }

@@ -31,6 +31,20 @@ export default function SignInPage() {
       return
     }
 
+    // Check if new user needs onboarding
+    try {
+      const check = await fetch("/api/onboarding/check")
+      if (check.ok) {
+        const { needsOnboarding } = await check.json()
+        if (needsOnboarding) {
+          router.push("/onboarding")
+          return
+        }
+      }
+    } catch {
+      // Fall through to feed on check failure
+    }
+
     router.push("/feed")
   }
 
@@ -107,10 +121,11 @@ export default function SignInPage() {
               type="text"
               placeholder="your-username"
               value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, "").slice(0, 30))}
               autoComplete="username"
               autoFocus
               spellCheck={false}
+              maxLength={30}
               style={{ fontSize: 16 }}
             />
           </div>

@@ -2,7 +2,9 @@
 
 import { useState, useMemo } from "react"
 import { useRouter } from "next/navigation"
+import { toast } from "sonner"
 import { ArtistCard } from "@/components/feed/artist-card"
+import { hexToRgba, stringToVibrantHex, sanitizeHex } from "@/lib/color-utils"
 
 interface Track {
   id: string
@@ -38,40 +40,6 @@ interface Recommendation {
 
 interface FeedClientProps {
   recommendations: Recommendation[]
-  coldStart?: boolean
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function hexToRgba(hex: string, alpha: number): string {
-  const cleaned = hex.replace(/^#/, "")
-  const full = cleaned.length === 3 ? cleaned.split("").map((c) => c + c).join("") : cleaned
-  const num = parseInt(full.slice(0, 6), 16)
-  return `rgba(${(num >> 16) & 0xff}, ${(num >> 8) & 0xff}, ${num & 0xff}, ${alpha})`
-}
-
-function stringToVibrantHex(str: string): string {
-  let hash = 0
-  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash)
-  const hue = Math.abs(hash) % 360
-  const s = 0.70, l = 0.65
-  const c = (1 - Math.abs(2 * l - 1)) * s
-  const x = c * (1 - Math.abs((hue / 60) % 2 - 1))
-  const m = l - c / 2
-  let r = 0, g = 0, b = 0
-  if (hue < 60)       { r = c; g = x; b = 0 }
-  else if (hue < 120) { r = x; g = c; b = 0 }
-  else if (hue < 180) { r = 0; g = c; b = x }
-  else if (hue < 240) { r = 0; g = x; b = c }
-  else if (hue < 300) { r = x; g = 0; b = c }
-  else                { r = c; g = 0; b = x }
-  const toHex = (n: number) => {
-    const hex = Math.round((n + m) * 255).toString(16)
-    return hex.length === 1 ? "0" + hex : hex
-  }
-  return `#${toHex(r)}${toHex(g)}${toHex(b)}`
 }
 
 // ---------------------------------------------------------------------------
@@ -80,7 +48,7 @@ function stringToVibrantHex(str: string): string {
 
 function FullBleedSpread({ rec }: { rec: Recommendation }) {
   const { artist_data, artist_color } = rec
-  const color = artist_color ?? stringToVibrantHex(artist_data.name)
+  const color = sanitizeHex(artist_color) === "#8b5cf6" ? stringToVibrantHex(artist_data.name) : sanitizeHex(artist_color)
   return (
     <div
       className="fadein"
@@ -129,7 +97,7 @@ function FullBleedSpread({ rec }: { rec: Recommendation }) {
           Editor&apos;s pick · No. 03
         </div>
         <div className="mono" style={{ fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color }}>
-          {artist_data.genres[0]}
+          {artist_data.genres[0] ?? "Uncategorized"}
         </div>
       </div>
       <div style={{ position: "absolute", left: 28, right: 28, bottom: 28 }}>
@@ -169,8 +137,8 @@ function PullQuote({ index }: { index: number }) {
 }
 
 function VsCard({ recA, recB }: { recA: Recommendation; recB: Recommendation }) {
-  const colorA = recA.artist_color ?? stringToVibrantHex(recA.artist_data.name)
-  const colorB = recB.artist_color ?? stringToVibrantHex(recB.artist_data.name)
+  const colorA = sanitizeHex(recA.artist_color) === "#8b5cf6" ? stringToVibrantHex(recA.artist_data.name) : sanitizeHex(recA.artist_color)
+  const colorB = sanitizeHex(recB.artist_color) === "#8b5cf6" ? stringToVibrantHex(recB.artist_data.name) : sanitizeHex(recB.artist_color)
   return (
     <div
       className="fadein"
@@ -231,37 +199,7 @@ function VsHalf({ rec, color }: { rec: Recommendation; color: string }) {
       </div>
       <div className="display" style={{ fontSize: 22, lineHeight: 1.0 }}>{artist_data.name}</div>
       <div className="mono" style={{ fontSize: 9.5, color, letterSpacing: "0.16em", textTransform: "uppercase" }}>
-        {artist_data.genres[0]}
-      </div>
-    </div>
-  )
-}
-
-function ColdStartBanner({ accent, likeCount }: { accent: string; likeCount: number }) {
-  const remaining = Math.max(0, 5 - likeCount)
-  const pct = Math.min(100, (likeCount / 5) * 100)
-  return (
-    <div
-      className="fadein"
-      style={{
-        padding: "16px 18px",
-        borderRadius: 16,
-        marginBottom: 8,
-        background: `linear-gradient(135deg, ${hexToRgba(accent, 0.10)}, transparent)`,
-        border: `1px solid ${hexToRgba(accent, 0.22)}`,
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: "-0.01em" }}>Wandering mode</div>
-        <span className="mono" style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-muted)" }}>
-          {likeCount}/5
-        </span>
-      </div>
-      <div className="serif" style={{ fontSize: 14, color: "var(--text-secondary)", lineHeight: 1.5, marginBottom: 10, fontStyle: "italic" }}>
-        Random discoveries — like {remaining > 0 ? `${remaining} more` : "a few"} to start tuning the engine.
-      </div>
-      <div style={{ height: 3, borderRadius: 2, background: "rgba(255,255,255,0.05)", overflow: "hidden" }}>
-        <div style={{ height: "100%", width: `${pct}%`, background: accent, transition: "width .4s" }} />
+        {artist_data.genres[0] ?? "Uncategorized"}
       </div>
     </div>
   )
@@ -294,73 +232,107 @@ function buildSequence(recs: Recommendation[], magazine: boolean): FeedItem[] {
 // Main component
 // ---------------------------------------------------------------------------
 
-export function FeedClient({ recommendations, coldStart = false }: FeedClientProps) {
+export function FeedClient({ recommendations }: FeedClientProps) {
   const [dismissedSignals, setDismissedSignals] = useState<Map<string, string>>(new Map())
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set())
   const [isGenerating, setIsGenerating] = useState(false)
+  const [genreFilter, setGenreFilter] = useState<string | null>(null)
   const router = useRouter()
 
-  const likeCount = useMemo(
-    () => Array.from(dismissedSignals.values()).filter((s) => s === "thumbs_up").length,
-    [dismissedSignals]
+  const allGenres = useMemo(() => {
+    const set = new Set<string>()
+    for (const r of recommendations) {
+      for (const g of r.artist_data.genres) set.add(g)
+    }
+    return Array.from(set).sort()
+  }, [recommendations])
+
+  const filteredRecs = useMemo(
+    () =>
+      genreFilter
+        ? recommendations.filter((r) =>
+            r.artist_data.genres.some((g) => g.toLowerCase().includes(genreFilter.toLowerCase()))
+          )
+        : recommendations,
+    [recommendations, genreFilter]
   )
 
-  const activeRec = recommendations.find((r) => !dismissedSignals.has(r.spotify_artist_id))
-  const activeAuraColor = activeRec?.artist_color ?? "#8b5cf6"
+  const activeRec = filteredRecs.find((r) => !dismissedSignals.has(r.spotify_artist_id))
+  const activeAuraColor = sanitizeHex(activeRec?.artist_color)
 
   const sequence = useMemo(
-    () => buildSequence(recommendations, true),
-    [recommendations]
+    () => buildSequence(filteredRecs, true),
+    [filteredRecs]
   )
 
   async function handleFeedback(artistId: string, signal: string) {
     setDismissedSignals((prev) => new Map(prev).set(artistId, signal))
     try {
-      await fetch("/api/feedback", {
+      const res = await fetch("/api/feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ spotifyArtistId: artistId, signal }),
       })
-    } catch (err) {
-      console.error("[feed-client] feedback failed", err)
+      if (!res.ok) throw new Error("Server error")
+    } catch {
+      setDismissedSignals((prev) => {
+        const next = new Map(prev)
+        next.delete(artistId)
+        return next
+      })
+      toast.error("Couldn't save feedback — try again")
     }
   }
 
   async function handleGenerateMore() {
     setIsGenerating(true)
     try {
-      const res = await fetch("/api/recommendations/generate", { method: "POST" })
+      const url = genreFilter
+        ? `/api/recommendations/generate?genre=${encodeURIComponent(genreFilter)}`
+        : "/api/recommendations/generate"
+      const res = await fetch(url, { method: "POST" })
       if (res.status === 401) {
-        window.location.href = "/api/auth/signin"
+        window.location.href = "/sign-in"
         return
       }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error((data as { error?: string }).error ?? "Generation failed")
+      }
+      router.refresh()
     } catch (err) {
-      console.error("[feed-client] generate failed", err)
+      toast.error(err instanceof Error ? err.message : "Generation failed")
+    } finally {
+      setIsGenerating(false)
     }
-    router.refresh()
-    setTimeout(() => setIsGenerating(false), 3000)
   }
 
   async function handleSave(artistId: string) {
     if (savedIds.has(artistId)) {
       setSavedIds((prev) => { const n = new Set(prev); n.delete(artistId); return n })
       try {
-        await fetch("/api/saves", {
+        const res = await fetch("/api/saves", {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ spotifyArtistId: artistId }),
         })
-      } catch {}
+        if (!res.ok) throw new Error("Server error")
+      } catch {
+        setSavedIds((prev) => new Set(prev).add(artistId))
+        toast.error("Couldn't unsave — try again")
+      }
     } else {
       setSavedIds((prev) => new Set(prev).add(artistId))
       try {
-        await fetch("/api/saves", {
+        const res = await fetch("/api/saves", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ spotifyArtistId: artistId }),
         })
-      } catch (err) {
-        console.error("[feed-client] save failed", err)
+        if (!res.ok) throw new Error("Server error")
+      } catch {
+        setSavedIds((prev) => { const n = new Set(prev); n.delete(artistId); return n })
+        toast.error("Couldn't save — try again")
       }
     }
   }
@@ -387,11 +359,29 @@ export function FeedClient({ recommendations, coldStart = false }: FeedClientPro
       {/* Page header */}
       <div className="page-head">
         <h1>Today&apos;s feed</h1>
-        <span className="sub">{recommendations.length} cued</span>
+        <span className="sub">{filteredRecs.length} cued</span>
       </div>
 
-      {/* Cold-start banner */}
-      {coldStart && <ColdStartBanner accent="#8b5cf6" likeCount={likeCount} />}
+      {/* Genre filter chips */}
+      {allGenres.length > 0 && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
+          <button
+            className={"chip" + (genreFilter === null ? " selected" : "")}
+            onClick={() => setGenreFilter(null)}
+          >
+            All
+          </button>
+          {allGenres.map((g) => (
+            <button
+              key={g}
+              className={"chip" + (genreFilter === g ? " selected" : "")}
+              onClick={() => setGenreFilter(genreFilter === g ? null : g)}
+            >
+              {g}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Feed sequence */}
       <div className="col" style={{ gap: 24, marginTop: 8 }}>
@@ -421,6 +411,8 @@ export function FeedClient({ recommendations, coldStart = false }: FeedClientPro
           <button className="btn" onClick={handleGenerateMore} disabled={isGenerating}>
             {isGenerating ? (
               <span className="mono" style={{ fontSize: 12 }}>Generating…</span>
+            ) : genreFilter ? (
+              `More ${genreFilter} artists`
             ) : (
               "Load more artists"
             )}

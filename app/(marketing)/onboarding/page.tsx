@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
+import { toast } from "sonner"
 import { Search, X, Music, ChevronDown, ChevronUp, Lock } from "lucide-react"
 import genreData from "@/data/genres.json"
 import type { GenreNode } from "@/lib/types"
@@ -133,36 +134,44 @@ export default function OnboardingPage() {
     setSaving(true)
 
     try {
+      const promises: Promise<Response>[] = []
+
       // 1. Save Last.fm username
       if (!skip && lastfmUsername.trim()) {
-        await fetch("/api/settings", {
+        promises.push(fetch("/api/settings", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ lastfmUsername: lastfmUsername.trim() }),
-        })
+        }))
       }
 
       // 2. Save selected genres
       if (!skip && selectedGenres.length > 0) {
-        await fetch("/api/settings", {
+        promises.push(fetch("/api/settings", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ selectedGenres: selectedGenres.map((g) => g.lastfmTag) }),
-        })
+        }))
       }
 
-      // 3. Save seed artists (requires 3–5)
+      // 3. Save seed artists
       const artistsToSave = selectedArtists.slice(0, 5)
       if (!skip && artistsToSave.length >= 3) {
-        await fetch("/api/onboarding/seeds", {
+        promises.push(fetch("/api/onboarding/seeds", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ artistIds: artistsToSave.map((a) => a.id) }),
-        })
+        }))
       }
 
+      const results = await Promise.all(promises)
+      const failed = results.find((r) => !r.ok)
+      if (failed) {
+        toast.error("Some settings couldn't be saved — you can update them later")
+      }
       router.push("/feed")
     } catch {
+      toast.error("Something went wrong — please try again")
       setSaving(false)
     }
   }

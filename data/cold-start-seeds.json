@@ -49,6 +49,32 @@
     { "name": "William Tyler", "genre": "folk", "spotifyPopularity": 10 },
     { "name": "Billy Woods", "genre": "hip-hop", "spotifyPopularity": 18 },
     { "name": "Armand Hammer", "genre": "hip-hop", "spotifyPopularity": 14 },
-    { "name": "Moor Mother", "genre": "hip-hop", "spotifyPopularity": 11 }
+    { "name": "Moor Mother", "genre": "hip-hop", "spotifyPopularity": 11 },
+
+    { "name": "Nana Adjoa", "genre": "indie-pop", "spotifyPopularity": 12 },
+    { "name": "Benny Sings", "genre": "indie-pop", "spotifyPopularity": 18 },
+    { "name": "Sofie Royer", "genre": "indie-pop", "spotifyPopularity": 10 },
+    { "name": "Enumclaw", "genre": "indie-rock", "spotifyPopularity": 15 },
+    { "name": "Horsegirl", "genre": "indie-rock", "spotifyPopularity": 14 },
+    { "name": "Geese", "genre": "indie-rock", "spotifyPopularity": 16 },
+    { "name": "Duendita", "genre": "r-and-b", "spotifyPopularity": 9 },
+    { "name": "Rochelle Jordan", "genre": "r-and-b", "spotifyPopularity": 13 },
+    { "name": "Topaz Jones", "genre": "r-and-b", "spotifyPopularity": 11 },
+    { "name": "Mon Laferte", "genre": "latin", "spotifyPopularity": 19 },
+    { "name": "Silvana Estrada", "genre": "latin", "spotifyPopularity": 16 },
+    { "name": "Cimafunk", "genre": "latin", "spotifyPopularity": 12 },
+    { "name": "Charley Crockett", "genre": "country", "spotifyPopularity": 19 },
+    { "name": "49 Winchester", "genre": "country", "spotifyPopularity": 15 },
+    { "name": "Sierra Ferrell", "genre": "country", "spotifyPopularity": 18 },
+    { "name": "Se So Neon", "genre": "k-rock", "spotifyPopularity": 14 },
+    { "name": "Parannoul", "genre": "k-rock", "spotifyPopularity": 16 },
+    { "name": "Balming Tiger", "genre": "k-pop", "spotifyPopularity": 13 },
+    { "name": "CIFIKA", "genre": "k-pop", "spotifyPopularity": 8 },
+    { "name": "Lamp", "genre": "j-pop", "spotifyPopularity": 17 },
+    { "name": "Ichiko Aoba", "genre": "j-folk", "spotifyPopularity": 19 },
+    { "name": "Hania Rani", "genre": "neo-classical", "spotifyPopularity": 19 },
+    { "name": "Residente", "genre": "latin-hip-hop", "spotifyPopularity": 18 },
+    { "name": "La Luz", "genre": "surf-rock", "spotifyPopularity": 14 },
+    { "name": "Melt-Banana", "genre": "noise-rock", "spotifyPopularity": 12 }
   ]
 }

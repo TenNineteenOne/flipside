@@ -13,7 +13,7 @@ export async function POST(): Promise<Response> {
 
   const { data: user, error: userError } = await supabase
     .from("users")
-    .select("lastfm_username")
+    .select("lastfm_username, last_accumulated_at")
     .eq("id", userId)
     .maybeSingle()
 
@@ -27,6 +27,17 @@ export async function POST(): Promise<Response> {
   if (!user.lastfm_username) {
     return apiError("No Last.fm account connected", 400)
   }
+
+  // Per-user cooldown: 15 minutes between accumulate requests
+  if (user.last_accumulated_at) {
+    const elapsed = Date.now() - new Date(user.last_accumulated_at).getTime()
+    if (elapsed < 15 * 60_000) {
+      return apiError("Please wait before syncing again", 429)
+    }
+  }
+
+  // Update cooldown timestamp
+  await supabase.from("users").update({ last_accumulated_at: new Date().toISOString() }).eq("id", userId)
 
   try {
     const accessToken = await getSpotifyClientToken() ?? ""

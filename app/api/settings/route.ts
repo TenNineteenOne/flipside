@@ -8,7 +8,7 @@ export async function PATCH(request: Request) {
 
   const userId = session.user.id
 
-  let body: { playThreshold?: number; lastfmUsername?: string; selectedGenres?: string[] }
+  let body: { playThreshold?: number; lastfmUsername?: string; selectedGenres?: string[]; undergroundMode?: boolean }
   try {
     body = await request.json()
   } catch {
@@ -37,7 +37,11 @@ export async function PATCH(request: Request) {
     if (!Array.isArray(body.selectedGenres) || body.selectedGenres.length > 20) {
       return apiError("selectedGenres must be an array of up to 20 tags", 400)
     }
-    update.selected_genres = body.selectedGenres.filter((g) => typeof g === "string")
+    update.selected_genres = body.selectedGenres.filter((g) => typeof g === "string" && g.length <= 80)
+  }
+
+  if (body.undergroundMode !== undefined) {
+    update.underground_mode = !!body.undergroundMode
   }
 
   if (Object.keys(update).length === 0) {

@@ -13,6 +13,9 @@ export async function GET(req: NextRequest) {
   if (!query || query.trim().length === 0) {
     return apiError("Query parameter 'q' is required", 400)
   }
+  if (query.trim().length > 200) {
+    return apiError("Query too long", 400)
+  }
 
   const accessToken = await getSpotifyClientToken()
   if (!accessToken) return apiError("Spotify unavailable", 503)

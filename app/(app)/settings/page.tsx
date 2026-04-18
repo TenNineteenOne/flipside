@@ -13,7 +13,7 @@ export default async function SettingsPage() {
   const supabase = createServiceClient()
   const { data: user } = await supabase
     .from("users")
-    .select("id, play_threshold, lastfm_username, flipside_playlist_id")
+    .select("id, play_threshold, lastfm_username, underground_mode")
     .eq("id", userId)
     .maybeSingle()
 
@@ -35,7 +35,7 @@ export default async function SettingsPage() {
       initialPlayThreshold={user?.play_threshold ?? 5}
       initialLastfmUsername={user?.lastfm_username ?? null}
       initialLastfmArtistCount={lastfmArtistCount}
-      flipsidePlaylistId={user?.flipside_playlist_id ?? null}
+      initialUndergroundMode={user?.underground_mode ?? false}
     />
   )
 }

@@ -5,7 +5,7 @@ export const proxy = auth((req) => {
   const { pathname } = req.nextUrl
   const session = req.auth
 
-  const isProtectedPage = ["/feed", "/settings"].some((p) =>
+  const isProtectedPage = ["/feed", "/settings", "/history", "/saved", "/stats", "/onboarding"].some((p) =>
     pathname.startsWith(p)
   )
   const isProtectedApi =

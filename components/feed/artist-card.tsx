@@ -2,9 +2,11 @@
 
 import { useState, useEffect, useMemo } from "react"
 import { motion } from "framer-motion"
-import { SkipForward, Bookmark, Check } from "lucide-react"
+import { SkipForward, Bookmark, Check, Share2, ChevronDown, ChevronUp } from "lucide-react"
+import { toast } from "sonner"
 import { TrackStrip } from "@/components/feed/track-strip"
 import { useAudio } from "@/lib/audio-context"
+import { stringToVibrantHex, hexToRgba, sanitizeHex } from "@/lib/color-utils"
 import type { Track } from "@/lib/music-provider/types"
 
 // ---------------------------------------------------------------------------
@@ -42,42 +44,6 @@ export interface ArtistCardProps {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function stringToVibrantHex(str: string): string {
-  let hash = 0
-  for (let i = 0; i < str.length; i++) {
-    hash = str.charCodeAt(i) + ((hash << 5) - hash)
-  }
-  const hue = Math.abs(hash) % 360
-  const s = 0.70
-  const l = 0.65
-  const c = (1 - Math.abs(2 * l - 1)) * s
-  const x = c * (1 - Math.abs((hue / 60) % 2 - 1))
-  const m = l - c / 2
-  let r = 0, g = 0, b = 0
-  if (hue < 60)        { r = c; g = x; b = 0 }
-  else if (hue < 120)  { r = x; g = c; b = 0 }
-  else if (hue < 180)  { r = 0; g = c; b = x }
-  else if (hue < 240)  { r = 0; g = x; b = c }
-  else if (hue < 300)  { r = x; g = 0; b = c }
-  else                 { r = c; g = 0; b = x }
-  const toHex = (n: number) => {
-    const hex = Math.round((n + m) * 255).toString(16)
-    return hex.length === 1 ? "0" + hex : hex
-  }
-  return `#${toHex(r)}${toHex(g)}${toHex(b)}`
-}
-
-function hexToRgba(hex: string, alpha: number): string {
-  const cleaned = hex.replace(/^#/, "")
-  const full = cleaned.length === 3 ? cleaned.split("").map((c) => c + c).join("") : cleaned
-  const num = parseInt(full.slice(0, 6), 16)
-  return `rgba(${(num >> 16) & 0xff}, ${(num >> 8) & 0xff}, ${num & 0xff}, ${alpha})`
-}
-
-// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -91,8 +57,8 @@ export function ArtistCard({
 }: ArtistCardProps) {
   const { artist_data, why, artist_color } = recommendation
   const artistColor = useMemo(() => {
-    const c = artist_color ?? "#8b5cf6"
-    if (c.toLowerCase() === "#8b5cf6") return stringToVibrantHex(artist_data.name)
+    const c = sanitizeHex(artist_color)
+    if (c === "#8b5cf6") return stringToVibrantHex(artist_data.name)
     return c
   }, [artist_color, artist_data.name])
 
@@ -100,17 +66,23 @@ export function ArtistCard({
 
   const [localTracks, setLocalTracks] = useState<Track[]>(artist_data.topTracks)
   const [isFetchingTracks, setIsFetchingTracks] = useState(false)
+  const [showWhy, setShowWhy] = useState(false)
 
   useEffect(() => {
     if (artist_data.topTracks.length === 0 && localTracks.length === 0 && !isFetchingTracks) {
       setIsFetchingTracks(true)
       fetch(`/api/artists/${recommendation.spotify_artist_id}/tracks?name=${encodeURIComponent(artist_data.name)}`)
-        .then((r) => r.json())
+        .then((r) => {
+          if (!r.ok) throw new Error("fetch failed")
+          return r.json()
+        })
         .then((data) => {
           if (data.tracks?.length > 0) setLocalTracks(data.tracks)
         })
+        .catch(() => {})
         .finally(() => setIsFetchingTracks(false))
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only fetch once when tracks are empty
   }, [artist_data.topTracks.length, artist_data.name, recommendation.spotify_artist_id])
 
   function handleSave(e: React.MouseEvent) {
@@ -122,12 +94,20 @@ export function ArtistCard({
     play(track, artist_data.name, artist_data.imageUrl, artistColor)
   }
 
+  function handleShare(e: React.MouseEvent) {
+    e.stopPropagation()
+    const url = `https://open.spotify.com/artist/${recommendation.spotify_artist_id}`
+    navigator.clipboard.writeText(url).then(() => toast.success("Link copied!")).catch(() => toast.error("Couldn't copy link"))
+  }
+
   const reasonText =
     why.sourceArtists.length > 0
       ? `Similar to ${why.sourceArtists.join(" & ")}`
       : why.genres.length > 0
         ? `Because you like ${why.genres.join(", ")}`
         : null
+
+  const hasWhyDetails = why.sourceArtists.length > 0 || why.genres.length > 0 || why.friendBoost.length > 0
 
   // ------------------------------------------------------------------
   // Collapsed (slim bar) state — no emoji, colour-coded labels
@@ -306,8 +286,52 @@ export function ArtistCard({
           </div>
         )}
 
-        {/* Reason / why */}
-        {reasonText && (
+        {/* Why this artist? — expandable */}
+        {hasWhyDetails && (
+          <div style={{ marginTop: 18 }}>
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowWhy(!showWhy) }}
+              className="btn btn-block"
+              style={{
+                background: "rgba(255,255,255,0.025)",
+                justifyContent: "space-between",
+                fontSize: 13,
+                color: "var(--text-secondary)",
+              }}
+            >
+              <span className="serif" style={{ fontStyle: "italic" }}>
+                {reasonText ?? "Why this artist?"}
+              </span>
+              {showWhy ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </button>
+            {showWhy && (
+              <div
+                style={{
+                  marginTop: 6,
+                  padding: "12px 14px",
+                  background: "rgba(255,255,255,0.02)",
+                  borderRadius: 10,
+                  border: "1px solid var(--border)",
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 6,
+                }}
+              >
+                {why.sourceArtists.map((a) => (
+                  <span key={a} className="chip selected">{a}</span>
+                ))}
+                {why.genres.map((g) => (
+                  <span key={g} className="chip" style={{ color: artistColor, borderColor: hexToRgba(artistColor, 0.3) }}>{g}</span>
+                ))}
+                {why.friendBoost.map((f) => (
+                  <span key={f} className="chip" style={{ color: "var(--accent)" }}>via {f}</span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        {/* Show reason text only when no expandable why panel */}
+        {!hasWhyDetails && reasonText && (
           <div
             className="serif"
             style={{
@@ -327,19 +351,30 @@ export function ArtistCard({
 
         {/* Actions */}
         <div className="col gap-12" style={{ marginTop: 16 }}>
-          {/* Spotify */}
-          <a
-            href={`https://open.spotify.com/artist/${recommendation.spotify_artist_id}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn btn-spotify btn-block"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/>
-            </svg>
-            Open in Spotify
-          </a>
+          {/* Spotify + Share */}
+          <div style={{ display: "flex", gap: 8 }}>
+            <a
+              href={`https://open.spotify.com/artist/${recommendation.spotify_artist_id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-spotify"
+              onClick={(e) => e.stopPropagation()}
+              style={{ flex: 1 }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/>
+              </svg>
+              Open in Spotify
+            </a>
+            <button
+              className="btn"
+              onClick={handleShare}
+              title="Copy artist link"
+              style={{ padding: "0 14px" }}
+            >
+              <Share2 size={15} />
+            </button>
+          </div>
 
           {/* Bookmark */}
           <button

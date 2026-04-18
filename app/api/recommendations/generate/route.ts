@@ -21,7 +21,11 @@ async function pLimit<T>(
   const workers = Array.from({ length: Math.min(limit, tasks.length) }, async () => {
     while (index < tasks.length) {
       const i = index++
-      results[i] = await tasks[i]()
+      try {
+        results[i] = await tasks[i]()
+      } catch (err) {
+        console.error(`[pLimit] task ${i} failed:`, err instanceof Error ? err.message : err)
+      }
     }
   })
 
@@ -44,7 +48,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   // Read user row including play_threshold
   const { data: user, error: userError } = await supabase
     .from("users")
-    .select("id, play_threshold")
+    .select("id, play_threshold, underground_mode, last_generated_at")
     .eq("id", userId)
     .maybeSingle()
 
@@ -52,6 +56,17 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   // Default to 5 if the column is null (pre-migration rows)
   const playThreshold: number = user.play_threshold ?? 5
+
+  // Per-user cooldown: 30 seconds between generate requests
+  if (user.last_generated_at) {
+    const elapsed = Date.now() - new Date(user.last_generated_at).getTime()
+    if (elapsed < 30_000) {
+      return apiError("Please wait before generating more recommendations", 429)
+    }
+  }
+
+  // Update cooldown timestamp
+  await supabase.from("users").update({ last_generated_at: new Date().toISOString() }).eq("id", userId)
 
   // ── [SECURITY PATCH] Algorithmic Queue Capacity DoS limit ──
   // Restricts bad actors from infinitely looping the background engine, but allows up to 60 unseen artists to queue
@@ -76,10 +91,16 @@ export async function POST(req: NextRequest): Promise<Response> {
     // Use user's Spotify token if available, otherwise fall back to client credentials
     const accessToken = userAccessToken ?? await getSpotifyClientToken() ?? ""
 
-    const count = await buildRecommendations({
+    // Optional genre filter from query params
+    const rawGenre = req.nextUrl.searchParams.get("genre")
+    const genre = rawGenre && rawGenre.length <= 80 ? rawGenre : undefined
+
+    const recCount = await buildRecommendations({
       userId: user.id,
       accessToken,
       playThreshold,
+      genre,
+      undergroundMode: user.underground_mode ?? false,
     })
 
     // ── Colour extraction ──────────────────────────────────────────────────
@@ -111,26 +132,25 @@ export async function POST(req: NextRequest): Promise<Response> {
       })
 
       if (needsColor.length > 0) {
-        await Promise.all(
-          needsColor.map(async (r) => {
-            const artistData = r.artist_data as Artist | null
-            const imageUrl = artistData?.imageUrl
-            if (!imageUrl) return
+        const colorTasks = needsColor.map((r) => async () => {
+          const artistData = r.artist_data as Artist | null
+          const imageUrl = artistData?.imageUrl
+          if (!imageUrl) return
 
-            const color = await extractArtistColor(imageUrl)
-            colorMap.set(r.spotify_artist_id, color)
+          const color = await extractArtistColor(imageUrl)
+          colorMap.set(r.spotify_artist_id, color)
 
-            // Write back to artist_search_cache (keyed by spotify_artist_id)
-            const { error: colorErr } = await supabase
-              .from("artist_search_cache")
-              .update({ artist_color: color })
-              .eq("spotify_artist_id", r.spotify_artist_id)
+          // Write back to artist_search_cache (keyed by spotify_artist_id)
+          const { error: colorErr } = await supabase
+            .from("artist_search_cache")
+            .update({ artist_color: color })
+            .eq("spotify_artist_id", r.spotify_artist_id)
 
-            if (colorErr) {
-              console.log(`[generate] color-update-fail id=${r.spotify_artist_id} err=${colorErr.message}`)
-            }
-          })
-        )
+          if (colorErr) {
+            console.log(`[generate] color-update-fail id=${r.spotify_artist_id} err=${colorErr.message}`)
+          }
+        })
+        await pLimit(colorTasks, 5)
       }
 
       // Write artist_color into recommendation_cache rows.
@@ -215,7 +235,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       }
     }
 
-    return Response.json({ success: true, count })
+    return Response.json({ success: true, count: recCount })
   } catch (err) {
     console.log(`[generate] fail err=${err instanceof Error ? err.message : err}`)
     return apiError("Recommendation generation failed", 500)

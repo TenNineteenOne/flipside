@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation"
 import { auth } from "@/lib/auth"
 import { AppNav } from "@/components/nav/app-nav"
 import { AudioProvider } from "@/lib/audio-context"
@@ -9,8 +10,10 @@ export default async function AppLayout({
   children: React.ReactNode
 }) {
   const session = await auth()
+  if (!session?.user?.id) redirect("/sign-in")
+
   // Seed the identicon from user ID (deterministic, not PII)
-  const userSeed = session?.user?.id ?? session?.user?.name ?? "user"
+  const userSeed = session.user.id
 
   return (
     <AudioProvider>

@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { signOut } from "next-auth/react"
 import { toast } from "sonner"
 import { IdenticonAvatar } from "@/components/ui/identicon-avatar"
 
@@ -9,7 +10,7 @@ interface SettingsFormProps {
   initialPlayThreshold: number
   initialLastfmUsername: string | null
   initialLastfmArtistCount: number
-  flipsidePlaylistId: string | null
+  initialUndergroundMode: boolean
 }
 
 async function patchSettings(payload: Record<string, unknown>) {
@@ -29,9 +30,11 @@ export function SettingsForm({
   initialPlayThreshold,
   initialLastfmUsername,
   initialLastfmArtistCount,
+  initialUndergroundMode,
 }: SettingsFormProps) {
   const [threshold, setThreshold] = useState(initialPlayThreshold)
   const [lastfmUsername, setLastfmUsername] = useState(initialLastfmUsername ?? "")
+  const [undergroundMode, setUndergroundMode] = useState(initialUndergroundMode)
   const [isSyncing, setIsSyncing] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
@@ -64,6 +67,17 @@ export function SettingsForm({
     }
   }
 
+  async function handleUndergroundToggle() {
+    const next = !undergroundMode
+    setUndergroundMode(next)
+    try {
+      await patchSettings({ undergroundMode: next })
+    } catch {
+      setUndergroundMode(!next)
+      toast.error("Failed to save setting")
+    }
+  }
+
   async function handleLastfmBlur() {
     const trimmed = lastfmUsername.trim()
     if (trimmed === (initialLastfmUsername ?? "")) return
@@ -82,7 +96,10 @@ export function SettingsForm({
     }
     setIsDeleting(true)
     try {
-      await fetch("/api/account", { method: "DELETE" })
+      const res = await fetch("/api/account", { method: "DELETE" })
+      if (!res.ok && !res.redirected) {
+        throw new Error("Delete failed")
+      }
       window.location.href = "/"
     } catch {
       toast.error("Failed to delete account")
@@ -221,6 +238,59 @@ export function SettingsForm({
             </div>
           </div>
 
+          {/* ── Deep underground mode ──────────────────────────────── */}
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 10 }}>Deep underground mode</div>
+            <div className="fs-card">
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 16,
+                }}
+              >
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
+                    Extra obscure
+                  </div>
+                  <div className="muted" style={{ fontSize: 12, lineHeight: 1.5 }}>
+                    Aggressively deprioritize anything remotely popular. Only for listeners who want the absolute deepest cuts.
+                  </div>
+                </div>
+                <button
+                  onClick={handleUndergroundToggle}
+                  role="switch"
+                  aria-checked={undergroundMode}
+                  style={{
+                    width: 48,
+                    height: 28,
+                    borderRadius: 14,
+                    border: 0,
+                    cursor: "pointer",
+                    flexShrink: 0,
+                    background: undergroundMode ? "var(--accent)" : "rgba(255,255,255,0.10)",
+                    position: "relative",
+                    transition: "background 0.2s",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 22,
+                      height: 22,
+                      borderRadius: "50%",
+                      background: "#fff",
+                      position: "absolute",
+                      top: 3,
+                      left: undergroundMode ? 23 : 3,
+                      transition: "left 0.2s",
+                    }}
+                  />
+                </button>
+              </div>
+            </div>
+          </div>
+
           {/* ── Connected sources ────────────────────────────────────── */}
           <div>
             <div className="eyebrow" style={{ marginBottom: 10 }}>Connected sources</div>
@@ -302,11 +372,12 @@ export function SettingsForm({
           <div>
             <div className="eyebrow" style={{ marginBottom: 10 }}>Account</div>
             <div className="fs-card col gap-12">
-              <form action="/api/auth/signout" method="POST">
-                <button type="submit" className="btn">
-                  Sign out
-                </button>
-              </form>
+              <button
+                className="btn"
+                onClick={() => signOut({ callbackUrl: "/" })}
+              >
+                Sign out
+              </button>
               <button
                 className="btn"
                 onClick={handleDeleteAccount}

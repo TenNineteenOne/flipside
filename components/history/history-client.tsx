@@ -1,7 +1,9 @@
 "use client"
 
 import { useState, useMemo } from "react"
+import { toast } from "sonner"
 import { ThumbsUp, ThumbsDown, SkipForward, Bookmark, Undo2 } from "lucide-react"
+import { stringToVibrantHex, hexToRgba, sanitizeHex } from "@/lib/color-utils"
 
 interface HistoryEntry {
   spotify_artist_id: string
@@ -24,39 +26,7 @@ type FilterTab = "all" | "thumbs_up" | "thumbs_down" | "skip" | "bookmarked"
 
 interface HistoryClientProps {
   history: HistoryEntry[]
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function stringToVibrantHex(str: string): string {
-  let hash = 0
-  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash)
-  const hue = Math.abs(hash) % 360
-  const s = 0.70, l = 0.65
-  const c = (1 - Math.abs(2 * l - 1)) * s
-  const x = c * (1 - Math.abs((hue / 60) % 2 - 1))
-  const m = l - c / 2
-  let r = 0, g = 0, b = 0
-  if (hue < 60)       { r = c; g = x; b = 0 }
-  else if (hue < 120) { r = x; g = c; b = 0 }
-  else if (hue < 180) { r = 0; g = c; b = x }
-  else if (hue < 240) { r = 0; g = x; b = c }
-  else if (hue < 300) { r = x; g = 0; b = c }
-  else                { r = c; g = 0; b = x }
-  const toHex = (n: number) => {
-    const hex = Math.round((n + m) * 255).toString(16)
-    return hex.length === 1 ? "0" + hex : hex
-  }
-  return `#${toHex(r)}${toHex(g)}${toHex(b)}`
-}
-
-function hexToRgba(hex: string, alpha: number): string {
-  const cleaned = hex.replace(/^#/, "")
-  const full = cleaned.length === 3 ? cleaned.split("").map((c) => c + c).join("") : cleaned
-  const num = parseInt(full.slice(0, 6), 16)
-  return `rgba(${(num >> 16) & 0xff}, ${(num >> 8) & 0xff}, ${num & 0xff}, ${alpha})`
+  hasMore?: boolean
 }
 
 const SIG_STYLES: Record<string, { Icon: React.ElementType; color: string; label: string }> = {
@@ -118,10 +88,12 @@ const FILTER_TABS: { key: FilterTab; label: string }[] = [
 // Component
 // ---------------------------------------------------------------------------
 
-export function HistoryClient({ history: initialHistory }: HistoryClientProps) {
+export function HistoryClient({ history: initialHistory, hasMore: initialHasMore = false }: HistoryClientProps) {
   const [history, setHistory] = useState(initialHistory)
   const [filter, setFilter] = useState<FilterTab>("all")
   const [undoingIds, setUndoingIds] = useState<Set<string>>(new Set())
+  const [hasMore, setHasMore] = useState(initialHasMore)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
 
   const filtered = useMemo(() => {
     if (filter === "all") return history
@@ -145,10 +117,11 @@ export function HistoryClient({ history: initialHistory }: HistoryClientProps) {
   async function handleUndo(artistId: string) {
     setUndoingIds((prev) => new Set(prev).add(artistId))
     try {
-      await fetch(`/api/feedback/${artistId}`, { method: "DELETE" })
+      const res = await fetch(`/api/feedback/${artistId}`, { method: "DELETE" })
+      if (!res.ok) throw new Error("Server error")
       setHistory((prev) => prev.filter((h) => h.spotify_artist_id !== artistId))
-    } catch (err) {
-      console.error("[history] undo failed", err)
+    } catch {
+      toast.error("Couldn't undo — try again")
     } finally {
       setUndoingIds((prev) => {
         const next = new Set(prev)
@@ -159,17 +132,41 @@ export function HistoryClient({ history: initialHistory }: HistoryClientProps) {
   }
 
   async function handleChangeSignal(artistId: string, newSignal: string) {
+    const prevSignal = history.find((h) => h.spotify_artist_id === artistId)?.signal
     setHistory((prev) =>
       prev.map((h) => (h.spotify_artist_id === artistId ? { ...h, signal: newSignal } : h))
     )
     try {
-      await fetch("/api/feedback", {
+      const res = await fetch("/api/feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ spotifyArtistId: artistId, signal: newSignal }),
       })
+      if (!res.ok) throw new Error("Server error")
+    } catch {
+      setHistory((prev) =>
+        prev.map((h) => (h.spotify_artist_id === artistId ? { ...h, signal: prevSignal ?? "skip" } : h))
+      )
+      toast.error("Couldn't update signal — try again")
+    }
+  }
+
+  async function handleLoadMore() {
+    setIsLoadingMore(true)
+    try {
+      const res = await fetch(`/api/history?offset=${history.length}&limit=50`)
+      if (!res.ok) throw new Error("Server error")
+      const data = await res.json()
+      if (data.history?.length) {
+        setHistory((prev) => [...prev, ...data.history])
+        setHasMore(data.hasMore ?? false)
+      } else {
+        setHasMore(false)
+      }
     } catch (err) {
-      console.error("[history] signal change failed", err)
+      console.error("[history] load more failed", err)
+    } finally {
+      setIsLoadingMore(false)
     }
   }
 
@@ -239,7 +236,7 @@ export function HistoryClient({ history: initialHistory }: HistoryClientProps) {
                 }}
               >
                 {items.map((entry, i) => {
-                  const artistColor = entry.artist_color ?? stringToVibrantHex(entry.artist_data.name)
+                  const artistColor = sanitizeHex(entry.artist_color) === "#8b5cf6" ? stringToVibrantHex(entry.artist_data.name) : sanitizeHex(entry.artist_color)
                   const sig = entry.bookmarked
                     ? SIG_STYLES.bookmarked
                     : (SIG_STYLES[entry.signal] ?? SIG_STYLES.skip)
@@ -342,6 +339,13 @@ export function HistoryClient({ history: initialHistory }: HistoryClientProps) {
               </div>
             </div>
           ))}
+          {hasMore && (
+            <div style={{ display: "flex", justifyContent: "center", padding: "16px 0" }}>
+              <button className="btn" onClick={handleLoadMore} disabled={isLoadingMore}>
+                {isLoadingMore ? "Loading…" : "Load more"}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
