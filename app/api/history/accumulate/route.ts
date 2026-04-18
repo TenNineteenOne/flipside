@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth"
 import { apiError, apiUnauthorized } from "@/lib/errors"
 import { createServiceClient } from "@/lib/supabase/server"
 import { accumulateLastFmHistory } from "@/lib/listened-artists"
+import { getSpotifyClientToken } from "@/lib/spotify-client-token"
 
 export async function POST(): Promise<Response> {
   const session = await auth()
@@ -28,10 +29,11 @@ export async function POST(): Promise<Response> {
   }
 
   try {
+    const accessToken = await getSpotifyClientToken() ?? ""
     await accumulateLastFmHistory({
       userId,
       lastfmUsername: user.lastfm_username,
-      accessToken: "",
+      accessToken,
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : "Accumulation failed"
