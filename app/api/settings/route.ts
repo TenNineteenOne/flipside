@@ -8,7 +8,7 @@ export async function PATCH(request: Request) {
 
   const userId = session.user.id
 
-  let body: { playThreshold?: number; lastfmUsername?: string }
+  let body: { playThreshold?: number; lastfmUsername?: string; selectedGenres?: string[] }
   try {
     body = await request.json()
   } catch {
@@ -31,6 +31,13 @@ export async function PATCH(request: Request) {
       return apiError("Invalid Last.fm username format", 400)
     }
     update.lastfm_username = lfmUsername || null
+  }
+
+  if (body.selectedGenres !== undefined) {
+    if (!Array.isArray(body.selectedGenres) || body.selectedGenres.length > 20) {
+      return apiError("selectedGenres must be an array of up to 20 tags", 400)
+    }
+    update.selected_genres = body.selectedGenres.filter((g) => typeof g === "string")
   }
 
   if (Object.keys(update).length === 0) {

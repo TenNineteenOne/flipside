@@ -4,6 +4,9 @@ import { createServiceClient } from '@/lib/supabase/server'
 import type { RecommendationInput, ScoredArtist } from './types'
 import { ArtistNameCache } from './artist-name-cache'
 import { resolveArtistsByName } from './resolve-candidates'
+import coldStartData from '@/data/cold-start-seeds.json'
+
+const LASTFM_BASE = "http://ws.audioscrobbler.com/2.0"
 
 /** Return the popularity-tier multiplier for a Spotify popularity value (0–100). */
 function tierMultiplier(popularity: number): number {
@@ -12,72 +15,107 @@ function tierMultiplier(popularity: number): number {
   return 0.02
 }
 
-export async function buildRecommendations(input: RecommendationInput): Promise<number> {
-  const { userId, accessToken, playThreshold } = input
-  const supabase = createServiceClient()
+/** Fetch artist names for a Last.fm genre tag. */
+async function getTagArtistNames(tag: string): Promise<string[]> {
+  const apiKey = process.env.LASTFM_API_KEY
+  if (!apiKey) return []
+  try {
+    const url =
+      `${LASTFM_BASE}/?method=tag.gettopartists` +
+      `&tag=${encodeURIComponent(tag)}&api_key=${apiKey}&format=json&limit=20`
+    const res = await fetch(url)
+    if (!res.ok) return []
+    const data = await res.json()
+    const artists = data?.topartists?.artist
+    if (!Array.isArray(artists)) return []
+    return (artists as Array<{ name: string }>).map((a) => a.name).filter(Boolean)
+  } catch {
+    return []
+  }
+}
 
-  // ── Step 1: Get user's top artists (all 3 time ranges) ──────────────────
-  const [shortTerm, mediumTerm, longTerm] = await Promise.all([
-    musicProvider.getTopArtists(accessToken, 'short_term'),
-    musicProvider.getTopArtists(accessToken, 'medium_term'),
-    musicProvider.getTopArtists(accessToken, 'long_term'),
+// ── Seed gathering ──────────────────────────────────────────────────────────
+
+type SupabaseClient = ReturnType<typeof createServiceClient>
+
+async function gatherSeedNames(userId: string, supabase: SupabaseClient): Promise<string[]> {
+  const [dbSeeds, thumbsUpRows, userRow] = await Promise.all([
+    supabase
+      .from('seed_artists')
+      .select('name')
+      .eq('user_id', userId)
+      .then(({ data }) => (data ?? []).map((r) => r.name as string).filter(Boolean)),
+
+    supabase
+      .from('feedback')
+      .select('spotify_artist_id')
+      .eq('user_id', userId)
+      .eq('signal', 'thumbs_up')
+      .is('deleted_at', null)
+      .limit(10)
+      .then(({ data }) => (data ?? []).map((r) => r.spotify_artist_id as string).filter(Boolean)),
+
+    supabase
+      .from('users')
+      .select('selected_genres')
+      .eq('id', userId)
+      .maybeSingle()
+      .then(({ data }) => data),
   ])
 
-  const topArtistMap = new Map<string, Artist>()
-  for (const artist of [...shortTerm, ...mediumTerm, ...longTerm]) {
-    if (!topArtistMap.has(artist.id)) topArtistMap.set(artist.id, artist)
-  }
+  const names: string[] = [...dbSeeds]
 
-  if (topArtistMap.size === 0) {
-    console.error('[engine] FAIL no_top_artists')
-    return 0
-  }
-
-  // ── Step 2: Pick 10 diverse seeds across all time ranges ────────────────
-  // 4 from short, 4 from medium, 2 from long — avoids over-indexing on recent weeks
-  const seenSeedIds = new Set<string>()
-  const pickSeeds = (artists: Artist[], n: number): Artist[] => {
-    const picked: Artist[] = []
-    for (const a of artists) {
-      if (picked.length >= n) break
-      if (!seenSeedIds.has(a.id)) {
-        seenSeedIds.add(a.id)
-        picked.push(a)
-      }
+  // Resolve thumbs-up artist IDs to names via recommendation_cache
+  if (thumbsUpRows.length > 0) {
+    const { data: cached } = await supabase
+      .from('recommendation_cache')
+      .select('artist_data')
+      .eq('user_id', userId)
+      .in('spotify_artist_id', thumbsUpRows)
+    for (const row of cached ?? []) {
+      const name = (row.artist_data as { name?: string })?.name
+      if (name) names.push(name)
     }
-    return picked
   }
 
-  const seeds = [
-    ...pickSeeds(shortTerm, 4),
-    ...pickSeeds(mediumTerm, 4),
-    ...pickSeeds(longTerm, 2),
-  ]
-
-  if (seeds.length === 0) {
-    console.error('[engine] FAIL no_seeds')
-    return 0
+  // Gather genre tag artists from Last.fm
+  const genres = (userRow?.selected_genres as string[] | null) ?? []
+  if (genres.length > 0) {
+    const genreResults = await Promise.all(genres.map(getTagArtistNames))
+    for (const batch of genreResults) names.push(...batch)
   }
 
-  // ── Step 3: Fetch Last.fm names for all seeds IN PARALLEL ───────────────
-  // No Spotify calls here — Last.fm is free, no auth, no rate limit.
-  const topArtistNames = new Set([...topArtistMap.values()].map(a => a.name.toLowerCase()))
+  // Deduplicate
+  return [...new Set(names)]
+}
 
+// ── Core pipeline ───────────────────────────────────────────────────────────
+
+async function runPipeline(
+  seedNames: string[],
+  accessToken: string,
+  userId: string,
+  playThreshold: number,
+  supabase: SupabaseClient,
+  source: string
+): Promise<number> {
+  const capSeedNames = seedNames.slice(0, 10)
+
+  // Step A: Fetch Last.fm similar artists for all seeds in parallel
   const lfmResults = await Promise.all(
-    seeds.map(async (seed) => ({
-      seed,
-      names: await musicProvider.getSimilarArtistNames(seed.name),
+    capSeedNames.map(async (name) => ({
+      seed: name,
+      names: await musicProvider.getSimilarArtistNames(name),
     }))
   )
 
-  // ── Step 4: Deduplicate names across seeds, build name→seeds map ─────────
-  // One Spotify search per unique name — not per seed × name.
+  const knownNames = new Set(capSeedNames.map((n) => n.toLowerCase()))
   const nameToSeeds = new Map<string, string[]>()
   for (const { seed, names } of lfmResults) {
     for (const name of names) {
-      if (topArtistNames.has(name.toLowerCase())) continue  // skip known artists by name
+      if (knownNames.has(name.toLowerCase())) continue
       if (!nameToSeeds.has(name)) nameToSeeds.set(name, [])
-      nameToSeeds.get(name)!.push(seed.name)
+      nameToSeeds.get(name)!.push(seed)
     }
   }
 
@@ -85,16 +123,12 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
   const lfmTotal = lfmResults.reduce((sum, r) => sum + r.names.length, 0)
 
   if (uniqueNames.length === 0) {
-    console.error(`[engine] FAIL no_unique seeds=${seeds.length} lfm=${lfmTotal}`)
+    console.error(`[engine] FAIL no_unique seeds=${capSeedNames.length} lfm=${lfmTotal} source=${source}`)
     return 0
   }
 
-  // ── Step 5: Resolve unique names → Spotify artists (cache-first) ─────────
-  // Hit the artist_search_cache table first; only live-search Spotify for misses.
+  // Step B: Resolve names → Spotify artists (cache-first)
   const candidateMap = new Map<string, { artist: Artist; seedArtists: string[] }>()
-
-  const recentlyPlayed = await musicProvider.getRecentlyPlayed(accessToken)
-  const recentIds = new Set(recentlyPlayed.map((r) => r.artistId))
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const nameCache = new ArtistNameCache(supabase as any)
@@ -103,10 +137,9 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     searchArtists: (name) => musicProvider.searchArtists(accessToken, name),
   })
 
-  let filtTop = 0, filtRecent = 0
+  console.log(`[cache-search] hit=${resolved.cacheHits} miss=${resolved.cacheMisses} total=${uniqueNames.length}`)
+
   for (const [name, artist] of resolved.resolved) {
-    if (topArtistMap.has(artist.id)) { filtTop++; continue }
-    if (recentIds.has(artist.id)) { filtRecent++; continue }
     const seedArtists = nameToSeeds.get(name) ?? []
     if (candidateMap.has(artist.id)) {
       const existing = candidateMap.get(artist.id)!
@@ -117,30 +150,22 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
       candidateMap.set(artist.id, { artist, seedArtists })
     }
   }
-  const searchOk = resolved.searchOk
-  const searchFail = resolved.searchFail
-  console.log(`[cache-search] hit=${resolved.cacheHits} miss=${resolved.cacheMisses} total=${uniqueNames.length}`)
 
-  // ── Step 5a: Filter — play threshold ─────────────────────────────────────
-  // Exclude artists the user has listened to more times than playThreshold.
-  // Artists with null play_count (unknown listen history) pass through.
+  // Step C: Filter — play threshold
   const { data: listenedData } = await supabase
     .from('listened_artists')
     .select('spotify_artist_id, play_count')
     .eq('user_id', userId)
 
-  // Build a set of Spotify IDs that are over the threshold.
   const overThresholdIds = new Set<string>()
   for (const row of listenedData ?? []) {
     if (!row.spotify_artist_id) continue
-    // null play_count → treat as unheard, pass through
     if (row.play_count != null && row.play_count > playThreshold) {
       overThresholdIds.add(row.spotify_artist_id)
     }
   }
-  let filtListened = 0
 
-  // ── Step 5b: Filter — thumbs-down ─────────────────────────────────────────
+  // Step C2: Filter — thumbs-down
   const { data: thumbsDownData } = await supabase
     .from('feedback')
     .select('spotify_artist_id')
@@ -149,6 +174,7 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     .is('deleted_at', null)
 
   const thumbsDownIds = new Set((thumbsDownData ?? []).map((r) => r.spotify_artist_id))
+  let filtListened = 0
 
   const filteredCandidates = [...candidateMap.entries()]
     .filter(([id]) => {
@@ -158,9 +184,7 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     })
     .map(([, val]) => val)
 
-  // ── Step 6: Score — discovery curve + popularity tier multiplier ──────────
-  // Power-of-2 curve: 80% weight on obscurity, 20% on seed relevance.
-  // Then multiply by the tier weight to soft-rank underground artists first.
+  // Step D: Score
   const scored: ScoredArtist[] = filteredCandidates.map(({ artist, seedArtists }) => {
     const discoveryScore = Math.pow((100 - artist.popularity) / 100, 2)
     const seedRelevance = Math.min(seedArtists.length / 3, 1)
@@ -175,23 +199,23 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
         genres: artist.genres.slice(0, 2),
         friendBoost: [],
       },
-      source: 'lastfm_similar',
+      source,
     }
   })
 
   scored.sort((a, b) => b.score - a.score)
-
-  // ── Step 7: Take top 20 — no hard popularity cap ──────────────────────────
-  // The tier multiplier already ensures underground artists rank first.
-  // If fewer than 20 remain, return what's available.
   const top = scored.slice(0, 20)
 
   if (top.length === 0) {
-    console.error(`[engine] FAIL zero_top seeds=${seeds.length} lfm=${lfmTotal} uniq=${uniqueNames.length} ok=${searchOk} fail=${searchFail} retries=${resolved.searchRetries} rateLimited=${resolved.rateLimited} budgetExhausted=${resolved.backoffBudgetExhausted} filtTop=${filtTop} filtRecent=${filtRecent} filtListened=${filtListened} cands=${candidateMap.size} scored=${scored.length}`)
+    console.error(
+      `[engine] FAIL zero_top seeds=${capSeedNames.length} lfm=${lfmTotal} ` +
+      `uniq=${uniqueNames.length} ok=${resolved.searchOk} fail=${resolved.searchFail} ` +
+      `filtListened=${filtListened} cands=${candidateMap.size} source=${source}`
+    )
     return 0
   }
 
-  // ── Step 8: Write to cache ────────────────────────────────────────────────
+  // Step E: Write to cache
   const { data: existingCache } = await supabase
     .from('recommendation_cache')
     .select('spotify_artist_id, seen_at')
@@ -209,11 +233,10 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
   const rows = top
     .filter((item) => {
       const seenAt = existingSeenAt.get(item.artist.id)
-      if (seenAt === undefined) return true   // never cached → fresh
-      if (seenAt === null) return true         // cached but unseen → fresh
+      if (seenAt === undefined) return true
+      if (seenAt === null) return true
       // Allow re-recommendation after 7-day cooldown
-      const seenDate = new Date(seenAt)
-      const daysSinceSeen = (now.getTime() - seenDate.getTime()) / (1000 * 60 * 60 * 24)
+      const daysSinceSeen = (now.getTime() - new Date(seenAt).getTime()) / (1000 * 60 * 60 * 24)
       return daysSinceSeen >= 7
     })
     .map((item) => ({
@@ -227,19 +250,47 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
       seen_at: null,
     }))
 
-  let written = 0
-  if (rows.length > 0) {
-    const { error } = await supabase
-      .from('recommendation_cache')
-      .upsert(rows, { onConflict: 'user_id,spotify_artist_id' })
+  if (rows.length === 0) return 0
 
-    if (error) {
-      console.error(`[engine] FAIL upsert_error seeds=${seeds.length} lfm=${lfmTotal} uniq=${uniqueNames.length} ok=${searchOk} fail=${searchFail} filtTop=${filtTop} filtRecent=${filtRecent} filtListened=${filtListened} cands=${candidateMap.size} top=${top.length} err=${error.message}`)
-    } else {
-      written = rows.length
-    }
+  const { error } = await supabase
+    .from('recommendation_cache')
+    .upsert(rows, { onConflict: 'user_id,spotify_artist_id' })
+
+  if (error) {
+    console.error(`[engine] upsert_error source=${source} err=${error.message}`)
+    return 0
   }
 
-  console.log(`[engine] OK seeds=${seeds.length} lfm=${lfmTotal} uniq=${uniqueNames.length} ok=${searchOk} fail=${searchFail} filtTop=${filtTop} filtRecent=${filtRecent} filtListened=${filtListened} cands=${candidateMap.size} top=${top.length} written=${written}`)
-  return written
+  console.log(
+    `[engine] OK seeds=${capSeedNames.length} lfm=${lfmTotal} uniq=${uniqueNames.length} ` +
+    `ok=${resolved.searchOk} fail=${resolved.searchFail} filtListened=${filtListened} ` +
+    `cands=${candidateMap.size} top=${top.length} written=${rows.length} source=${source}`
+  )
+  return rows.length
+}
+
+// ── Main entry point ────────────────────────────────────────────────────────
+
+export async function buildRecommendations(input: RecommendationInput): Promise<number> {
+  const { userId, accessToken, playThreshold } = input
+  const supabase = createServiceClient()
+
+  // Gather seeds from all configured sources
+  const seedNames = await gatherSeedNames(userId, supabase)
+
+  if (seedNames.length > 0) {
+    console.log(`[engine] start userId=${userId} seeds=${seedNames.length}`)
+    return runPipeline(seedNames, accessToken, userId, playThreshold, supabase, 'multi_source')
+  }
+
+  // Cold-start: no seeds configured — pick random artists from curated list
+  console.log(`[engine] cold_start userId=${userId}`)
+  const pool = [...coldStartData.seeds]
+  // Shuffle and pick 5
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[pool[i], pool[j]] = [pool[j], pool[i]]
+  }
+  const coldSeeds = pool.slice(0, 5).map((s) => s.name)
+  return runPipeline(coldSeeds, accessToken, userId, playThreshold, supabase, 'cold_start')
 }
