@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, apiUnauthorized } from "@/lib/errors"
 import { getAccessToken } from "@/lib/get-access-token"
+import { getSpotifyClientToken } from "@/lib/spotify-client-token"
 import { buildRecommendations } from "@/lib/recommendation/engine"
 import { extractArtistColor } from "@/lib/colour-extraction"
 import { searchTracksByArtist } from "@/lib/music-provider/itunes"
@@ -31,10 +32,12 @@ async function pLimit<T>(
 export async function POST(req: NextRequest): Promise<Response> {
   console.log(`[generate] POST`)
   const session = await auth()
-  if (!session?.user?.spotifyId) return apiUnauthorized()
+  if (!session?.user?.id) return apiUnauthorized()
 
-  const accessToken = await getAccessToken(req)
-  if (!accessToken) return apiUnauthorized()
+  const userId = session.user.id
+
+  // User-level Spotify token (only available for spotify_authorized users)
+  const userAccessToken = await getAccessToken(req)
 
   const supabase = createServiceClient()
 
@@ -42,7 +45,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const { data: user, error: userError } = await supabase
     .from("users")
     .select("id, play_threshold")
-    .eq("spotify_id", session.user.spotifyId)
+    .eq("id", userId)
     .maybeSingle()
 
   if (userError || !user) return apiError("User not found", 404)
@@ -67,13 +70,15 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   try {
-    // Note: We no longer delete the unseen cache entries. 
+    // Note: We no longer delete the unseen cache entries.
     // This allows users to request "more" natively and gracefully append them to their existing batch.
+
+    // Use user's Spotify token if available, otherwise fall back to client credentials
+    const accessToken = userAccessToken ?? await getSpotifyClientToken() ?? ""
 
     const count = await buildRecommendations({
       userId: user.id,
       accessToken,
-      spotifyId: session.user.spotifyId,
       playThreshold,
     })
 

@@ -1,9 +1,9 @@
 import { type NextRequest } from "next/server"
 import { auth } from "@/lib/auth"
 import { apiError, apiUnauthorized } from "@/lib/errors"
-import { getAccessToken } from "@/lib/get-access-token"
 import { isValidSpotifyId } from "@/lib/spotify-ids"
 import { createServiceClient } from "@/lib/supabase/server"
+import { getSpotifyClientToken } from "@/lib/spotify-client-token"
 
 interface SpotifyArtistImage {
   url: string
@@ -23,10 +23,9 @@ interface SpotifyArtistsResponse {
 
 export async function POST(req: NextRequest) {
   const session = await auth()
-  if (!session?.user?.spotifyId) return apiUnauthorized()
+  if (!session?.user?.id) return apiUnauthorized()
 
-  const accessToken = await getAccessToken(req)
-  if (!accessToken) return apiUnauthorized()
+  const userId = session.user.id
 
   let body: { artistIds?: unknown }
   try {
@@ -45,6 +44,9 @@ export async function POST(req: NextRequest) {
     return apiError("artistIds must be an array of 3–5 valid Spotify artist IDs", 400)
   }
 
+  const accessToken = await getSpotifyClientToken()
+  if (!accessToken) return apiError("Spotify unavailable", 503)
+
   const spotifyRes = await fetch(
     `https://api.spotify.com/v1/artists?ids=${artistIds.join(",")}`,
     { headers: { Authorization: `Bearer ${accessToken}` } }
@@ -58,22 +60,8 @@ export async function POST(req: NextRequest) {
 
   const supabase = createServiceClient()
 
-  // Upsert user row (creates on first login)
-  const { data: userRow, error: userError } = await supabase
-    .from("users")
-    .upsert(
-      { spotify_id: session.user.spotifyId },
-      { onConflict: "spotify_id" }
-    )
-    .select("id")
-    .single()
-
-  if (userError || !userRow) {
-    return apiError("Failed to create user account", 500)
-  }
-
   const rows = spotifyData.artists.map((artist) => ({
-    user_id: userRow.id,
+    user_id: userId,
     spotify_artist_id: artist.id,
     name: artist.name,
     image_url: artist.images?.[0]?.url ?? null,

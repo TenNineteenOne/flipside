@@ -14,7 +14,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ): Promise<Response> {
   const session = await auth()
-  if (!session?.user?.spotifyId) return apiUnauthorized()
+  if (!session?.user?.id) return apiUnauthorized()
 
   const { id: artistId } = await params
   if (!isValidSpotifyId(artistId)) return apiError("Invalid artist ID", 400)
@@ -45,7 +45,7 @@ export async function GET(
       try {
         const liveTracks = await searchTracksByArtist(artistName, "US", 5)
         if (liveTracks && liveTracks.length > 0) {
-           await supabase.from("artist_tracks_cache").upsert(
+          await supabase.from("artist_tracks_cache").upsert(
             {
               spotify_artist_id: artistId,
               tracks: liveTracks,
@@ -60,7 +60,7 @@ export async function GET(
         console.log(`[tracks] API fallback failed:`, err)
       }
     }
-    
+
     // Nothing retrieved
     return Response.json({ tracks: [], cache_miss: true })
   }

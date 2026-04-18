@@ -1,26 +1,19 @@
 import { auth } from "@/lib/auth"
 import { apiError, apiUnauthorized } from "@/lib/errors"
 import { createServiceClient } from "@/lib/supabase/server"
-import { getAccessToken } from "@/lib/get-access-token"
-import {
-  accumulateSpotifyHistory,
-  accumulateLastFmHistory,
-} from "@/lib/listened-artists"
-import { type NextRequest } from "next/server"
+import { accumulateLastFmHistory } from "@/lib/listened-artists"
 
-export async function POST(req: NextRequest): Promise<Response> {
+export async function POST(): Promise<Response> {
   const session = await auth()
-  if (!session?.user?.spotifyId) return apiUnauthorized()
+  if (!session?.user?.id) return apiUnauthorized()
 
-  const accessToken = await getAccessToken(req)
-  if (!accessToken) return apiUnauthorized()
-
+  const userId = session.user.id
   const supabase = createServiceClient()
 
   const { data: user, error: userError } = await supabase
     .from("users")
-    .select("id, lastfm_username")
-    .eq("spotify_id", session.user.spotifyId)
+    .select("lastfm_username")
+    .eq("id", userId)
     .maybeSingle()
 
   if (userError) {
@@ -30,16 +23,16 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   if (!user) return apiError("User not found", 404)
 
-  try {
-    await accumulateSpotifyHistory({ userId: user.id, accessToken })
+  if (!user.lastfm_username) {
+    return apiError("No Last.fm account connected", 400)
+  }
 
-    if (user.lastfm_username) {
-      await accumulateLastFmHistory({
-        userId: user.id,
-        lastfmUsername: user.lastfm_username,
-        accessToken,
-      })
-    }
+  try {
+    await accumulateLastFmHistory({
+      userId,
+      lastfmUsername: user.lastfm_username,
+      accessToken: "",
+    })
   } catch (err) {
     const message = err instanceof Error ? err.message : "Accumulation failed"
     console.error("[history/accumulate] Error:", message)

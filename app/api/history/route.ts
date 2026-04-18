@@ -1,7 +1,6 @@
 import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiUnauthorized, dbError } from "@/lib/errors"
-import { getUserId } from "@/lib/user"
 
 /**
  * GET /api/history
@@ -10,11 +9,9 @@ import { getUserId } from "@/lib/user"
  */
 export async function GET(): Promise<Response> {
   const session = await auth()
-  if (!session?.user?.spotifyId) return apiUnauthorized()
+  if (!session?.user?.id) return apiUnauthorized()
 
-  const userId = await getUserId(session.user.spotifyId)
-  if (!userId) return apiUnauthorized()
-
+  const userId = session.user.id
   const supabase = createServiceClient()
 
   // 1. All seen recommendations

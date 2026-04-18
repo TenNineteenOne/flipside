@@ -1,18 +1,15 @@
 import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, apiUnauthorized } from "@/lib/errors"
-import { getUserId } from "@/lib/user"
 
 export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ artistId: string }> }
 ): Promise<Response> {
   const session = await auth()
-  if (!session?.user?.spotifyId) return apiUnauthorized()
+  if (!session?.user?.id) return apiUnauthorized()
 
-  const userId = await getUserId(session.user.spotifyId)
-  if (!userId) return apiUnauthorized()
-
+  const userId = session.user.id
   const { artistId } = await params
 
   const supabase = createServiceClient()

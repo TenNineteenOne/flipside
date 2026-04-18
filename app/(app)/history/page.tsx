@@ -1,18 +1,15 @@
 import { redirect } from "next/navigation"
 import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
-import { getUserId } from "@/lib/user"
 import { HistoryClient } from "@/components/history/history-client"
 
 export default async function HistoryPage() {
   const session = await auth()
-  if (!session?.user?.spotifyId) {
-    redirect("/api/auth/signin")
+  if (!session?.user?.id) {
+    redirect("/sign-in")
   }
 
-  const userId = await getUserId(session.user.spotifyId)
-  if (!userId) redirect("/api/auth/signin")
-
+  const userId = session.user.id
   const supabase = createServiceClient()
 
   // 1. All seen recommendations

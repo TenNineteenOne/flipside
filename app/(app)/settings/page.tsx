@@ -5,15 +5,16 @@ import { SettingsForm } from "@/components/settings/settings-form"
 
 export default async function SettingsPage() {
   const session = await auth()
-  if (!session?.user?.spotifyId) {
-    redirect("/api/auth/signin")
+  if (!session?.user?.id) {
+    redirect("/sign-in")
   }
 
+  const userId = session.user.id
   const supabase = createServiceClient()
   const { data: user } = await supabase
     .from("users")
     .select("id, play_threshold, lastfm_username, flipside_playlist_id")
-    .eq("spotify_id", session.user.spotifyId)
+    .eq("id", userId)
     .maybeSingle()
 
   let lastfmArtistCount = 0
@@ -26,7 +27,7 @@ export default async function SettingsPage() {
     lastfmArtistCount = count ?? 0
   }
 
-  const userSeed = session.user.id ?? session.user.spotifyId ?? "user"
+  const userSeed = userId
 
   return (
     <SettingsForm

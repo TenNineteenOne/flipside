@@ -2,8 +2,7 @@ import type { ArtistWithTracks } from '../music-provider/types'
 
 export interface RecommendationInput {
   userId: string        // Supabase UUID
-  accessToken: string   // Spotify access token
-  spotifyId: string     // Spotify user ID (for playlist creation)
+  accessToken: string   // Spotify access token (empty string if user has no Spotify)
   playThreshold: number // from users.play_threshold
 }
 

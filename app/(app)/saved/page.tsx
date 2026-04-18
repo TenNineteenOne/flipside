@@ -6,20 +6,20 @@ import type { Track } from "@/lib/music-provider/types"
 
 export default async function SavedPage() {
   const session = await auth()
-  if (!session?.user?.spotifyId) {
-    redirect("/api/auth/signin")
+  if (!session?.user?.id) {
+    redirect("/sign-in")
   }
 
+  const userId = session.user.id
   const supabase = createServiceClient()
 
-  // Resolve internal user id + lastfm_username
   const { data: user } = await supabase
     .from("users")
     .select("id, lastfm_username")
-    .eq("spotify_id", session.user.spotifyId)
-    .single()
+    .eq("id", userId)
+    .maybeSingle()
 
-  if (!user) redirect("/api/auth/signin")
+  if (!user) redirect("/sign-in")
 
   const hasLastfm = Boolean(user.lastfm_username)
 

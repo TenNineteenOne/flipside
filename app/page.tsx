@@ -1,17 +1,15 @@
 import Link from "next/link"
 import { redirect } from "next/navigation"
 import { auth } from "@/lib/auth"
-import { getUserId } from "@/lib/user"
 import { hasFreshRecs } from "@/lib/recommendation/freshness"
 import { SplashClient } from "@/components/splash/splash-client"
 
 export default async function LandingPage() {
   const session = await auth()
 
-  if (session?.user?.spotifyId) {
+  if (session?.user?.id) {
     // Logged-in: if there are fresh recs waiting, skip straight to the feed
-    const userId = await getUserId(session.user.spotifyId)
-    if (userId && (await hasFreshRecs(userId))) {
+    if (await hasFreshRecs(session.user.id)) {
       redirect("/feed")
     }
     // Otherwise show the generation splash
