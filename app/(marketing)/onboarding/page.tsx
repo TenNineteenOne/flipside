@@ -61,9 +61,19 @@ export default function OnboardingPage() {
   // Genre state
   const [selectedGenres, setSelectedGenres] = useState<GenreNode[]>([])
   const [openAnchors, setOpenAnchors] = useState<Set<string>>(new Set())
+  const [openClusters, setOpenClusters] = useState<Set<string>>(new Set())
 
   const toggleAnchor = (id: string) => {
     setOpenAnchors((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleCluster = (id: string) => {
+    setOpenClusters((prev) => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
       else next.add(id)
@@ -339,6 +349,8 @@ export default function OnboardingPage() {
                   anchor={anchor}
                   expanded={openAnchors.has(anchor.id)}
                   onToggleExpand={() => toggleAnchor(anchor.id)}
+                  openClusters={openClusters}
+                  onToggleCluster={toggleCluster}
                   selectedIds={selectedGenreIds}
                   atCap={selectedGenres.length >= 20}
                   onToggleSelect={(node) =>
@@ -523,12 +535,25 @@ function PathCard({
   )
 }
 
-// ── GenreAnchor ───────────────────────────────────────────────────────────────
+// ── GenreAnchor (level 1) ─────────────────────────────────────────────────────
+
+function countSelectedInTree(node: GenreNode, selectedIds: Set<string>): number {
+  let n = selectedIds.has(node.id) ? 1 : 0
+  for (const child of node.children) n += countSelectedInTree(child, selectedIds)
+  return n
+}
+
+function countLeaves(node: GenreNode): number {
+  if (node.children.length === 0) return 1
+  return node.children.reduce((n, c) => n + countLeaves(c), 0)
+}
 
 function GenreAnchor({
   anchor,
   expanded,
   onToggleExpand,
+  openClusters,
+  onToggleCluster,
   selectedIds,
   atCap,
   onToggleSelect,
@@ -536,16 +561,15 @@ function GenreAnchor({
   anchor: GenreNode
   expanded: boolean
   onToggleExpand: () => void
+  openClusters: Set<string>
+  onToggleCluster: (id: string) => void
   selectedIds: Set<string>
   atCap: boolean
   onToggleSelect: (node: GenreNode) => void
 }) {
-  const parentSelected = selectedIds.has(anchor.id)
-  const childSelectedCount = anchor.children.reduce(
-    (n, c) => (selectedIds.has(c.id) ? n + 1 : n),
-    0
-  )
-  const totalSelected = (parentSelected ? 1 : 0) + childSelectedCount
+  const anchorSelected = selectedIds.has(anchor.id)
+  const totalSelected = countSelectedInTree(anchor, selectedIds)
+  const totalLeaves = anchor.children.reduce((n, c) => n + countLeaves(c), 0)
 
   return (
     <div
@@ -592,7 +616,7 @@ function GenreAnchor({
             )}
           </div>
           <div className="mono" style={{ fontSize: 10.5, color: "var(--text-muted)", marginTop: 2 }}>
-            {anchor.children.length} sub-genres
+            {anchor.children.length} groups · {totalLeaves} sub-genres
           </div>
         </div>
         <div style={{ color: "var(--text-faint)", flexShrink: 0 }}>
@@ -604,20 +628,120 @@ function GenreAnchor({
         <div style={{ padding: "6px 8px 10px", borderTop: "1px solid var(--border)" }}>
           <GenreRow
             label={`Select all of ${anchor.label}`}
-            selected={parentSelected}
-            disabled={!parentSelected && atCap}
+            selected={anchorSelected}
+            disabled={!anchorSelected && atCap}
             onClick={() => onToggleSelect(anchor)}
             emphasis
           />
-          {anchor.children.map((child) => {
-            const sel = selectedIds.has(child.id)
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 6 }}>
+            {anchor.children.map((cluster) => (
+              <GenreCluster
+                key={cluster.id}
+                cluster={cluster}
+                expanded={openClusters.has(cluster.id)}
+                onToggleExpand={() => onToggleCluster(cluster.id)}
+                selectedIds={selectedIds}
+                atCap={atCap}
+                onToggleSelect={onToggleSelect}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── GenreCluster (level 2) ────────────────────────────────────────────────────
+
+function GenreCluster({
+  cluster,
+  expanded,
+  onToggleExpand,
+  selectedIds,
+  atCap,
+  onToggleSelect,
+}: {
+  cluster: GenreNode
+  expanded: boolean
+  onToggleExpand: () => void
+  selectedIds: Set<string>
+  atCap: boolean
+  onToggleSelect: (node: GenreNode) => void
+}) {
+  const clusterSelected = selectedIds.has(cluster.id)
+  const totalSelected = countSelectedInTree(cluster, selectedIds)
+
+  return (
+    <div
+      style={{
+        borderRadius: 8,
+        border: "1px solid var(--border)",
+        background: expanded ? "rgba(255,255,255,0.03)" : "transparent",
+        overflow: "hidden",
+      }}
+    >
+      <button
+        type="button"
+        onClick={onToggleExpand}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          width: "100%",
+          padding: "8px 10px",
+          background: "none",
+          border: 0,
+          cursor: "pointer",
+          textAlign: "left",
+        }}
+      >
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+            {cluster.label}
+            {totalSelected > 0 && (
+              <span
+                className="mono"
+                style={{
+                  fontSize: 9.5,
+                  fontWeight: 700,
+                  padding: "1px 5px",
+                  borderRadius: 3,
+                  background: "rgba(139,92,246,0.2)",
+                  color: "var(--accent)",
+                }}
+              >
+                {totalSelected}
+              </span>
+            )}
+          </div>
+          <div className="mono" style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 1 }}>
+            {cluster.children.length} sub-genres
+          </div>
+        </div>
+        <div style={{ color: "var(--text-faint)", flexShrink: 0 }}>
+          {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+        </div>
+      </button>
+
+      {expanded && (
+        <div style={{ padding: "4px 6px 8px", borderTop: "1px solid var(--border)" }}>
+          <GenreRow
+            label={`Select all of ${cluster.label}`}
+            selected={clusterSelected}
+            disabled={!clusterSelected && atCap}
+            onClick={() => onToggleSelect(cluster)}
+            emphasis
+          />
+          {cluster.children.map((leaf) => {
+            const sel = selectedIds.has(leaf.id)
             return (
               <GenreRow
-                key={child.id}
-                label={child.label}
+                key={leaf.id}
+                label={leaf.label}
                 selected={sel}
                 disabled={!sel && atCap}
-                onClick={() => onToggleSelect(child)}
+                onClick={() => onToggleSelect(leaf)}
               />
             )
           })}
