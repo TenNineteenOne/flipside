@@ -56,15 +56,11 @@ export default async function FeedPage() {
 
   const supabase = createServiceClient()
 
-  // Upsert user on every login — creates row on first visit, updates profile on subsequent
+  // Upsert user on every login — creates row on first visit
   const { data: user, error: upsertError } = await supabase
     .from("users")
     .upsert(
-      {
-        spotify_id: session.user.spotifyId,
-        display_name: session.user.displayName ?? null,
-        avatar_url: session.user.avatarUrl ?? null,
-      },
+      { spotify_id: session.user.spotifyId },
       { onConflict: "spotify_id" }
     )
     .select("id")

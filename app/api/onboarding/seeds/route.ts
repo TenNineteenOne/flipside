@@ -58,15 +58,11 @@ export async function POST(req: NextRequest) {
 
   const supabase = createServiceClient()
 
-  // Upsert user row (creates on first login, updates profile on subsequent)
+  // Upsert user row (creates on first login)
   const { data: userRow, error: userError } = await supabase
     .from("users")
     .upsert(
-      {
-        spotify_id: session.user.spotifyId,
-        display_name: session.user.displayName ?? null,
-        avatar_url: session.user.avatarUrl ?? null,
-      },
+      { spotify_id: session.user.spotifyId },
       { onConflict: "spotify_id" }
     )
     .select("id")

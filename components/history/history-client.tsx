@@ -1,12 +1,7 @@
 "use client"
 
 import { useState, useMemo } from "react"
-import { useRouter } from "next/navigation"
-import { ThumbsUp, ThumbsDown, Clock, Bookmark, Undo2, ExternalLink } from "lucide-react"
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+import { ThumbsUp, ThumbsDown, SkipForward, Bookmark, Undo2 } from "lucide-react"
 
 interface HistoryEntry {
   spotify_artist_id: string
@@ -21,7 +16,7 @@ interface HistoryEntry {
   why: { sourceArtists: string[]; genres: string[]; friendBoost: string[] }
   artist_color?: string | null
   seen_at: string
-  signal: string     // "thumbs_up" | "thumbs_down" | "skip"
+  signal: string
   bookmarked: boolean
 }
 
@@ -35,6 +30,28 @@ interface HistoryClientProps {
 // Helpers
 // ---------------------------------------------------------------------------
 
+function stringToVibrantHex(str: string): string {
+  let hash = 0
+  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash)
+  const hue = Math.abs(hash) % 360
+  const s = 0.70, l = 0.65
+  const c = (1 - Math.abs(2 * l - 1)) * s
+  const x = c * (1 - Math.abs((hue / 60) % 2 - 1))
+  const m = l - c / 2
+  let r = 0, g = 0, b = 0
+  if (hue < 60)       { r = c; g = x; b = 0 }
+  else if (hue < 120) { r = x; g = c; b = 0 }
+  else if (hue < 180) { r = 0; g = c; b = x }
+  else if (hue < 240) { r = 0; g = x; b = c }
+  else if (hue < 300) { r = x; g = 0; b = c }
+  else                { r = c; g = 0; b = x }
+  const toHex = (n: number) => {
+    const hex = Math.round((n + m) * 255).toString(16)
+    return hex.length === 1 ? "0" + hex : hex
+  }
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`
+}
+
 function hexToRgba(hex: string, alpha: number): string {
   const cleaned = hex.replace(/^#/, "")
   const full = cleaned.length === 3 ? cleaned.split("").map((c) => c + c).join("") : cleaned
@@ -42,13 +59,11 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${(num >> 16) & 0xff}, ${(num >> 8) & 0xff}, ${num & 0xff}, ${alpha})`
 }
 
-function signalMeta(signal: string, bookmarked: boolean) {
-  if (bookmarked) return { label: "Bookmarked", emoji: "🔖", color: "#a78bfa", bg: "rgba(167,139,250,0.12)", border: "rgba(167,139,250,0.25)" }
-  switch (signal) {
-    case "thumbs_up":   return { label: "Liked",    emoji: "👍", color: "#22c55e", bg: "rgba(34,197,94,0.12)",  border: "rgba(34,197,94,0.25)" }
-    case "thumbs_down": return { label: "Disliked", emoji: "👎", color: "#ff4b4b", bg: "rgba(255,75,75,0.12)", border: "rgba(255,75,75,0.25)" }
-    default:            return { label: "Skipped",  emoji: "⏱️", color: "#888",    bg: "rgba(255,255,255,0.05)", border: "rgba(255,255,255,0.1)" }
-  }
+const SIG_STYLES: Record<string, { Icon: React.ElementType; color: string; label: string }> = {
+  thumbs_up:   { Icon: ThumbsUp,    color: "var(--like)",      label: "Liked"   },
+  thumbs_down: { Icon: ThumbsDown,  color: "var(--dislike)",   label: "Passed"  },
+  skip:        { Icon: SkipForward, color: "var(--text-muted)", label: "Skipped" },
+  bookmarked:  { Icon: Bookmark,    color: "var(--accent)",    label: "Saved"   },
 }
 
 function timeAgo(dateStr: string): string {
@@ -59,23 +74,51 @@ function timeAgo(dateStr: string): string {
   const hours = Math.floor(minutes / 60)
   if (hours < 24) return `${hours}h ago`
   const days = Math.floor(hours / 24)
-  return `${days}d ago`
+  if (days < 7) return `${days}d ago`
+  return new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric" })
 }
+
+function groupByPeriod(entries: HistoryEntry[]) {
+  const now = Date.now()
+  const today: HistoryEntry[] = []
+  const yesterday: HistoryEntry[] = []
+  const thisWeek: HistoryEntry[] = []
+  const older: HistoryEntry[] = []
+
+  for (const e of entries) {
+    const age = now - new Date(e.seen_at).getTime()
+    const hours = age / 3600000
+    if (hours < 24) today.push(e)
+    else if (hours < 48) yesterday.push(e)
+    else if (hours < 168) thisWeek.push(e)
+    else older.push(e)
+  }
+
+  const groups: { label: string; items: HistoryEntry[] }[] = []
+  if (today.length) groups.push({ label: "Today", items: today })
+  if (yesterday.length) groups.push({ label: "Yesterday", items: yesterday })
+  if (thisWeek.length) groups.push({ label: "Earlier this week", items: thisWeek })
+  if (older.length) groups.push({ label: "Older", items: older })
+  return groups
+}
+
+// ---------------------------------------------------------------------------
+// Filter tabs
+// ---------------------------------------------------------------------------
+
+const FILTER_TABS: { key: FilterTab; label: string }[] = [
+  { key: "all",         label: "All"       },
+  { key: "thumbs_up",   label: "Liked"     },
+  { key: "thumbs_down", label: "Passed"    },
+  { key: "skip",        label: "Skipped"   },
+  { key: "bookmarked",  label: "Saved"     },
+]
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-const FILTER_TABS: { key: FilterTab; label: string; icon: React.ElementType }[] = [
-  { key: "all",         label: "All",        icon: Clock },
-  { key: "thumbs_up",   label: "Liked",      icon: ThumbsUp },
-  { key: "thumbs_down", label: "Disliked",   icon: ThumbsDown },
-  { key: "skip",        label: "Skipped",    icon: Clock },
-  { key: "bookmarked",  label: "Bookmarked", icon: Bookmark },
-]
-
 export function HistoryClient({ history: initialHistory }: HistoryClientProps) {
-  const router = useRouter()
   const [history, setHistory] = useState(initialHistory)
   const [filter, setFilter] = useState<FilterTab>("all")
   const [undoingIds, setUndoingIds] = useState<Set<string>>(new Set())
@@ -86,9 +129,8 @@ export function HistoryClient({ history: initialHistory }: HistoryClientProps) {
     return history.filter((h) => h.signal === filter && !h.bookmarked)
   }, [history, filter])
 
-  // Counts for the filter badges
   const counts = useMemo(() => {
-    const c = { all: history.length, thumbs_up: 0, thumbs_down: 0, skip: 0, bookmarked: 0 }
+    const c: Record<FilterTab, number> = { all: history.length, thumbs_up: 0, thumbs_down: 0, skip: 0, bookmarked: 0 }
     for (const h of history) {
       if (h.bookmarked) c.bookmarked++
       else if (h.signal === "thumbs_up") c.thumbs_up++
@@ -98,12 +140,12 @@ export function HistoryClient({ history: initialHistory }: HistoryClientProps) {
     return c
   }, [history])
 
+  const groups = useMemo(() => groupByPeriod(filtered), [filtered])
+
   async function handleUndo(artistId: string) {
     setUndoingIds((prev) => new Set(prev).add(artistId))
     try {
-      // 1. Delete the feedback row (soft-delete + clear seen_at)
       await fetch(`/api/feedback/${artistId}`, { method: "DELETE" })
-      // 2. Remove from local state
       setHistory((prev) => prev.filter((h) => h.spotify_artist_id !== artistId))
     } catch (err) {
       console.error("[history] undo failed", err)
@@ -117,11 +159,8 @@ export function HistoryClient({ history: initialHistory }: HistoryClientProps) {
   }
 
   async function handleChangeSignal(artistId: string, newSignal: string) {
-    // Optimistic update
     setHistory((prev) =>
-      prev.map((h) =>
-        h.spotify_artist_id === artistId ? { ...h, signal: newSignal } : h
-      )
+      prev.map((h) => (h.spotify_artist_id === artistId ? { ...h, signal: newSignal } : h))
     )
     try {
       await fetch("/api/feedback", {
@@ -135,169 +174,176 @@ export function HistoryClient({ history: initialHistory }: HistoryClientProps) {
   }
 
   return (
-    <div className="relative min-h-screen w-full flex flex-col items-center pt-6 pb-[200px]">
-      {/* Header */}
-      <div className="w-full max-w-[600px] px-4 mb-6">
-        <h1 className="text-2xl font-bold text-white mb-1">History</h1>
-        <p className="text-sm text-gray-400">
-          Every artist you&apos;ve been recommended. Change your mind anytime.
-        </p>
+    <div>
+      {/* Page header */}
+      <div className="page-head">
+        <h1>History</h1>
+        <span className="sub">your taps &amp; skips</span>
       </div>
 
-      {/* Filter Tabs */}
-      <div className="w-full max-w-[600px] px-4 mb-6">
-        <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-          {FILTER_TABS.map(({ key, label, icon: Icon }) => {
-            const active = filter === key
-            const count = counts[key]
-            return (
-              <button
-                key={key}
-                onClick={() => setFilter(key)}
-                className={`flex items-center gap-1.5 px-4 h-9 rounded-full text-[13px] font-semibold whitespace-nowrap transition-all border cursor-pointer ${
-                  active
-                    ? "bg-white/10 border-white/20 text-white"
-                    : "bg-white/[0.03] border-white/[0.06] text-gray-500 hover:text-gray-300 hover:bg-white/[0.06]"
-                }`}
-              >
-                <Icon className="size-3.5" />
-                {label}
-                {count > 0 && (
-                  <span className={`ml-0.5 text-[11px] ${active ? "text-gray-300" : "text-gray-600"}`}>
-                    {count}
-                  </span>
-                )}
-              </button>
-            )
-          })}
-        </div>
+      {/* Filter chips */}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 20 }}>
+        {FILTER_TABS.map(({ key, label }) => {
+          const active = filter === key
+          const count = counts[key]
+          return (
+            <button
+              key={key}
+              onClick={() => setFilter(key)}
+              className={"chip" + (active ? " selected" : "")}
+            >
+              {label}
+              {count > 0 && (
+                <span
+                  className="mono"
+                  style={{ fontSize: 10, color: active ? "var(--text-primary)" : "var(--text-faint)" }}
+                >
+                  {count}
+                </span>
+              )}
+            </button>
+          )
+        })}
       </div>
 
-      {/* History List */}
-      <div className="w-full max-w-[600px] px-4 flex flex-col gap-3">
-        {filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <Clock className="size-10 text-gray-600 mb-3" />
-            <p className="text-sm font-medium text-gray-400">
-              {filter === "all"
-                ? "No history yet. Start discovering artists in your feed!"
-                : `No ${FILTER_TABS.find((t) => t.key === filter)?.label.toLowerCase()} artists yet.`}
-            </p>
+      {/* Groups */}
+      {groups.length === 0 ? (
+        <div
+          style={{
+            textAlign: "center",
+            padding: "80px 20px",
+            color: "var(--text-muted)",
+          }}
+        >
+          <SkipForward
+            size={32}
+            style={{ margin: "0 auto 12px", display: "block", opacity: 0.4 }}
+          />
+          <div style={{ fontSize: 14 }}>
+            {filter === "all"
+              ? "No history yet. Start discovering artists in your feed."
+              : `No ${FILTER_TABS.find((t) => t.key === filter)?.label.toLowerCase()} artists yet.`}
           </div>
-        ) : (
-          filtered.map((entry) => {
-            const meta = signalMeta(entry.signal, entry.bookmarked)
-            const artistColor = entry.artist_color ?? "#8b5cf6"
-            const isUndoing = undoingIds.has(entry.spotify_artist_id)
-
-            return (
+        </div>
+      ) : (
+        <div className="col gap-24" style={{ marginTop: 8 }}>
+          {groups.map(({ label, items }) => (
+            <div key={label}>
+              <div className="eyebrow" style={{ marginBottom: 10 }}>{label}</div>
               <div
-                key={entry.spotify_artist_id}
-                className="group relative flex items-center gap-3 p-3 rounded-2xl border transition-all hover:bg-white/[0.03]"
                 style={{
-                  background: "rgba(15,15,15,0.5)",
-                  backdropFilter: "blur(12px)",
-                  border: `1px solid rgba(255,255,255,0.06)`,
+                  background: "var(--bg-card)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 16,
+                  overflow: "hidden",
                 }}
               >
-                {/* Artist Image */}
-                <div className="relative shrink-0 size-14 rounded-xl overflow-hidden">
-                  {entry.artist_data.imageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={entry.artist_data.imageUrl}
-                      alt={entry.artist_data.name}
-                      className="size-full object-cover"
-                    />
-                  ) : (
+                {items.map((entry, i) => {
+                  const artistColor = entry.artist_color ?? stringToVibrantHex(entry.artist_data.name)
+                  const sig = entry.bookmarked
+                    ? SIG_STYLES.bookmarked
+                    : (SIG_STYLES[entry.signal] ?? SIG_STYLES.skip)
+                  const { Icon } = sig
+                  const isUndoing = undoingIds.has(entry.spotify_artist_id)
+
+                  return (
                     <div
-                      className="size-full flex items-center justify-center text-lg font-bold"
-                      style={{ background: hexToRgba(artistColor, 0.2), color: artistColor }}
+                      key={entry.spotify_artist_id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 14,
+                        padding: "12px 16px",
+                        borderTop: i === 0 ? 0 : "1px solid var(--border)",
+                      }}
                     >
-                      {entry.artist_data.name.charAt(0)}
+                      {/* 36px art square */}
+                      <div
+                        style={{
+                          width: 36,
+                          height: 36,
+                          borderRadius: 10,
+                          overflow: "hidden",
+                          flexShrink: 0,
+                          background: hexToRgba(artistColor, 0.2),
+                        }}
+                      >
+                        {entry.artist_data.imageUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={entry.artist_data.imageUrl}
+                            alt={entry.artist_data.name}
+                            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                          />
+                        ) : null}
+                      </div>
+
+                      {/* Name + time */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 14, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {entry.artist_data.name}
+                        </div>
+                        <div className="mono" style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                          {timeAgo(entry.seen_at)}
+                        </div>
+                      </div>
+
+                      {/* Signal label — no emoji */}
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, color: sig.color, flexShrink: 0 }}>
+                        <Icon size={14} />
+                        <span style={{ fontSize: 12, fontWeight: 600 }}>{sig.label}</span>
+                      </div>
+
+                      {/* Quick actions */}
+                      <div style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0 }}>
+                        {entry.signal !== "thumbs_up" && !entry.bookmarked && (
+                          <button
+                            onClick={() => handleChangeSignal(entry.spotify_artist_id, "thumbs_up")}
+                            title="Change to Liked"
+                            style={{
+                              width: 32, height: 32, borderRadius: 8,
+                              background: "transparent", border: 0, cursor: "pointer",
+                              color: "var(--text-faint)", display: "grid", placeItems: "center",
+                            }}
+                          >
+                            <ThumbsUp size={13} />
+                          </button>
+                        )}
+                        {entry.signal !== "thumbs_down" && !entry.bookmarked && (
+                          <button
+                            onClick={() => handleChangeSignal(entry.spotify_artist_id, "thumbs_down")}
+                            title="Change to Passed"
+                            style={{
+                              width: 32, height: 32, borderRadius: 8,
+                              background: "transparent", border: 0, cursor: "pointer",
+                              color: "var(--text-faint)", display: "grid", placeItems: "center",
+                            }}
+                          >
+                            <ThumbsDown size={13} />
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleUndo(entry.spotify_artist_id)}
+                          disabled={isUndoing}
+                          title="Undo — return to feed"
+                          style={{
+                            width: 32, height: 32, borderRadius: 8,
+                            background: "transparent", border: 0, cursor: "pointer",
+                            color: "var(--text-faint)", display: "grid", placeItems: "center",
+                            opacity: isUndoing ? 0.4 : 1,
+                          }}
+                        >
+                          <Undo2 size={13} />
+                        </button>
+                      </div>
                     </div>
-                  )}
-                  {/* Tiny color accent bar */}
-                  <div
-                    className="absolute bottom-0 inset-x-0 h-[3px]"
-                    style={{ background: artistColor }}
-                  />
-                </div>
-
-                {/* Info */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[15px] font-semibold text-white truncate">
-                      {entry.artist_data.name}
-                    </span>
-                    <a
-                      href={`https://open.spotify.com/artist/${entry.spotify_artist_id}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="shrink-0 text-gray-600 hover:text-gray-400 transition-colors"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <ExternalLink className="size-3.5" />
-                    </a>
-                  </div>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    {/* Signal badge */}
-                    <span
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold"
-                      style={{ background: meta.bg, border: `1px solid ${meta.border}`, color: meta.color }}
-                    >
-                      {meta.emoji} {meta.label}
-                    </span>
-                    <span className="text-[11px] text-gray-600">{timeAgo(entry.seen_at)}</span>
-                  </div>
-                  {entry.artist_data.genres.length > 0 && (
-                    <p className="text-[11px] text-gray-500 mt-0.5 truncate">
-                      {entry.artist_data.genres.slice(0, 2).join(" · ")}
-                    </p>
-                  )}
-                </div>
-
-                {/* Actions */}
-                <div className="flex shrink-0 items-center gap-1">
-                  {/* Quick signal toggles */}
-                  {entry.signal !== "thumbs_up" && (
-                    <button
-                      onClick={() => handleChangeSignal(entry.spotify_artist_id, "thumbs_up")}
-                      className="size-9 flex items-center justify-center rounded-xl text-gray-600 hover:text-[#22c55e] hover:bg-[#22c55e]/10 transition-colors cursor-pointer"
-                      title="Change to Like"
-                    >
-                      <ThumbsUp className="size-4" />
-                    </button>
-                  )}
-                  {entry.signal !== "thumbs_down" && (
-                    <button
-                      onClick={() => handleChangeSignal(entry.spotify_artist_id, "thumbs_down")}
-                      className="size-9 flex items-center justify-center rounded-xl text-gray-600 hover:text-[#ff4b4b] hover:bg-[#ff4b4b]/10 transition-colors cursor-pointer"
-                      title="Change to Dislike"
-                    >
-                      <ThumbsDown className="size-4" />
-                    </button>
-                  )}
-
-                  {/* Undo — sends back to feed */}
-                  <button
-                    onClick={() => handleUndo(entry.spotify_artist_id)}
-                    disabled={isUndoing}
-                    className="size-9 flex items-center justify-center rounded-xl text-gray-600 hover:text-white hover:bg-white/10 transition-colors cursor-pointer disabled:opacity-40"
-                    title="Undo — return to feed"
-                  >
-                    {isUndoing ? (
-                      <div className="w-3.5 h-3.5 border-2 border-gray-600 border-t-white rounded-full animate-spin" />
-                    ) : (
-                      <Undo2 className="size-4" />
-                    )}
-                  </button>
-                </div>
+                  )
+                })}
               </div>
-            )
-          })
-        )}
-      </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

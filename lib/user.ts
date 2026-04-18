@@ -16,17 +16,11 @@ export async function getUserId(spotifyId: string): Promise<string | null> {
 // Called server-side after auth to ensure user row exists in Supabase
 export async function upsertUser(params: {
   spotifyId: string
-  displayName: string | null
-  avatarUrl: string | null
 }): Promise<void> {
   const supabase = createServiceClient()
 
   const { error } = await supabase.from("users").upsert(
-    {
-      spotify_id: params.spotifyId,
-      display_name: params.displayName,
-      avatar_url: params.avatarUrl,
-    },
+    { spotify_id: params.spotifyId },
     {
       onConflict: "spotify_id",
       ignoreDuplicates: true, // never overwrite play_threshold or flipside_playlist_id on re-login

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react"
 import { motion } from "framer-motion"
+import { SkipForward, Bookmark, Check } from "lucide-react"
 import { TrackStrip } from "@/components/feed/track-strip"
 import { useAudio } from "@/lib/audio-context"
 import type { Track } from "@/lib/music-provider/types"
@@ -41,35 +42,30 @@ export interface ArtistCardProps {
 }
 
 // ---------------------------------------------------------------------------
-// Component
+// Helpers
 // ---------------------------------------------------------------------------
 
-// Deterministic Color Hashing Fallback
 function stringToVibrantHex(str: string): string {
   let hash = 0
   for (let i = 0; i < str.length; i++) {
     hash = str.charCodeAt(i) + ((hash << 5) - hash)
   }
   const hue = Math.abs(hash) % 360
-  
-  // Convert HSL (hue, 70%, 65%) to Hex
   const s = 0.70
   const l = 0.65
   const c = (1 - Math.abs(2 * l - 1)) * s
   const x = c * (1 - Math.abs((hue / 60) % 2 - 1))
   const m = l - c / 2
-  
   let r = 0, g = 0, b = 0
-  if (0 <= hue && hue < 60) { r = c; g = x; b = 0 }
-  else if (60 <= hue && hue < 120) { r = x; g = c; b = 0 }
-  else if (120 <= hue && hue < 180) { r = 0; g = c; b = x }
-  else if (180 <= hue && hue < 240) { r = 0; g = x; b = c }
-  else if (240 <= hue && hue < 300) { r = x; g = 0; b = c }
-  else if (300 <= hue && hue < 360) { r = c; g = 0; b = x }
-  
+  if (hue < 60)        { r = c; g = x; b = 0 }
+  else if (hue < 120)  { r = x; g = c; b = 0 }
+  else if (hue < 180)  { r = 0; g = c; b = x }
+  else if (hue < 240)  { r = 0; g = x; b = c }
+  else if (hue < 300)  { r = x; g = 0; b = c }
+  else                 { r = c; g = 0; b = x }
   const toHex = (n: number) => {
     const hex = Math.round((n + m) * 255).toString(16)
-    return hex.length === 1 ? '0' + hex : hex
+    return hex.length === 1 ? "0" + hex : hex
   }
   return `#${toHex(r)}${toHex(g)}${toHex(b)}`
 }
@@ -81,7 +77,18 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${(num >> 16) & 0xff}, ${(num >> 8) & 0xff}, ${num & 0xff}, ${alpha})`
 }
 
-export function ArtistCard({ recommendation, onSave, onFeedback, isDismissed = false, isSaved = false, dismissSignal = null }: ArtistCardProps) {
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
+export function ArtistCard({
+  recommendation,
+  onSave,
+  onFeedback,
+  isDismissed = false,
+  isSaved = false,
+  dismissSignal = null,
+}: ArtistCardProps) {
   const { artist_data, why, artist_color } = recommendation
   const artistColor = useMemo(() => {
     const c = artist_color ?? "#8b5cf6"
@@ -90,39 +97,21 @@ export function ArtistCard({ recommendation, onSave, onFeedback, isDismissed = f
   }, [artist_color, artist_data.name])
 
   const { play } = useAudio()
-  
-  // Track Loading State Fallback
+
   const [localTracks, setLocalTracks] = useState<Track[]>(artist_data.topTracks)
   const [isFetchingTracks, setIsFetchingTracks] = useState(false)
 
-  // Lazy-load missing tracks if prewarm failed
   useEffect(() => {
     if (artist_data.topTracks.length === 0 && localTracks.length === 0 && !isFetchingTracks) {
       setIsFetchingTracks(true)
       fetch(`/api/artists/${recommendation.spotify_artist_id}/tracks?name=${encodeURIComponent(artist_data.name)}`)
-        .then(r => r.json())
-        .then(data => {
-           if (data.tracks && data.tracks.length > 0) {
-             setLocalTracks(data.tracks)
-           }
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.tracks?.length > 0) setLocalTracks(data.tracks)
         })
         .finally(() => setIsFetchingTracks(false))
     }
   }, [artist_data.topTracks.length, artist_data.name, recommendation.spotify_artist_id])
-
-  // handleDismiss removed in favor of inline onFeedback bindings
-
-  function handleUndo(e: React.MouseEvent) {
-    e.stopPropagation()
-    // In this updated architecture, undo logic is currently just dismissing it locally. 
-    // Technically, to undo, the feed-client needs an onUndo trigger. 
-    // Wait, the client used to just drop it from `collapsed`. 
-    // We didn't pass an onUndo to ArtistCard. For now, we will just reload or leave it dismissed.
-    // Let's implement an onUndo trigger in feed-client if we needed it, but since I didn't add it to feed-client props, 
-    // I will mock this for now to rely on the parent state reload or just hide Undo for this iteration to focus on the UI aesthetic 
-    // Actually, the simplest fix is to just ignore Undo for a second or implement it properly. 
-    // Let's keep the local state if the parent hasn't explicitly dismissed it fully yet.
-  }
 
   function handleSave(e: React.MouseEvent) {
     e.stopPropagation()
@@ -133,24 +122,24 @@ export function ArtistCard({ recommendation, onSave, onFeedback, isDismissed = f
     play(track, artist_data.name, artist_data.imageUrl, artistColor)
   }
 
-  const reasonText = why.sourceArtists.length > 0
-    ? `Similar to ${why.sourceArtists.join(" and ")}`
-    : why.genres.length > 0
-      ? `Because you love ${why.genres.join(", ")}`
-      : null
+  const reasonText =
+    why.sourceArtists.length > 0
+      ? `Similar to ${why.sourceArtists.join(" & ")}`
+      : why.genres.length > 0
+        ? `Because you like ${why.genres.join(", ")}`
+        : null
 
   // ------------------------------------------------------------------
-  // Collapsed (slim bar) state
+  // Collapsed (slim bar) state — no emoji, colour-coded labels
   // ------------------------------------------------------------------
   if (isDismissed) {
-    const signalLabel =
-      dismissSignal === "thumbs_up" ? "👍 Liked"
-      : dismissSignal === "thumbs_down" ? "👎 Disliked"
-      : "⏱️ Skipped"
-    const signalColor =
-      dismissSignal === "thumbs_up" ? "#22c55e"
-      : dismissSignal === "thumbs_down" ? "#ff4b4b"
-      : "#666"
+    const labelMap: Record<string, { text: string; color: string }> = {
+      thumbs_up:   { text: "Liked",       color: "var(--like)"     },
+      thumbs_down: { text: "Passed",      color: "var(--dislike)"  },
+      skip:        { text: "Maybe later", color: "var(--text-muted)" },
+      saved:       { text: "Saved",       color: "var(--accent)"   },
+    }
+    const signal = labelMap[dismissSignal ?? "skip"] ?? labelMap.skip
 
     return (
       <motion.div
@@ -159,22 +148,38 @@ export function ArtistCard({ recommendation, onSave, onFeedback, isDismissed = f
         animate={{ height: 56, opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={{ type: "spring", stiffness: 400, damping: 40 }}
-        className="w-full bg-[#141414]/90 backdrop-blur-md border border-white/5 rounded-2xl overflow-hidden flex items-center px-4 gap-3 cursor-default"
+        style={{
+          padding: "14px 18px",
+          background: "rgba(15,15,15,0.6)",
+          border: "1px solid var(--border)",
+          borderRadius: 16,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          overflow: "hidden",
+        }}
       >
-        <div className="flex-1 min-w-0">
-          <span className="text-sm font-semibold text-gray-400 block truncate">
-            {artist_data.name}
-          </span>
-          <span className="text-[11px] font-semibold" style={{ color: signalColor }}>
-            {signalLabel}
-          </span>
-        </div>
+        <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-secondary)" }}>
+          {artist_data.name}
+        </span>
+        <span
+          className="mono"
+          style={{
+            fontSize: 11,
+            fontWeight: 600,
+            color: signal.color,
+            textTransform: "uppercase",
+            letterSpacing: "0.1em",
+          }}
+        >
+          {signal.text}
+        </span>
       </motion.div>
     )
   }
 
   // ------------------------------------------------------------------
-  // Expanded (full) state (Option 11 Aesthetic)
+  // Expanded hero card
   // ------------------------------------------------------------------
   return (
     <motion.div
@@ -182,50 +187,97 @@ export function ArtistCard({ recommendation, onSave, onFeedback, isDismissed = f
       initial={{ opacity: 0, y: 20 }}
       animate={{ height: "auto", opacity: 1, y: 0 }}
       transition={{ type: "spring", stiffness: 400, damping: 40 }}
-      className="w-full overflow-hidden flex flex-col pb-4 relative transition-transform"
+      className="fadein"
       style={{
-        background: 'rgba(15, 15, 15, 0.6)',
-        backdropFilter: 'blur(30px)',
-        WebkitBackdropFilter: 'blur(30px)',
-        border: '1px solid rgba(255, 255, 255, 0.1)',
-        boxShadow: '0 40px 80px rgba(0,0,0,0.6)',
-        borderRadius: '32px'
+        width: "100%",
+        borderRadius: "var(--radius-xl)",
+        overflow: "hidden",
+        background: "rgba(15,15,15,0.65)",
+        backdropFilter: "blur(30px)",
+        WebkitBackdropFilter: "blur(30px)",
+        border: "1px solid rgba(255,255,255,0.08)",
+        boxShadow: "0 30px 80px rgba(0,0,0,0.55)",
       }}
     >
-      {/* 1. Hero image area */}
-      <div className="relative h-[320px] shrink-0 w-full overflow-hidden rounded-t-[32px]">
+      {/* Hero image */}
+      <div style={{ position: "relative", height: 340, overflow: "hidden" }}>
         {artist_data.imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={artist_data.imageUrl}
             alt={artist_data.name}
-            className="w-full h-full object-cover transition-transform duration-700 hover:scale-105"
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              filter: "saturate(0.85) contrast(1.05)",
+            }}
           />
         ) : (
-          <div className="w-full h-full bg-[#141414]" />
+          <div
+            style={{
+              width: "100%",
+              height: "100%",
+              background: `linear-gradient(135deg, ${hexToRgba(artistColor, 0.4)}, ${hexToRgba(artistColor, 0.15)} 60%, #0a0a0a)`,
+            }}
+          />
         )}
 
-        {/* Option 11 Dark Gradient overlay */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent pointer-events-none" />
+        {/* Color tint overlay */}
+        {artist_data.imageUrl && (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              background: `linear-gradient(135deg, ${hexToRgba(artistColor, 0.18)}, transparent 60%)`,
+              mixBlendMode: "color",
+            }}
+          />
+        )}
 
-        {/* Bottom-left: genre tag + artist name */}
-        <div className="absolute bottom-0 left-0 p-5 pt-12 w-full bg-gradient-to-t from-black/80 to-transparent">
+        {/* Dark gradient scrim */}
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background: "linear-gradient(to top, #000 0%, transparent 65%)",
+          }}
+        />
+
+        {/* Genre + name */}
+        <div style={{ position: "absolute", left: 24, right: 24, bottom: 20 }}>
           {artist_data.genres.length > 0 && (
-            <div 
-              className="text-[11px] font-bold uppercase tracking-[0.2em] mb-1.5 drop-shadow-md brightness-150"
-              style={{ color: artistColor }}
+            <div
+              className="mono"
+              style={{
+                fontSize: 10.5,
+                fontWeight: 600,
+                letterSpacing: "0.2em",
+                textTransform: "uppercase",
+                color: artistColor,
+                marginBottom: 10,
+              }}
             >
-              {artist_data.genres[0]}
+              {artist_data.genres[0]} · pop {artist_data.popularity}
             </div>
           )}
-          <div className="font-display font-bold text-5xl tracking-tight text-white drop-shadow-lg leading-[1.05]">
+          <div
+            className="display"
+            style={{
+              fontSize: "clamp(40px, 9vw, 56px)",
+              lineHeight: 0.92,
+              color: "#fff",
+              textShadow: "0 4px 30px rgba(0,0,0,0.5)",
+            }}
+          >
             {artist_data.name}
           </div>
         </div>
       </div>
 
-      {/* TrackStrip (Inline stacked gradient rows) */}
-      <div className="px-4 mt-2 z-20 flex flex-col w-full">
+      {/* Body */}
+      <div style={{ padding: "18px 20px 20px" }}>
+        {/* Track strip */}
         {localTracks.length > 0 ? (
           <div onClick={(e) => e.stopPropagation()}>
             <TrackStrip
@@ -237,73 +289,119 @@ export function ArtistCard({ recommendation, onSave, onFeedback, isDismissed = f
             />
           </div>
         ) : (
-          <div className="h-16 w-full flex items-center justify-center my-2 text-xs font-semibold text-gray-500 bg-black/20 rounded-2xl border border-white/5 shadow-inner">
-            {isFetchingTracks ? (
-               <span className="animate-pulse">Loading tracks...</span>
-            ) : (
-               <span>No tracks available right now</span>
-            )}
+          <div
+            style={{
+              height: 64,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: 12,
+              background: "rgba(255,255,255,0.025)",
+              border: "1px solid var(--border)",
+            }}
+          >
+            <span className="mono" style={{ fontSize: 11, color: "var(--text-muted)" }}>
+              {isFetchingTracks ? "Loading tracks…" : "No tracks available"}
+            </span>
           </div>
         )}
-      </div>
 
-      {/* Details & Actions Footer */}
-      <div className="px-5 pt-4 pb-4 flex flex-col gap-4 w-full">
-        {/* Reason text container */}
+        {/* Reason / why */}
         {reasonText && (
-          <div className="text-[13px] text-gray-300 bg-white/5 p-3 rounded-xl border border-white/5 text-center font-medium shadow-inner">
+          <div
+            className="serif"
+            style={{
+              marginTop: 18,
+              padding: "14px 16px",
+              background: "rgba(255,255,255,0.025)",
+              borderRadius: 12,
+              fontSize: 15,
+              textAlign: "center",
+              color: "var(--text-secondary)",
+              lineHeight: 1.4,
+            }}
+          >
             {reasonText}
           </div>
         )}
 
-        {/* Vertical Actions Block */}
-        <div className="flex flex-col gap-3 w-full">
-          {/* New Solid Spotify Block */}
+        {/* Actions */}
+        <div className="col gap-12" style={{ marginTop: 16 }}>
+          {/* Spotify */}
           <a
             href={`https://open.spotify.com/artist/${recommendation.spotify_artist_id}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="w-full flex items-center justify-center gap-2 bg-[#1db954] text-black font-bold h-12 rounded-2xl hover:brightness-110 transition-colors shadow-lg"
+            className="btn btn-spotify btn-block"
             onClick={(e) => e.stopPropagation()}
           >
-            <span className="size-2 rounded-full bg-black/50" />
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/>
+            </svg>
             Open in Spotify
           </a>
 
-          {/* Core Decision Strip */}
-          <div className="flex flex-col gap-3">
+          {/* Bookmark */}
+          <button
+            className="btn btn-block btn-lg"
+            onClick={handleSave}
+            style={{
+              background: isSaved ? "rgba(255,255,255,0.04)" : hexToRgba(artistColor, 0.15),
+              borderColor: isSaved ? "var(--border)" : hexToRgba(artistColor, 0.35),
+              color: isSaved ? "var(--text-muted)" : "var(--text-primary)",
+              fontWeight: 600,
+            }}
+          >
+            {isSaved ? (
+              <>
+                <Check size={16} strokeWidth={2.5} /> Bookmarked
+              </>
+            ) : (
+              <>
+                <Bookmark size={16} /> Bookmark in Flipside
+              </>
+            )}
+          </button>
+
+          {/* Feedback strip — NO EMOJI */}
+          <div style={{ display: "flex", gap: 10 }}>
             <button
-              onClick={handleSave}
-              className="text-[15px] font-bold h-14 rounded-2xl transition-all border outline-none cursor-pointer hover:brightness-125 flex items-center justify-center gap-2"
+              onClick={() => onFeedback("thumbs_down")}
+              className="btn"
               style={{
-                backgroundColor: isSaved ? "rgba(255,255,255,0.05)" : hexToRgba(artistColor, 0.15),
-                borderColor: isSaved ? "rgba(255,255,255,0.1)" : hexToRgba(artistColor, 0.3),
-                color: isSaved ? "#888" : "#fff"
+                flex: 1,
+                color: "#ff7b7b",
+                background: "rgba(255,75,75,0.05)",
+                borderColor: "rgba(255,75,75,0.18)",
               }}
             >
-              {isSaved ? "✓ Bookmarked" : "🔖 Bookmark in Flipside"}
+              <span className="mono" style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.04em" }}>
+                —
+              </span>{" "}
+              Less like this
             </button>
-
-            <div className="flex gap-3">
-              <button
-                onClick={() => onFeedback("thumbs_down")}
-                className="flex-1 h-14 bg-white/5 border border-white/10 rounded-2xl font-semibold text-[15px] text-[#ff4b4b]/80 hover:text-[#ff4b4b] hover:bg-white/10 transition-colors cursor-pointer"
-              >
-                👎 Dislike
-              </button>
-              <button
-                onClick={() => onFeedback("skip")}
-                className="flex-1 h-14 bg-white/5 border border-white/10 rounded-2xl font-semibold text-[15px] text-gray-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
-              >
-                ⏱️ Maybe later
-              </button>
-              <button
-                onClick={() => onFeedback("thumbs_up")}
-                className="flex-1 h-14 bg-[#22c55e]/10 border border-[#22c55e]/20 rounded-2xl font-semibold text-[15px] text-[#22c55e]/80 hover:text-[#22c55e] hover:bg-[#22c55e]/15 transition-colors cursor-pointer"
-              >
-                👍 Like
-              </button>
-            </div>
+            <button
+              onClick={() => onFeedback("skip")}
+              className="btn"
+              style={{ flex: 1 }}
+            >
+              <SkipForward size={15} /> Later
+            </button>
+            <button
+              onClick={() => onFeedback("thumbs_up")}
+              className="btn"
+              style={{
+                flex: 1.2,
+                color: "var(--like)",
+                background: "rgba(34,197,94,0.07)",
+                borderColor: "rgba(34,197,94,0.22)",
+              }}
+            >
+              <span className="mono" style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.04em" }}>
+                +
+              </span>{" "}
+              More like this
+            </button>
           </div>
         </div>
       </div>

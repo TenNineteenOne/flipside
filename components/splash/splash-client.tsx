@@ -2,13 +2,12 @@
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Loader2, Sparkles } from "lucide-react"
 
 type Status = "idle" | "generating" | "error"
 
 const PROGRESS_STEPS = [
-  "Reading your top artists…",
   "Finding similar artists…",
+  "Scoring by obscurity…",
   "Loading your feed…",
 ]
 
@@ -17,7 +16,6 @@ export function SplashClient() {
   const [status, setStatus] = useState<Status>("idle")
   const [stepIndex, setStepIndex] = useState(0)
 
-  // Cycle cosmetic progress copy while generating.
   useEffect(() => {
     if (status !== "generating") return
     setStepIndex(0)
@@ -27,7 +25,7 @@ export function SplashClient() {
     return () => clearInterval(id)
   }, [status])
 
-  async function handleClick() {
+  async function handleGenerate() {
     setStatus("generating")
     try {
       const res = await fetch("/api/recommendations/generate", { method: "POST" })
@@ -40,56 +38,127 @@ export function SplashClient() {
   }
 
   return (
-    <main className="flex flex-col items-center justify-center min-h-screen px-6 text-center">
-      <div className="max-w-md w-full space-y-8">
-        <div className="space-y-3">
-          <h1 className="text-5xl font-bold tracking-tight text-primary">flipside</h1>
-          <p className="text-lg text-muted-foreground">
-            Hand-picked underground artists, based on what you already love.
-          </p>
+    <main
+      style={{
+        minHeight: "100dvh",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "40px 24px",
+        textAlign: "center",
+        position: "relative",
+        overflow: "hidden",
+      }}
+    >
+      {/* Radial aura */}
+      <div
+        aria-hidden
+        style={{
+          position: "absolute",
+          top: "30%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          width: 600,
+          height: 600,
+          pointerEvents: "none",
+          zIndex: -1,
+          background: "radial-gradient(circle, var(--accent-glow) 0%, transparent 60%)",
+        }}
+      />
+
+      {/* Brand mark */}
+      <div style={{ display: "inline-flex", alignItems: "center", gap: 10, marginBottom: 32 }}>
+        <span
+          style={{
+            width: 10,
+            height: 10,
+            borderRadius: "50%",
+            background: "var(--accent)",
+            boxShadow: "0 0 20px var(--accent-glow)",
+          }}
+        />
+        <span className="display" style={{ fontSize: 18, letterSpacing: "-0.02em" }}>
+          flipside
+        </span>
+      </div>
+
+      {/* Headline */}
+      <h1
+        className="display"
+        style={{
+          fontSize: "clamp(44px, 9vw, 84px)",
+          lineHeight: 0.95,
+          margin: "0 0 18px",
+          maxWidth: 680,
+        }}
+      >
+        Music discovery,
+        <br />
+        <span className="serif" style={{ color: "var(--accent)", fontWeight: 400 }}>
+          without the strings.
+        </span>
+      </h1>
+
+      <p
+        className="muted"
+        style={{ fontSize: 17, lineHeight: 1.5, maxWidth: 480, margin: "0 0 32px" }}
+      >
+        Hand-picked underground artists, based on what you already love.
+      </p>
+
+      {status === "idle" && (
+        <button
+          onClick={handleGenerate}
+          className="btn btn-primary btn-lg fadein"
+          style={{ paddingLeft: 24, paddingRight: 24 }}
+        >
+          Find my music →
+        </button>
+      )}
+
+      {status === "generating" && (
+        <div className="fadein col" style={{ alignItems: "center", gap: 12 }}>
+          <div
+            className="mono"
+            style={{ fontSize: 13, color: "var(--text-secondary)", letterSpacing: "0.02em" }}
+          >
+            {PROGRESS_STEPS[stepIndex]}
+          </div>
+          <div
+            className="eyebrow"
+            style={{ color: "var(--text-faint)" }}
+          >
+            usually 10–20 seconds
+          </div>
         </div>
+      )}
 
-        {status === "idle" && (
-          <div className="space-y-3">
-            <button
-              onClick={handleClick}
-              className="inline-flex items-center justify-center gap-2 w-full h-12 px-6 rounded-lg bg-primary text-primary-foreground font-semibold text-sm transition-opacity hover:opacity-90"
-            >
-              <Sparkles className="size-4" />
-              Find me music
-            </button>
-            <p className="text-xs text-muted-foreground">
-              We&apos;ll read your Spotify listening history and find a fresh
-              batch of artists you probably haven&apos;t heard.
-            </p>
-          </div>
-        )}
+      {status === "error" && (
+        <div className="fadein col" style={{ alignItems: "center", gap: 12 }}>
+          <p style={{ fontSize: 14, color: "var(--dislike)" }}>
+            Something went wrong. Check your connection and try again.
+          </p>
+          <button
+            onClick={handleGenerate}
+            className="btn btn-sm"
+          >
+            Try again
+          </button>
+        </div>
+      )}
 
-        {status === "generating" && (
-          <div className="space-y-3">
-            <div className="flex items-center justify-center gap-2 text-sm text-foreground">
-              <Loader2 className="size-4 animate-spin" />
-              <span>{PROGRESS_STEPS[stepIndex]}</span>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              This usually takes 10–20 seconds.
-            </p>
-          </div>
-        )}
-
-        {status === "error" && (
-          <div className="space-y-3">
-            <p className="text-sm text-destructive">
-              Something went wrong finding your music.
-            </p>
-            <button
-              onClick={handleClick}
-              className="inline-flex items-center justify-center w-full h-11 px-6 rounded-lg border border-border bg-background text-foreground font-medium text-sm transition-colors hover:bg-muted"
-            >
-              Try again
-            </button>
-          </div>
-        )}
+      <div
+        className="mono"
+        style={{
+          marginTop: 36,
+          fontSize: 11,
+          color: "var(--text-faint)",
+          textTransform: "uppercase",
+          letterSpacing: "0.16em",
+        }}
+      >
+        no email · no password · no listening history
       </div>
     </main>
   )
