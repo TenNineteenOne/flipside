@@ -15,6 +15,13 @@ interface StatsClientProps {
   totalDislikes: number
   topGenres: { genre: string; count: number }[]
   savedArtists: SavedArtist[]
+  likedArtists: SavedArtist[]
+}
+
+type TasteKind = "saved" | "liked"
+const KIND_COLOR: Record<TasteKind, string> = {
+  saved: "var(--accent)",
+  liked: "#22c55e",
 }
 
 function StatCard({
@@ -124,12 +131,61 @@ function hashSeed(str: string): number {
   return (h >>> 0) / 4294967295
 }
 
-function SavedPopularityView({ savedArtists }: { savedArtists: SavedArtist[] }) {
+function LegendSwatch({ color, label }: { color: string; label: string }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, color: "var(--text-muted)" }}>
+      <span style={{ width: 8, height: 8, borderRadius: "50%", background: color, display: "inline-block" }} />
+      {label}
+    </span>
+  )
+}
+
+function KindBadge({ kind }: { kind: TasteKind }) {
+  const color = KIND_COLOR[kind]
+  const label = kind === "saved" ? "Saved" : "Liked"
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        padding: "2px 8px",
+        borderRadius: 999,
+        fontSize: 10,
+        fontWeight: 600,
+        letterSpacing: "0.02em",
+        color,
+        border: `1px solid ${color}`,
+        opacity: 0.9,
+      }}
+    >
+      {label}
+    </span>
+  )
+}
+
+type TasteItem = { name: string; popularity: number; kind: TasteKind }
+
+function TasteProfileView({
+  savedArtists,
+  likedArtists,
+}: {
+  savedArtists: SavedArtist[]
+  likedArtists: SavedArtist[]
+}) {
   const [sortDesc, setSortDesc] = useState(false)
 
+  const items = useMemo<TasteItem[]>(() => {
+    const savedNames = new Set(savedArtists.map((a) => a.name))
+    const out: TasteItem[] = savedArtists.map((a) => ({ ...a, kind: "saved" as const }))
+    for (const a of likedArtists) {
+      if (savedNames.has(a.name)) continue
+      out.push({ ...a, kind: "liked" })
+    }
+    return out
+  }, [savedArtists, likedArtists])
+
   const sorted = useMemo(
-    () => [...savedArtists].sort((a, b) => (sortDesc ? b.popularity - a.popularity : a.popularity - b.popularity)),
-    [savedArtists, sortDesc]
+    () => [...items].sort((a, b) => (sortDesc ? b.popularity - a.popularity : a.popularity - b.popularity)),
+    [items, sortDesc]
   )
 
   const svgHeight = 110
@@ -149,16 +205,22 @@ function SavedPopularityView({ savedArtists }: { savedArtists: SavedArtist[] }) 
         gap: 16,
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <Bookmark size={16} style={{ color: "var(--accent)" }} />
-        <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text-secondary)" }}>
-          Your saved artists
-        </span>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "space-between", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Bookmark size={16} style={{ color: "var(--accent)" }} />
+          <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text-secondary)" }}>
+            Your taste profile
+          </span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <LegendSwatch color={KIND_COLOR.saved} label="Saved" />
+          <LegendSwatch color={KIND_COLOR.liked} label="Liked" />
+        </div>
       </div>
 
-      {savedArtists.length === 0 ? (
+      {items.length === 0 ? (
         <p style={{ fontSize: 14, color: "var(--text-muted)" }}>
-          Save some artists to see where they fall on the popularity scale.
+          Save or like some artists to see where they fall on the popularity scale.
         </p>
       ) : (
         <>
@@ -166,7 +228,7 @@ function SavedPopularityView({ savedArtists }: { savedArtists: SavedArtist[] }) 
             viewBox={`0 0 400 ${svgHeight}`}
             width="100%"
             style={{ display: "block" }}
-            aria-label="Saved artists popularity distribution"
+            aria-label="Taste profile popularity distribution"
           >
             <line
               x1={svgPad.left}
@@ -203,22 +265,22 @@ function SavedPopularityView({ savedArtists }: { savedArtists: SavedArtist[] }) 
               )
             })}
 
-            {savedArtists.map((a) => {
+            {items.map((a) => {
               const cx = svgPad.left + (a.popularity / 100) * plotW
               const jitter = hashSeed(a.name)
               const cy = svgPad.top + jitter * plotH
               return (
                 <circle
-                  key={a.name}
+                  key={`${a.kind}-${a.name}`}
                   cx={cx}
                   cy={cy}
                   r="4"
-                  fill="var(--accent)"
+                  fill={KIND_COLOR[a.kind]}
                   fillOpacity="0.7"
                   stroke="var(--bg-card)"
                   strokeWidth="1"
                 >
-                  <title>{`${a.name} · popularity ${a.popularity}`}</title>
+                  <title>{`${a.name} · popularity ${a.popularity} · ${a.kind}`}</title>
                 </circle>
               )
             })}
@@ -230,7 +292,7 @@ function SavedPopularityView({ savedArtists }: { savedArtists: SavedArtist[] }) 
               onClick={() => setSortDesc((v) => !v)}
               style={{
                 display: "grid",
-                gridTemplateColumns: "1fr 80px 90px",
+                gridTemplateColumns: "1fr 72px 90px",
                 gap: 8,
                 padding: "8px 0",
                 background: "transparent",
@@ -246,20 +308,20 @@ function SavedPopularityView({ savedArtists }: { savedArtists: SavedArtist[] }) 
               }}
             >
               <span>Artist</span>
+              <span style={{ textAlign: "right" }}>Kind</span>
               <span style={{ display: "inline-flex", alignItems: "center", gap: 4, justifyContent: "flex-end" }}>
                 Popularity
                 <ArrowUpDown size={11} />
               </span>
-              <span style={{ textAlign: "right" }}>Tier</span>
             </button>
 
             <div style={{ maxHeight: 320, overflowY: "auto" }}>
               {sorted.map((a) => (
                 <div
-                  key={a.name}
+                  key={`${a.kind}-${a.name}`}
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "1fr 80px 90px",
+                    gridTemplateColumns: "1fr 72px 90px",
                     gap: 8,
                     padding: "10px 0",
                     borderBottom: "1px solid rgba(255,255,255,0.04)",
@@ -278,11 +340,15 @@ function SavedPopularityView({ savedArtists }: { savedArtists: SavedArtist[] }) 
                   >
                     {a.name}
                   </span>
-                  <span className="mono" style={{ fontSize: 12, color: "var(--text-secondary)", textAlign: "right" }}>
-                    {a.popularity}
+                  <span style={{ textAlign: "right" }}>
+                    <KindBadge kind={a.kind} />
                   </span>
-                  <span style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "right" }}>
-                    {popularityTier(a.popularity)}
+                  <span
+                    className="mono"
+                    style={{ fontSize: 12, color: "var(--text-secondary)", textAlign: "right" }}
+                    title={popularityTier(a.popularity)}
+                  >
+                    {a.popularity}
                   </span>
                 </div>
               ))}
@@ -301,6 +367,7 @@ export function StatsClient({
   totalDislikes,
   topGenres,
   savedArtists,
+  likedArtists,
 }: StatsClientProps) {
   return (
     <div>
@@ -318,7 +385,7 @@ export function StatsClient({
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <GenreCard genres={topGenres} />
-        <SavedPopularityView savedArtists={savedArtists} />
+        <TasteProfileView savedArtists={savedArtists} likedArtists={likedArtists} />
       </div>
     </div>
   )
