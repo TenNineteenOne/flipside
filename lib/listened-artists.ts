@@ -177,7 +177,7 @@ interface UnresolvedRow {
  * Processed in batches of RESOLUTION_BATCH_SIZE to stay within Spotify rate limits.
  * Never throws — all errors are logged so the parent sync call is not disrupted.
  */
-async function resolveLastFmArtistIds(params: {
+export async function resolveUnresolvedArtistIds(params: {
   supabase: ReturnType<typeof createServiceClient>
   userId: string
   accessToken: string
@@ -212,16 +212,68 @@ async function resolveLastFmArtistIds(params: {
   // 2. Process in batches
   for (let i = 0; i < unresolved.length; i += RESOLUTION_BATCH_SIZE) {
     const batch = unresolved.slice(i, i + RESOLUTION_BATCH_SIZE)
-    await resolveLastFmBatch({ supabase, accessToken, batch })
+    await resolveLastFmBatch({ supabase, userId, accessToken, batch })
   }
+}
+
+/**
+ * Try to set spotify_artist_id on `orphanId`. If a row with the same
+ * (user_id, spotify_artist_id) already exists (unique constraint 23505),
+ * merge the orphan's play_count into the existing row and delete the orphan.
+ */
+async function resolveOrMergeRow(params: {
+  supabase: ReturnType<typeof createServiceClient>
+  userId: string
+  orphanId: string
+  spotifyArtistId: string
+  now: string
+}): Promise<{ merged: boolean; error?: string }> {
+  const { supabase, userId, orphanId, spotifyArtistId, now } = params
+
+  const { error: updateErr } = await supabase
+    .from("listened_artists")
+    .update({ spotify_artist_id: spotifyArtistId, id_resolution_attempted_at: now })
+    .eq("id", orphanId)
+
+  if (!updateErr) return { merged: false }
+  if (updateErr.code !== "23505") return { merged: false, error: updateErr.message }
+
+  const { data: orphan } = await supabase
+    .from("listened_artists")
+    .select("play_count, last_seen_at")
+    .eq("id", orphanId)
+    .maybeSingle()
+
+  const { data: target } = await supabase
+    .from("listened_artists")
+    .select("id, play_count, last_seen_at")
+    .eq("user_id", userId)
+    .eq("spotify_artist_id", spotifyArtistId)
+    .maybeSingle()
+
+  if (target && orphan) {
+    const mergedPlays = (target.play_count ?? 0) + (orphan.play_count ?? 0)
+    const mergedLastSeen =
+      new Date(target.last_seen_at).getTime() >= new Date(orphan.last_seen_at).getTime()
+        ? target.last_seen_at
+        : orphan.last_seen_at
+    await supabase
+      .from("listened_artists")
+      .update({ play_count: mergedPlays, last_seen_at: mergedLastSeen })
+      .eq("id", target.id)
+  }
+
+  await supabase.from("listened_artists").delete().eq("id", orphanId)
+  return { merged: true }
 }
 
 async function resolveLastFmBatch(params: {
   supabase: ReturnType<typeof createServiceClient>
+  userId: string
   accessToken: string
   batch: UnresolvedRow[]
 }): Promise<void> {
-  const { supabase, accessToken, batch } = params
+  const { supabase, userId, accessToken, batch } = params
   const now = new Date().toISOString()
 
   // 2a. Batch-read artist_search_cache for all names in this batch
@@ -256,23 +308,24 @@ async function resolveLastFmBatch(params: {
     const cached = cacheByLower.get(nameLower)
 
     if (cached) {
-      // Cache hit — write spotify_artist_id back to listened_artists
-      const { error: updateErr } = await supabase
-        .from("listened_artists")
-        .update({
-          spotify_artist_id: cached.spotify_artist_id,
-          id_resolution_attempted_at: now,
-        })
-        .eq("id", row.id)
-
-      if (updateErr) {
+      // Cache hit — write spotify_artist_id back to listened_artists, merging
+      // into an existing row for this user+artist if the unique constraint
+      // (user_id, spotify_artist_id) trips.
+      const res = await resolveOrMergeRow({
+        supabase,
+        userId,
+        orphanId: row.id,
+        spotifyArtistId: cached.spotify_artist_id,
+        now,
+      })
+      if (res.error) {
         console.error(
           `[resolveLastFmArtistIds] Cache-hit update failed for "${row.lastfm_artist_name}":`,
-          updateErr.message
+          res.error
         )
       } else {
         console.log(
-          `[resolveLastFmArtistIds] cache-hit name="${row.lastfm_artist_name}" id=${cached.spotify_artist_id}`
+          `[resolveLastFmArtistIds] cache-hit name="${row.lastfm_artist_name}" id=${cached.spotify_artist_id}${res.merged ? " (merged)" : ""}`
         )
       }
       continue
@@ -345,20 +398,42 @@ async function resolveLastFmBatch(params: {
       )
     }
 
-    // Write result (resolved ID or null) + update timestamp
-    const { error: updateErr } = await supabase
-      .from("listened_artists")
-      .update({
-        spotify_artist_id: resolvedId,  // null stays null — retry via id_resolution_attempted_at window
-        id_resolution_attempted_at: now,
+    // Write result (resolved ID or null) + update timestamp.
+    // When resolvedId is set, the update may trip the (user_id, spotify_artist_id)
+    // unique constraint if another source already owns that artist — merge in that case.
+    if (resolvedId) {
+      const res = await resolveOrMergeRow({
+        supabase,
+        userId,
+        orphanId: row.id,
+        spotifyArtistId: resolvedId,
+        now,
       })
-      .eq("id", row.id)
+      if (res.error) {
+        console.error(
+          `[resolveLastFmArtistIds] Update failed for "${row.lastfm_artist_name}":`,
+          res.error
+        )
+      } else if (res.merged) {
+        console.log(
+          `[resolveLastFmArtistIds] merged orphan name="${row.lastfm_artist_name}" into existing id=${resolvedId}`
+        )
+      }
+    } else {
+      const { error: updateErr } = await supabase
+        .from("listened_artists")
+        .update({
+          spotify_artist_id: null,  // null stays null — retry via id_resolution_attempted_at window
+          id_resolution_attempted_at: now,
+        })
+        .eq("id", row.id)
 
-    if (updateErr) {
-      console.error(
-        `[resolveLastFmArtistIds] Update failed for "${row.lastfm_artist_name}":`,
-        updateErr.message
-      )
+      if (updateErr) {
+        console.error(
+          `[resolveLastFmArtistIds] Timestamp update failed for "${row.lastfm_artist_name}":`,
+          updateErr.message
+        )
+      }
     }
   }
 }
@@ -469,7 +544,7 @@ export async function accumulateLastFmHistory(params: {
   // that still have NULL.  Runs non-blocking (no throw) so a Spotify hiccup
   // does not break the sync response for the user.
   try {
-    await resolveLastFmArtistIds({ supabase, userId, accessToken })
+    await resolveUnresolvedArtistIds({ supabase, userId, accessToken })
   } catch (err) {
     console.error(
       "[accumulateLastFmHistory] Resolution pass failed:",
@@ -538,7 +613,18 @@ async function batchUpsertLastFmArtists(
       .from("listened_artists")
       .insert(toInsert)
     if (insertError) {
-      console.error("[accumulateLastFmHistory] Batch insert error:", insertError.message)
+      if (insertError.code === "23505") {
+        // Concurrent sync from another source inserted a name-only row first.
+        // Fall back to per-row insert so one conflict doesn't drop the batch.
+        for (const row of toInsert) {
+          const { error: rowErr } = await supabase.from("listened_artists").insert(row)
+          if (rowErr && rowErr.code !== "23505") {
+            console.error("[accumulateLastFmHistory] Row insert error:", rowErr.message)
+          }
+        }
+      } else {
+        console.error("[accumulateLastFmHistory] Batch insert error:", insertError.message)
+      }
     }
   }
 

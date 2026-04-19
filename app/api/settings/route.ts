@@ -8,7 +8,13 @@ export async function PATCH(request: Request) {
 
   const userId = session.user.id
 
-  let body: { playThreshold?: number; lastfmUsername?: string; selectedGenres?: string[]; undergroundMode?: boolean }
+  let body: {
+    playThreshold?: number
+    lastfmUsername?: string
+    statsfmUsername?: string
+    selectedGenres?: string[]
+    undergroundMode?: boolean
+  }
   try {
     body = await request.json()
   } catch {
@@ -33,9 +39,17 @@ export async function PATCH(request: Request) {
     update.lastfm_username = lfmUsername || null
   }
 
+  if (body.statsfmUsername !== undefined) {
+    const sfmUsername = body.statsfmUsername.trim()
+    if (sfmUsername && !/^[a-zA-Z0-9._-]{1,30}$/.test(sfmUsername)) {
+      return apiError("Invalid stats.fm username format", 400)
+    }
+    update.statsfm_username = sfmUsername || null
+  }
+
   if (body.selectedGenres !== undefined) {
-    if (!Array.isArray(body.selectedGenres) || body.selectedGenres.length > 20) {
-      return apiError("selectedGenres must be an array of up to 20 tags", 400)
+    if (!Array.isArray(body.selectedGenres) || body.selectedGenres.length > 50) {
+      return apiError("selectedGenres must be an array of up to 50 tags", 400)
     }
     update.selected_genres = body.selectedGenres.filter((g) => typeof g === "string" && g.length <= 80)
   }

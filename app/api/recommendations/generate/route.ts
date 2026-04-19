@@ -68,25 +68,41 @@ export async function POST(req: NextRequest): Promise<Response> {
   // Update cooldown timestamp
   await supabase.from("users").update({ last_generated_at: new Date().toISOString() }).eq("id", userId)
 
-  // ── [SECURITY PATCH] Algorithmic Queue Capacity DoS limit ──
-  // Restricts bad actors from infinitely looping the background engine, but allows up to 60 unseen artists to queue
-  const { count, error: countErr } = await supabase
-    .from("recommendation_cache")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", user.id)
-    .is("seen_at", null)
+  // Replace mode: wipe unseen queue before regenerating. Powers the Settings
+  // "Generate my feed" button so newly-added anchors take immediate effect.
+  const replace = req.nextUrl.searchParams.get("replace") === "true"
 
-  if (countErr) {
-    console.error("[generate] failed to check queue limit", countErr)
-  }
+  if (replace) {
+    const { error: wipeErr } = await supabase
+      .from("recommendation_cache")
+      .delete()
+      .eq("user_id", user.id)
+      .is("seen_at", null)
+    if (wipeErr) {
+      console.error("[generate] replace wipe failed", wipeErr.message)
+    }
+  } else {
+    // ── [SECURITY PATCH] Algorithmic Queue Capacity DoS limit ──
+    // Restricts bad actors from infinitely looping the background engine, but allows up to 60 unseen artists to queue
+    const { count, error: countErr } = await supabase
+      .from("recommendation_cache")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .is("seen_at", null)
 
-  if (count && count >= 60) {
-    return apiError("Your discovery queue is full. Please review some artists before generating more.", 429)
+    if (countErr) {
+      console.error("[generate] failed to check queue limit", countErr)
+    }
+
+    if (count && count >= 60) {
+      return apiError("Your discovery queue is full. Please review some artists before generating more.", 429)
+    }
   }
 
   try {
-    // Note: We no longer delete the unseen cache entries.
+    // Note: For the normal append path, we no longer delete the unseen cache entries.
     // This allows users to request "more" natively and gracefully append them to their existing batch.
+    // Replace mode (above) wipes unseen first so Settings-driven regen reflects new anchors.
 
     // Use user's Spotify token if available, otherwise fall back to client credentials
     const accessToken = userAccessToken ?? await getSpotifyClientToken() ?? ""

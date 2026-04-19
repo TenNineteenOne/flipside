@@ -405,12 +405,15 @@ export function ArtistCard({
               className="btn"
               style={{
                 flex: 1,
+                minWidth: 0,
+                fontSize: 13,
+                whiteSpace: "nowrap",
                 color: "#ff7b7b",
                 background: "rgba(255,75,75,0.05)",
                 borderColor: "rgba(255,75,75,0.18)",
               }}
             >
-              <span className="mono" style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.04em" }}>
+              <span className="mono" style={{ fontSize: 13, fontWeight: 700 }}>
                 —
               </span>{" "}
               Less like this
@@ -418,7 +421,7 @@ export function ArtistCard({
             <button
               onClick={() => onFeedback("skip")}
               className="btn"
-              style={{ flex: 1 }}
+              style={{ flex: 1, minWidth: 0, fontSize: 13, whiteSpace: "nowrap" }}
             >
               <SkipForward size={15} /> Later
             </button>
@@ -427,12 +430,15 @@ export function ArtistCard({
               className="btn"
               style={{
                 flex: 1.2,
+                minWidth: 0,
+                fontSize: 13,
+                whiteSpace: "nowrap",
                 color: "var(--like)",
                 background: "rgba(34,197,94,0.07)",
                 borderColor: "rgba(34,197,94,0.22)",
               }}
             >
-              <span className="mono" style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.04em" }}>
+              <span className="mono" style={{ fontSize: 13, fontWeight: 700 }}>
                 +
               </span>{" "}
               More like this
