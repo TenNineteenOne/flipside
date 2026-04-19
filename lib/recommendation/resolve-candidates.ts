@@ -10,7 +10,7 @@ export interface ResolveDeps {
    * array on no-match, or a `RateLimited` sentinel on 429.
    */
   searchArtists: (name: string) => Promise<Artist[] | RateLimited>
-  /** Delay between successful searches (ms). Default 2000. Pass 0 in tests. */
+  /** Delay between successful searches (ms). Default 200. Pass 0 in tests. */
   delayMs?: number
   /** Max single-retry backoff (ms). Default 20_000. */
   maxRetryBackoffMs?: number
@@ -57,7 +57,7 @@ export async function resolveArtistsByName(
   deps: ResolveDeps
 ): Promise<ResolveResult> {
   const sleep = deps.sleep ?? defaultSleep
-  const delayMs = deps.delayMs ?? 2000
+  const delayMs = deps.delayMs ?? 200
   const maxRetryBackoffMs = deps.maxRetryBackoffMs ?? 20_000
   const totalBackoffBudgetMs = deps.totalBackoffBudgetMs ?? 90_000
   const maxAttempts = deps.maxAttemptsPerName ?? 3

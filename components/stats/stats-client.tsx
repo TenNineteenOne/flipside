@@ -1,7 +1,12 @@
 "use client"
 
-import { Disc3, Bookmark, ThumbsUp, ThumbsDown, Music } from "lucide-react"
-import type { ReactNode } from "react"
+import { Disc3, Bookmark, ThumbsUp, ThumbsDown, Music, ArrowUpDown } from "lucide-react"
+import { useMemo, useState, type ReactNode } from "react"
+
+interface SavedArtist {
+  name: string
+  popularity: number
+}
 
 interface StatsClientProps {
   totalDiscovered: number
@@ -9,6 +14,7 @@ interface StatsClientProps {
   totalLikes: number
   totalDislikes: number
   topGenres: { genre: string; count: number }[]
+  savedArtists: SavedArtist[]
 }
 
 function StatCard({
@@ -101,12 +107,200 @@ function GenreCard({ genres }: { genres: { genre: string; count: number }[] }) {
   )
 }
 
+function popularityTier(pop: number): string {
+  if (pop < 20) return "Obscure"
+  if (pop < 40) return "Niche"
+  if (pop < 60) return "Emerging"
+  if (pop < 80) return "Popular"
+  return "Mainstream"
+}
+
+function hashSeed(str: string): number {
+  let h = 2166136261
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return (h >>> 0) / 4294967295
+}
+
+function SavedPopularityView({ savedArtists }: { savedArtists: SavedArtist[] }) {
+  const [sortDesc, setSortDesc] = useState(false)
+
+  const sorted = useMemo(
+    () => [...savedArtists].sort((a, b) => (sortDesc ? b.popularity - a.popularity : a.popularity - b.popularity)),
+    [savedArtists, sortDesc]
+  )
+
+  const svgHeight = 110
+  const svgPad = { left: 20, right: 20, top: 20, bottom: 30 }
+  const plotW = 400 - svgPad.left - svgPad.right
+  const plotH = svgHeight - svgPad.top - svgPad.bottom
+
+  return (
+    <div
+      style={{
+        background: "var(--bg-card)",
+        border: "1px solid var(--border)",
+        borderRadius: 16,
+        padding: "24px 20px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 16,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <Bookmark size={16} style={{ color: "var(--accent)" }} />
+        <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text-secondary)" }}>
+          Your saved artists
+        </span>
+      </div>
+
+      {savedArtists.length === 0 ? (
+        <p style={{ fontSize: 14, color: "var(--text-muted)" }}>
+          Save some artists to see where they fall on the popularity scale.
+        </p>
+      ) : (
+        <>
+          <svg
+            viewBox={`0 0 400 ${svgHeight}`}
+            width="100%"
+            style={{ display: "block" }}
+            aria-label="Saved artists popularity distribution"
+          >
+            <line
+              x1={svgPad.left}
+              y1={svgHeight - svgPad.bottom}
+              x2={400 - svgPad.right}
+              y2={svgHeight - svgPad.bottom}
+              stroke="rgba(255,255,255,0.12)"
+              strokeWidth="1"
+            />
+
+            {[0, 20, 40, 60, 80, 100].map((tick) => {
+              const x = svgPad.left + (tick / 100) * plotW
+              return (
+                <g key={tick}>
+                  <line
+                    x1={x}
+                    y1={svgHeight - svgPad.bottom}
+                    x2={x}
+                    y2={svgHeight - svgPad.bottom + 4}
+                    stroke="rgba(255,255,255,0.2)"
+                    strokeWidth="1"
+                  />
+                  <text
+                    x={x}
+                    y={svgHeight - svgPad.bottom + 16}
+                    textAnchor="middle"
+                    fill="var(--text-muted)"
+                    fontSize="10"
+                    className="mono"
+                  >
+                    {tick}
+                  </text>
+                </g>
+              )
+            })}
+
+            {savedArtists.map((a) => {
+              const cx = svgPad.left + (a.popularity / 100) * plotW
+              const jitter = hashSeed(a.name)
+              const cy = svgPad.top + jitter * plotH
+              return (
+                <circle
+                  key={a.name}
+                  cx={cx}
+                  cy={cy}
+                  r="4"
+                  fill="var(--accent)"
+                  fillOpacity="0.7"
+                  stroke="var(--bg-card)"
+                  strokeWidth="1"
+                >
+                  <title>{`${a.name} · popularity ${a.popularity}`}</title>
+                </circle>
+              )
+            })}
+          </svg>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+            <button
+              type="button"
+              onClick={() => setSortDesc((v) => !v)}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 80px 90px",
+                gap: 8,
+                padding: "8px 0",
+                background: "transparent",
+                border: 0,
+                borderBottom: "1px solid var(--border)",
+                color: "var(--text-muted)",
+                fontSize: 11,
+                fontWeight: 500,
+                textTransform: "uppercase",
+                letterSpacing: "0.08em",
+                textAlign: "left",
+                cursor: "pointer",
+              }}
+            >
+              <span>Artist</span>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 4, justifyContent: "flex-end" }}>
+                Popularity
+                <ArrowUpDown size={11} />
+              </span>
+              <span style={{ textAlign: "right" }}>Tier</span>
+            </button>
+
+            <div style={{ maxHeight: 320, overflowY: "auto" }}>
+              {sorted.map((a) => (
+                <div
+                  key={a.name}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 80px 90px",
+                    gap: 8,
+                    padding: "10px 0",
+                    borderBottom: "1px solid rgba(255,255,255,0.04)",
+                    alignItems: "center",
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: 13,
+                      color: "var(--text-primary)",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                    title={a.name}
+                  >
+                    {a.name}
+                  </span>
+                  <span className="mono" style={{ fontSize: 12, color: "var(--text-secondary)", textAlign: "right" }}>
+                    {a.popularity}
+                  </span>
+                  <span style={{ fontSize: 12, color: "var(--text-muted)", textAlign: "right" }}>
+                    {popularityTier(a.popularity)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 export function StatsClient({
   totalDiscovered,
   totalSaves,
   totalLikes,
   totalDislikes,
   topGenres,
+  savedArtists,
 }: StatsClientProps) {
   return (
     <div>
@@ -122,7 +316,10 @@ export function StatsClient({
         <StatCard icon={<ThumbsDown size={16} />} label="Passed" value={totalDislikes} accentColor="#ff4b4b" />
       </div>
 
-      <GenreCard genres={topGenres} />
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <GenreCard genres={topGenres} />
+        <SavedPopularityView savedArtists={savedArtists} />
+      </div>
     </div>
   )
 }

@@ -13,7 +13,7 @@ export default async function SettingsPage() {
   const supabase = createServiceClient()
   const { data: user } = await supabase
     .from("users")
-    .select("id, play_threshold, lastfm_username, statsfm_username, underground_mode, selected_genres")
+    .select("id, play_threshold, popularity_curve, lastfm_username, statsfm_username, underground_mode, selected_genres")
     .eq("id", userId)
     .maybeSingle()
 
@@ -41,16 +41,69 @@ export default async function SettingsPage() {
     popularity: 0,
   }))
 
+  // Pull recent recs to build distinct example artists at anchor popularities
+  const { data: recRows } = await supabase
+    .from("recommendation_cache")
+    .select("artist_data")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(200)
+
+  type FeedArtist = { name: string; popularity: number }
+  const userArtists: FeedArtist[] = []
+  for (const row of recRows ?? []) {
+    const data = row.artist_data as { name?: string; popularity?: number } | null
+    const pop = typeof data?.popularity === "number" ? data.popularity : null
+    if (pop === null || !data?.name) continue
+    userArtists.push({ name: data.name, popularity: pop })
+  }
+
+  // Hardcode mainstream anchors so the curve preview is an honest reference
+  // regardless of the user's (niche-skewed) cache. Niche anchors still prefer
+  // a real cached pick when one falls within tolerance of the target.
+  const HARDCODED_ANCHORS: Record<number, string> = {
+    30: "Hana Vu",
+    70: "Phoebe Bridgers",
+    100: "Taylor Swift",
+  }
+  const TOLERANCE = 7
+  // Anchors the curve preview renders at (popularity 0–100).
+  const anchors = [0, 30, 70, 100]
+  const used = new Set<string>()
+  const exampleArtists = anchors.map((target) => {
+    const hardcoded = HARDCODED_ANCHORS[target]
+    if (hardcoded) {
+      return { popularity: target, artist: { name: hardcoded, popularity: target } }
+    }
+    let best: FeedArtist | null = null
+    let bestDiff = Infinity
+    for (const a of userArtists) {
+      if (used.has(a.name)) continue
+      const diff = Math.abs(a.popularity - target)
+      if (diff < bestDiff) {
+        bestDiff = diff
+        best = a
+      }
+    }
+    if (best && bestDiff <= TOLERANCE) {
+      used.add(best.name)
+      return { popularity: target, artist: best }
+    }
+    return { popularity: target, artist: null }
+  })
+
   return (
     <SettingsForm
       userSeed={userId}
       initialPlayThreshold={user?.play_threshold ?? 5}
+      initialPopularityCurve={user?.popularity_curve ?? 0.95}
       initialLastfmUsername={user?.lastfm_username ?? null}
       initialStatsfmUsername={user?.statsfm_username ?? null}
       initialLastfmArtistCount={lastfmArtistCount}
       initialUndergroundMode={user?.underground_mode ?? false}
       initialSelectedGenres={(user?.selected_genres as string[] | null) ?? []}
       initialSeedArtists={seedArtists}
+      exampleArtists={exampleArtists}
     />
   )
 }

@@ -10,6 +10,7 @@ export async function PATCH(request: Request) {
 
   let body: {
     playThreshold?: number
+    popularityCurve?: number
     lastfmUsername?: string
     statsfmUsername?: string
     selectedGenres?: string[]
@@ -29,6 +30,15 @@ export async function PATCH(request: Request) {
       return apiError("playThreshold must be an integer between 0 and 100", 400)
     }
     update.play_threshold = threshold
+  }
+
+  if (body.popularityCurve !== undefined) {
+    const curve = body.popularityCurve
+    if (typeof curve !== "number" || !Number.isFinite(curve) || curve < 0.9 || curve > 1.0) {
+      return apiError("popularityCurve must be a number between 0.9 and 1.0", 400)
+    }
+    // Clamp to 3 decimals to match the column definition
+    update.popularity_curve = Math.round(curve * 1000) / 1000
   }
 
   if (body.lastfmUsername !== undefined) {

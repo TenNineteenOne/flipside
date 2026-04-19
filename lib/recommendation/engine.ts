@@ -1,16 +1,21 @@
 import { musicProvider } from '@/lib/music-provider/provider'
 import type { Artist } from '@/lib/music-provider/types'
 import { createServiceClient } from '@/lib/supabase/server'
-import type { RecommendationInput, ScoredArtist } from './types'
+import type { BuildResult, RecommendationInput, ScoredArtist } from './types'
 import { ArtistNameCache } from './artist-name-cache'
 import { resolveArtistsByName } from './resolve-candidates'
 import coldStartData from '@/data/cold-start-seeds.json'
 
 const LASTFM_BASE = "https://ws.audioscrobbler.com/2.0"
 
-/** Return the popularity-tier multiplier for a Spotify popularity value (0–100). */
-export function tierMultiplier(popularity: number): number {
-  return Math.pow(0.95, popularity)
+/**
+ * Return the popularity-tier multiplier for a Spotify popularity value (0–100).
+ * `curveK` is the base of the exponential (users.popularity_curve). Smaller =
+ * steeper = stronger obscurity preference. Defaults to 0.95 for callers that
+ * haven't been plumbed through yet.
+ */
+export function tierMultiplier(popularity: number, curveK = 0.95): number {
+  return Math.pow(curveK, popularity)
 }
 
 /** Fetch artist names for a Last.fm genre tag. */
@@ -83,23 +88,42 @@ async function gatherSeedNames(userId: string, supabase: SupabaseClient): Promis
     for (const batch of genreResults) names.push(...batch)
   }
 
-  // Deduplicate
-  return [...new Set(names)]
+  console.log(
+    `[engine] gather userId=${userId} selected_genres=${JSON.stringify(genres)} ` +
+    `dbSeeds=${dbSeeds.length} thumbsUp=${thumbsUpRows.length} totalPooled=${names.length}`
+  )
+
+  // Deduplicate then shuffle (Fisher–Yates) so each generation surfaces a
+  // different mix of sources — prevents any single over-fertile seed source
+  // (a popular genre's Last.fm tag list) from monopolizing the 10-slice below.
+  const deduped = [...new Set(names)]
+  for (let i = deduped.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[deduped[i], deduped[j]] = [deduped[j], deduped[i]]
+  }
+  return deduped
 }
 
 // ── Core pipeline ───────────────────────────────────────────────────────────
+
+// Primary/secondary split: resolve this many names on the critical path
+// (blocks the response), resolve the rest in the background via runSecondary.
+const PRIMARY_RESOLVE_CAP = 20
+const SECONDARY_RESOLVE_CAP = 30
 
 async function runPipeline(
   seedNames: string[],
   accessToken: string,
   userId: string,
   playThreshold: number,
+  popularityCurve: number,
   supabase: SupabaseClient,
   source: string,
   genre?: string,
   undergroundMode?: boolean
-): Promise<number> {
+): Promise<BuildResult> {
   const capSeedNames = seedNames.slice(0, 10)
+  console.log(`[engine] seeds-post-shuffle source=${source} seeds=${JSON.stringify(capSeedNames)}`)
 
   // Step A: Fetch Last.fm similar artists for all seeds in parallel
   const lfmResults = await Promise.all(
@@ -119,13 +143,15 @@ async function runPipeline(
     }
   }
 
-  // Cap to 50 to prevent excessive sequential Spotify API calls on cold caches
-  const uniqueNames = [...nameToSeeds.keys()].slice(0, 50)
+  // Split: first chunk resolves synchronously (20), second chunk runs in after()
+  const allNames = [...nameToSeeds.keys()]
+  const uniqueNames = allNames.slice(0, PRIMARY_RESOLVE_CAP)
+  const secondaryNames = allNames.slice(PRIMARY_RESOLVE_CAP, PRIMARY_RESOLVE_CAP + SECONDARY_RESOLVE_CAP)
   const lfmTotal = lfmResults.reduce((sum, r) => sum + r.names.length, 0)
 
   if (uniqueNames.length === 0) {
     console.error(`[engine] FAIL no_unique seeds=${capSeedNames.length} lfm=${lfmTotal} source=${source}`)
-    return 0
+    return { count: 0, runSecondary: null }
   }
 
   // Step B: Resolve names → Spotify artists (cache-first)
@@ -189,8 +215,11 @@ async function runPipeline(
 
   // Step D: Score
   const scored: ScoredArtist[] = filteredCandidates.map(({ artist, seedArtists }) => {
-    const seedRelevance = Math.min(seedArtists.length / 3, 1)
-    const tier = tierMultiplier(artist.popularity)
+    // Diminishing-returns seedRelevance: sqrt curve instead of linear/3.
+    // Reduces compounding when one artist appears in many seeds' similar
+    // lists — a 3-match candidate no longer blows past a 1-match.
+    const seedRelevance = Math.min(Math.sqrt(seedArtists.length) / Math.sqrt(6), 1)
+    const tier = tierMultiplier(artist.popularity, popularityCurve)
     // Underground mode: apply additional discoveryScore penalty for extra obscurity
     const discoveryPenalty = undergroundMode
       ? Math.pow((100 - artist.popularity) / 100, 2)
@@ -211,7 +240,40 @@ async function runPipeline(
   })
 
   scored.sort((a, b) => b.score - a.score)
-  const top = scored.slice(0, 20)
+
+  // Soft genre novelty: greedy selection with a small penalty per existing
+  // rep of a genre. Not a hard cap — if the entire candidate pool is one
+  // genre, all slots still fill. Only kicks in when the pool is diverse.
+  const pool = scored.slice(0, 40)
+  const poolGenreDist = new Map<string, number>()
+  for (const s of pool) {
+    const g = s.artist.genres[0] ?? "unknown"
+    poolGenreDist.set(g, (poolGenreDist.get(g) ?? 0) + 1)
+  }
+  console.log(
+    `[engine] top40-genre-dist source=${source} ` +
+    JSON.stringify([...poolGenreDist.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10))
+  )
+
+  const top: ScoredArtist[] = []
+  const genreCounts = new Map<string, number>()
+  while (top.length < 20 && pool.length > 0) {
+    let bestIdx = 0
+    let bestAdjusted = -Infinity
+    for (let i = 0; i < pool.length; i++) {
+      const primary = pool[i].artist.genres[0] ?? "unknown"
+      const count = genreCounts.get(primary) ?? 0
+      const adjusted = pool[i].score - count * 0.02
+      if (adjusted > bestAdjusted) {
+        bestAdjusted = adjusted
+        bestIdx = i
+      }
+    }
+    const picked = pool.splice(bestIdx, 1)[0]
+    const primary = picked.artist.genres[0] ?? "unknown"
+    genreCounts.set(primary, (genreCounts.get(primary) ?? 0) + 1)
+    top.push(picked)
+  }
 
   if (top.length === 0) {
     console.error(
@@ -219,7 +281,7 @@ async function runPipeline(
       `uniq=${uniqueNames.length} ok=${resolved.searchOk} fail=${resolved.searchFail} ` +
       `filtListened=${filtListened} cands=${candidateMap.size} source=${source}`
     )
-    return 0
+    return { count: 0, runSecondary: null }
   }
 
   // Step E: Write to cache — only check cooldown for artists we're about to write
@@ -263,15 +325,15 @@ async function runPipeline(
       }
     })
 
-  if (rows.length === 0) return 0
-
-  const { error } = await supabase
-    .from('recommendation_cache')
-    .upsert(rows, { onConflict: 'user_id,spotify_artist_id' })
+  const { error } = rows.length === 0
+    ? { error: null }
+    : await supabase
+        .from('recommendation_cache')
+        .upsert(rows, { onConflict: 'user_id,spotify_artist_id' })
 
   if (error) {
     console.error(`[engine] upsert_error source=${source} err=${error.message}`)
-    return 0
+    return { count: 0, runSecondary: null }
   }
 
   console.log(
@@ -279,13 +341,88 @@ async function runPipeline(
     `ok=${resolved.searchOk} fail=${resolved.searchFail} filtListened=${filtListened} ` +
     `cands=${candidateMap.size} top=${top.length} written=${rows.length} source=${source}`
   )
-  return rows.length
+
+  const writtenIds = new Set(rows.map((r) => r.spotify_artist_id))
+
+  const runSecondary = secondaryNames.length === 0
+    ? null
+    : async (): Promise<number> => {
+        const secondaryResolved = await resolveArtistsByName(secondaryNames, {
+          cache: nameCache,
+          searchArtists: (name) => musicProvider.searchArtists(accessToken, name),
+        })
+
+        const secondaryCandidates: Array<{ artist: Artist; seedArtists: string[] }> = []
+        for (const [name, artist] of secondaryResolved.resolved) {
+          if (writtenIds.has(artist.id)) continue
+          if (thumbsDownIds.has(artist.id)) continue
+          if (overThresholdIds.has(artist.id)) continue
+          if (genre && !artist.genres.some((g) => g.toLowerCase().includes(genre.toLowerCase()))) continue
+          const seedArtists = nameToSeeds.get(name) ?? []
+          secondaryCandidates.push({ artist, seedArtists })
+        }
+
+        if (secondaryCandidates.length === 0) {
+          console.log(`[engine] secondary_empty source=${source}`)
+          return 0
+        }
+
+        const secondaryScored: ScoredArtist[] = secondaryCandidates.map(({ artist, seedArtists }) => {
+          const seedRelevance = Math.min(Math.sqrt(seedArtists.length) / Math.sqrt(6), 1)
+          const tier = tierMultiplier(artist.popularity, popularityCurve)
+          const discoveryPenalty = undergroundMode
+            ? Math.pow((100 - artist.popularity) / 100, 2)
+            : 1
+          const baseScore = tier * 0.80 + seedRelevance * 0.20
+          const score = baseScore * discoveryPenalty
+          return {
+            artist: { ...artist, topTracks: [] },
+            score,
+            why: {
+              sourceArtists: seedArtists.slice(0, 2),
+              genres: artist.genres.slice(0, 2),
+              friendBoost: [],
+            },
+            source: `${source}_secondary`,
+          }
+        })
+
+        secondaryScored.sort((a, b) => b.score - a.score)
+
+        const secondaryRows = secondaryScored.map((item) => ({
+          user_id: userId,
+          spotify_artist_id: item.artist.id,
+          artist_data: item.artist,
+          score: item.score,
+          why: item.why,
+          source: item.source,
+          expires_at: expiresAt.toISOString(),
+          seen_at: null,
+        }))
+
+        const { error: secErr } = await supabase
+          .from('recommendation_cache')
+          .upsert(secondaryRows, { onConflict: 'user_id,spotify_artist_id' })
+
+        if (secErr) {
+          console.error(`[engine] secondary_upsert_error source=${source} err=${secErr.message}`)
+          return 0
+        }
+
+        console.log(
+          `[engine] secondary-OK source=${source} names=${secondaryNames.length} ` +
+          `resolved=${secondaryResolved.resolved.size} written=${secondaryRows.length}`
+        )
+        return secondaryRows.length
+      }
+
+  return { count: rows.length, runSecondary }
 }
 
 // ── Main entry point ────────────────────────────────────────────────────────
 
-export async function buildRecommendations(input: RecommendationInput): Promise<number> {
-  const { userId, accessToken, playThreshold, genre, undergroundMode } = input
+export async function buildRecommendations(input: RecommendationInput): Promise<BuildResult> {
+  const { userId, accessToken, playThreshold, popularityCurve, genre, undergroundMode } = input
   const supabase = createServiceClient()
 
   // Gather seeds from all configured sources
@@ -293,7 +430,7 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
 
   if (seedNames.length > 0) {
     console.log(`[engine] start userId=${userId} seeds=${seedNames.length}${genre ? ` genre=${genre}` : ""}`)
-    return runPipeline(seedNames, accessToken, userId, playThreshold, supabase, 'multi_source', genre, undergroundMode)
+    return runPipeline(seedNames, accessToken, userId, playThreshold, popularityCurve, supabase, 'multi_source', genre, undergroundMode)
   }
 
   // Cold-start: no seeds configured — pick random artists from curated list
@@ -305,5 +442,5 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     ;[pool[i], pool[j]] = [pool[j], pool[i]]
   }
   const coldSeeds = pool.slice(0, 5).map((s) => s.name)
-  return runPipeline(coldSeeds, accessToken, userId, playThreshold, supabase, 'cold_start', genre, undergroundMode)
+  return runPipeline(coldSeeds, accessToken, userId, playThreshold, popularityCurve, supabase, 'cold_start', genre, undergroundMode)
 }

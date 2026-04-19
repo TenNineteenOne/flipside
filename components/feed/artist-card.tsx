@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react"
 import { motion } from "framer-motion"
-import { SkipForward, Bookmark, Check, Share2, ChevronDown, ChevronUp } from "lucide-react"
+import { SkipForward, Bookmark, Check, Share2 } from "lucide-react"
 import { toast } from "sonner"
 import { TrackStrip } from "@/components/feed/track-strip"
 import { useAudio } from "@/lib/audio-context"
@@ -66,7 +66,6 @@ export function ArtistCard({
 
   const [localTracks, setLocalTracks] = useState<Track[]>(artist_data.topTracks)
   const [isFetchingTracks, setIsFetchingTracks] = useState(false)
-  const [showWhy, setShowWhy] = useState(false)
 
   useEffect(() => {
     if (artist_data.topTracks.length === 0 && localTracks.length === 0 && !isFetchingTracks) {
@@ -106,8 +105,6 @@ export function ArtistCard({
       : why.genres.length > 0
         ? `Because you like ${why.genres.join(", ")}`
         : null
-
-  const hasWhyDetails = why.sourceArtists.length > 0 || why.genres.length > 0 || why.friendBoost.length > 0
 
   // ------------------------------------------------------------------
   // Collapsed (slim bar) state — no emoji, colour-coded labels
@@ -286,52 +283,7 @@ export function ArtistCard({
           </div>
         )}
 
-        {/* Why this artist? — expandable */}
-        {hasWhyDetails && (
-          <div style={{ marginTop: 18 }}>
-            <button
-              onClick={(e) => { e.stopPropagation(); setShowWhy(!showWhy) }}
-              className="btn btn-block"
-              style={{
-                background: "rgba(255,255,255,0.025)",
-                justifyContent: "space-between",
-                fontSize: 13,
-                color: "var(--text-secondary)",
-              }}
-            >
-              <span className="serif" style={{ fontStyle: "italic" }}>
-                {reasonText ?? "Why this artist?"}
-              </span>
-              {showWhy ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            </button>
-            {showWhy && (
-              <div
-                style={{
-                  marginTop: 6,
-                  padding: "12px 14px",
-                  background: "rgba(255,255,255,0.02)",
-                  borderRadius: 10,
-                  border: "1px solid var(--border)",
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: 6,
-                }}
-              >
-                {why.sourceArtists.map((a) => (
-                  <span key={a} className="chip selected">{a}</span>
-                ))}
-                {why.genres.map((g) => (
-                  <span key={g} className="chip" style={{ color: artistColor, borderColor: hexToRgba(artistColor, 0.3) }}>{g}</span>
-                ))}
-                {why.friendBoost.map((f) => (
-                  <span key={f} className="chip" style={{ color: "var(--accent)" }}>via {f}</span>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-        {/* Show reason text only when no expandable why panel */}
-        {!hasWhyDetails && reasonText && (
+        {reasonText && (
           <div
             className="serif"
             style={{
