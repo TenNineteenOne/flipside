@@ -83,8 +83,20 @@ async function gatherSeedNames(userId: string, supabase: SupabaseClient): Promis
     for (const batch of genreResults) names.push(...batch)
   }
 
-  // Deduplicate
-  return [...new Set(names)]
+  console.log(
+    `[engine] gather userId=${userId} selected_genres=${JSON.stringify(genres)} ` +
+    `dbSeeds=${dbSeeds.length} thumbsUp=${thumbsUpRows.length} totalPooled=${names.length}`
+  )
+
+  // Deduplicate then shuffle (Fisher–Yates) so each generation surfaces a
+  // different mix of sources — prevents any single over-fertile seed source
+  // (a popular genre's Last.fm tag list) from monopolizing the 10-slice below.
+  const deduped = [...new Set(names)]
+  for (let i = deduped.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[deduped[i], deduped[j]] = [deduped[j], deduped[i]]
+  }
+  return deduped
 }
 
 // ── Core pipeline ───────────────────────────────────────────────────────────
@@ -100,6 +112,7 @@ async function runPipeline(
   undergroundMode?: boolean
 ): Promise<number> {
   const capSeedNames = seedNames.slice(0, 10)
+  console.log(`[engine] seeds-post-shuffle source=${source} seeds=${JSON.stringify(capSeedNames)}`)
 
   // Step A: Fetch Last.fm similar artists for all seeds in parallel
   const lfmResults = await Promise.all(
@@ -189,7 +202,10 @@ async function runPipeline(
 
   // Step D: Score
   const scored: ScoredArtist[] = filteredCandidates.map(({ artist, seedArtists }) => {
-    const seedRelevance = Math.min(seedArtists.length / 3, 1)
+    // Diminishing-returns seedRelevance: sqrt curve instead of linear/3.
+    // Reduces compounding when one artist appears in many seeds' similar
+    // lists — a 3-match candidate no longer blows past a 1-match.
+    const seedRelevance = Math.min(Math.sqrt(seedArtists.length) / Math.sqrt(6), 1)
     const tier = tierMultiplier(artist.popularity)
     // Underground mode: apply additional discoveryScore penalty for extra obscurity
     const discoveryPenalty = undergroundMode
@@ -211,7 +227,40 @@ async function runPipeline(
   })
 
   scored.sort((a, b) => b.score - a.score)
-  const top = scored.slice(0, 20)
+
+  // Soft genre novelty: greedy selection with a small penalty per existing
+  // rep of a genre. Not a hard cap — if the entire candidate pool is one
+  // genre, all slots still fill. Only kicks in when the pool is diverse.
+  const pool = scored.slice(0, 40)
+  const poolGenreDist = new Map<string, number>()
+  for (const s of pool) {
+    const g = s.artist.genres[0] ?? "unknown"
+    poolGenreDist.set(g, (poolGenreDist.get(g) ?? 0) + 1)
+  }
+  console.log(
+    `[engine] top40-genre-dist source=${source} ` +
+    JSON.stringify([...poolGenreDist.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10))
+  )
+
+  const top: ScoredArtist[] = []
+  const genreCounts = new Map<string, number>()
+  while (top.length < 20 && pool.length > 0) {
+    let bestIdx = 0
+    let bestAdjusted = -Infinity
+    for (let i = 0; i < pool.length; i++) {
+      const primary = pool[i].artist.genres[0] ?? "unknown"
+      const count = genreCounts.get(primary) ?? 0
+      const adjusted = pool[i].score - count * 0.02
+      if (adjusted > bestAdjusted) {
+        bestAdjusted = adjusted
+        bestIdx = i
+      }
+    }
+    const picked = pool.splice(bestIdx, 1)[0]
+    const primary = picked.artist.genres[0] ?? "unknown"
+    genreCounts.set(primary, (genreCounts.get(primary) ?? 0) + 1)
+    top.push(picked)
+  }
 
   if (top.length === 0) {
     console.error(
