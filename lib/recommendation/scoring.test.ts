@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { tierMultiplier } from "./engine"
+import { UNDERGROUND_MAX_POPULARITY } from "./types"
 
 describe("tierMultiplier (exponential decay)", () => {
   it("returns 1.0 at popularity 0", () => {
@@ -39,5 +40,13 @@ describe("tierMultiplier (exponential decay)", () => {
     for (let p = 0; p <= 100; p++) {
       expect(tierMultiplier(p)).toBeGreaterThan(0)
     }
+  })
+})
+
+describe("UNDERGROUND_MAX_POPULARITY", () => {
+  it("is pinned to 50 so the engine filter and UI cliff stay aligned", () => {
+    // Changing this value requires updating the curve-preview cliff, excluded-zone
+    // shading, and user-facing docs that promise "never above X popularity".
+    expect(UNDERGROUND_MAX_POPULARITY).toBe(50)
   })
 })

@@ -16,6 +16,13 @@ export interface ScoredArtist {
   source: string
 }
 
+/**
+ * When `undergroundMode` is on, any candidate whose Spotify `popularity` is
+ * strictly greater than this value is hard-dropped from the pool. Shared with
+ * the settings curve preview so the UI cliff tracks the engine filter.
+ */
+export const UNDERGROUND_MAX_POPULARITY = 50
+
 export interface BuildResult {
   count: number
   /**

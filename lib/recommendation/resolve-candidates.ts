@@ -18,6 +18,8 @@ export interface ResolveDeps {
   totalBackoffBudgetMs?: number
   /** Max attempts per name (initial + retries). Default 3. */
   maxAttemptsPerName?: number
+  /** Number of parallel miss-resolver workers. Default 4. */
+  concurrency?: number
   sleep?: (ms: number) => Promise<void>
 }
 
@@ -89,67 +91,68 @@ export async function resolveArtistsByName(
   }
   result.cacheMisses = misses.length
 
+  // Shared budget across workers; reserved synchronously before each sleep
+  // so concurrent workers see the updated value and don't double-spend.
   let spentBackoffMs = 0
-  let firstSuccessfulSearch = true
 
-  for (const name of misses) {
-    // Polite delay between successful live searches (skip before the first)
-    if (!firstSuccessfulSearch) {
-      await sleep(delayMs)
-    }
+  const queue = [...misses]
+  const concurrency = Math.max(1, Math.min(deps.concurrency ?? 4, queue.length))
 
-    let attempt = 0
-    let resolvedArtist: Artist | null = null
-    let exhaustedForThisName = false
+  async function runWorker() {
+    let firstSuccessfulSearch = true
 
-    while (attempt < maxAttempts) {
-      attempt++
-      const res = await deps.searchArtists(name)
+    while (queue.length > 0) {
+      const name = queue.shift()
+      if (name === undefined) return
 
-      if (isRateLimited(res)) {
-        result.rateLimited = true
-        if (attempt >= maxAttempts) {
-          exhaustedForThisName = true
-          break
-        }
-        result.searchRetries++
-        const budgetLeft = totalBackoffBudgetMs - spentBackoffMs
-        if (budgetLeft <= 0) {
-          result.backoffBudgetExhausted = true
-          // No more waiting — try next name immediately
-          exhaustedForThisName = true
-          break
-        }
-        const requested = Math.max(1, res.retryAfterSec) * 1000
-        const waitMs = Math.min(requested, maxRetryBackoffMs, budgetLeft)
-        await sleep(waitMs)
-        spentBackoffMs += waitMs
-        continue
+      // Polite delay between this worker's successful live searches.
+      if (!firstSuccessfulSearch) {
+        await sleep(delayMs)
       }
 
-      // Not rate limited — it's an array
-      if (res.length === 0) {
-        // No match for this name
+      let attempt = 0
+      let resolvedArtist: Artist | null = null
+
+      while (attempt < maxAttempts) {
+        attempt++
+        const res = await deps.searchArtists(name)
+
+        if (isRateLimited(res)) {
+          result.rateLimited = true
+          if (attempt >= maxAttempts) break
+          result.searchRetries++
+          const budgetLeft = totalBackoffBudgetMs - spentBackoffMs
+          if (budgetLeft <= 0) {
+            result.backoffBudgetExhausted = true
+            break
+          }
+          const requested = Math.max(1, res.retryAfterSec) * 1000
+          const waitMs = Math.min(requested, maxRetryBackoffMs, budgetLeft)
+          // Reserve before sleeping so concurrent workers see the updated budget
+          spentBackoffMs += waitMs
+          await sleep(waitMs)
+          continue
+        }
+
+        if (res.length === 0) break
+
+        const lower = name.toLowerCase()
+        resolvedArtist = res.find((a) => a.name.toLowerCase() === lower) ?? res[0]
         break
       }
 
-      const lower = name.toLowerCase()
-      resolvedArtist = res.find((a) => a.name.toLowerCase() === lower) ?? res[0]
-      break
-    }
-
-    if (resolvedArtist) {
-      result.searchOk++
-      result.resolved.set(name, resolvedArtist)
-      await deps.cache.write(name, resolvedArtist)
-      firstSuccessfulSearch = false
-    } else {
-      result.searchFail++
-      if (exhaustedForThisName) {
-        // Counted as fail above; keep looping to try next name
+      if (resolvedArtist) {
+        result.searchOk++
+        result.resolved.set(name, resolvedArtist)
+        await deps.cache.write(name, resolvedArtist)
+        firstSuccessfulSearch = false
+      } else {
+        result.searchFail++
       }
     }
   }
+
+  await Promise.all(Array.from({ length: concurrency }, runWorker))
 
   return result
 }

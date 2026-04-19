@@ -175,4 +175,36 @@ describe("resolveArtistsByName", () => {
     expect(r.cacheHits).toBe(1)
     expect(r.rateLimited).toBe(true)
   })
+
+  it("runs miss resolution concurrently up to the configured pool size", async () => {
+    let active = 0
+    let maxActive = 0
+    const search = vi.fn(async (name: string): Promise<Artist[] | RateLimited> => {
+      active++
+      if (active > maxActive) maxActive = active
+      await new Promise((r) => setTimeout(r, 5))
+      active--
+      return [artist(`id-${name}`, name)]
+    })
+    const names = ["a", "b", "c", "d", "e", "f", "g", "h"]
+    const r = await resolveArtistsByName(names, { ...makeDeps({ search }), concurrency: 4 })
+    expect(r.searchOk).toBe(8)
+    expect(maxActive).toBeGreaterThan(1)
+    expect(maxActive).toBeLessThanOrEqual(4)
+  })
+
+  it("serializes to concurrency=1 when configured", async () => {
+    let active = 0
+    let maxActive = 0
+    const search = vi.fn(async (name: string): Promise<Artist[] | RateLimited> => {
+      active++
+      if (active > maxActive) maxActive = active
+      await new Promise((r) => setTimeout(r, 1))
+      active--
+      return [artist(`id-${name}`, name)]
+    })
+    const r = await resolveArtistsByName(["a", "b", "c"], { ...makeDeps({ search }), concurrency: 1 })
+    expect(r.searchOk).toBe(3)
+    expect(maxActive).toBe(1)
+  })
 })
