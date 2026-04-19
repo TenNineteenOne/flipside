@@ -1,4 +1,4 @@
-import type { MusicProvider, RateLimited } from "./index"
+import type { MusicProvider, RateLimited, SimilarArtistRef } from "./index"
 import type { Artist, PlayHistory, Track } from "./types"
 
 const SPOTIFY_BASE = "https://api.spotify.com/v1"
@@ -50,7 +50,7 @@ interface SpotifyRecentlyPlayedResponse {
 
 interface LastFmSimilarArtistsResponse {
   similarartists?: {
-    artist: Array<{ name: string }>
+    artist: Array<{ name: string; match?: string | number }>
   }
   error?: number
   message?: string
@@ -175,7 +175,7 @@ export class SpotifyProvider implements MusicProvider {
   // -------------------------------------------------------------------------
   // getSimilarArtistNames — Last.fm only, no Spotify call, no access token
   // -------------------------------------------------------------------------
-  async getSimilarArtistNames(artistName: string): Promise<string[]> {
+  async getSimilarArtistNames(artistName: string): Promise<SimilarArtistRef[]> {
     const apiKey = process.env.LASTFM_API_KEY
     if (!apiKey) {
       if (!SpotifyProvider._lastFmKeyMissing) {
@@ -199,11 +199,13 @@ export class SpotifyProvider implements MusicProvider {
       const data = (await res.json()) as LastFmSimilarArtistsResponse
       if (data.error || !data.similarartists?.artist?.length) return []
 
-      const all = data.similarartists.artist.map((a) => a.name)
-      // Skip top-3 obvious matches, take next 15 for a wider candidate pool.
-      // For niche artists with few results, return whatever we have.
-      if (all.length <= 3) return all
-      return all.slice(3, 18)
+      return data.similarartists.artist
+        .map((a) => {
+          const rawMatch = typeof a.match === "string" ? parseFloat(a.match) : a.match
+          const match = typeof rawMatch === "number" && Number.isFinite(rawMatch) ? rawMatch : 0
+          return { name: a.name, match }
+        })
+        .filter((a) => a.name)
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
         console.error(`[lfm] getSimilarArtistNames timed out after 8s artist="${artistName}"`)
@@ -216,8 +218,9 @@ export class SpotifyProvider implements MusicProvider {
 
   /** @deprecated Use getSimilarArtistNames + engine-level Spotify resolution instead */
   private async _getSimilarViaLastFm(accessToken: string, artistName: string): Promise<Artist[]> {
-    const names = await this.getSimilarArtistNames(artistName)
-    if (!names.length) return []
+    const refs = await this.getSimilarArtistNames(artistName)
+    if (!refs.length) return []
+    const names = refs.map((r) => r.name)
     const resolved: Artist[] = []
     for (let i = 0; i < names.length; i += 5) {
       const batch = names.slice(i, i + 5)

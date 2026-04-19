@@ -7,6 +7,7 @@ export interface RecommendationInput {
   popularityCurve: number // from users.popularity_curve — base `k` of k^popularity scoring
   genre?: string        // optional genre filter for targeted generation
   undergroundMode?: boolean // when true, applies additional discoveryScore penalty
+  deepDiscovery?: boolean   // when true, take a 2nd-hop walk from each seed's lowest-match similars
 }
 
 export interface ScoredArtist {
@@ -15,6 +16,13 @@ export interface ScoredArtist {
   why: { sourceArtists: string[]; genres: string[]; friendBoost: string[] }
   source: string
 }
+
+/**
+ * When `undergroundMode` is on, any candidate whose Spotify `popularity` is
+ * strictly greater than this value is hard-dropped from the pool. Shared with
+ * the settings curve preview so the UI cliff tracks the engine filter.
+ */
+export const UNDERGROUND_MAX_POPULARITY = 50
 
 export interface BuildResult {
   count: number

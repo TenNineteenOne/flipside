@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo } from "react"
+import { UNDERGROUND_MAX_POPULARITY } from "@/lib/recommendation/types"
 
 export interface CurvePreviewProps {
   /** Base `k` of the scoring curve k^popularity. Range 0.90–1.00. */
@@ -28,9 +29,14 @@ export function CurvePreview({ popularityCurve, undergroundMode, exampleArtists 
       return `${svgX(p)},${svgY(y)}`
     })
 
+    // Underground curve applies the ((100-pop)/100)^2 extra-obscurity penalty,
+    // then hard-cliffs to 0 at UNDERGROUND_MAX_POPULARITY to mirror the engine
+    // filter that drops any candidate above that threshold.
     const undergroundPoints = Array.from({ length: 51 }, (_, i) => {
       const p = i * 2
-      const y = Math.pow(popularityCurve, p) * Math.pow((100 - p) / 100, 2)
+      const y = p > UNDERGROUND_MAX_POPULARITY
+        ? 0
+        : Math.pow(popularityCurve, p) * Math.pow((100 - p) / 100, 2)
       return `${svgX(p)},${svgY(y)}`
     })
 
@@ -58,6 +64,19 @@ export function CurvePreview({ popularityCurve, undergroundMode, exampleArtists 
           </defs>
 
           <line x1="20" y1="170" x2="380" y2="170" stroke="rgba(255,255,255,0.12)" strokeWidth="1" />
+
+          {/* Underground-mode excluded zone: everything above pop=50 is hard-dropped */}
+          <rect
+            x={svgX(UNDERGROUND_MAX_POPULARITY)}
+            y={svgY(1)}
+            width={svgX(100) - svgX(UNDERGROUND_MAX_POPULARITY)}
+            height={svgY(0) - svgY(1)}
+            fill="#a78bfa"
+            style={{
+              opacity: undergroundMode ? 0.15 : 0,
+              transition: "opacity 0.4s ease",
+            }}
+          />
 
           {[0, 20, 40, 60, 80, 100].map((tick) => (
             <g key={tick}>
@@ -113,28 +132,34 @@ export function CurvePreview({ popularityCurve, undergroundMode, exampleArtists 
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
-        {exampleArtists.map(({ popularity, artist }) => (
-          <div key={popularity} style={{ display: "flex", flexDirection: "column", gap: 2, alignItems: "center", minWidth: 0 }}>
-            <span className="mono" style={{ fontSize: 10, color: "var(--text-muted)" }}>
-              pop. {popularity}
-            </span>
-            <span
-              style={{
-                fontSize: 12,
-                color: "var(--text-primary)",
-                textAlign: "center",
-                lineHeight: 1.2,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                maxWidth: "100%",
-              }}
-              title={artist?.name ?? undefined}
-            >
-              {artist?.name ?? "—"}
-            </span>
-          </div>
-        ))}
+        {exampleArtists.map(({ popularity, artist }) => {
+          const excluded = undergroundMode && popularity > UNDERGROUND_MAX_POPULARITY
+          return (
+            <div key={popularity} style={{ display: "flex", flexDirection: "column", gap: 2, alignItems: "center", minWidth: 0 }}>
+              <span className="mono" style={{ fontSize: 10, color: "var(--text-muted)", opacity: excluded ? 0.4 : 1, transition: "opacity 0.4s ease" }}>
+                pop. {popularity}
+              </span>
+              <span
+                style={{
+                  fontSize: 12,
+                  color: "var(--text-primary)",
+                  textAlign: "center",
+                  lineHeight: 1.2,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  maxWidth: "100%",
+                  opacity: excluded ? 0.4 : 1,
+                  textDecoration: excluded ? "line-through" : "none",
+                  transition: "opacity 0.4s ease",
+                }}
+                title={artist?.name ?? undefined}
+              >
+                {artist?.name ?? "—"}
+              </span>
+            </div>
+          )
+        })}
       </div>
     </div>
   )

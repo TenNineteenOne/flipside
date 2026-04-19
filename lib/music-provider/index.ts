@@ -13,6 +13,13 @@ export function isRateLimited(x: unknown): x is RateLimited {
   return typeof x === "object" && x !== null && (x as RateLimited).rateLimited === true
 }
 
+/** A similar-artist reference as returned by Last.fm's artist.getSimilar endpoint. */
+export interface SimilarArtistRef {
+  name: string
+  /** Similarity score in [0, 1]. Parsed from Last.fm's `match` string. 0 when missing/unparseable. */
+  match: number
+}
+
 export interface MusicProvider {
   /** Get user's top artists for a given time range */
   getTopArtists(accessToken: string, term: 'short_term' | 'medium_term' | 'long_term'): Promise<Artist[]>
@@ -29,8 +36,12 @@ export interface MusicProvider {
   /** Fetch full artist objects by IDs (batch, up to 50 per call). Always includes genres. */
   getArtists(accessToken: string, ids: string[]): Promise<Artist[]>
 
-  /** Get similar artist names from Last.fm (no Spotify call, no access token needed) */
-  getSimilarArtistNames(artistName: string): Promise<string[]>
+  /**
+   * Get similar artist refs from Last.fm (no Spotify call, no access token needed).
+   * Preserves the ordered similarity ranking and the `match` score so callers
+   * can pick tail (low match) items for niche discovery.
+   */
+  getSimilarArtistNames(artistName: string): Promise<SimilarArtistRef[]>
 
   /**
    * Search for artists by name. Returns a `RateLimited` sentinel with the

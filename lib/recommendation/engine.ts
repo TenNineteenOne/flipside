@@ -1,7 +1,8 @@
 import { musicProvider } from '@/lib/music-provider/provider'
 import type { Artist } from '@/lib/music-provider/types'
+import type { SimilarArtistRef } from '@/lib/music-provider'
 import { createServiceClient } from '@/lib/supabase/server'
-import type { BuildResult, RecommendationInput, ScoredArtist } from './types'
+import { UNDERGROUND_MAX_POPULARITY, type BuildResult, type RecommendationInput, type ScoredArtist } from './types'
 import { ArtistNameCache } from './artist-name-cache'
 import { resolveArtistsByName } from './resolve-candidates'
 import { normalizeArtistName } from '@/lib/listened-artists'
@@ -109,8 +110,128 @@ async function gatherSeedNames(userId: string, supabase: SupabaseClient): Promis
 
 // Primary/secondary split: resolve this many names on the critical path
 // (blocks the response), resolve the rest in the background via runSecondary.
-const PRIMARY_RESOLVE_CAP = 20
+const PRIMARY_RESOLVE_CAP = 60
 const SECONDARY_RESOLVE_CAP = 30
+
+/**
+ * Round-robin interleave across seed similar-lists so each seed contributes
+ * equally to the primary candidate pool. Without this, map insertion order
+ * equals seed order and a single mainstream-biased seed can flood the first
+ * PRIMARY_RESOLVE_CAP slots with its whole similars list.
+ *
+ * With `tailFirst`, each seed's list is consumed from the END (lowest-match
+ * items first). Last.fm orders similars by similarity, which correlates with
+ * popularity/mainstream-ness, so tail items are less-obvious picks.
+ */
+export function buildRoundRobinNames(
+  lfmResults: { seed: string; names: string[] }[],
+  knownNames: Set<string>,
+  opts: { tailFirst?: boolean } = {}
+): string[] {
+  const tailFirst = opts.tailFirst ?? false
+  const out: string[] = []
+  const seen = new Set<string>()
+  const maxLen = Math.max(0, ...lfmResults.map((r) => r.names.length))
+  for (let i = 0; i < maxLen; i++) {
+    for (const { names } of lfmResults) {
+      const idx = tailFirst ? names.length - 1 - i : i
+      if (idx < 0 || idx >= names.length) continue
+      const n = names[idx]
+      if (!n) continue
+      const key = n.toLowerCase()
+      if (seen.has(key) || knownNames.has(key)) continue
+      seen.add(key)
+      out.push(n)
+    }
+  }
+  return out
+}
+
+/**
+ * Deep-discovery 2nd-hop walk. For each seed, takes its N lowest-match first-hop
+ * similars (furthest from seed's typical neighborhood, likeliest to be niche) and
+ * calls getSimilar on each. Merges 2nd-hop refs back under the parent seed so
+ * round-robin and per-source-seed penalty semantics are preserved.
+ *
+ * Exported for tests. `fetchSimilar` is injected so tests can run without
+ * network access.
+ */
+export async function runDeepHop(
+  firstHop: { seed: string; items: SimilarArtistRef[] }[],
+  fetchSimilar: (name: string) => Promise<SimilarArtistRef[]>,
+  hopsPerSeed = 3
+): Promise<{ seed: string; items: SimilarArtistRef[] }[]> {
+  const bySeed = new Map<string, SimilarArtistRef[]>()
+  for (const { seed, items } of firstHop) bySeed.set(seed, [...items])
+
+  const tasks = firstHop.flatMap(({ seed, items }) =>
+    [...items]
+      .sort((a, b) => a.match - b.match)
+      .slice(0, hopsPerSeed)
+      .map(async (niche) => ({
+        parentSeed: seed,
+        hopItems: await fetchSimilar(niche.name),
+      }))
+  )
+  const hops = await Promise.all(tasks)
+
+  for (const { parentSeed, hopItems } of hops) {
+    const existing = bySeed.get(parentSeed)
+    if (!existing) continue
+    const seen = new Set(existing.map((i) => i.name.toLowerCase()))
+    for (const hi of hopItems) {
+      const key = hi.name.toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      existing.push(hi)
+    }
+  }
+
+  return [...bySeed.entries()].map(([seed, items]) => ({ seed, items }))
+}
+
+/**
+ * Greedy pick with soft per-genre AND per-source-seed diversity penalties.
+ * The per-seed penalty prevents one seed whose similar list is all mainstream
+ * from dominating the final feed even when its artists sit under several
+ * distinct genre labels.
+ */
+export function greedyPickTop(
+  pool: ScoredArtist[],
+  maxSize = 20,
+  genreWeight = 0.02,
+  sourceWeight = 0.04
+): ScoredArtist[] {
+  const working = [...pool]
+  const top: ScoredArtist[] = []
+  const genreCounts = new Map<string, number>()
+  const sourceSeedCounts = new Map<string, number>()
+  while (top.length < maxSize && working.length > 0) {
+    let bestIdx = 0
+    let bestAdjusted = -Infinity
+    for (let i = 0; i < working.length; i++) {
+      const primary = working[i].artist.genres[0] ?? 'unknown'
+      const gCount = genreCounts.get(primary) ?? 0
+      const srcPenalty = working[i].why.sourceArtists.reduce(
+        (acc, s) => acc + (sourceSeedCounts.get(s) ?? 0) * sourceWeight,
+        0
+      )
+      const adjusted = working[i].score - gCount * genreWeight - srcPenalty
+      if (adjusted > bestAdjusted) {
+        bestAdjusted = adjusted
+        bestIdx = i
+      }
+    }
+    const picked = working.splice(bestIdx, 1)[0]
+    const primary = picked.artist.genres[0] ?? 'unknown'
+    genreCounts.set(primary, (genreCounts.get(primary) ?? 0) + 1)
+    for (const s of picked.why.sourceArtists) {
+      sourceSeedCounts.set(s, (sourceSeedCounts.get(s) ?? 0) + 1)
+    }
+    top.push(picked)
+  }
+  return top
+}
 
 async function runPipeline(
   seedNames: string[],
@@ -121,18 +242,30 @@ async function runPipeline(
   supabase: SupabaseClient,
   source: string,
   genre?: string,
-  undergroundMode?: boolean
+  undergroundMode?: boolean,
+  deepDiscovery?: boolean
 ): Promise<BuildResult> {
   const capSeedNames = seedNames.slice(0, 10)
-  console.log(`[engine] seeds-post-shuffle source=${source} seeds=${JSON.stringify(capSeedNames)}`)
+  console.log(`[engine] seeds-post-shuffle source=${source} seeds=${JSON.stringify(capSeedNames)} deepDiscovery=${!!deepDiscovery}`)
 
   // Step A: Fetch Last.fm similar artists for all seeds in parallel
-  const lfmResults = await Promise.all(
+  const firstHop = await Promise.all(
     capSeedNames.map(async (name) => ({
       seed: name,
-      names: await musicProvider.getSimilarArtistNames(name),
+      items: await musicProvider.getSimilarArtistNames(name),
     }))
   )
+
+  // Step A2: Deep-discovery 2nd hop — fire ≤3 extra getSimilar calls per seed
+  // from the lowest-match first-hop items. Merged back under the parent seed.
+  const lfmRefResults = deepDiscovery
+    ? await runDeepHop(firstHop, (n) => musicProvider.getSimilarArtistNames(n))
+    : firstHop
+
+  const lfmResults = lfmRefResults.map(({ seed, items }) => ({
+    seed,
+    names: items.map((i) => i.name),
+  }))
 
   const knownNames = new Set(capSeedNames.map((n) => n.toLowerCase()))
   const nameToSeeds = new Map<string, string[]>()
@@ -144,8 +277,9 @@ async function runPipeline(
     }
   }
 
-  // Split: first chunk resolves synchronously (20), second chunk runs in after()
-  const allNames = [...nameToSeeds.keys()]
+  // Tail-first round-robin: consume each seed's low-match items before its
+  // high-match ones, so the primary pool skews toward less-obvious similars.
+  const allNames = buildRoundRobinNames(lfmResults, knownNames, { tailFirst: true })
   const uniqueNames = allNames.slice(0, PRIMARY_RESOLVE_CAP)
   const secondaryNames = allNames.slice(PRIMARY_RESOLVE_CAP, PRIMARY_RESOLVE_CAP + SECONDARY_RESOLVE_CAP)
   const lfmTotal = lfmResults.reduce((sum, r) => sum + r.names.length, 0)
@@ -215,6 +349,7 @@ async function runPipeline(
       if (thumbsDownIds.has(id)) return false
       if (overThresholdIds.has(id)) { filtListened++; return false }
       if (overThresholdNames.has(normalizeArtistName(val.artist.name))) { filtListened++; return false }
+      if (undergroundMode && val.artist.popularity > UNDERGROUND_MAX_POPULARITY) return false
       // Genre filter: only include artists matching the requested genre
       if (genre && !val.artist.genres.some((g) => g.toLowerCase().includes(genre.toLowerCase()))) return false
       return true
@@ -263,25 +398,7 @@ async function runPipeline(
     JSON.stringify([...poolGenreDist.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10))
   )
 
-  const top: ScoredArtist[] = []
-  const genreCounts = new Map<string, number>()
-  while (top.length < 20 && pool.length > 0) {
-    let bestIdx = 0
-    let bestAdjusted = -Infinity
-    for (let i = 0; i < pool.length; i++) {
-      const primary = pool[i].artist.genres[0] ?? "unknown"
-      const count = genreCounts.get(primary) ?? 0
-      const adjusted = pool[i].score - count * 0.02
-      if (adjusted > bestAdjusted) {
-        bestAdjusted = adjusted
-        bestIdx = i
-      }
-    }
-    const picked = pool.splice(bestIdx, 1)[0]
-    const primary = picked.artist.genres[0] ?? "unknown"
-    genreCounts.set(primary, (genreCounts.get(primary) ?? 0) + 1)
-    top.push(picked)
-  }
+  const top = greedyPickTop(pool, 20)
 
   if (top.length === 0) {
     console.error(
@@ -366,6 +483,7 @@ async function runPipeline(
           if (thumbsDownIds.has(artist.id)) continue
           if (overThresholdIds.has(artist.id)) continue
           if (overThresholdNames.has(normalizeArtistName(artist.name))) continue
+          if (undergroundMode && artist.popularity > UNDERGROUND_MAX_POPULARITY) continue
           if (genre && !artist.genres.some((g) => g.toLowerCase().includes(genre.toLowerCase()))) continue
           const seedArtists = nameToSeeds.get(name) ?? []
           secondaryCandidates.push({ artist, seedArtists })
@@ -431,7 +549,7 @@ async function runPipeline(
 // ── Main entry point ────────────────────────────────────────────────────────
 
 export async function buildRecommendations(input: RecommendationInput): Promise<BuildResult> {
-  const { userId, accessToken, playThreshold, popularityCurve, genre, undergroundMode } = input
+  const { userId, accessToken, playThreshold, popularityCurve, genre, undergroundMode, deepDiscovery } = input
   const supabase = createServiceClient()
 
   // Gather seeds from all configured sources
@@ -439,7 +557,7 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
 
   if (seedNames.length > 0) {
     console.log(`[engine] start userId=${userId} seeds=${seedNames.length}${genre ? ` genre=${genre}` : ""}`)
-    return runPipeline(seedNames, accessToken, userId, playThreshold, popularityCurve, supabase, 'multi_source', genre, undergroundMode)
+    return runPipeline(seedNames, accessToken, userId, playThreshold, popularityCurve, supabase, 'multi_source', genre, undergroundMode, deepDiscovery)
   }
 
   // Cold-start: no seeds configured — pick random artists from curated list
@@ -451,5 +569,5 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     ;[pool[i], pool[j]] = [pool[j], pool[i]]
   }
   const coldSeeds = pool.slice(0, 5).map((s) => s.name)
-  return runPipeline(coldSeeds, accessToken, userId, playThreshold, popularityCurve, supabase, 'cold_start', genre, undergroundMode)
+  return runPipeline(coldSeeds, accessToken, userId, playThreshold, popularityCurve, supabase, 'cold_start', genre, undergroundMode, deepDiscovery)
 }

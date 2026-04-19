@@ -15,6 +15,7 @@ export async function PATCH(request: Request) {
     statsfmUsername?: string
     selectedGenres?: string[]
     undergroundMode?: boolean
+    deepDiscovery?: boolean
   }
   try {
     body = await request.json()
@@ -67,6 +68,11 @@ export async function PATCH(request: Request) {
   if (body.undergroundMode !== undefined) {
     update.underground_mode = !!body.undergroundMode
   }
+
+  if (body.deepDiscovery !== undefined) {
+    update.deep_discovery = !!body.deepDiscovery
+  }
+
 
   if (Object.keys(update).length === 0) {
     return apiError("No valid fields to update", 400)

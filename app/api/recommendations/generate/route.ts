@@ -174,7 +174,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   // Read user row including play_threshold
   const { data: user, error: userError } = await supabase
     .from("users")
-    .select("id, play_threshold, popularity_curve, underground_mode, last_generated_at")
+    .select("id, play_threshold, popularity_curve, underground_mode, deep_discovery, last_generated_at")
     .eq("id", userId)
     .maybeSingle()
 
@@ -246,6 +246,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       popularityCurve,
       genre,
       undergroundMode: user.underground_mode ?? false,
+      deepDiscovery: user.deep_discovery ?? false,
     })
 
     // Decorations (colour extraction + track pre-warming) and secondary
