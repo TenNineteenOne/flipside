@@ -24,6 +24,9 @@ export async function GET(): Promise<Response> {
   ])
 
   if (rowsResult.error) return dbError(rowsResult.error, "recommendations/fetch")
+  if (userResult.error) {
+    console.error("[recommendations/fetch] user lookup:", userResult.error.message)
+  }
 
   // Re-filter cached rows by the user's *current* underground_mode so toggling
   // the setting takes effect without requiring an explicit regenerate.
