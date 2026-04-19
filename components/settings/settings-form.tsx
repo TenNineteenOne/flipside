@@ -6,17 +6,20 @@ import { signOut } from "next-auth/react"
 import { toast } from "sonner"
 import { IdenticonAvatar } from "@/components/ui/identicon-avatar"
 import { LibraryEditor } from "@/components/settings/library-editor"
+import { CurvePreview } from "@/components/settings/curve-preview"
 import type { SpotifyArtist } from "@/components/onboarding/artist-search"
 
 interface SettingsFormProps {
   userSeed: string
   initialPlayThreshold: number
+  initialPopularityCurve: number
   initialLastfmUsername: string | null
   initialStatsfmUsername: string | null
   initialLastfmArtistCount: number
   initialUndergroundMode: boolean
   initialSelectedGenres: string[]
   initialSeedArtists: SpotifyArtist[]
+  exampleArtists: { popularity: number; artist: { name: string; popularity: number } | null }[]
 }
 
 async function patchSettings(payload: Record<string, unknown>) {
@@ -34,15 +37,18 @@ async function patchSettings(payload: Record<string, unknown>) {
 export function SettingsForm({
   userSeed,
   initialPlayThreshold,
+  initialPopularityCurve,
   initialLastfmUsername,
   initialStatsfmUsername,
   initialLastfmArtistCount,
   initialUndergroundMode,
   initialSelectedGenres,
   initialSeedArtists,
+  exampleArtists,
 }: SettingsFormProps) {
   const router = useRouter()
   const [threshold, setThreshold] = useState(initialPlayThreshold)
+  const [popularityCurve, setPopularityCurve] = useState(initialPopularityCurve)
   const [lastfmUsername, setLastfmUsername] = useState(initialLastfmUsername ?? "")
   const [statsfmUsername, setStatsfmUsername] = useState(initialStatsfmUsername ?? "")
   const [undergroundMode, setUndergroundMode] = useState(initialUndergroundMode)
@@ -54,16 +60,16 @@ export function SettingsForm({
   const isConnected = lastfmUsername.trim().length > 0
   const isStatsfmConnected = statsfmUsername.trim().length > 0
 
-  const sliderPct = Math.round((threshold / 50) * 100)
-  const sliderBg = `linear-gradient(to right, var(--accent) ${sliderPct}%, rgba(255,255,255,0.10) ${sliderPct}%)`
+  const familiarPct = Math.round((threshold / 50) * 100)
+  const familiarBg = `linear-gradient(to right, var(--accent) ${familiarPct}%, rgba(255,255,255,0.10) ${familiarPct}%)`
 
-  const obscurityLabel =
-    threshold < 5  ? "Deep underground"
-    : threshold < 15 ? "Adventurous"
-    : threshold < 30 ? "Curious"
-    : "Familiar"
+  const familiarityLabel =
+    threshold < 5  ? "Nothing familiar"
+    : threshold < 15 ? "Mostly new"
+    : threshold < 30 ? "Some favorites"
+    : "All familiar"
 
-  const obscurityHelp =
+  const familiarityHelp =
     threshold < 5
       ? "Almost nothing you\u2019ve heard before will appear."
       : threshold < 15
@@ -72,11 +78,42 @@ export function SettingsForm({
       ? "A balanced mix \u2014 some discovery, some comfort."
       : "Includes artists you already play often."
 
+  // Popularity curve slider: store as 0.90–1.00 (k value).
+  // Smaller k = steeper curve = stronger niche preference.
+  const curvePct = Math.round(((popularityCurve - 0.9) / 0.1) * 100)
+  const curveBg = `linear-gradient(to right, var(--accent) ${curvePct}%, rgba(255,255,255,0.10) ${curvePct}%)`
+
+  const curveLabel =
+    popularityCurve < 0.92 ? "Niche only"
+    : popularityCurve < 0.95 ? "Mostly niche"
+    : popularityCurve < 0.97 ? "Balanced"
+    : popularityCurve < 0.99 ? "Mostly popular"
+    : "Mainstream"
+
+  const curveHelp =
+    popularityCurve < 0.92
+      ? "The steepest curve — popularity is punished hard. Expect deep cuts only."
+      : popularityCurve < 0.95
+      ? "Obscurity is strongly preferred, with room for a few less-obvious names."
+      : popularityCurve < 0.97
+      ? "Default mix \u2014 obscurity wins, but not by a landslide."
+      : popularityCurve < 0.99
+      ? "Popularity barely hurts. Expect familiar names alongside some discoveries."
+      : "The curve flattens — popularity is nearly ignored."
+
   async function handleThresholdRelease() {
     try {
       await patchSettings({ playThreshold: threshold })
     } catch {
-      toast.error("Failed to save play threshold")
+      toast.error("Failed to save familiarity")
+    }
+  }
+
+  async function handleCurveRelease() {
+    try {
+      await patchSettings({ popularityCurve })
+    } catch {
+      toast.error("Failed to save popularity preference")
     }
   }
 
@@ -173,7 +210,7 @@ export function SettingsForm({
 
   return (
     <>
-      {/* Slider CSS */}
+      {/* Slider CSS — shared by familiarity and popularity dials */}
       <style>{`
         .obs-slider {
           -webkit-appearance: none;
@@ -223,18 +260,17 @@ export function SettingsForm({
                   your account
                 </div>
                 <div
-                  className="mono"
-                  style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}
+                  style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 3, lineHeight: 1.45 }}
                 >
-                  zero PII stored
+                  your username is your only login — we store a hash, not the name itself
                 </div>
               </div>
             </div>
           </div>
 
-          {/* ── How underground? ─────────────────────────────────────── */}
+          {/* ── How familiar? ─────────────────────────────────────── */}
           <div>
-            <div className="eyebrow" style={{ marginBottom: 10 }}>How underground?</div>
+            <div className="eyebrow" style={{ marginBottom: 10 }}>How familiar?</div>
             <div className="fs-card">
               <div
                 style={{
@@ -245,7 +281,7 @@ export function SettingsForm({
                 }}
               >
                 <div className="serif" style={{ fontSize: 22, color: "var(--accent)" }}>
-                  {obscurityLabel}
+                  {familiarityLabel}
                 </div>
                 <div className="mono" style={{ fontSize: 12, color: "var(--text-muted)" }}>
                   hide if played &gt; {threshold}&times;
@@ -261,7 +297,7 @@ export function SettingsForm({
                 onChange={(e) => setThreshold(Number(e.target.value))}
                 onPointerUp={handleThresholdRelease}
                 onKeyUp={handleThresholdRelease}
-                style={{ background: sliderBg }}
+                style={{ background: familiarBg }}
               />
               <div
                 style={{
@@ -275,64 +311,11 @@ export function SettingsForm({
                   letterSpacing: "0.1em",
                 }}
               >
-                <span>&larr; deep underground</span>
-                <span>familiar &rarr;</span>
+                <span>&larr; nothing familiar</span>
+                <span>all familiar &rarr;</span>
               </div>
               <div className="muted" style={{ fontSize: 12, marginTop: 10, lineHeight: 1.5 }}>
-                {obscurityHelp}
-              </div>
-            </div>
-          </div>
-
-          {/* ── Deep underground mode ──────────────────────────────── */}
-          <div>
-            <div className="eyebrow" style={{ marginBottom: 10 }}>Deep underground mode</div>
-            <div className="fs-card">
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 16,
-                }}
-              >
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
-                    Extra obscure
-                  </div>
-                  <div className="muted" style={{ fontSize: 12, lineHeight: 1.5 }}>
-                    Aggressively deprioritize anything remotely popular. Only for listeners who want the absolute deepest cuts.
-                  </div>
-                </div>
-                <button
-                  onClick={handleUndergroundToggle}
-                  role="switch"
-                  aria-checked={undergroundMode}
-                  style={{
-                    width: 48,
-                    height: 28,
-                    borderRadius: 14,
-                    border: 0,
-                    cursor: "pointer",
-                    flexShrink: 0,
-                    background: undergroundMode ? "var(--accent)" : "rgba(255,255,255,0.10)",
-                    position: "relative",
-                    transition: "background 0.2s",
-                  }}
-                >
-                  <div
-                    style={{
-                      width: 22,
-                      height: 22,
-                      borderRadius: "50%",
-                      background: "#fff",
-                      position: "absolute",
-                      top: 3,
-                      left: undergroundMode ? 23 : 3,
-                      transition: "left 0.2s",
-                    }}
-                  />
-                </button>
+                {familiarityHelp}
               </div>
             </div>
           </div>
@@ -438,6 +421,120 @@ export function SettingsForm({
               >
                 {isGenerating ? "Generating…" : "Generate my feed →"}
               </button>
+            </div>
+          </div>
+
+          {/* ── Discovery ────────────────────────────────────────────── */}
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 10 }}>Discovery</div>
+            <div className="fs-card col gap-16">
+              {/* Popularity preference dial */}
+              <div>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "baseline",
+                    justifyContent: "space-between",
+                    marginBottom: 14,
+                  }}
+                >
+                  <div className="serif" style={{ fontSize: 22, color: "var(--accent)" }}>
+                    {curveLabel}
+                  </div>
+                  <div className="mono" style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                    k = {popularityCurve.toFixed(3)}
+                  </div>
+                </div>
+                <input
+                  type="range"
+                  className="obs-slider"
+                  min={0.9}
+                  max={1.0}
+                  step={0.005}
+                  value={popularityCurve}
+                  onChange={(e) => setPopularityCurve(Number(e.target.value))}
+                  onPointerUp={handleCurveRelease}
+                  onKeyUp={handleCurveRelease}
+                  style={{ background: curveBg }}
+                />
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    marginTop: 8,
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 10.5,
+                    color: "var(--text-muted)",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.1em",
+                  }}
+                >
+                  <span>&larr; niche</span>
+                  <span>mainstream &rarr;</span>
+                </div>
+                <div className="muted" style={{ fontSize: 12, marginTop: 10, lineHeight: 1.5 }}>
+                  {curveHelp}
+                </div>
+              </div>
+
+              <div className="divider" />
+
+              {/* Live curve preview */}
+              <CurvePreview
+                popularityCurve={popularityCurve}
+                undergroundMode={undergroundMode}
+                exampleArtists={exampleArtists}
+              />
+
+              <div className="divider" />
+
+              {/* Extra obscure toggle */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 16,
+                }}
+              >
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
+                    Extra obscure
+                  </div>
+                  <div className="muted" style={{ fontSize: 12, lineHeight: 1.5 }}>
+                    Applies an extra penalty on top of the curve above. The dashed overlay shows the combined effect.
+                  </div>
+                </div>
+                <button
+                  onClick={handleUndergroundToggle}
+                  role="switch"
+                  aria-checked={undergroundMode}
+                  style={{
+                    width: 48,
+                    height: 28,
+                    borderRadius: 14,
+                    border: 0,
+                    cursor: "pointer",
+                    flexShrink: 0,
+                    background: undergroundMode ? "var(--accent)" : "rgba(255,255,255,0.10)",
+                    position: "relative",
+                    transition: "background 0.2s",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 22,
+                      height: 22,
+                      borderRadius: "50%",
+                      background: "#fff",
+                      position: "absolute",
+                      top: 3,
+                      left: undergroundMode ? 23 : 3,
+                      transition: "left 0.2s",
+                    }}
+                  />
+                </button>
+              </div>
             </div>
           </div>
 

@@ -13,7 +13,7 @@ export default async function StatsPage() {
   const supabase = createServiceClient()
 
   // Run all queries in parallel
-  const [seenResult, savesResult, likesResult, dislikesResult, genreResult] =
+  const [seenResult, savesResult, likesResult, dislikesResult, genreResult, savedArtistRows] =
     await Promise.all([
       supabase
         .from("recommendation_cache")
@@ -46,6 +46,11 @@ export default async function StatsPage() {
         .eq("user_id", userId)
         .eq("signal", "thumbs_up")
         .is("deleted_at", null),
+
+      supabase
+        .from("saves")
+        .select("spotify_artist_id")
+        .eq("user_id", userId),
     ])
 
   // Build top genres from liked artists
@@ -76,6 +81,27 @@ export default async function StatsPage() {
     }
   }
 
+  // Resolve saved artists → { name, popularity } via recommendation_cache join
+  const savedIds = Array.from(new Set((savedArtistRows.data ?? []).map((r) => r.spotify_artist_id)))
+  const savedArtists: { name: string; popularity: number }[] = []
+  if (savedIds.length > 0) {
+    const { data: cachedArtistData } = await supabase
+      .from("recommendation_cache")
+      .select("spotify_artist_id, artist_data")
+      .eq("user_id", userId)
+      .in("spotify_artist_id", savedIds)
+
+    const seen = new Set<string>()
+    for (const row of cachedArtistData ?? []) {
+      if (seen.has(row.spotify_artist_id)) continue
+      seen.add(row.spotify_artist_id)
+      const data = row.artist_data as { name?: string; popularity?: number } | null
+      if (!data?.name) continue
+      const pop = typeof data.popularity === "number" ? data.popularity : 0
+      savedArtists.push({ name: data.name, popularity: pop })
+    }
+  }
+
   return (
     <StatsClient
       totalDiscovered={seenResult.count ?? 0}
@@ -83,6 +109,7 @@ export default async function StatsPage() {
       totalLikes={likesResult.count ?? 0}
       totalDislikes={dislikesResult.count ?? 0}
       topGenres={topGenres}
+      savedArtists={savedArtists}
     />
   )
 }
