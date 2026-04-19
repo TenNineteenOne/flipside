@@ -1,16 +1,22 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { signOut } from "next-auth/react"
 import { toast } from "sonner"
 import { IdenticonAvatar } from "@/components/ui/identicon-avatar"
+import { LibraryEditor } from "@/components/settings/library-editor"
+import type { SpotifyArtist } from "@/components/onboarding/artist-search"
 
 interface SettingsFormProps {
   userSeed: string
   initialPlayThreshold: number
   initialLastfmUsername: string | null
+  initialStatsfmUsername: string | null
   initialLastfmArtistCount: number
   initialUndergroundMode: boolean
+  initialSelectedGenres: string[]
+  initialSeedArtists: SpotifyArtist[]
 }
 
 async function patchSettings(payload: Record<string, unknown>) {
@@ -29,17 +35,24 @@ export function SettingsForm({
   userSeed,
   initialPlayThreshold,
   initialLastfmUsername,
+  initialStatsfmUsername,
   initialLastfmArtistCount,
   initialUndergroundMode,
+  initialSelectedGenres,
+  initialSeedArtists,
 }: SettingsFormProps) {
+  const router = useRouter()
   const [threshold, setThreshold] = useState(initialPlayThreshold)
   const [lastfmUsername, setLastfmUsername] = useState(initialLastfmUsername ?? "")
+  const [statsfmUsername, setStatsfmUsername] = useState(initialStatsfmUsername ?? "")
   const [undergroundMode, setUndergroundMode] = useState(initialUndergroundMode)
-  const [isSyncing, setIsSyncing] = useState(false)
+  const [syncingSource, setSyncingSource] = useState<null | "lastfm" | "statsfm">(null)
+  const [isGenerating, setIsGenerating] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
 
   const isConnected = lastfmUsername.trim().length > 0
+  const isStatsfmConnected = statsfmUsername.trim().length > 0
 
   const sliderPct = Math.round((threshold / 50) * 100)
   const sliderBg = `linear-gradient(to right, var(--accent) ${sliderPct}%, rgba(255,255,255,0.10) ${sliderPct}%)`
@@ -89,6 +102,17 @@ export function SettingsForm({
     }
   }
 
+  async function handleStatsfmBlur() {
+    const trimmed = statsfmUsername.trim()
+    if (trimmed === (initialStatsfmUsername ?? "")) return
+    try {
+      await patchSettings({ statsfmUsername: trimmed })
+      toast.success("stats.fm username saved")
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save stats.fm username")
+    }
+  }
+
   async function handleDeleteAccount() {
     if (!deleteConfirm) {
       setDeleteConfirm(true)
@@ -108,20 +132,42 @@ export function SettingsForm({
     }
   }
 
-  async function handleSyncNow() {
-    if (isSyncing || !isConnected) return
-    setIsSyncing(true)
+  async function handleGenerate() {
+    if (isGenerating) return
+    setIsGenerating(true)
     try {
-      const res = await fetch("/api/history/accumulate", { method: "POST" })
+      const res = await fetch("/api/recommendations/generate?replace=true", { method: "POST" })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error((data as { error?: string }).error ?? "Generate failed")
+      }
+      router.push("/feed")
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't generate")
+      setIsGenerating(false)
+    }
+  }
+
+  async function handleSync(source: "lastfm" | "statsfm") {
+    if (syncingSource) return
+    if (source === "lastfm" && !isConnected) return
+    if (source === "statsfm" && !isStatsfmConnected) return
+    setSyncingSource(source)
+    try {
+      const res = await fetch("/api/history/accumulate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source }),
+      })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         throw new Error((data as { error?: string }).error ?? "Sync failed")
       }
-      toast.success("Sync complete")
+      toast.success(`${source === "lastfm" ? "Last.fm" : "stats.fm"} sync complete`)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Sync failed")
     } finally {
-      setIsSyncing(false)
+      setSyncingSource(null)
     }
   }
 
@@ -291,10 +337,25 @@ export function SettingsForm({
             </div>
           </div>
 
-          {/* ── Connected sources ────────────────────────────────────── */}
+          {/* ── Taste anchors ────────────────────────────────────────── */}
           <div>
-            <div className="eyebrow" style={{ marginBottom: 10 }}>Connected sources</div>
-            <div className="fs-card col gap-12">
+            <div className="eyebrow" style={{ marginBottom: 10 }}>Taste anchors</div>
+            <div
+              className="fs-card col gap-14"
+              style={{
+                borderColor: "rgba(139,92,246,0.45)",
+                borderWidth: 2,
+                background: "rgba(139,92,246,0.04)",
+              }}
+            >
+              <LibraryEditor
+                initialGenreTags={initialSelectedGenres}
+                initialSeedArtists={initialSeedArtists}
+                flat
+              />
+
+              <div className="divider" />
+
               {/* Last.fm */}
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <div style={{ fontSize: 18, flexShrink: 0 }}>♫</div>
@@ -323,48 +384,60 @@ export function SettingsForm({
                 </div>
                 <button
                   className="btn btn-sm"
-                  onClick={handleSyncNow}
-                  disabled={isSyncing || !isConnected}
+                  onClick={() => handleSync("lastfm")}
+                  disabled={syncingSource !== null || !isConnected}
                   style={{ flexShrink: 0, opacity: !isConnected ? 0.4 : 1 }}
                 >
-                  {isSyncing ? "Syncing…" : "Sync now"}
+                  {syncingSource === "lastfm" ? "Syncing…" : "Sync now"}
                 </button>
               </div>
 
               <div className="divider" />
 
-              {/* Spotify — restricted */}
-              <div style={{ display: "flex", alignItems: "center", gap: 12, opacity: 0.55 }}>
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="var(--spotify)"
-                  style={{ flexShrink: 0 }}
-                >
-                  <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/>
-                </svg>
+              {/* stats.fm */}
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ fontSize: 18, flexShrink: 0 }}>📊</div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600 }}>Spotify</div>
-                  <div className="mono" style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                    restricted access
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>stats.fm</div>
+                  <div
+                    className="mono"
+                    style={{
+                      fontSize: 11,
+                      color: isStatsfmConnected ? "var(--like)" : "var(--text-muted)",
+                    }}
+                  >
+                    {isStatsfmConnected
+                      ? `connected · @${statsfmUsername.trim()}`
+                      : "not connected"}
+                  </div>
+                  <div className="field" style={{ height: 40, marginTop: 8 }}>
+                    <input
+                      type="text"
+                      placeholder="your-statsfm-username"
+                      value={statsfmUsername}
+                      onChange={(e) => setStatsfmUsername(e.target.value)}
+                      onBlur={handleStatsfmBlur}
+                    />
                   </div>
                 </div>
-                <span
-                  style={{
-                    fontSize: 9.5,
-                    fontWeight: 700,
-                    padding: "2px 7px",
-                    borderRadius: 4,
-                    background: "rgba(255,255,255,0.06)",
-                    color: "var(--text-muted)",
-                    letterSpacing: "0.08em",
-                    textTransform: "uppercase",
-                  }}
+                <button
+                  className="btn btn-sm"
+                  onClick={() => handleSync("statsfm")}
+                  disabled={syncingSource !== null || !isStatsfmConnected}
+                  style={{ flexShrink: 0, opacity: !isStatsfmConnected ? 0.4 : 1 }}
                 >
-                  locked
-                </span>
+                  {syncingSource === "statsfm" ? "Syncing…" : "Sync now"}
+                </button>
               </div>
+
+              <button
+                className="btn btn-primary"
+                onClick={handleGenerate}
+                disabled={isGenerating}
+                style={{ width: "100%", marginTop: 4 }}
+              >
+                {isGenerating ? "Generating…" : "Generate my feed →"}
+              </button>
             </div>
           </div>
 

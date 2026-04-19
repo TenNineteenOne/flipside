@@ -1,25 +1,8 @@
 import { type NextRequest } from "next/server"
 import { auth } from "@/lib/auth"
 import { apiError, apiUnauthorized } from "@/lib/errors"
-import { isValidSpotifyId } from "@/lib/spotify-ids"
 import { createServiceClient } from "@/lib/supabase/server"
-import { getSpotifyClientToken } from "@/lib/spotify-client-token"
-
-interface SpotifyArtistImage {
-  url: string
-  height: number
-  width: number
-}
-
-interface SpotifyArtistObject {
-  id: string
-  name: string
-  images: SpotifyArtistImage[]
-}
-
-interface SpotifyArtistsResponse {
-  artists: SpotifyArtistObject[]
-}
+import { validateSeedArtists } from "@/lib/seed-artist-validation"
 
 export async function POST(req: NextRequest) {
   const session = await auth()
@@ -27,44 +10,22 @@ export async function POST(req: NextRequest) {
 
   const userId = session.user.id
 
-  let body: { artistIds?: unknown }
+  let body: { artists?: unknown }
   try {
     body = await req.json()
   } catch {
     return apiError("Invalid JSON body", 400)
   }
 
-  const { artistIds } = body
-  if (
-    !Array.isArray(artistIds) ||
-    artistIds.length < 3 ||
-    artistIds.length > 5 ||
-    !artistIds.every((id) => typeof id === "string" && isValidSpotifyId(id))
-  ) {
-    return apiError("artistIds must be an array of 3–5 valid Spotify artist IDs", 400)
-  }
-
-  const accessToken = await getSpotifyClientToken()
-  if (!accessToken) return apiError("Spotify unavailable", 503)
-
-  const spotifyRes = await fetch(
-    `https://api.spotify.com/v1/artists?ids=${artistIds.join(",")}`,
-    { headers: { Authorization: `Bearer ${accessToken}` } }
-  )
-
-  if (!spotifyRes.ok) {
-    return apiError("Failed to fetch artist details from Spotify", 502)
-  }
-
-  const spotifyData: SpotifyArtistsResponse = await spotifyRes.json()
+  const result = validateSeedArtists(body.artists, { min: 3, max: 200 })
+  if (!result.ok) return apiError(result.error, 400)
 
   const supabase = createServiceClient()
-
-  const rows = spotifyData.artists.map((artist) => ({
+  const rows = result.artists.map((a) => ({
     user_id: userId,
-    spotify_artist_id: artist.id,
-    name: artist.name,
-    image_url: artist.images?.[0]?.url ?? null,
+    spotify_artist_id: a.id,
+    name: a.name,
+    image_url: a.imageUrl,
   }))
 
   const { error } = await supabase
@@ -72,6 +33,7 @@ export async function POST(req: NextRequest) {
     .upsert(rows, { onConflict: "user_id,spotify_artist_id" })
 
   if (error) {
+    console.error("[onboarding/seeds] upsert error:", error.message)
     return apiError("Failed to save seed artists", 500)
   }
 

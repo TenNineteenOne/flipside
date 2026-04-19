@@ -13,7 +13,7 @@ export default async function SettingsPage() {
   const supabase = createServiceClient()
   const { data: user } = await supabase
     .from("users")
-    .select("id, play_threshold, lastfm_username, underground_mode")
+    .select("id, play_threshold, lastfm_username, statsfm_username, underground_mode, selected_genres")
     .eq("id", userId)
     .maybeSingle()
 
@@ -27,15 +27,30 @@ export default async function SettingsPage() {
     lastfmArtistCount = count ?? 0
   }
 
-  const userSeed = userId
+  const { data: seedArtistsData } = await supabase
+    .from("seed_artists")
+    .select("spotify_artist_id, name, image_url, added_at")
+    .eq("user_id", userId)
+    .order("added_at", { ascending: true })
+
+  const seedArtists = (seedArtistsData ?? []).map((r) => ({
+    id: r.spotify_artist_id,
+    name: r.name,
+    genres: [] as string[],
+    imageUrl: r.image_url,
+    popularity: 0,
+  }))
 
   return (
     <SettingsForm
-      userSeed={userSeed}
+      userSeed={userId}
       initialPlayThreshold={user?.play_threshold ?? 5}
       initialLastfmUsername={user?.lastfm_username ?? null}
+      initialStatsfmUsername={user?.statsfm_username ?? null}
       initialLastfmArtistCount={lastfmArtistCount}
       initialUndergroundMode={user?.underground_mode ?? false}
+      initialSelectedGenres={(user?.selected_genres as string[] | null) ?? []}
+      initialSeedArtists={seedArtists}
     />
   )
 }
