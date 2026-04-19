@@ -33,7 +33,7 @@ export async function searchTracksByArtist(
     const url =
       `${ITUNES_BASE}?term=${encodeURIComponent(artistName)}` +
       `&entity=song&limit=25&country=${encodeURIComponent(market)}`
-    const res = await fetch(url)
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
     if (!res.ok) {
       console.log(`[itunes] ${res.status} artist="${artistName}"`)
       return null

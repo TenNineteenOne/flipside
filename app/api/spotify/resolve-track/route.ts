@@ -73,7 +73,8 @@ export async function POST(req: NextRequest): Promise<Response> {
     trackName = targetTrack.name
 
     const artistReq = await fetch(`${SPOTIFY_BASE}/artists/${spotifyArtistId}`, {
-      headers: { Authorization: `Bearer ${accessToken}` }
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(8000),
     })
     if (artistReq.ok) {
         const aData = await artistReq.json()
@@ -90,6 +91,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(8000),
   })
 
   if (res.status === 401) return apiError("Spotify session expired", 401)

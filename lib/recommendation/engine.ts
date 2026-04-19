@@ -4,6 +4,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import type { BuildResult, RecommendationInput, ScoredArtist } from './types'
 import { ArtistNameCache } from './artist-name-cache'
 import { resolveArtistsByName } from './resolve-candidates'
+import { normalizeArtistName } from '@/lib/listened-artists'
 import coldStartData from '@/data/cold-start-seeds.json'
 
 const LASTFM_BASE = "https://ws.audioscrobbler.com/2.0"
@@ -182,7 +183,7 @@ async function runPipeline(
   const [{ data: listenedData }, { data: thumbsDownData }] = await Promise.all([
     supabase
       .from('listened_artists')
-      .select('spotify_artist_id, play_count')
+      .select('spotify_artist_id, lastfm_artist_name, play_count')
       .eq('user_id', userId),
     supabase
       .from('feedback')
@@ -193,10 +194,16 @@ async function runPipeline(
   ])
 
   const overThresholdIds = new Set<string>()
+  // Also match by normalized name — Last.fm/stats.fm rows with a null
+  // spotify_artist_id (resolver hasn't run yet, or the name didn't match
+  // Spotify's catalog) would otherwise slip past this filter entirely.
+  const overThresholdNames = new Set<string>()
   for (const row of listenedData ?? []) {
-    if (!row.spotify_artist_id) continue
-    if (row.play_count != null && row.play_count > playThreshold) {
+    if (row.play_count == null || row.play_count <= playThreshold) continue
+    if (row.spotify_artist_id) {
       overThresholdIds.add(row.spotify_artist_id)
+    } else if (row.lastfm_artist_name) {
+      overThresholdNames.add(normalizeArtistName(row.lastfm_artist_name))
     }
   }
 
@@ -207,6 +214,7 @@ async function runPipeline(
     .filter(([id, val]) => {
       if (thumbsDownIds.has(id)) return false
       if (overThresholdIds.has(id)) { filtListened++; return false }
+      if (overThresholdNames.has(normalizeArtistName(val.artist.name))) { filtListened++; return false }
       // Genre filter: only include artists matching the requested genre
       if (genre && !val.artist.genres.some((g) => g.toLowerCase().includes(genre.toLowerCase()))) return false
       return true
@@ -357,6 +365,7 @@ async function runPipeline(
           if (writtenIds.has(artist.id)) continue
           if (thumbsDownIds.has(artist.id)) continue
           if (overThresholdIds.has(artist.id)) continue
+          if (overThresholdNames.has(normalizeArtistName(artist.name))) continue
           if (genre && !artist.genres.some((g) => g.toLowerCase().includes(genre.toLowerCase()))) continue
           const seedArtists = nameToSeeds.get(name) ?? []
           secondaryCandidates.push({ artist, seedArtists })
