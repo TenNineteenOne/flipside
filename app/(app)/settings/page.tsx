@@ -13,7 +13,7 @@ export default async function SettingsPage() {
   const supabase = createServiceClient()
   const { data: user } = await supabase
     .from("users")
-    .select("id, play_threshold, popularity_curve, lastfm_username, statsfm_username, underground_mode, selected_genres")
+    .select("id, play_threshold, popularity_curve, lastfm_username, statsfm_username, underground_mode, deep_discovery, selected_genres")
     .eq("id", userId)
     .maybeSingle()
 
@@ -101,6 +101,7 @@ export default async function SettingsPage() {
       initialStatsfmUsername={user?.statsfm_username ?? null}
       initialLastfmArtistCount={lastfmArtistCount}
       initialUndergroundMode={user?.underground_mode ?? false}
+      initialDeepDiscovery={user?.deep_discovery ?? false}
       initialSelectedGenres={(user?.selected_genres as string[] | null) ?? []}
       initialSeedArtists={seedArtists}
       exampleArtists={exampleArtists}

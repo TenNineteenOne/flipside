@@ -7,6 +7,7 @@ export interface RecommendationInput {
   popularityCurve: number // from users.popularity_curve — base `k` of k^popularity scoring
   genre?: string        // optional genre filter for targeted generation
   undergroundMode?: boolean // when true, applies additional discoveryScore penalty
+  deepDiscovery?: boolean   // when true, take a 2nd-hop walk from each seed's lowest-match similars
 }
 
 export interface ScoredArtist {

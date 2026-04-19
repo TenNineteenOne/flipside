@@ -17,6 +17,7 @@ interface SettingsFormProps {
   initialStatsfmUsername: string | null
   initialLastfmArtistCount: number
   initialUndergroundMode: boolean
+  initialDeepDiscovery: boolean
   initialSelectedGenres: string[]
   initialSeedArtists: SpotifyArtist[]
   exampleArtists: { popularity: number; artist: { name: string; popularity: number } | null }[]
@@ -42,6 +43,7 @@ export function SettingsForm({
   initialStatsfmUsername,
   initialLastfmArtistCount,
   initialUndergroundMode,
+  initialDeepDiscovery,
   initialSelectedGenres,
   initialSeedArtists,
   exampleArtists,
@@ -52,6 +54,7 @@ export function SettingsForm({
   const [lastfmUsername, setLastfmUsername] = useState(initialLastfmUsername ?? "")
   const [statsfmUsername, setStatsfmUsername] = useState(initialStatsfmUsername ?? "")
   const [undergroundMode, setUndergroundMode] = useState(initialUndergroundMode)
+  const [deepDiscovery, setDeepDiscovery] = useState(initialDeepDiscovery)
   const [syncingSource, setSyncingSource] = useState<null | "lastfm" | "statsfm">(null)
   const [isGenerating, setIsGenerating] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -124,6 +127,17 @@ export function SettingsForm({
       await patchSettings({ undergroundMode: next })
     } catch {
       setUndergroundMode(!next)
+      toast.error("Failed to save setting")
+    }
+  }
+
+  async function handleDeepDiscoveryToggle() {
+    const next = !deepDiscovery
+    setDeepDiscovery(next)
+    try {
+      await patchSettings({ deepDiscovery: next })
+    } catch {
+      setDeepDiscovery(!next)
       toast.error("Failed to save setting")
     }
   }
@@ -530,6 +544,56 @@ export function SettingsForm({
                       position: "absolute",
                       top: 3,
                       left: undergroundMode ? 23 : 3,
+                      transition: "left 0.2s",
+                    }}
+                  />
+                </button>
+              </div>
+
+              <div className="divider" />
+
+              {/* Deep discovery toggle */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 16,
+                }}
+              >
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
+                    Deep discovery
+                  </div>
+                  <div className="muted" style={{ fontSize: 12, lineHeight: 1.5 }}>
+                    Walks two artists deep into similar-artist chains. More obscure picks; occasional genre drift.
+                  </div>
+                </div>
+                <button
+                  onClick={handleDeepDiscoveryToggle}
+                  role="switch"
+                  aria-checked={deepDiscovery}
+                  style={{
+                    width: 48,
+                    height: 28,
+                    borderRadius: 14,
+                    border: 0,
+                    cursor: "pointer",
+                    flexShrink: 0,
+                    background: deepDiscovery ? "var(--accent)" : "rgba(255,255,255,0.10)",
+                    position: "relative",
+                    transition: "background 0.2s",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 22,
+                      height: 22,
+                      borderRadius: "50%",
+                      background: "#fff",
+                      position: "absolute",
+                      top: 3,
+                      left: deepDiscovery ? 23 : 3,
                       transition: "left 0.2s",
                     }}
                   />

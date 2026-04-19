@@ -1,7 +1,8 @@
-import { describe, it, expect } from "vitest"
-import { buildRoundRobinNames, greedyPickTop } from "./engine"
+import { describe, it, expect, vi } from "vitest"
+import { buildRoundRobinNames, greedyPickTop, runDeepHop } from "./engine"
 import type { ScoredArtist } from "./types"
 import type { ArtistWithTracks } from "@/lib/music-provider/types"
+import type { SimilarArtistRef } from "@/lib/music-provider"
 
 function artist(id: string, name: string, popularity = 50, genre = "rock"): ArtistWithTracks {
   return { id, name, genres: [genre], imageUrl: null, popularity, topTracks: [] }
@@ -97,6 +98,46 @@ describe("buildRoundRobinNames", () => {
     expect(r).toEqual(["a1", "b1", "b2", "b3"])
   })
 
+  it("tailFirst reverses per-seed iteration order", () => {
+    const r = buildRoundRobinNames(
+      [
+        { seed: "A", names: ["a1", "a2", "a3"] },
+        { seed: "B", names: ["b1", "b2", "b3"] },
+      ],
+      new Set(),
+      { tailFirst: true }
+    )
+    expect(r).toEqual(["a3", "b3", "a2", "b2", "a1", "b1"])
+  })
+
+  it("tailFirst handles uneven seed lengths without skipping short-seed tails", () => {
+    const r = buildRoundRobinNames(
+      [
+        { seed: "A", names: ["a1", "a2", "a3", "a4", "a5"] },
+        { seed: "B", names: ["b1"] },
+      ],
+      new Set(),
+      { tailFirst: true }
+    )
+    // Cycle 0: a5, b1. Cycle 1-4: a4, a3, a2, a1.
+    expect(r).toEqual(["a5", "b1", "a4", "a3", "a2", "a1"])
+  })
+
+  it("tailFirst prioritizes low-similarity (tail) picks across seeds", () => {
+    // Simulates 6 seeds with 50 similars each, ordered head (mainstream) → tail (niche).
+    // Under tail-first round-robin, the first 60 slots should all come from the tail.
+    const lfm = Array.from({ length: 6 }, (_, s) => ({
+      seed: `S${s}`,
+      names: Array.from({ length: 50 }, (_, i) => `s${s}_idx${i}`),
+    }))
+    const r = buildRoundRobinNames(lfm, new Set(), { tailFirst: true }).slice(0, 60)
+    // Every item in the top 60 should have idx >= 40 (bottom 20%).
+    for (const name of r) {
+      const idx = parseInt(name.split("_idx")[1], 10)
+      expect(idx).toBeGreaterThanOrEqual(40)
+    }
+  })
+
   it("one mainstream-biased seed cannot flood the pool when other seeds have variety", () => {
     // Simulates: one seed returns 15 mainstream artists; others have only a
     // few similars. Under seed-order dedup, the mainstream seed's 15 artists
@@ -188,5 +229,73 @@ describe("greedyPickTop", () => {
     const pool = Array.from({ length: 50 }, (_, i) => scored(`a${i}`, 1 - i * 0.01))
     const top = greedyPickTop(pool, 20)
     expect(top.length).toBe(20)
+  })
+})
+
+function ref(name: string, match: number): SimilarArtistRef {
+  return { name, match }
+}
+
+describe("runDeepHop", () => {
+  it("fetches 2nd-hop for each seed's N lowest-match first-hop items", async () => {
+    const firstHop = [
+      {
+        seed: "Drake",
+        items: [ref("Kendrick", 0.9), ref("Tyler", 0.8), ref("Obscure1", 0.2), ref("Obscure2", 0.1), ref("Obscure3", 0.05)],
+      },
+    ]
+    const calls: string[] = []
+    const fetchSimilar = vi.fn(async (name: string): Promise<SimilarArtistRef[]> => {
+      calls.push(name)
+      return [ref(`${name}-related`, 0.5)]
+    })
+
+    const result = await runDeepHop(firstHop, fetchSimilar, 3)
+    // Only the 3 lowest-match items are hopped from.
+    expect(calls.sort()).toEqual(["Obscure1", "Obscure2", "Obscure3"])
+    // The parent seed's item list was extended with the hop results.
+    const drake = result.find((r) => r.seed === "Drake")!
+    expect(drake.items.map((i) => i.name)).toEqual(
+      expect.arrayContaining(["Kendrick", "Obscure1", "Obscure1-related", "Obscure2-related", "Obscure3-related"])
+    )
+  })
+
+  it("handles seeds with fewer items than hopsPerSeed", async () => {
+    const firstHop = [{ seed: "Niche", items: [ref("A", 0.5)] }]
+    const fetchSimilar = vi.fn(async (name: string): Promise<SimilarArtistRef[]> => [ref(`${name}-hop`, 0.3)])
+    const result = await runDeepHop(firstHop, fetchSimilar, 3)
+    expect(fetchSimilar).toHaveBeenCalledTimes(1)
+    expect(result[0].items.map((i) => i.name)).toEqual(["A", "A-hop"])
+  })
+
+  it("dedupes hop items against existing first-hop items (case-insensitive)", async () => {
+    const firstHop = [{ seed: "Seed", items: [ref("Already", 0.9), ref("Niche", 0.1)] }]
+    const fetchSimilar = vi.fn(async (): Promise<SimilarArtistRef[]> => [
+      ref("already", 0.4),  // case-insensitive dup of Already
+      ref("Fresh", 0.3),
+    ])
+    const result = await runDeepHop(firstHop, fetchSimilar, 3)
+    const names = result[0].items.map((i) => i.name)
+    expect(names).toEqual(["Already", "Niche", "Fresh"])
+  })
+
+  it("preserves per-seed isolation — hops from seed A don't pollute seed B", async () => {
+    const firstHop = [
+      { seed: "A", items: [ref("A-niche", 0.1)] },
+      { seed: "B", items: [ref("B-niche", 0.1)] },
+    ]
+    const fetchSimilar = vi.fn(async (name: string): Promise<SimilarArtistRef[]> => [ref(`${name}-hop`, 0.3)])
+    const result = await runDeepHop(firstHop, fetchSimilar, 3)
+    const a = result.find((r) => r.seed === "A")!
+    const b = result.find((r) => r.seed === "B")!
+    expect(a.items.map((i) => i.name)).toEqual(["A-niche", "A-niche-hop"])
+    expect(b.items.map((i) => i.name)).toEqual(["B-niche", "B-niche-hop"])
+  })
+
+  it("handles empty first-hop items without crashing", async () => {
+    const fetchSimilar = vi.fn(async (): Promise<SimilarArtistRef[]> => [])
+    const result = await runDeepHop([{ seed: "Seed", items: [] }], fetchSimilar, 3)
+    expect(fetchSimilar).not.toHaveBeenCalled()
+    expect(result[0].items).toEqual([])
   })
 })
