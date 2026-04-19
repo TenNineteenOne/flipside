@@ -516,7 +516,7 @@ export function SettingsForm({
                     Extra obscure
                   </div>
                   <div className="muted" style={{ fontSize: 12, lineHeight: 1.5 }}>
-                    Applies an extra penalty on top of the curve above. The dashed overlay shows the combined effect.
+                    Drops every artist above pop 50 entirely, and penalizes the rest on top of the curve above. The striped region is excluded; the dashed overlay shows the combined effect.
                   </div>
                 </div>
                 <button

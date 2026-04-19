@@ -282,6 +282,7 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
                         </div>
                         <div className="mono" style={{ fontSize: 11, color: "var(--text-muted)" }}>
                           {timeAgo(entry.seen_at)}
+                          {entry.artist_data.popularity > 0 && ` · pop ${entry.artist_data.popularity}`}
                         </div>
                       </div>
 

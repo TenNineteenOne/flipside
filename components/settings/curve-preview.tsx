@@ -61,22 +61,68 @@ export function CurvePreview({ popularityCurve, undergroundMode, exampleArtists 
               <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.4" />
               <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
             </linearGradient>
+            <pattern
+              id="undergroundCutoff"
+              patternUnits="userSpaceOnUse"
+              width="8"
+              height="8"
+              patternTransform="rotate(45)"
+            >
+              <rect width="8" height="8" fill="#a78bfa" fillOpacity="0.08" />
+              <line x1="0" y1="0" x2="0" y2="8" stroke="#a78bfa" strokeOpacity="0.55" strokeWidth="2" />
+            </pattern>
           </defs>
 
           <line x1="20" y1="170" x2="380" y2="170" stroke="rgba(255,255,255,0.12)" strokeWidth="1" />
 
-          {/* Underground-mode excluded zone: everything above pop=50 is hard-dropped */}
-          <rect
-            x={svgX(UNDERGROUND_MAX_POPULARITY)}
-            y={svgY(1)}
-            width={svgX(100) - svgX(UNDERGROUND_MAX_POPULARITY)}
-            height={svgY(0) - svgY(1)}
-            fill="#a78bfa"
+          {/* Underground-mode excluded zone: every artist above pop=50 is hard-dropped */}
+          <g
             style={{
-              opacity: undergroundMode ? 0.15 : 0,
+              opacity: undergroundMode ? 1 : 0,
               transition: "opacity 0.4s ease",
             }}
-          />
+          >
+            <rect
+              x={svgX(UNDERGROUND_MAX_POPULARITY)}
+              y={svgY(1)}
+              width={svgX(100) - svgX(UNDERGROUND_MAX_POPULARITY)}
+              height={svgY(0) - svgY(1)}
+              fill="url(#undergroundCutoff)"
+            />
+            <line
+              x1={svgX(UNDERGROUND_MAX_POPULARITY)}
+              y1={svgY(1)}
+              x2={svgX(UNDERGROUND_MAX_POPULARITY)}
+              y2={svgY(0)}
+              stroke="#a78bfa"
+              strokeOpacity="0.75"
+              strokeWidth="1.5"
+              strokeDasharray="3 3"
+            />
+            <text
+              x={(svgX(UNDERGROUND_MAX_POPULARITY) + svgX(100)) / 2}
+              y={svgY(0.55)}
+              textAnchor="middle"
+              fill="#a78bfa"
+              fontSize="9"
+              fontWeight="700"
+              letterSpacing="0.12em"
+              className="mono"
+            >
+              EXCLUDED
+            </text>
+            <text
+              x={(svgX(UNDERGROUND_MAX_POPULARITY) + svgX(100)) / 2}
+              y={svgY(0.35)}
+              textAnchor="middle"
+              fill="#a78bfa"
+              fillOpacity="0.75"
+              fontSize="8"
+              className="mono"
+            >
+              hard cutoff at pop {UNDERGROUND_MAX_POPULARITY}
+            </text>
+          </g>
 
           {[0, 20, 40, 60, 80, 100].map((tick) => (
             <g key={tick}>

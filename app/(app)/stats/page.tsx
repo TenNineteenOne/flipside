@@ -81,15 +81,21 @@ export default async function StatsPage() {
     }
   }
 
-  // Resolve saved artists → { name, popularity } via recommendation_cache join
+  // Resolve saved + liked artists → { name, popularity } via one recommendation_cache join
   const savedIds = Array.from(new Set((savedArtistRows.data ?? []).map((r) => r.spotify_artist_id)))
+  const likedIds = Array.from(new Set(likedArtistIds))
+  const savedSet = new Set(savedIds)
+  const allIds = Array.from(new Set([...savedIds, ...likedIds]))
+
   const savedArtists: { name: string; popularity: number }[] = []
-  if (savedIds.length > 0) {
+  const likedArtists: { name: string; popularity: number }[] = []
+
+  if (allIds.length > 0) {
     const { data: cachedArtistData } = await supabase
       .from("recommendation_cache")
       .select("spotify_artist_id, artist_data")
       .eq("user_id", userId)
-      .in("spotify_artist_id", savedIds)
+      .in("spotify_artist_id", allIds)
 
     const seen = new Set<string>()
     for (const row of cachedArtistData ?? []) {
@@ -98,7 +104,12 @@ export default async function StatsPage() {
       const data = row.artist_data as { name?: string; popularity?: number } | null
       if (!data?.name) continue
       const pop = typeof data.popularity === "number" ? data.popularity : 0
-      savedArtists.push({ name: data.name, popularity: pop })
+      const item = { name: data.name, popularity: pop }
+      if (savedSet.has(row.spotify_artist_id)) {
+        savedArtists.push(item)
+      } else {
+        likedArtists.push(item)
+      }
     }
   }
 
@@ -110,6 +121,7 @@ export default async function StatsPage() {
       totalDislikes={dislikesResult.count ?? 0}
       topGenres={topGenres}
       savedArtists={savedArtists}
+      likedArtists={likedArtists}
     />
   )
 }
