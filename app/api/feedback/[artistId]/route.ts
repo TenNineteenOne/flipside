@@ -17,23 +17,12 @@ export async function DELETE(
 
   const supabase = createServiceClient()
 
-  // Soft-delete the feedback row
-  const { error: feedbackError } = await supabase
-    .from("feedback")
-    .update({ deleted_at: new Date().toISOString() })
-    .eq("user_id", userId)
-    .eq("spotify_artist_id", artistId)
+  const { error: rpcError } = await supabase.rpc("rpc_delete_feedback", {
+    p_user_id: userId,
+    p_artist_id: artistId,
+  })
 
-  if (feedbackError) return dbError(feedbackError, "feedback/delete")
-
-  // Clear seen_at in recommendation_cache
-  const { error: cacheError } = await supabase
-    .from("recommendation_cache")
-    .update({ seen_at: null })
-    .eq("user_id", userId)
-    .eq("spotify_artist_id", artistId)
-
-  if (cacheError) return dbError(cacheError, "feedback/cache-clear")
+  if (rpcError) return dbError(rpcError, "feedback/delete-rpc")
 
   return new Response(null, { status: 204 })
 }

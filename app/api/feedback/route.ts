@@ -26,26 +26,13 @@ export async function POST(request: Request): Promise<Response> {
 
   const supabase = createServiceClient()
 
-  // Upsert feedback only if it's an actionable algorithm signal
-  if (signal !== "skip") {
-    const { error: feedbackError } = await supabase
-      .from("feedback")
-      .upsert(
-        { user_id: userId, spotify_artist_id: spotifyArtistId, signal, deleted_at: null },
-        { onConflict: "user_id,spotify_artist_id" }
-      )
+  const { error: rpcError } = await supabase.rpc("rpc_record_feedback", {
+    p_user_id: userId,
+    p_artist_id: spotifyArtistId,
+    p_signal: signal,
+  })
 
-    if (feedbackError) return dbError(feedbackError, "feedback/upsert")
-  }
-
-  // Update seen_at in recommendation_cache
-  const { error: cacheError } = await supabase
-    .from("recommendation_cache")
-    .update({ seen_at: new Date().toISOString() })
-    .eq("user_id", userId)
-    .eq("spotify_artist_id", spotifyArtistId)
-
-  if (cacheError) return dbError(cacheError, "feedback/cache-update")
+  if (rpcError) return dbError(rpcError, "feedback/rpc")
 
   return Response.json({ success: true })
 }

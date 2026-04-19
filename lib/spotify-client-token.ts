@@ -8,10 +8,9 @@
 
 let cachedToken: string | null = null
 let tokenExpiresAt = 0
+let inFlight: Promise<string | null> | null = null
 
-export async function getSpotifyClientToken(): Promise<string | null> {
-  if (cachedToken && Date.now() < tokenExpiresAt) return cachedToken
-
+async function fetchToken(): Promise<string | null> {
   const clientId = process.env.SPOTIFY_CLIENT_ID
   const clientSecret = process.env.SPOTIFY_CLIENT_SECRET
   if (!clientId || !clientSecret) return null
@@ -23,6 +22,7 @@ export async function getSpotifyClientToken(): Promise<string | null> {
       Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
     },
     body: new URLSearchParams({ grant_type: "client_credentials" }),
+    signal: AbortSignal.timeout(8000),
   })
 
   if (!res.ok) {
@@ -34,4 +34,14 @@ export async function getSpotifyClientToken(): Promise<string | null> {
   cachedToken = data.access_token as string
   tokenExpiresAt = Date.now() + (data.expires_in - 60) * 1000
   return cachedToken
+}
+
+export async function getSpotifyClientToken(): Promise<string | null> {
+  if (cachedToken && Date.now() < tokenExpiresAt) return cachedToken
+  if (inFlight) return inFlight
+
+  inFlight = fetchToken().finally(() => {
+    inFlight = null
+  })
+  return inFlight
 }
