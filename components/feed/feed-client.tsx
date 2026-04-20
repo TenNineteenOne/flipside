@@ -183,7 +183,7 @@ export function FeedClient({ recommendations }: FeedClientProps) {
       {/* Page header */}
       <div className="page-head">
         <h1>Today&apos;s feed</h1>
-        <span className="sub">{filteredRecs.length} cued</span>
+        <span className="sub">{filteredRecs.length} artists</span>
       </div>
 
       {/* Genre filter chips */}
