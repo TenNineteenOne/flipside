@@ -7,6 +7,8 @@ import { Music, ChevronDown, ChevronUp, Lock } from "lucide-react"
 import type { GenreNode } from "@/lib/types"
 import { GenrePicker } from "@/components/onboarding/genre-picker"
 import { ArtistSearch, type SpotifyArtist } from "@/components/onboarding/artist-search"
+import { PlatformPicker } from "@/components/settings/platform-picker"
+import { DEFAULT_MUSIC_PLATFORM, type MusicPlatform } from "@/lib/music-links"
 
 const SPOTIFY_VISIBLE = false
 const ARTIST_CAP = 200
@@ -25,6 +27,7 @@ export default function OnboardingPage() {
   const [selectedGenres, setSelectedGenres] = useState<GenreNode[]>([])
   const [lastfmUsername, setLastfmUsername] = useState("")
   const [statsfmUsername, setStatsfmUsername] = useState("")
+  const [musicPlatform, setMusicPlatform] = useState<MusicPlatform>(DEFAULT_MUSIC_PLATFORM)
 
   const togglePath = (key: string) => {
     setOpenPaths((prev) => {
@@ -70,6 +73,10 @@ export default function OnboardingPage() {
       const promises: Promise<Response>[] = []
 
       const settingsPayload: Record<string, unknown> = {}
+      // Always persist the platform choice (even on skip) so outbound links
+      // reflect the user's selection on the very first feed view. Default is
+      // Spotify so the value is never unexpected if the user didn't touch it.
+      settingsPayload.preferredMusicPlatform = musicPlatform
       if (!skip && lastfmUsername.trim()) settingsPayload.lastfmUsername = lastfmUsername.trim()
       if (!skip && statsfmUsername.trim()) settingsPayload.statsfmUsername = statsfmUsername.trim()
       if (!skip && selectedGenres.length > 0) {
@@ -146,6 +153,20 @@ export default function OnboardingPage() {
           </div>
           <div className="muted" style={{ fontSize: 13 }}>
             Pick one or more paths — or skip and start cold.
+          </div>
+        </div>
+
+        {/* ── Where do you listen? ───────────────────────────────── */}
+        <div
+          className="fs-card col gap-10"
+          style={{ marginBottom: 16, padding: 16 }}
+        >
+          <div style={{ fontSize: 14, fontWeight: 600 }}>Where do you listen?</div>
+          <PlatformPicker value={musicPlatform} onChange={setMusicPlatform} />
+          <div className="muted" style={{ fontSize: 11.5, lineHeight: 1.5 }}>
+            We&rsquo;ll use this to open artists in the app you already use.{" "}
+            <strong style={{ color: "var(--text-secondary)" }}>No login needed &mdash; we just link out.</strong>{" "}
+            You can change this anytime in Settings.
           </div>
         </div>
 

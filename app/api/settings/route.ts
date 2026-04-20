@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, apiUnauthorized, dbError } from "@/lib/errors"
+import { isMusicPlatform } from "@/lib/music-links"
 
 export async function PATCH(request: Request) {
   const session = await auth()
@@ -16,6 +17,7 @@ export async function PATCH(request: Request) {
     selectedGenres?: string[]
     undergroundMode?: boolean
     deepDiscovery?: boolean
+    preferredMusicPlatform?: string
   }
   try {
     body = await request.json()
@@ -71,6 +73,13 @@ export async function PATCH(request: Request) {
 
   if (body.deepDiscovery !== undefined) {
     update.deep_discovery = !!body.deepDiscovery
+  }
+
+  if (body.preferredMusicPlatform !== undefined) {
+    if (!isMusicPlatform(body.preferredMusicPlatform)) {
+      return apiError("Invalid preferredMusicPlatform", 400)
+    }
+    update.preferred_music_platform = body.preferredMusicPlatform
   }
 
 

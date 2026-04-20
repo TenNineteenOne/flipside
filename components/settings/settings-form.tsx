@@ -7,7 +7,9 @@ import { toast } from "sonner"
 import { IdenticonAvatar } from "@/components/ui/identicon-avatar"
 import { LibraryEditor } from "@/components/settings/library-editor"
 import { CurvePreview } from "@/components/settings/curve-preview"
+import { PlatformPicker } from "@/components/settings/platform-picker"
 import type { SpotifyArtist } from "@/components/onboarding/artist-search"
+import type { MusicPlatform } from "@/lib/music-links"
 
 interface SettingsFormProps {
   userSeed: string
@@ -20,6 +22,7 @@ interface SettingsFormProps {
   initialDeepDiscovery: boolean
   initialSelectedGenres: string[]
   initialSeedArtists: SpotifyArtist[]
+  initialMusicPlatform: MusicPlatform
   exampleArtists: { popularity: number; artist: { name: string; popularity: number } | null }[]
 }
 
@@ -46,6 +49,7 @@ export function SettingsForm({
   initialDeepDiscovery,
   initialSelectedGenres,
   initialSeedArtists,
+  initialMusicPlatform,
   exampleArtists,
 }: SettingsFormProps) {
   const router = useRouter()
@@ -55,6 +59,7 @@ export function SettingsForm({
   const [statsfmUsername, setStatsfmUsername] = useState(initialStatsfmUsername ?? "")
   const [undergroundMode, setUndergroundMode] = useState(initialUndergroundMode)
   const [deepDiscovery, setDeepDiscovery] = useState(initialDeepDiscovery)
+  const [musicPlatform, setMusicPlatform] = useState<MusicPlatform>(initialMusicPlatform)
   const [syncingSource, setSyncingSource] = useState<null | "lastfm" | "statsfm">(null)
   const [isGenerating, setIsGenerating] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -139,6 +144,19 @@ export function SettingsForm({
     } catch {
       setDeepDiscovery(!next)
       toast.error("Failed to save setting")
+    }
+  }
+
+  async function handleMusicPlatformChange(next: MusicPlatform) {
+    if (next === musicPlatform) return
+    const prev = musicPlatform
+    setMusicPlatform(next)
+    try {
+      await patchSettings({ preferredMusicPlatform: next })
+      toast.success("Saved")
+    } catch {
+      setMusicPlatform(prev)
+      toast.error("Failed to save preference")
     }
   }
 
@@ -598,6 +616,18 @@ export function SettingsForm({
                     }}
                   />
                 </button>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Where do you listen? ────────────────────────────────── */}
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 10 }}>Where do you listen?</div>
+            <div className="fs-card col gap-12">
+              <PlatformPicker value={musicPlatform} onChange={handleMusicPlatformChange} />
+              <div className="muted" style={{ fontSize: 12, lineHeight: 1.5 }}>
+                Pick the app where you want to open and save artists. We&rsquo;ll only link out —{" "}
+                <strong style={{ color: "var(--text-secondary)" }}>we won&rsquo;t ask for your Apple Music or YouTube Music login.</strong>
               </div>
             </div>
           </div>
