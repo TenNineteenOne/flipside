@@ -2,9 +2,16 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { X, Bookmark, ExternalLink, Share2 } from "lucide-react"
+import { X, Bookmark, Share2 } from "lucide-react"
 import { toast } from "sonner"
 import { stringToVibrantHex, sanitizeHex } from "@/lib/color-utils"
+import {
+  PLATFORM_META,
+  getArtistLink,
+  getShareableArtistLink,
+  type MusicPlatform,
+} from "@/lib/music-links"
+import { PlatformIcon } from "@/components/platform-icon"
 
 export interface SavedArtistRow {
   artistId: string
@@ -17,9 +24,10 @@ export interface SavedArtistRow {
 interface SavedClientProps {
   artists: SavedArtistRow[]
   hasLastfm: boolean
+  musicPlatform: MusicPlatform
 }
 
-export function SavedClient({ artists, hasLastfm }: SavedClientProps) {
+export function SavedClient({ artists, hasLastfm, musicPlatform }: SavedClientProps) {
   const router = useRouter()
   const [removedIds, setRemovedIds] = useState<Set<string>>(new Set())
 
@@ -163,7 +171,10 @@ export function SavedClient({ artists, hasLastfm }: SavedClientProps) {
                   )}
                   <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
                     <a
-                      href={`https://open.spotify.com/artist/${artist.artistId}`}
+                      href={getArtistLink(musicPlatform, {
+                        spotifyArtistId: artist.artistId,
+                        artistName: artist.name,
+                      })}
                       target="_blank"
                       rel="noopener noreferrer"
                       style={{
@@ -171,13 +182,17 @@ export function SavedClient({ artists, hasLastfm }: SavedClientProps) {
                         background: "rgba(255,255,255,0.05)", border: "1px solid var(--border)",
                         display: "grid", placeItems: "center", color: "var(--text-muted)",
                       }}
-                      title="Open in Spotify"
+                      title={`Open in ${PLATFORM_META[musicPlatform].label}`}
                     >
-                      <ExternalLink size={12} />
+                      <PlatformIcon platform={musicPlatform} size={12} color={PLATFORM_META[musicPlatform].brandColor} />
                     </a>
                     <button
                       onClick={() => {
-                        navigator.clipboard.writeText(`https://open.spotify.com/artist/${artist.artistId}`)
+                        const url = getShareableArtistLink(musicPlatform, {
+                          spotifyArtistId: artist.artistId,
+                          artistName: artist.name,
+                        })
+                        navigator.clipboard.writeText(url)
                           .then(() => toast.success("Link copied!"))
                           .catch(() => toast.error("Couldn't copy link"))
                       }}

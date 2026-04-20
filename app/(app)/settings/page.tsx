@@ -2,6 +2,7 @@ import { redirect } from "next/navigation"
 import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { SettingsForm } from "@/components/settings/settings-form"
+import { DEFAULT_MUSIC_PLATFORM, isMusicPlatform } from "@/lib/music-links"
 
 export default async function SettingsPage() {
   const session = await auth()
@@ -13,7 +14,7 @@ export default async function SettingsPage() {
   const supabase = createServiceClient()
   const { data: user } = await supabase
     .from("users")
-    .select("id, play_threshold, popularity_curve, lastfm_username, statsfm_username, underground_mode, deep_discovery, selected_genres")
+    .select("id, play_threshold, popularity_curve, lastfm_username, statsfm_username, underground_mode, deep_discovery, selected_genres, preferred_music_platform")
     .eq("id", userId)
     .maybeSingle()
 
@@ -104,6 +105,11 @@ export default async function SettingsPage() {
       initialDeepDiscovery={user?.deep_discovery ?? false}
       initialSelectedGenres={(user?.selected_genres as string[] | null) ?? []}
       initialSeedArtists={seedArtists}
+      initialMusicPlatform={
+        isMusicPlatform(user?.preferred_music_platform)
+          ? user.preferred_music_platform
+          : DEFAULT_MUSIC_PLATFORM
+      }
       exampleArtists={exampleArtists}
     />
   )

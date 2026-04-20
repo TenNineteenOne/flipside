@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { ArtistCard } from "@/components/feed/artist-card"
 import { hexToRgba, sanitizeHex } from "@/lib/color-utils"
+import type { MusicPlatform } from "@/lib/music-links"
 
 interface Track {
   id: string
@@ -40,6 +41,7 @@ interface Recommendation {
 
 interface FeedClientProps {
   recommendations: Recommendation[]
+  musicPlatform: MusicPlatform
 }
 
 // ---------------------------------------------------------------------------
@@ -56,7 +58,7 @@ function buildSequence(recs: Recommendation[]): FeedItem[] {
 // Main component
 // ---------------------------------------------------------------------------
 
-export function FeedClient({ recommendations }: FeedClientProps) {
+export function FeedClient({ recommendations, musicPlatform }: FeedClientProps) {
   const [dismissedSignals, setDismissedSignals] = useState<Map<string, string>>(new Map())
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set())
   const [isGenerating, setIsGenerating] = useState(false)
@@ -215,6 +217,7 @@ export function FeedClient({ recommendations }: FeedClientProps) {
             <ArtistCard
               key={item.key}
               recommendation={rec}
+              musicPlatform={musicPlatform}
               onSave={() => handleSave(rec.spotify_artist_id)}
               isSaved={savedIds.has(rec.spotify_artist_id)}
               onFeedback={(signal) => handleFeedback(rec.spotify_artist_id, signal)}

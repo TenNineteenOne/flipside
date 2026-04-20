@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { FeedClient } from "@/components/feed/feed-client"
 import { RecommendationsLoader } from "@/components/feed/recommendations-loader"
+import { DEFAULT_MUSIC_PLATFORM, isMusicPlatform, type MusicPlatform } from "@/lib/music-links"
 
 interface Rec {
   spotify_artist_id: string
@@ -59,7 +60,7 @@ export default async function FeedPage() {
   // Look up user row (created during sign-in via credentials provider)
   const { data: user, error: userError } = await supabase
     .from("users")
-    .select("id")
+    .select("id, preferred_music_platform")
     .eq("id", userId)
     .maybeSingle()
 
@@ -91,6 +92,10 @@ export default async function FeedPage() {
     (r: { artist_data?: { id?: string; name?: string } }) => r.artist_data?.id && r.artist_data?.name
   ) as Rec[]
 
+  const musicPlatform: MusicPlatform = isMusicPlatform(user.preferred_music_platform)
+    ? user.preferred_music_platform
+    : DEFAULT_MUSIC_PLATFORM
+
   // No valid recommendations — client component triggers generation and refreshes
   if (validRecs.length === 0) {
     return <RecommendationsLoader />
@@ -115,5 +120,5 @@ export default async function FeedPage() {
     return { ...rec, artist_color }
   })
 
-  return <FeedClient recommendations={interleave(recsWithColor)} />
+  return <FeedClient recommendations={interleave(recsWithColor)} musicPlatform={musicPlatform} />
 }
