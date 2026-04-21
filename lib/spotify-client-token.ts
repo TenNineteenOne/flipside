@@ -9,11 +9,18 @@
 let cachedToken: string | null = null
 let tokenExpiresAt = 0
 let inFlight: Promise<string | null> | null = null
+let loggedMissingCreds = false
 
 async function fetchToken(): Promise<string | null> {
   const clientId = process.env.SPOTIFY_CLIENT_ID
   const clientSecret = process.env.SPOTIFY_CLIENT_SECRET
-  if (!clientId || !clientSecret) return null
+  if (!clientId || !clientSecret) {
+    if (!loggedMissingCreds) {
+      console.error("[spotify-client-token] SPOTIFY_CLIENT_ID or SPOTIFY_CLIENT_SECRET is missing")
+      loggedMissingCreds = true
+    }
+    return null
+  }
 
   const res = await fetch("https://accounts.spotify.com/api/token", {
     method: "POST",
