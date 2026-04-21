@@ -3,6 +3,23 @@
 import { useEffect, useRef, useState } from "react"
 import { Search, X } from "lucide-react"
 
+type SearchError =
+  | "unauth"
+  | "rate-limited"
+  | "unavailable"
+  | "network"
+  | "unknown"
+
+function errorMessage(kind: SearchError): string {
+  switch (kind) {
+    case "unauth": return "Please sign in again to search artists"
+    case "rate-limited": return "Too many searches — try again in a few seconds"
+    case "unavailable": return "Search is temporarily unavailable"
+    case "network": return "Network error — check your connection"
+    case "unknown": return "Couldn't search — try again"
+  }
+}
+
 export interface SpotifyArtist {
   id: string
   name: string
@@ -23,26 +40,51 @@ export function ArtistSearch({ selected, onAdd, onRemove, cap, minForHint = 3 }:
   const [query, setQuery] = useState("")
   const [results, setResults] = useState<SpotifyArtist[]>([])
   const [searching, setSearching] = useState(false)
+  const [error, setError] = useState<SearchError | null>(null)
+  const [degraded, setDegraded] = useState(false)
   const debounceRef = useRef<NodeJS.Timeout | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    if (!query.trim()) { setResults([]); return }
+    abortRef.current?.abort()
+    if (!query.trim()) { setResults([]); setError(null); setDegraded(false); return }
 
     debounceRef.current = setTimeout(async () => {
+      const aborter = new AbortController()
+      abortRef.current = aborter
       setSearching(true)
+      setError(null)
       try {
-        const res = await fetch(`/api/onboarding/search?q=${encodeURIComponent(query.trim())}`)
+        const res = await fetch(
+          `/api/onboarding/search?q=${encodeURIComponent(query.trim())}`,
+          { signal: aborter.signal },
+        )
         if (res.ok) {
           const data = await res.json()
           setResults(data.artists ?? [])
+          setDegraded(!!data.degraded)
+          return
         }
+        setDegraded(false)
+        console.error("[artist-search]", res.status)
+        if (res.status === 401) setError("unauth")
+        else if (res.status === 429) setError("rate-limited")
+        else if (res.status === 503) setError("unavailable")
+        else setError("unknown")
+      } catch (err) {
+        if ((err as { name?: string } | null)?.name === "AbortError") return
+        console.error("[artist-search] network", err)
+        setError("network")
       } finally {
         setSearching(false)
       }
     }, 350)
 
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+      abortRef.current?.abort()
+    }
   }, [query])
 
   const selectedIds = new Set(selected.map((a) => a.id))
@@ -80,8 +122,22 @@ export function ArtistSearch({ selected, onAdd, onRemove, cap, minForHint = 3 }:
           style={{ paddingLeft: 32 }}
         />
       </div>
-      {searching && (
+      {searching && !error && (
         <div className="mono muted" style={{ fontSize: 11 }}>Searching…</div>
+      )}
+      {error && (
+        <div
+          className="mono"
+          style={{ fontSize: 11, color: "var(--danger, #f87171)" }}
+          role="alert"
+        >
+          {errorMessage(error)}
+        </div>
+      )}
+      {!error && degraded && results.length > 0 && (
+        <div className="mono muted" style={{ fontSize: 11 }}>
+          Showing cached results — live search is rate-limited
+        </div>
       )}
       {results.length > 0 && (
         <div
