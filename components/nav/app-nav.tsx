@@ -4,6 +4,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Music2, Bookmark, Settings, Clock, BarChart3, Compass } from "lucide-react"
 import { IdenticonAvatar } from "@/components/ui/identicon-avatar"
+import { NavLinkStatus } from "@/components/nav/navigation-progress"
 
 const navLinks = [
   { href: "/feed",     label: "Feed",     icon: Music2    },
@@ -42,6 +43,7 @@ export function AppNav({ userSeed = "user" }: AppNavProps) {
               className={isActive(href) ? "active" : ""}
             >
               {label}
+              <NavLinkStatus />
             </Link>
           ))}
         </nav>
@@ -60,6 +62,7 @@ export function AppNav({ userSeed = "user" }: AppNavProps) {
           >
             <Icon size={22} />
             <span>{label}</span>
+            <NavLinkStatus />
           </Link>
         ))}
       </nav>

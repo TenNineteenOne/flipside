@@ -1,3 +1,4 @@
+import { Suspense } from "react"
 import { redirect } from "next/navigation"
 import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
@@ -23,6 +24,7 @@ import {
   buildApplicabilityCtx,
   ensureWeeklyChallenge,
 } from "@/lib/challenges/engine"
+import ExploreLoading from "./loading"
 
 interface ArtistData {
   id: string
@@ -56,12 +58,6 @@ const RAIL_TITLES: Record<RailKey, { title: string; subtitle: string; empty: str
   },
 }
 
-/**
- * When wildcardsRail has no thumbs-ups to seed from, the engine substitutes
- * a second left-field sample in that slot and marks it via `why.__meta`.
- * The page reads the marker and re-titles the rail so the user doesn't see
- * "From your wildcards" above picks that weren't wildcard-sourced.
- */
 const WILDCARDS_FALLBACK_META = {
   title: "More curveballs",
   subtitle: "Thumbs-up a few artists to unlock your rabbit holes — until then, another blind throw",
@@ -75,12 +71,17 @@ export default async function ExplorePage() {
   const userId = session.user.id
   const supabase = createServiceClient()
 
-  const { data: user, error: userErr } = await supabase
-    .from("users")
-    .select("id, adventurous, preferred_music_platform")
-    .eq("id", userId)
-    .maybeSingle()
+  const [userResult, savesResult, accessTokenRaw] = await Promise.all([
+    supabase
+      .from("users")
+      .select("id, adventurous, preferred_music_platform")
+      .eq("id", userId)
+      .maybeSingle(),
+    supabase.from("saves").select("spotify_artist_id").eq("user_id", userId),
+    getSpotifyClientToken(),
+  ])
 
+  const { data: user, error: userErr } = userResult
   if (userErr) {
     console.error("[explore-page] user lookup err", userErr.message)
     throw new Error(`Failed to load your account: ${userErr.message}`)
@@ -91,25 +92,48 @@ export default async function ExplorePage() {
     ? user.preferred_music_platform
     : DEFAULT_MUSIC_PLATFORM
   const adventurous = !!user.adventurous
+  const initialSavedIds = (savesResult.data ?? []).map((r) => r.spotify_artist_id as string)
+  const accessToken = accessTokenRaw ?? ""
 
-  // Load saves so the initial render marks existing saves correctly.
-  const { data: savesRows } = await supabase
-    .from("saves")
-    .select("spotify_artist_id")
-    .eq("user_id", user.id)
-  const initialSavedIds = (savesRows ?? []).map((r) => r.spotify_artist_id as string)
+  return (
+    <Suspense fallback={<ExploreLoading />}>
+      <ExploreRailsSection
+        userId={user.id}
+        accessToken={accessToken}
+        adventurous={adventurous}
+        musicPlatform={musicPlatform}
+        initialSavedIds={initialSavedIds}
+      />
+    </Suspense>
+  )
+}
 
-  // Build (or return cached) rails. In P2.1 rail generators return empty
-  // results; subsequent issues fill them in. `buildExploreRails` handles cache
-  // read + parallel generation + upsert.
-  const accessToken = (await getSpotifyClientToken()) ?? ""
-  const { rails } = await buildExploreRails({
-    userId: user.id,
-    accessToken,
-    adventurous,
-  })
+interface RailsSectionProps {
+  userId: string
+  accessToken: string
+  adventurous: boolean
+  musicPlatform: MusicPlatform
+  initialSavedIds: string[]
+}
 
-  // Hydrate artist IDs into full Artist records for the UI.
+async function ExploreRailsSection({
+  userId,
+  accessToken,
+  adventurous,
+  musicPlatform,
+  initialSavedIds,
+}: RailsSectionProps) {
+  const supabase = createServiceClient()
+
+  // Rails + challenge are independent — fire them in parallel. The challenge
+  // load is best-effort; its failure is swallowed so it cannot block the page.
+  const [buildResult, challenge] = await Promise.all([
+    buildExploreRails({ userId, accessToken, adventurous }),
+    loadChallenge(supabase, userId),
+  ])
+  const { rails } = buildResult
+
+  // Hydrate artist IDs into full Artist records for the UI. Needs rail data.
   const allIds = Array.from(new Set(rails.flatMap((r) => r.artistIds)))
   const artistById = new Map<string, ArtistData>()
   if (allIds.length > 0) {
@@ -160,11 +184,6 @@ export default async function ExplorePage() {
     }
   })
 
-  // Weekly challenge: ensure one is assigned for this ISO week, compute
-  // applicability from the same signals rails use. Best-effort — if the DB
-  // write fails we just render without a challenge card.
-  const challenge = await loadChallenge(supabase, user.id)
-
   return (
     <ExploreClient
       rails={payloads}
@@ -180,8 +199,6 @@ async function loadChallenge(
   supabase: ReturnType<typeof createServiceClient>,
   userId: string,
 ): Promise<ChallengePayload | null> {
-  // Pull just enough context to judge applicability. Matches what the engine
-  // reads internally but scoped narrower so this stays cheap.
   const [{ data: userRow }, { data: listenedRows }, { data: thumbsUp }] = await Promise.all([
     supabase.from("users").select("selected_genres").eq("id", userId).maybeSingle(),
     supabase.from("listened_artists").select("spotify_artist_id").eq("user_id", userId).limit(500),
@@ -190,13 +207,20 @@ async function loadChallenge(
 
   const listenedIds = (listenedRows ?? []).map((r) => r.spotify_artist_id as string)
   const genresById = new Map<string, string[]>()
+
+  const chunks: string[][] = []
   for (let i = 0; i < listenedIds.length; i += 200) {
-    const chunk = listenedIds.slice(i, i + 200)
-    if (chunk.length === 0) continue
-    const { data } = await supabase
-      .from("artist_search_cache")
-      .select("spotify_artist_id, artist_data")
-      .in("spotify_artist_id", chunk)
+    chunks.push(listenedIds.slice(i, i + 200))
+  }
+  const chunkResults = await Promise.all(
+    chunks.map((chunk) =>
+      supabase
+        .from("artist_search_cache")
+        .select("spotify_artist_id, artist_data")
+        .in("spotify_artist_id", chunk),
+    ),
+  )
+  for (const { data } of chunkResults) {
     for (const row of data ?? []) {
       const a = row.artist_data as { genres?: string[] } | null
       genresById.set(row.spotify_artist_id as string, a?.genres ?? [])

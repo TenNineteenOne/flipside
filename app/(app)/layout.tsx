@@ -3,6 +3,7 @@ import { safeAuth } from "@/lib/auth"
 import { AppNav } from "@/components/nav/app-nav"
 import { AudioProvider } from "@/lib/audio-context"
 import { MiniPlayer } from "@/components/player/mini-player"
+import { NavigationProgressProvider } from "@/components/nav/navigation-progress"
 
 export default async function AppLayout({
   children,
@@ -16,14 +17,16 @@ export default async function AppLayout({
   const userSeed = session.user.id
 
   return (
-    <AudioProvider>
-      <div className="app">
-        <AppNav userSeed={userSeed} />
-        <main className="app-main">
-          <div className="app-col">{children}</div>
-        </main>
-        <MiniPlayer />
-      </div>
-    </AudioProvider>
+    <NavigationProgressProvider>
+      <AudioProvider>
+        <div className="app">
+          <AppNav userSeed={userSeed} />
+          <main className="app-main">
+            <div className="app-col">{children}</div>
+          </main>
+          <MiniPlayer />
+        </div>
+      </AudioProvider>
+    </NavigationProgressProvider>
   )
 }

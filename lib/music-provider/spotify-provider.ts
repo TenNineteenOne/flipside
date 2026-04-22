@@ -1,5 +1,6 @@
 import type { MusicProvider, RateLimited, SimilarArtistRef } from "./index"
 import type { Artist, PlayHistory, Track } from "./types"
+import { cachedSimilarArtistNames } from "@/lib/lastfm-cache"
 
 const SPOTIFY_BASE = "https://api.spotify.com/v1"
 const LASTFM_BASE = "https://ws.audioscrobbler.com/2.0"
@@ -174,8 +175,13 @@ export class SpotifyProvider implements MusicProvider {
 
   // -------------------------------------------------------------------------
   // getSimilarArtistNames — Last.fm only, no Spotify call, no access token
+  // Results pass through a shared 7-day Supabase cache (lastfm_cache).
   // -------------------------------------------------------------------------
   async getSimilarArtistNames(artistName: string): Promise<SimilarArtistRef[]> {
+    return cachedSimilarArtistNames(artistName, (name) => this._fetchSimilarArtistNames(name))
+  }
+
+  private async _fetchSimilarArtistNames(artistName: string): Promise<SimilarArtistRef[]> {
     const apiKey = process.env.LASTFM_API_KEY
     if (!apiKey) {
       if (!SpotifyProvider._lastFmKeyMissing) {

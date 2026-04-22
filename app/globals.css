@@ -452,6 +452,51 @@ body::after {
   50%       { box-shadow: 0 0 0 6px transparent; }
 }
 
+/* ── Navigation progress bar ──────────────────────────────────── */
+@keyframes navprog-trickle {
+  0%   { transform: scaleX(0); }
+  15%  { transform: scaleX(0.3); }
+  100% { transform: scaleX(0.85); }
+}
+.nav-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow);
+  transform-origin: left;
+  transform: scaleX(0);
+  z-index: 9999;
+  pointer-events: none;
+}
+.nav-progress-pending {
+  animation: navprog-trickle 600ms ease-out forwards;
+}
+.nav-progress-done {
+  transform: scaleX(1);
+  opacity: 0;
+  transition: transform 180ms ease-out, opacity 220ms ease-out 80ms;
+}
+
+/* ── Skeleton shimmer (loading.tsx) ───────────────────────────── */
+@keyframes fs-shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.fs-skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(255,255,255,0.03) 0%,
+    rgba(255,255,255,0.08) 50%,
+    rgba(255,255,255,0.03) 100%
+  );
+  background-size: 200% 100%;
+  animation: fs-shimmer 1.6s linear infinite;
+  border-radius: 8px;
+}
+
 /* Splash gradient aura */
 .aura {
   position: fixed;

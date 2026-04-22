@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
+import Image from "next/image"
 import { motion } from "framer-motion"
 import { SkipForward, Bookmark, Check, Share2 } from "lucide-react"
 import { toast } from "sonner"
@@ -202,13 +203,12 @@ export function ArtistCard({
       {/* Hero image */}
       <div style={{ position: "relative", height: 340, overflow: "hidden" }}>
         {artist_data.imageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <Image
             src={artist_data.imageUrl}
             alt={artist_data.name}
+            fill
+            sizes="(min-width: 900px) 680px, 100vw"
             style={{
-              width: "100%",
-              height: "100%",
               objectFit: "cover",
               filter: "saturate(0.85) contrast(1.05)",
             }}

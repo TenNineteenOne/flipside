@@ -15,6 +15,7 @@ import { fetchArtistEnrichment } from './enrich-artist'
 import { normalizeArtistName } from '@/lib/listened-artists'
 import { normalizedIncludes, normalizeGenre } from '@/lib/genre/normalize'
 import { adjacentGenres } from '@/lib/genre/adjacency'
+import { cachedTagArtistNames } from '@/lib/lastfm-cache'
 import coldStartData from '@/data/cold-start-seeds.json'
 
 const LASTFM_BASE = "https://ws.audioscrobbler.com/2.0"
@@ -36,13 +37,7 @@ export function tierMultiplier(popularity: number, curveK = 0.95): number {
   return Math.pow(curveK, popularity)
 }
 
-/**
- * Fetch artist names for a Last.fm genre tag. `limit` controls how many top
- * artists to request; default 20 matches the engine's main-pool seeding. The
- * Explore "Left-field" rail passes `limit=30` so it can sample from positions
- * 10-30 (deeper cuts). Return order matches Last.fm's rank order.
- */
-export async function getTagArtistNames(tag: string, limit = 20): Promise<string[]> {
+async function fetchTagArtistNames(tag: string, limit: number): Promise<string[]> {
   const apiKey = process.env.LASTFM_API_KEY
   if (!apiKey) return []
   try {
@@ -58,6 +53,19 @@ export async function getTagArtistNames(tag: string, limit = 20): Promise<string
   } catch {
     return []
   }
+}
+
+/**
+ * Fetch artist names for a Last.fm genre tag. `limit` controls how many top
+ * artists to request; default 20 matches the engine's main-pool seeding. The
+ * Explore "Left-field" rail passes `limit=30` so it can sample from positions
+ * 10-30 (deeper cuts). Return order matches Last.fm's rank order.
+ *
+ * Results pass through a shared 7-day Supabase cache (lastfm_cache) so cold
+ * Explore loads don't redo the same tag.gettopartists call every time.
+ */
+export async function getTagArtistNames(tag: string, limit = 20): Promise<string[]> {
+  return cachedTagArtistNames(tag, limit, fetchTagArtistNames)
 }
 
 /**

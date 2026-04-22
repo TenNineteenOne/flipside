@@ -112,17 +112,25 @@ async function loadUserContext(supabase: SupabaseClient, userId: string) {
   ])
 
   // Hydrate listened artists with their genres via artist_search_cache.
-  // Batched in chunks of 200 to stay well within Postgres IN-list limits.
+  // Chunked at 200 to stay within Postgres IN-list limits; chunks run in
+  // parallel so a user with 1000+ listened artists pays one round-trip of
+  // latency instead of N.
   const listenedIds = (listenedRows ?? []).map((r) => r.spotify_artist_id as string)
   const genreById = new Map<string, string[]>()
   const CHUNK = 200
+  const chunks: string[][] = []
   for (let i = 0; i < listenedIds.length; i += CHUNK) {
-    const chunk = listenedIds.slice(i, i + CHUNK)
-    if (chunk.length === 0) continue
-    const { data } = await supabase
-      .from('artist_search_cache')
-      .select('spotify_artist_id, artist_data')
-      .in('spotify_artist_id', chunk)
+    chunks.push(listenedIds.slice(i, i + CHUNK))
+  }
+  const chunkResults = await Promise.all(
+    chunks.map((chunk) =>
+      supabase
+        .from('artist_search_cache')
+        .select('spotify_artist_id, artist_data')
+        .in('spotify_artist_id', chunk),
+    ),
+  )
+  for (const { data } of chunkResults) {
     for (const row of data ?? []) {
       const artist = row.artist_data as { genres?: string[] } | null
       genreById.set(row.spotify_artist_id as string, artist?.genres ?? [])

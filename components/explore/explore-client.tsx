@@ -1,15 +1,14 @@
 "use client"
 
-import { useState, useTransition, useMemo } from "react"
+import { useCallback, useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { RefreshCw } from "lucide-react"
-import { AnimatePresence, motion } from "framer-motion"
-import { ArtistCard } from "@/components/feed/artist-card"
+import { AnimatePresence } from "framer-motion"
 import { ChallengeCard } from "@/components/explore/challenge-card"
+import { ExploreArtistRow } from "@/components/explore/explore-artist-row"
 import type { RailArtist } from "@/components/explore/rail"
 import type { MusicPlatform } from "@/lib/music-links"
-import type { Track } from "@/lib/music-provider/types"
 
 export interface ChallengePayload {
   title: string
@@ -35,46 +34,6 @@ export interface ExploreClientProps {
   adventurous: boolean
   initialSavedIds: string[]
   challenge: ChallengePayload | null
-}
-
-interface ArtistWithTracks {
-  id: string
-  name: string
-  genres: string[]
-  imageUrl: string | null
-  popularity: number
-  topTracks: Track[]
-}
-
-interface RecommendationShape {
-  spotify_artist_id: string
-  artist_data: ArtistWithTracks
-  score: number
-  why: {
-    sourceArtists: string[]
-    genres: string[]
-    friendBoost: string[]
-  }
-  artist_color?: string | null
-}
-
-function railArtistToRecommendation(a: RailArtist): RecommendationShape {
-  const sourceArtists = a.why?.sourceArtist ? [a.why.sourceArtist] : []
-  const genres = a.why?.tag ? [a.why.tag] : []
-  return {
-    spotify_artist_id: a.id,
-    artist_data: {
-      id: a.id,
-      name: a.name,
-      genres: a.genres,
-      imageUrl: a.imageUrl,
-      popularity: a.popularity,
-      topTracks: [],
-    },
-    score: 0,
-    why: { sourceArtists, genres, friendBoost: [] },
-    artist_color: a.artistColor ?? null,
-  }
 }
 
 export function ExploreClient({
@@ -108,7 +67,7 @@ export function ExploreClient({
   const [activeKey, setActiveKey] = useState<RailKey>(orderedRails[0]?.railKey ?? "adjacent")
   const activeRail = orderedRails.find((r) => r.railKey === activeKey) ?? orderedRails[0]
 
-  async function handleFeedback(artistId: string, signal: string) {
+  const handleFeedback = useCallback(async (artistId: string, signal: string) => {
     setDismissedSignals((prev) => new Map(prev).set(artistId, signal))
     // "skip" is local-only in Explore — no server call, no recommendation_cache write.
     if (signal !== "thumbs_up" && signal !== "thumbs_down") return
@@ -127,9 +86,9 @@ export function ExploreClient({
       })
       toast.error("Couldn't save feedback — try again")
     }
-  }
+  }, [])
 
-  async function handleSave(artistId: string) {
+  const handleSave = useCallback(async (artistId: string) => {
     const isCurrentlySaved = savedIds.has(artistId)
     setSavedIds((prev) => {
       const n = new Set(prev)
@@ -156,7 +115,7 @@ export function ExploreClient({
       })
       toast.error(isCurrentlySaved ? "Couldn't unsave — try again" : "Couldn't save — try again")
     }
-  }
+  }, [savedIds])
 
   async function handleShuffle() {
     if (isRegenerating) return
@@ -309,30 +268,17 @@ export function ExploreClient({
           ) : (
             <div className="col gap-16">
               <AnimatePresence initial={false}>
-                {activeRail.artists.map((artist) => {
-                  const dismissSignal = dismissedSignals.get(artist.id) ?? null
-                  const isDismissed = dismissSignal !== null
-                  return (
-                    <motion.div
-                      key={artist.id}
-                      layout
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ type: "spring", stiffness: 400, damping: 40 }}
-                    >
-                      <ArtistCard
-                        recommendation={railArtistToRecommendation(artist)}
-                        musicPlatform={musicPlatform}
-                        onSave={() => handleSave(artist.id)}
-                        onFeedback={(sig) => handleFeedback(artist.id, sig)}
-                        isSaved={savedIds.has(artist.id)}
-                        isDismissed={isDismissed}
-                        dismissSignal={dismissSignal}
-                      />
-                    </motion.div>
-                  )
-                })}
+                {activeRail.artists.map((artist) => (
+                  <ExploreArtistRow
+                    key={artist.id}
+                    artist={artist}
+                    musicPlatform={musicPlatform}
+                    isSaved={savedIds.has(artist.id)}
+                    dismissSignal={dismissedSignals.get(artist.id) ?? null}
+                    onSave={handleSave}
+                    onFeedback={handleFeedback}
+                  />
+                ))}
               </AnimatePresence>
             </div>
           )}
