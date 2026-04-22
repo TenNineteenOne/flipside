@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { RefreshCw, ThumbsUp, ThumbsDown, Bookmark, Check, ExternalLink } from "lucide-react"
 import { stringToVibrantHex, sanitizeHex } from "@/lib/color-utils"
 import { getArtistLink, type MusicPlatform } from "@/lib/music-links"
+import { SixDegreesChain } from "./six-degrees-chain"
 
 export interface RailArtist {
   id: string
@@ -224,11 +225,7 @@ function ExploreCard({ artist, musicPlatform, isSaved, onFeedback, onSave }: Exp
             via {artist.why.sourceArtist}
           </div>
         )}
-        {artist.why?.chain && artist.why.chain.length > 0 && (
-          <div className="muted" style={{ fontSize: 10, lineHeight: 1.4 }}>
-            {artist.why.chain.map((hop) => hop.name).join(" → ")}
-          </div>
-        )}
+        <SixDegreesChain chain={artist.why?.chain} />
 
         <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
           <button
