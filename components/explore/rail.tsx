@@ -95,19 +95,21 @@ export function Rail({
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 4,
-            padding: "6px 10px",
+            gap: 6,
+            padding: "7px 12px",
             fontSize: 12,
-            background: "var(--bg-card)",
-            border: "1px solid var(--border)",
-            borderRadius: 6,
+            fontWeight: 600,
+            background: "rgba(139,92,246,0.10)",
+            border: "1px solid rgba(139,92,246,0.35)",
+            borderRadius: 8,
             cursor: regenerating ? "default" : "pointer",
-            color: "var(--text-faint)",
-            opacity: regenerating ? 0.6 : 1,
+            color: "var(--accent)",
+            opacity: regenerating ? 0.7 : 1,
+            transition: "background 0.15s, border-color 0.15s",
           }}
         >
-          <RefreshCw size={12} className={regenerating ? "spin" : undefined} />
-          <span>{regenerating ? "…" : "Regenerate"}</span>
+          <RefreshCw size={13} className={regenerating ? "spin" : undefined} />
+          <span>{regenerating ? "Shuffling…" : "Shuffle"}</span>
         </button>
       </div>
 

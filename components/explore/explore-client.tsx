@@ -3,9 +3,13 @@
 import { useState, useTransition, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { Rail, type RailArtist } from "@/components/explore/rail"
+import { RefreshCw } from "lucide-react"
+import { AnimatePresence, motion } from "framer-motion"
+import { ArtistCard } from "@/components/feed/artist-card"
 import { ChallengeCard } from "@/components/explore/challenge-card"
+import type { RailArtist } from "@/components/explore/rail"
 import type { MusicPlatform } from "@/lib/music-links"
+import type { Track } from "@/lib/music-provider/types"
 
 export interface ChallengePayload {
   title: string
@@ -33,6 +37,46 @@ export interface ExploreClientProps {
   challenge: ChallengePayload | null
 }
 
+interface ArtistWithTracks {
+  id: string
+  name: string
+  genres: string[]
+  imageUrl: string | null
+  popularity: number
+  topTracks: Track[]
+}
+
+interface RecommendationShape {
+  spotify_artist_id: string
+  artist_data: ArtistWithTracks
+  score: number
+  why: {
+    sourceArtists: string[]
+    genres: string[]
+    friendBoost: string[]
+  }
+  artist_color?: string | null
+}
+
+function railArtistToRecommendation(a: RailArtist): RecommendationShape {
+  const sourceArtists = a.why?.sourceArtist ? [a.why.sourceArtist] : []
+  const genres = a.why?.tag ? [a.why.tag] : []
+  return {
+    spotify_artist_id: a.id,
+    artist_data: {
+      id: a.id,
+      name: a.name,
+      genres: a.genres,
+      imageUrl: a.imageUrl,
+      popularity: a.popularity,
+      topTracks: [],
+    },
+    score: 0,
+    why: { sourceArtists, genres, friendBoost: [] },
+    artist_color: a.artistColor ?? null,
+  }
+}
+
 export function ExploreClient({
   rails,
   musicPlatform,
@@ -42,13 +86,13 @@ export function ExploreClient({
 }: ExploreClientProps) {
   const router = useRouter()
   const [, startTransition] = useTransition()
-  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set())
+  const [dismissedSignals, setDismissedSignals] = useState<Map<string, string>>(new Map())
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set(initialSavedIds))
   const [isRegenerating, setIsRegenerating] = useState(false)
 
   // Adventurous rail ordering — default-off order is adjacent/wildcards/outside/leftfield.
   // When ON, flip to serendipity-first: outside/leftfield/wildcards/adjacent. The server
-  // also inflates Left-field count from 6 → 12 when Adventurous is set.
+  // also inflates Left-field count when Adventurous is set.
   const orderedRails = useMemo(() => {
     const order: RailKey[] = adventurous
       ? ["outside", "leftfield", "wildcards", "adjacent"]
@@ -57,8 +101,13 @@ export function ExploreClient({
     return order.map((k) => byKey.get(k)).filter((r): r is RailPayload => !!r)
   }, [rails, adventurous])
 
-  async function handleFeedback(artistId: string, signal: "thumbs_up" | "thumbs_down") {
-    setDismissedIds((prev) => new Set(prev).add(artistId))
+  const [activeKey, setActiveKey] = useState<RailKey>(orderedRails[0]?.railKey ?? "adjacent")
+  const activeRail = orderedRails.find((r) => r.railKey === activeKey) ?? orderedRails[0]
+
+  async function handleFeedback(artistId: string, signal: string) {
+    setDismissedSignals((prev) => new Map(prev).set(artistId, signal))
+    // "skip" is local-only in Explore — no server call, no recommendation_cache write.
+    if (signal !== "thumbs_up" && signal !== "thumbs_down") return
     try {
       const res = await fetch("/api/feedback", {
         method: "POST",
@@ -67,8 +116,8 @@ export function ExploreClient({
       })
       if (!res.ok) throw new Error("server")
     } catch {
-      setDismissedIds((prev) => {
-        const n = new Set(prev)
+      setDismissedSignals((prev) => {
+        const n = new Map(prev)
         n.delete(artistId)
         return n
       })
@@ -78,7 +127,6 @@ export function ExploreClient({
 
   async function handleSave(artistId: string) {
     const isCurrentlySaved = savedIds.has(artistId)
-    // Optimistic flip
     setSavedIds((prev) => {
       const n = new Set(prev)
       if (isCurrentlySaved) n.delete(artistId)
@@ -92,6 +140,9 @@ export function ExploreClient({
         body: JSON.stringify({ spotifyArtistId: artistId }),
       })
       if (!res.ok) throw new Error("server")
+      if (!isCurrentlySaved) {
+        setDismissedSignals((prev) => new Map(prev).set(artistId, "saved"))
+      }
     } catch {
       setSavedIds((prev) => {
         const n = new Set(prev)
@@ -103,29 +154,35 @@ export function ExploreClient({
     }
   }
 
-  async function handleRegenerate(railKey: RailKey) {
-    // Individual-rail regen is not yet an endpoint — re-roll the whole set
-    // (cheap: 4 rails share one Last.fm budget). Keeps scope tight for P2.1.
+  async function handleShuffle() {
     if (isRegenerating) return
     setIsRegenerating(true)
     try {
       const res = await fetch("/api/explore/generate?force=true", { method: "POST" })
       if (!res.ok) throw new Error("generate failed")
+      // Clear dismissed for the active tab's artists so a fresh roll isn't hidden.
+      setDismissedSignals((prev) => {
+        if (!activeRail) return prev
+        const n = new Map(prev)
+        for (const a of activeRail.artists) n.delete(a.id)
+        return n
+      })
       startTransition(() => router.refresh())
-      void railKey
     } catch {
-      toast.error("Couldn't regenerate — try again")
+      toast.error("Couldn't shuffle — try again")
     } finally {
       setIsRegenerating(false)
     }
   }
+
+  const totalDiscoveries = orderedRails.reduce((n, r) => n + r.artists.length, 0)
 
   return (
     <div>
       <div className="page-head">
         <h1>Explore</h1>
         <span className="sub">
-          {orderedRails.reduce((n, r) => n + r.artists.length, 0)} discoveries
+          {totalDiscoveries} discoveries
           {adventurous ? " · Adventurous on" : ""}
         </span>
       </div>
@@ -140,23 +197,143 @@ export function ExploreClient({
         />
       )}
 
-      <div>
-        {orderedRails.map((rail) => (
-          <Rail
-            key={rail.railKey}
-            title={rail.title}
-            subtitle={rail.subtitle}
-            artists={rail.artists}
-            musicPlatform={musicPlatform}
-            onRegenerate={() => handleRegenerate(rail.railKey)}
-            onFeedback={handleFeedback}
-            onSave={handleSave}
-            savedIds={savedIds}
-            dismissedIds={dismissedIds}
-            emptyCaption={rail.emptyCaption}
-          />
-        ))}
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 6,
+          marginTop: 16,
+          marginBottom: 14,
+        }}
+      >
+        {orderedRails.map((rail) => {
+          const active = rail.railKey === activeKey
+          const count = rail.artists.length
+          return (
+            <button
+              key={rail.railKey}
+              type="button"
+              onClick={() => setActiveKey(rail.railKey)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "8px 14px",
+                fontSize: 13,
+                fontWeight: 600,
+                borderRadius: 999,
+                border: active ? "1px solid var(--accent)" : "1px solid var(--border)",
+                background: active ? "rgba(139,92,246,0.12)" : "transparent",
+                color: active ? "var(--accent)" : "var(--text-muted)",
+                cursor: "pointer",
+                transition: "background 0.15s, border-color 0.15s, color 0.15s",
+              }}
+            >
+              <span>{rail.title}</span>
+              <span
+                className="mono"
+                style={{
+                  fontSize: 11,
+                  padding: "1px 7px",
+                  borderRadius: 999,
+                  background: active ? "rgba(139,92,246,0.25)" : "rgba(255,255,255,0.05)",
+                  color: active ? "var(--accent)" : "var(--text-faint)",
+                }}
+              >
+                {count}
+              </span>
+            </button>
+          )
+        })}
       </div>
+
+      {activeRail && (
+        <div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "flex-end",
+              justifyContent: "space-between",
+              gap: 12,
+              marginBottom: 12,
+            }}
+          >
+            <div>
+              <div className="muted" style={{ fontSize: 13, lineHeight: 1.4 }}>
+                {activeRail.subtitle}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleShuffle}
+              disabled={isRegenerating}
+              aria-label={`Shuffle ${activeRail.title}`}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "8px 14px",
+                fontSize: 13,
+                fontWeight: 600,
+                borderRadius: 8,
+                background: "rgba(139,92,246,0.10)",
+                border: "1px solid rgba(139,92,246,0.35)",
+                color: "var(--accent)",
+                cursor: isRegenerating ? "default" : "pointer",
+                opacity: isRegenerating ? 0.7 : 1,
+                whiteSpace: "nowrap",
+              }}
+            >
+              <RefreshCw size={13} className={isRegenerating ? "spin" : undefined} />
+              <span>{isRegenerating ? "Shuffling…" : "Shuffle"}</span>
+            </button>
+          </div>
+
+          {activeRail.artists.length === 0 ? (
+            <div
+              className="muted"
+              style={{
+                padding: "36px 18px",
+                fontSize: 13,
+                textAlign: "center",
+                border: "1px dashed var(--border)",
+                borderRadius: 12,
+              }}
+            >
+              {activeRail.emptyCaption ?? "Nothing here yet — tap Shuffle."}
+            </div>
+          ) : (
+            <div className="col gap-16">
+              <AnimatePresence initial={false}>
+                {activeRail.artists.map((artist) => {
+                  const dismissSignal = dismissedSignals.get(artist.id) ?? null
+                  const isDismissed = dismissSignal !== null
+                  return (
+                    <motion.div
+                      key={artist.id}
+                      layout
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ type: "spring", stiffness: 400, damping: 40 }}
+                    >
+                      <ArtistCard
+                        recommendation={railArtistToRecommendation(artist)}
+                        musicPlatform={musicPlatform}
+                        onSave={() => handleSave(artist.id)}
+                        onFeedback={(sig) => handleFeedback(artist.id, sig)}
+                        isSaved={savedIds.has(artist.id)}
+                        isDismissed={isDismissed}
+                        dismissSignal={dismissSignal}
+                      />
+                    </motion.div>
+                  )
+                })}
+              </AnimatePresence>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

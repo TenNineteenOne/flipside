@@ -488,7 +488,14 @@ export function SettingsForm({
           {/* ── Discovery ────────────────────────────────────────────── */}
           <div>
             <div className="eyebrow" style={{ marginBottom: 10 }}>Discovery</div>
-            <div className="fs-card col gap-16">
+            <div
+              className="fs-card col gap-16"
+              style={{
+                borderColor: "rgba(139,92,246,0.45)",
+                borderWidth: 2,
+                background: "rgba(139,92,246,0.04)",
+              }}
+            >
               {/* Popularity preference dial */}
               <div>
                 <div
@@ -696,6 +703,15 @@ export function SettingsForm({
                   />
                 </button>
               </div>
+
+              <button
+                className="btn btn-primary"
+                onClick={handleGenerate}
+                disabled={isGenerating}
+                style={{ width: "100%", marginTop: 4 }}
+              >
+                {isGenerating ? "Generating…" : "Regenerate feed →"}
+              </button>
             </div>
           </div>
 

@@ -35,24 +35,24 @@ interface ArtistData {
 
 const RAIL_TITLES: Record<RailKey, { title: string; subtitle: string; empty: string }> = {
   adjacent: {
-    title: "Adjacent to your taste",
-    subtitle: "One hop from what you already love",
+    title: "Close cousins",
+    subtitle: "One hop over from what you already love",
     empty: "Pick a few genres or artists first — this rail grows with your taste.",
   },
   outside: {
-    title: "Totally outside your taste",
-    subtitle: "Genres you've never touched",
-    empty: "Coming soon — listen a little so we know what's outside.",
+    title: "Uncharted territory",
+    subtitle: "Corners of the sonic map you've never set foot in",
+    empty: "Listen a little first — we need to know where the edges are.",
   },
   wildcards: {
-    title: "From your wildcards",
-    subtitle: "Deep cuts inspired by your thumbs-ups",
-    empty: "Thumbs-up an artist and a wildcard rail will appear.",
+    title: "Rabbit holes",
+    subtitle: "Deep cuts spun off the artists you've starred",
+    empty: "Thumbs-up an artist and the rabbit hole opens up.",
   },
   leftfield: {
-    title: "Left-field wildcards",
-    subtitle: "Random leaves from the sonic map",
-    empty: "Nothing yet — regenerate to sample the map.",
+    title: "Curveballs",
+    subtitle: "A blind pick from the sonic map — good luck",
+    empty: "Nothing yet — regenerate for another throw.",
   },
 }
 
@@ -63,9 +63,9 @@ const RAIL_TITLES: Record<RailKey, { title: string; subtitle: string; empty: str
  * "From your wildcards" above picks that weren't wildcard-sourced.
  */
 const WILDCARDS_FALLBACK_META = {
-  title: "More left-field picks",
-  subtitle: "Thumbs-up an artist to unlock your wildcards — until then, another random sample",
-  empty: "Nothing yet — regenerate to sample the map.",
+  title: "More curveballs",
+  subtitle: "Thumbs-up a few artists to unlock your rabbit holes — until then, another blind throw",
+  empty: "Nothing yet — regenerate for another throw.",
 } as const
 
 export default async function ExplorePage() {

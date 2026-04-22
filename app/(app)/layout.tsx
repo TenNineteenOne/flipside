@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation"
-import { auth } from "@/lib/auth"
+import { safeAuth } from "@/lib/auth"
 import { AppNav } from "@/components/nav/app-nav"
 import { AudioProvider } from "@/lib/audio-context"
 import { MiniPlayer } from "@/components/player/mini-player"
@@ -9,7 +9,7 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode
 }) {
-  const session = await auth()
+  const session = await safeAuth()
   if (!session?.user?.id) redirect("/sign-in")
 
   // Seed the identicon from user ID (deterministic, not PII)

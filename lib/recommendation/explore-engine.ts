@@ -226,9 +226,9 @@ async function loadSeenIds(supabase: SupabaseClient, userId: string): Promise<Se
 
 const ADJACENT_TARGET = 10
 const ADJACENT_TARGET_ADVENTUROUS = 12
-const ADJACENT_PER_TAG = 3
+const ADJACENT_PER_TAG = 5
 const ADJACENT_PER_TAG_ADVENTUROUS = 5
-const ADJACENT_MAX_TAGS = 12
+const ADJACENT_MAX_TAGS = 15
 const ADJACENT_MAX_TAGS_ADVENTUROUS = 18
 
 /**
@@ -364,8 +364,8 @@ const OUTSIDE_TARGET_ADVENTUROUS = 12
 const OUTSIDE_ANCHORS_PICKED = 3
 const OUTSIDE_ANCHORS_PICKED_ADVENTUROUS = 4
 const OUTSIDE_MID_START = 10 // slice start of Last.fm top artists — skip mainstream head
-const OUTSIDE_MID_END = 30   // exclusive slice end
-const OUTSIDE_PER_ANCHOR_TARGET = 4
+const OUTSIDE_MID_END = 40   // exclusive slice end
+const OUTSIDE_PER_ANCHOR_TARGET = 6
 
 /**
  * Totally outside your taste — pull mid-list artists from anchors the user
@@ -606,9 +606,9 @@ export async function wildcardsRail(
   return { railKey: 'wildcards', artistIds, why }
 }
 
-const LEFTFIELD_TARGET = 6
+const LEFTFIELD_TARGET = 10
 const LEFTFIELD_TARGET_ADVENTUROUS = 12
-const LEFTFIELD_SAMPLE_COUNT = 18 // over-sample so filtering still yields enough picks
+const LEFTFIELD_SAMPLE_COUNT = 30 // over-sample so filtering still yields enough picks
 const LEFTFIELD_SAMPLE_COUNT_ADVENTUROUS = 28
 const LEFTFIELD_MID_START = 10
 const LEFTFIELD_MID_END = 30
