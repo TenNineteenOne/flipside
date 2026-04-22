@@ -527,6 +527,7 @@ export async function wildcardsRail(
 
   // Round-robin across seeds with provenance map.
   const nameToSeed = new Map<string, { id: string; name: string }>()
+  const nameToMatch = new Map<string, number>()
   const namesRoundRobin: string[] = []
   let idx = 0
   let exhausted = false
@@ -535,10 +536,11 @@ export async function wildcardsRail(
     for (const { seed, tailFirst } of perSeed) {
       if (idx < tailFirst.length) {
         exhausted = false
-        const name = tailFirst[idx].name
-        if (name && !nameToSeed.has(name)) {
-          nameToSeed.set(name, seed)
-          namesRoundRobin.push(name)
+        const ref = tailFirst[idx]
+        if (ref.name && !nameToSeed.has(ref.name)) {
+          nameToSeed.set(ref.name, seed)
+          nameToMatch.set(ref.name, ref.match)
+          namesRoundRobin.push(ref.name)
         }
       }
     }
@@ -565,8 +567,20 @@ export async function wildcardsRail(
     if (ctx.thumbsUpIds.has(a.id)) continue
     artistIds.push(a.id)
     const seed = nameToSeed.get(name)
+    const match = nameToMatch.get(name)
     why[a.id] = seed
-      ? { sourceArtist: seed.name, sourceArtistId: seed.id }
+      ? {
+          sourceArtist: seed.name,
+          sourceArtistId: seed.id,
+          // 1-hop six-degrees chain: surfaced artist is a direct Last.fm similar
+          // of the seed. chain[0] = seed (trivial 1.0 match), chain[1] = target.
+          chain: match !== undefined
+            ? [
+                { name: seed.name, match: 1 },
+                { name: a.name, match },
+              ]
+            : null,
+        }
       : {}
   }
 
