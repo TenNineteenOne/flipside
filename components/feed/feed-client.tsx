@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { ArtistCard } from "@/components/feed/artist-card"
 import { hexToRgba, sanitizeHex } from "@/lib/color-utils"
+import { normalizedIncludes } from "@/lib/genre/normalize"
 import type { MusicPlatform } from "@/lib/music-links"
 
 interface Track {
@@ -77,7 +78,7 @@ export function FeedClient({ recommendations, musicPlatform }: FeedClientProps) 
     () =>
       genreFilter
         ? recommendations.filter((r) =>
-            r.artist_data.genres.some((g) => g.toLowerCase().includes(genreFilter.toLowerCase()))
+            r.artist_data.genres.some((g) => normalizedIncludes(g, genreFilter))
           )
         : recommendations,
     [recommendations, genreFilter]
@@ -124,6 +125,21 @@ export function FeedClient({ recommendations, musicPlatform }: FeedClientProps) 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         throw new Error((data as { error?: string }).error ?? "Generation failed")
+      }
+      const data = (await res.json().catch(() => ({}))) as {
+        softenedFilters?: { playThreshold?: boolean; undergroundMode?: boolean; coldStart?: boolean }
+      }
+      if (data.softenedFilters) {
+        const s = data.softenedFilters
+        const bits: string[] = []
+        if (s.coldStart) bits.push("falling back to starter picks")
+        else {
+          if (s.playThreshold) bits.push("loosening the familiarity cap")
+          if (s.undergroundMode) bits.push("turning off the hard pop-50 cutoff")
+        }
+        if (bits.length > 0) {
+          toast(`Widened the search for this batch — ${bits.join(" and ")}.`)
+        }
       }
       router.refresh()
     } catch (err) {
