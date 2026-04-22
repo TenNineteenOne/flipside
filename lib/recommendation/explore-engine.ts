@@ -218,7 +218,9 @@ async function loadSeenIds(supabase: SupabaseClient, userId: string): Promise<Se
 const ADJACENT_TARGET = 10
 const ADJACENT_TARGET_ADVENTUROUS = 12
 const ADJACENT_PER_TAG = 3
+const ADJACENT_PER_TAG_ADVENTUROUS = 5
 const ADJACENT_MAX_TAGS = 12
+const ADJACENT_MAX_TAGS_ADVENTUROUS = 18
 
 /**
  * Adjacent rail — genres one hop away from the user's stated taste.
@@ -236,6 +238,8 @@ export async function adjacentRail(
   seenIds: Set<string>,
 ): Promise<RailResult> {
   const target = input.adventurous ? ADJACENT_TARGET_ADVENTUROUS : ADJACENT_TARGET
+  const perTag = input.adventurous ? ADJACENT_PER_TAG_ADVENTUROUS : ADJACENT_PER_TAG
+  const maxTags = input.adventurous ? ADJACENT_MAX_TAGS_ADVENTUROUS : ADJACENT_MAX_TAGS
   const seedTags = await resolveAdjacentSeeds(ctx, supabase)
   if (seedTags.length === 0) return { railKey: 'adjacent', artistIds: [], why: {} }
 
@@ -249,19 +253,19 @@ export async function adjacentRail(
       if (ownTagSet.has(tag.toLowerCase())) continue
       if (adjacentByTag.has(tag)) continue
       adjacentByTag.set(tag, [])
-      if (adjacentByTag.size >= ADJACENT_MAX_TAGS) break
+      if (adjacentByTag.size >= maxTags) break
     }
-    if (adjacentByTag.size >= ADJACENT_MAX_TAGS) break
+    if (adjacentByTag.size >= maxTags) break
   }
   if (adjacentByTag.size === 0) return { railKey: 'adjacent', artistIds: [], why: {} }
 
   // Fetch top artists per adjacent tag in parallel.
   const tagList = [...adjacentByTag.keys()]
   const perTagResults = await Promise.all(
-    tagList.map((tag) => getTagArtistNames(tag, ADJACENT_PER_TAG + 2)),
+    tagList.map((tag) => getTagArtistNames(tag, perTag + 2)),
   )
   for (let i = 0; i < tagList.length; i++) {
-    adjacentByTag.set(tagList[i], perTagResults[i].slice(0, ADJACENT_PER_TAG + 2))
+    adjacentByTag.set(tagList[i], perTagResults[i].slice(0, perTag + 2))
   }
 
   // Round-robin across tags → name list + name→tag map for provenance.
@@ -349,6 +353,7 @@ async function resolveAdjacentSeeds(
 const OUTSIDE_TARGET = 10
 const OUTSIDE_TARGET_ADVENTUROUS = 12
 const OUTSIDE_ANCHORS_PICKED = 3
+const OUTSIDE_ANCHORS_PICKED_ADVENTUROUS = 4
 const OUTSIDE_MID_START = 10 // slice start of Last.fm top artists — skip mainstream head
 const OUTSIDE_MID_END = 30   // exclusive slice end
 const OUTSIDE_PER_ANCHOR_TARGET = 4
@@ -369,6 +374,7 @@ export async function outsideRail(
 ): Promise<RailResult> {
   void supabase
   const target = input.adventurous ? OUTSIDE_TARGET_ADVENTUROUS : OUTSIDE_TARGET
+  const anchorsPicked = input.adventurous ? OUTSIDE_ANCHORS_PICKED_ADVENTUROUS : OUTSIDE_ANCHORS_PICKED
 
   // Anchors the user has touched, either via selected_genres or by listening.
   const touched = new Map<string, number>() // anchorId → "touch weight" (listened play count, selected genres count more)
@@ -387,17 +393,17 @@ export async function outsideRail(
   const anchors = listAnchors()
   const untouched = anchors.filter((a) => !touched.has(a.id))
   let picked: Array<{ id: string; lastfmTag: string; label: string }>
-  if (untouched.length >= OUTSIDE_ANCHORS_PICKED) {
+  if (untouched.length >= anchorsPicked) {
     // Stable pick across the cache window so the user doesn't see the set
     // shuffle under them on re-fetch.
     const shuffled = seededShuffle(untouched, cacheWindowSeed(input.userId, 'outside'))
-    picked = shuffled.slice(0, OUTSIDE_ANCHORS_PICKED)
+    picked = shuffled.slice(0, anchorsPicked)
   } else {
     // All anchors touched — pick least-touched (lowest touch weight).
     const ranked = [...anchors].sort(
       (a, b) => (touched.get(a.id) ?? 0) - (touched.get(b.id) ?? 0),
     )
-    picked = ranked.slice(0, OUTSIDE_ANCHORS_PICKED)
+    picked = ranked.slice(0, anchorsPicked)
   }
   if (picked.length === 0) return { railKey: 'outside', artistIds: [], why: {} }
 
@@ -468,7 +474,9 @@ export async function outsideRail(
 const WILDCARDS_TARGET = 10
 const WILDCARDS_TARGET_ADVENTUROUS = 12
 const WILDCARDS_SEED_COUNT = 3
+const WILDCARDS_SEED_COUNT_ADVENTUROUS = 4
 const WILDCARDS_PER_SEED = 4 // tail-bias the similars per seed
+const WILDCARDS_PER_SEED_ADVENTUROUS = 5
 
 /**
  * From your wildcards — deep cuts inspired by the user's thumbs-ups.
@@ -491,9 +499,11 @@ export async function wildcardsRail(
   if (thumbsUpIds.length === 0) return { railKey: 'wildcards', artistIds: [], why: {} }
 
   const target = input.adventurous ? WILDCARDS_TARGET_ADVENTUROUS : WILDCARDS_TARGET
+  const seedCount = input.adventurous ? WILDCARDS_SEED_COUNT_ADVENTUROUS : WILDCARDS_SEED_COUNT
+  const perSeedCount = input.adventurous ? WILDCARDS_PER_SEED_ADVENTUROUS : WILDCARDS_PER_SEED
 
   const shuffledIds = seededShuffle(thumbsUpIds, cacheWindowSeed(input.userId, 'wildcards'))
-  const seedIds = shuffledIds.slice(0, WILDCARDS_SEED_COUNT)
+  const seedIds = shuffledIds.slice(0, seedCount)
 
   // Resolve seed ids → seed names via artist_search_cache (plus seed_artists as
   // a fallback since those live in `seed_artists` and may pre-date any cache row).
@@ -520,7 +530,7 @@ export async function wildcardsRail(
   const perSeed = await Promise.all(
     seedPairs.map(async (seed) => {
       const similars = await musicProvider.getSimilarArtistNames(seed.name)
-      const tailFirst = [...similars].sort((a, b) => a.match - b.match).slice(0, WILDCARDS_PER_SEED)
+      const tailFirst = [...similars].sort((a, b) => a.match - b.match).slice(0, perSeedCount)
       return { seed, tailFirst }
     }),
   )
@@ -590,6 +600,7 @@ export async function wildcardsRail(
 const LEFTFIELD_TARGET = 6
 const LEFTFIELD_TARGET_ADVENTUROUS = 12
 const LEFTFIELD_SAMPLE_COUNT = 18 // over-sample so filtering still yields enough picks
+const LEFTFIELD_SAMPLE_COUNT_ADVENTUROUS = 28
 const LEFTFIELD_MID_START = 10
 const LEFTFIELD_MID_END = 30
 
@@ -617,8 +628,9 @@ export async function leftfieldRail(
   const pool = allLeavesWithAnchor().filter((l) => !excluded.has(l.anchorId))
   if (pool.length === 0) return { railKey: 'leftfield', artistIds: [], why: {} }
 
+  const sampleCount = input.adventurous ? LEFTFIELD_SAMPLE_COUNT_ADVENTUROUS : LEFTFIELD_SAMPLE_COUNT
   const seed = cacheWindowSeed(input.userId, 'leftfield')
-  const sampled = seededShuffle(pool, seed).slice(0, LEFTFIELD_SAMPLE_COUNT)
+  const sampled = seededShuffle(pool, seed).slice(0, sampleCount)
 
   // For each sampled tag, pick one candidate from Last.fm's mid-list slice.
   // We hash (userId:leafieldTag) to pick a stable offset inside the slice.
