@@ -92,13 +92,17 @@ export function ExploreClient({
 
   // Adventurous rail ordering — default-off order is adjacent/wildcards/outside/leftfield.
   // When ON, flip to serendipity-first: outside/leftfield/wildcards/adjacent. The server
-  // also inflates Left-field count when Adventurous is set.
+  // also inflates Left-field count when Adventurous is set. Rails with fewer than
+  // MIN_PICKS artists are hidden so every visible tab has real depth to browse.
   const orderedRails = useMemo(() => {
+    const MIN_PICKS = 5
     const order: RailKey[] = adventurous
       ? ["outside", "leftfield", "wildcards", "adjacent"]
       : ["adjacent", "wildcards", "outside", "leftfield"]
     const byKey = new Map(rails.map((r) => [r.railKey, r] as const))
-    return order.map((k) => byKey.get(k)).filter((r): r is RailPayload => !!r)
+    return order
+      .map((k) => byKey.get(k))
+      .filter((r): r is RailPayload => !!r && r.artists.length >= MIN_PICKS)
   }, [rails, adventurous])
 
   const [activeKey, setActiveKey] = useState<RailKey>(orderedRails[0]?.railKey ?? "adjacent")

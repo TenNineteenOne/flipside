@@ -256,15 +256,37 @@ export async function adjacentRail(
   // call budget bounded.
   const adjacentByTag = new Map<string, string[]>()
   const ownTagSet = new Set(seedTags.map((t) => t.toLowerCase()))
-  for (const seed of seedTags.slice(0, 5)) {
-    const neighbours = adjacentGenres(seed, 'close')
-    for (const tag of neighbours) {
-      if (ownTagSet.has(tag.toLowerCase())) continue
-      if (adjacentByTag.has(tag)) continue
-      adjacentByTag.set(tag, [])
+  function collectFromDistance(distance: 'close' | 'medium') {
+    for (const seed of seedTags.slice(0, 5)) {
+      const neighbours = adjacentGenres(seed, distance)
+      for (const tag of neighbours) {
+        if (ownTagSet.has(tag.toLowerCase())) continue
+        if (adjacentByTag.has(tag)) continue
+        adjacentByTag.set(tag, [])
+        if (adjacentByTag.size >= maxTags) break
+      }
       if (adjacentByTag.size >= maxTags) break
     }
-    if (adjacentByTag.size >= maxTags) break
+  }
+  collectFromDistance('close')
+  // Seeds derived from listened_artists aren't always coord-mapped leaves, so
+  // `close` can come back empty. Fall back to medium-distance neighbours, then
+  // to same-anchor sibling leaves so the rail always has something to chew on.
+  if (adjacentByTag.size === 0) collectFromDistance('medium')
+  if (adjacentByTag.size === 0) {
+    const seenAnchors = new Set<string>()
+    for (const seed of seedTags.slice(0, 5)) {
+      const anchor = genreToAnchor(seed)
+      if (!anchor || seenAnchors.has(anchor)) continue
+      seenAnchors.add(anchor)
+      for (const leaf of leafTagsInAnchor(anchor)) {
+        if (ownTagSet.has(leaf.toLowerCase())) continue
+        if (adjacentByTag.has(leaf)) continue
+        adjacentByTag.set(leaf, [])
+        if (adjacentByTag.size >= maxTags) break
+      }
+      if (adjacentByTag.size >= maxTags) break
+    }
   }
   if (adjacentByTag.size === 0) return { railKey: 'adjacent', artistIds: [], why: {} }
 
@@ -338,25 +360,40 @@ async function resolveAdjacentSeeds(
   supabase: SupabaseClient,
 ): Promise<string[]> {
   if (ctx.selectedGenres.length > 0) return ctx.selectedGenres.slice(0, 5)
-  if (ctx.seedArtists.length === 0) return []
 
-  const ids = ctx.seedArtists.map((s) => s.spotify_artist_id)
-  const { data } = await supabase
-    .from('artist_search_cache')
-    .select('spotify_artist_id, artist_data')
-    .in('spotify_artist_id', ids)
+  if (ctx.seedArtists.length > 0) {
+    const ids = ctx.seedArtists.map((s) => s.spotify_artist_id)
+    const { data } = await supabase
+      .from('artist_search_cache')
+      .select('spotify_artist_id, artist_data')
+      .in('spotify_artist_id', ids)
 
-  const genres: string[] = []
-  const seen = new Set<string>()
-  for (const row of data ?? []) {
-    const artist = row.artist_data as { genres?: string[] } | null
-    const primary = artist?.genres?.[0]
-    if (primary && !seen.has(primary)) {
-      seen.add(primary)
-      genres.push(primary)
+    const genres: string[] = []
+    const seen = new Set<string>()
+    for (const row of data ?? []) {
+      const artist = row.artist_data as { genres?: string[] } | null
+      const primary = artist?.genres?.[0]
+      if (primary && !seen.has(primary)) {
+        seen.add(primary)
+        genres.push(primary)
+      }
     }
+    if (genres.length > 0) return genres.slice(0, 5)
   }
-  return genres.slice(0, 5)
+
+  // Final fallback: top primary genres from listened_artists, ranked by
+  // total play_count. Lets the rail populate for users who have sync'd
+  // Last.fm / stats.fm but haven't picked seeds or genres manually.
+  const genrePlays = new Map<string, number>()
+  for (const row of ctx.listened) {
+    const primary = row.genres[0]
+    if (!primary) continue
+    genrePlays.set(primary, (genrePlays.get(primary) ?? 0) + (row.play_count ?? 1))
+  }
+  return [...genrePlays.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([g]) => g)
 }
 
 const OUTSIDE_TARGET = 10
@@ -612,6 +649,12 @@ const LEFTFIELD_SAMPLE_COUNT = 30 // over-sample so filtering still yields enoug
 const LEFTFIELD_SAMPLE_COUNT_ADVENTUROUS = 28
 const LEFTFIELD_MID_START = 10
 const LEFTFIELD_MID_END = 30
+// Per-tag pick count: Last.fm timeouts + Spotify-search misses + listened/seen
+// filters can drop 80%+ of candidates. Pulling multiple names per tag (and
+// round-robining so each slot comes from a different tag) gives the filter
+// pipeline enough slack to hit TARGET consistently.
+const LEFTFIELD_PICKS_PER_TAG = 8
+const LEFTFIELD_PICKS_PER_TAG_ADVENTUROUS = 10
 
 /**
  * Left-field wildcards — uniform long-tail sampling of the leaf-tag universe
@@ -643,14 +686,14 @@ export async function leftfieldRail(
     if (pool.length === 0) return { railKey: 'leftfield', artistIds: [], why: {} }
 
     const sampleCount = input.adventurous ? LEFTFIELD_SAMPLE_COUNT_ADVENTUROUS : LEFTFIELD_SAMPLE_COUNT
+    const picksPerTag = input.adventurous ? LEFTFIELD_PICKS_PER_TAG_ADVENTUROUS : LEFTFIELD_PICKS_PER_TAG
     const seed = cacheWindowSeed(input.userId, seedKey)
     const sampled = seededShuffle(pool, seed).slice(0, sampleCount)
 
-    // For each sampled tag, pick one candidate from Last.fm's mid-list slice.
-    // We hash (userId:leafieldTag) to pick a stable offset inside the slice.
-    // Fallback: niche tags often have <10 top artists — when the mid-list
-    // slice is empty, fall back to the whole top-N list so the rail still
-    // produces picks rather than going silently empty.
+    // Per sampled tag, pull `picksPerTag` candidates starting at a seeded
+    // offset within the mid-list slice. Fallback: niche tags often have <10
+    // top artists — when the mid-list slice is empty, fall back to the whole
+    // top-N list so the rail still produces picks.
     const perTag = await Promise.all(
       sampled.map(async (leaf) => {
         const names = await getTagArtistNames(leaf.lastfmTag, LEFTFIELD_MID_END)
@@ -658,14 +701,35 @@ export async function leftfieldRail(
         const mid = names.slice(LEFTFIELD_MID_START, LEFTFIELD_MID_END)
         const slice = mid.length > 0 ? mid : names
         const offset = seed ^ hashString(leaf.lastfmTag)
-        const pick = slice[offset % slice.length]
-        return { tag: leaf.lastfmTag, anchorId: leaf.anchorId, name: pick }
+        const start = offset % slice.length
+        const picksForTag: string[] = []
+        const seenName = new Set<string>()
+        for (let k = 0; k < picksPerTag && picksForTag.length < slice.length; k++) {
+          const name = slice[(start + k) % slice.length]
+          if (seenName.has(name)) continue
+          seenName.add(name)
+          picksForTag.push(name)
+        }
+        return { tag: leaf.lastfmTag, anchorId: leaf.anchorId, names: picksForTag }
       }),
     )
 
-    const picks = perTag.filter((p): p is { tag: string; anchorId: string; name: string } => !!p)
-    const namesFlat = picks.map((p) => p.name)
-    const resolved = await resolveAndFilter(namesFlat, input.accessToken, supabase, {
+    // Round-robin across tags: round k pulls the k-th name from each tag so
+    // variety wins over any single tag flooding the candidate list.
+    const picks = perTag.filter((p): p is { tag: string; anchorId: string; names: string[] } => !!p)
+    const namesRoundRobin: string[] = []
+    const nameMeta = new Map<string, { tag: string; anchorId: string }>()
+    for (let k = 0; k < picksPerTag; k++) {
+      for (const p of picks) {
+        if (k >= p.names.length) continue
+        const name = p.names[k]
+        if (nameMeta.has(name)) continue
+        nameMeta.set(name, { tag: p.tag, anchorId: p.anchorId })
+        namesRoundRobin.push(name)
+      }
+    }
+
+    const resolved = await resolveAndFilter(namesRoundRobin, input.accessToken, supabase, {
       listenedIds: ctx.listenedIds,
       thumbsDownIds: ctx.thumbsDownIds,
       seenIds,
@@ -676,14 +740,16 @@ export async function leftfieldRail(
     const artistIds: string[] = []
     const why: Record<string, RailWhy> = {}
     const seenArtist = new Set<string>()
-    for (const pick of picks) {
+    for (const name of namesRoundRobin) {
       if (artistIds.length >= target) break
-      const a = artistByName.get(pick.name)
+      const a = artistByName.get(name)
       if (!a || seenArtist.has(a.id)) continue
       if (excludeIds.has(a.id)) continue
+      const meta = nameMeta.get(name)
+      if (!meta) continue
       seenArtist.add(a.id)
       artistIds.push(a.id)
-      why[a.id] = { tag: pick.tag, anchor: pick.anchorId }
+      why[a.id] = { tag: meta.tag, anchor: meta.anchorId }
     }
 
     return { railKey: 'leftfield', artistIds, why }
