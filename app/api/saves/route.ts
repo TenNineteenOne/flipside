@@ -3,6 +3,7 @@ import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, apiUnauthorized, dbError } from "@/lib/errors"
 import { getAccessToken } from "@/lib/get-access-token"
 import { isValidSpotifyId } from "@/lib/spotify-ids"
+import { invalidateExploreCache } from "@/lib/recommendation/explore-engine"
 import { type NextRequest } from "next/server"
 
 async function spotifyFetch(url: string, accessToken: string, options: RequestInit = {}) {
@@ -74,6 +75,11 @@ export async function POST(request: NextRequest) {
 
   if (saveError) return dbError(saveError, "saves/upsert")
   console.log(`[saves] db-upsert ok`)
+
+  // A save is a strong positive signal — invalidate the explore rail cache so
+  // the next /explore load picks fresh candidates (the saved artist should
+  // not reappear, and adjacent picks may shift).
+  void invalidateExploreCache(userId)
 
   const { error: seenError } = await supabase
     .from("recommendation_cache")
@@ -190,6 +196,8 @@ export async function DELETE(request: NextRequest) {
     .eq("spotify_artist_id", spotifyArtistId)
 
   if (error) return dbError(error, "saves/delete")
+
+  void invalidateExploreCache(userId)
 
   console.log(`[saves] DELETE artistId=${spotifyArtistId}`)
   return Response.json({ success: true })
