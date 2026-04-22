@@ -18,7 +18,12 @@ import { ArtistNameCache } from './artist-name-cache'
 import { resolveArtistsByName } from './resolve-candidates'
 import { fetchArtistEnrichment } from './enrich-artist'
 import { getTagArtistNames } from './engine'
-import { adjacentGenres, genreToAnchor } from '@/lib/genre/adjacency'
+import {
+  adjacentGenres,
+  genreToAnchor,
+  leafTagsInAnchor,
+  listAnchors,
+} from '@/lib/genre/adjacency'
 
 export const RAIL_KEYS = ['adjacent', 'outside', 'wildcards', 'leftfield'] as const
 export type RailKey = typeof RAIL_KEYS[number]
@@ -340,14 +345,123 @@ async function resolveAdjacentSeeds(
   return genres.slice(0, 5)
 }
 
+const OUTSIDE_TARGET = 10
+const OUTSIDE_TARGET_ADVENTUROUS = 12
+const OUTSIDE_ANCHORS_PICKED = 3
+const OUTSIDE_MID_START = 10 // slice start of Last.fm top artists — skip mainstream head
+const OUTSIDE_MID_END = 30   // exclusive slice end
+const OUTSIDE_PER_ANCHOR_TARGET = 4
+
+/**
+ * Totally outside your taste — pull mid-list artists from anchors the user
+ * has never touched. "Mid-list" = Last.fm top artists for a tag, slice 10-30,
+ * so we avoid the mainstream head but still have non-trivial signal.
+ *
+ * When every anchor has been touched (maxed-out listener), fall back to the
+ * least-touched anchors instead so the rail never goes empty for engaged users.
+ */
 export async function outsideRail(
   input: BuildRailsInput,
   ctx: Awaited<ReturnType<typeof loadUserContext>>,
   supabase: SupabaseClient,
   seenIds: Set<string>,
 ): Promise<RailResult> {
-  void input; void ctx; void supabase; void seenIds
-  return { railKey: 'outside', artistIds: [], why: {} }
+  void supabase
+  const target = input.adventurous ? OUTSIDE_TARGET_ADVENTUROUS : OUTSIDE_TARGET
+
+  // Anchors the user has touched, either via selected_genres or by listening.
+  const touched = new Map<string, number>() // anchorId → "touch weight" (listened play count, selected genres count more)
+  for (const g of ctx.selectedGenres) {
+    const anchor = genreToAnchor(g)
+    if (anchor) touched.set(anchor, (touched.get(anchor) ?? 0) + 100)
+  }
+  for (const row of ctx.listened) {
+    const primary = row.genres[0]
+    if (!primary) continue
+    const anchor = genreToAnchor(primary)
+    if (!anchor) continue
+    touched.set(anchor, (touched.get(anchor) ?? 0) + (row.play_count ?? 1))
+  }
+
+  const anchors = listAnchors()
+  const untouched = anchors.filter((a) => !touched.has(a.id))
+  let picked: Array<{ id: string; lastfmTag: string; label: string }>
+  if (untouched.length >= OUTSIDE_ANCHORS_PICKED) {
+    // Stable pick across the cache window so the user doesn't see the set
+    // shuffle under them on re-fetch.
+    const shuffled = seededShuffle(untouched, cacheWindowSeed(input.userId, 'outside'))
+    picked = shuffled.slice(0, OUTSIDE_ANCHORS_PICKED)
+  } else {
+    // All anchors touched — pick least-touched (lowest touch weight).
+    const ranked = [...anchors].sort(
+      (a, b) => (touched.get(a.id) ?? 0) - (touched.get(b.id) ?? 0),
+    )
+    picked = ranked.slice(0, OUTSIDE_ANCHORS_PICKED)
+  }
+  if (picked.length === 0) return { railKey: 'outside', artistIds: [], why: {} }
+
+  // Pick one representative tag per anchor — prefer the anchor's own lastfmTag,
+  // otherwise the first leaf in the anchor (deterministic).
+  const anchorToTag = new Map<string, string>()
+  for (const a of picked) {
+    const tag = a.lastfmTag || leafTagsInAnchor(a.id)[0]
+    if (tag) anchorToTag.set(a.id, tag)
+  }
+
+  // Fetch mid-list (slice 10-30) artists per picked anchor in parallel.
+  const tagList = [...anchorToTag.entries()]
+  const perAnchor = await Promise.all(
+    tagList.map(async ([, tag]) => {
+      const names = await getTagArtistNames(tag, OUTSIDE_MID_END)
+      return names.slice(OUTSIDE_MID_START, OUTSIDE_MID_END)
+    }),
+  )
+
+  // Round-robin across picked anchors so no single anchor dominates.
+  const nameToAnchor = new Map<string, string>()
+  const namesRoundRobin: string[] = []
+  let idx = 0
+  let exhausted = false
+  while (!exhausted) {
+    exhausted = true
+    for (let i = 0; i < tagList.length; i++) {
+      const list = perAnchor[i]
+      if (idx < list.length && idx < OUTSIDE_PER_ANCHOR_TARGET) {
+        exhausted = false
+        const name = list[idx]
+        if (!nameToAnchor.has(name)) {
+          nameToAnchor.set(name, tagList[i][0])
+          namesRoundRobin.push(name)
+        }
+      }
+    }
+    idx++
+  }
+
+  const resolved = await resolveAndFilter(namesRoundRobin, input.accessToken, supabase, {
+    listenedIds: ctx.listenedIds,
+    thumbsDownIds: ctx.thumbsDownIds,
+    seenIds,
+  })
+
+  const artistByName = new Map<string, Artist>()
+  for (const a of resolved) artistByName.set(a.name, a)
+
+  const artistIds: string[] = []
+  const why: Record<string, RailWhy> = {}
+  const seenArtist = new Set<string>()
+  for (const name of namesRoundRobin) {
+    if (artistIds.length >= target) break
+    const a = artistByName.get(name)
+    if (!a || seenArtist.has(a.id)) continue
+    seenArtist.add(a.id)
+    artistIds.push(a.id)
+    const anchorId = nameToAnchor.get(name)
+    const anchorLabel = picked.find((p) => p.id === anchorId)?.label
+    why[a.id] = { anchor: anchorLabel ?? anchorId }
+  }
+
+  return { railKey: 'outside', artistIds, why }
 }
 
 export async function wildcardsRail(

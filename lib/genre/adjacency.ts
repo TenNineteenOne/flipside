@@ -157,6 +157,34 @@ export function genreToAnchor(tag: string): string | null {
 }
 
 /**
+ * Enumerate all anchors in the tree. Used by the Explore "Totally outside"
+ * rail to enumerate user-untouched anchors.
+ */
+export function listAnchors(): Array<{ id: string; label: string; lastfmTag: string }> {
+  return data.nodes.map((n) => ({ id: n.id, label: n.label, lastfmTag: n.lastfmTag }))
+}
+
+/**
+ * Every leaf-tag that belongs to an anchor, flattened. Preserves raw
+ * lastfmTag casing (hyphens included) so callers can pass straight to Last.fm.
+ */
+export function leafTagsInAnchor(anchorId: string): string[] {
+  const clusters = anchorToClusters.get(anchorId)
+  if (!clusters) return []
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const cid of clusters) {
+    for (const leafKey of clusterToLeafKeys.get(cid) ?? []) {
+      if (seen.has(leafKey)) continue
+      seen.add(leafKey)
+      const leaf = leafByKey.get(leafKey)
+      if (leaf) out.push(leaf.lastfmTag)
+    }
+  }
+  return out
+}
+
+/**
  * Pairwise adjacency score in [0, 1]:
  *   1.0  same tag (after normalization)
  *   continuous  when both tags have everynoise x/y coords:
