@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { ArtistCard } from "@/components/feed/artist-card"
 import { hexToRgba, sanitizeHex } from "@/lib/color-utils"
-import { normalizedIncludes } from "@/lib/genre/normalize"
 import type { MusicPlatform } from "@/lib/music-links"
 
 interface Track {
@@ -63,57 +62,12 @@ export function FeedClient({ recommendations, musicPlatform }: FeedClientProps) 
   const [dismissedSignals, setDismissedSignals] = useState<Map<string, string>>(new Map())
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set())
   const [isGenerating, setIsGenerating] = useState(false)
-  const [genreFilter, setGenreFilter] = useState<string | null>(null)
-  const [filterOpen, setFilterOpen] = useState(false)
-  const [showAllGenres, setShowAllGenres] = useState(false)
   const router = useRouter()
 
-  // Count how many artists each genre matches so we can rank chips by
-  // usefulness (and hide single-match noise by default). Spotify returns
-  // hyper-specific tags so a 20-artist feed can easily expose 60+ genres,
-  // most of which would filter down to 1 artist — unhelpful.
-  const genreCounts = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const r of recommendations) {
-      for (const g of r.artist_data.genres) map.set(g, (map.get(g) ?? 0) + 1)
-    }
-    return map
-  }, [recommendations])
-
-  const sortedGenres = useMemo(
-    () =>
-      Array.from(genreCounts.entries())
-        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-        .map(([g]) => g),
-    [genreCounts],
-  )
-
-  // Default view: only genres shared by ≥2 artists, capped at 10. "Show all"
-  // reveals every tag for power users.
-  const visibleGenres = useMemo(() => {
-    if (showAllGenres) return sortedGenres
-    return sortedGenres.filter((g) => (genreCounts.get(g) ?? 0) >= 2).slice(0, 10)
-  }, [sortedGenres, genreCounts, showAllGenres])
-
-  const hiddenGenreCount = sortedGenres.length - visibleGenres.length
-
-  const filteredRecs = useMemo(
-    () =>
-      genreFilter
-        ? recommendations.filter((r) =>
-            r.artist_data.genres.some((g) => normalizedIncludes(g, genreFilter))
-          )
-        : recommendations,
-    [recommendations, genreFilter]
-  )
-
-  const activeRec = filteredRecs.find((r) => !dismissedSignals.has(r.spotify_artist_id))
+  const activeRec = recommendations.find((r) => !dismissedSignals.has(r.spotify_artist_id))
   const activeAuraColor = sanitizeHex(activeRec?.artist_color)
 
-  const sequence = useMemo(
-    () => buildSequence(filteredRecs),
-    [filteredRecs]
-  )
+  const sequence = useMemo(() => buildSequence(recommendations), [recommendations])
 
   async function handleFeedback(artistId: string, signal: string) {
     setDismissedSignals((prev) => new Map(prev).set(artistId, signal))
@@ -137,10 +91,7 @@ export function FeedClient({ recommendations, musicPlatform }: FeedClientProps) 
   async function handleGenerateMore() {
     setIsGenerating(true)
     try {
-      const url = genreFilter
-        ? `/api/recommendations/generate?genre=${encodeURIComponent(genreFilter)}`
-        : "/api/recommendations/generate"
-      const res = await fetch(url, { method: "POST" })
+      const res = await fetch("/api/recommendations/generate", { method: "POST" })
       if (res.status === 401) {
         window.location.href = "/sign-in"
         return
@@ -224,90 +175,8 @@ export function FeedClient({ recommendations, musicPlatform }: FeedClientProps) 
       {/* Page header */}
       <div className="page-head">
         <h1>Today&apos;s feed</h1>
-        <span className="sub">{filteredRecs.length} artists</span>
+        <span className="sub">{recommendations.length} artists</span>
       </div>
-
-      {/* Genre filter — collapsed by default so the feed stays the focus.
-          Shows only the active filter + a disclosure toggle until opened. */}
-      {sortedGenres.length > 0 && (
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <button
-              type="button"
-              className="chip"
-              onClick={() => setFilterOpen((v) => !v)}
-              aria-expanded={filterOpen}
-              style={{ fontSize: 12 }}
-            >
-              {filterOpen ? "Hide filters" : "Filter by genre"}
-              <span aria-hidden style={{ marginLeft: 6, opacity: 0.6 }}>
-                {filterOpen ? "▴" : "▾"}
-              </span>
-            </button>
-            {genreFilter && (
-              <>
-                <span className="chip selected" style={{ fontSize: 12 }}>
-                  {genreFilter}
-                </span>
-                <button
-                  type="button"
-                  className="chip"
-                  onClick={() => setGenreFilter(null)}
-                  style={{ fontSize: 12 }}
-                >
-                  Clear
-                </button>
-              </>
-            )}
-          </div>
-
-          {filterOpen && (
-            <div
-              style={{
-                display: "flex",
-                gap: 6,
-                flexWrap: "wrap",
-                marginTop: 10,
-                paddingTop: 10,
-                borderTop: "1px solid var(--border)",
-              }}
-            >
-              <button
-                className={"chip" + (genreFilter === null ? " selected" : "")}
-                onClick={() => setGenreFilter(null)}
-              >
-                All
-              </button>
-              {visibleGenres.map((g) => {
-                const count = genreCounts.get(g) ?? 0
-                return (
-                  <button
-                    key={g}
-                    className={"chip" + (genreFilter === g ? " selected" : "")}
-                    onClick={() => setGenreFilter(genreFilter === g ? null : g)}
-                    title={`${count} artist${count === 1 ? "" : "s"}`}
-                  >
-                    {g}
-                    <span className="muted" style={{ marginLeft: 4, fontSize: 10 }}>
-                      {count}
-                    </span>
-                  </button>
-                )
-              })}
-              {hiddenGenreCount > 0 && (
-                <button
-                  type="button"
-                  className="chip"
-                  onClick={() => setShowAllGenres((v) => !v)}
-                  style={{ fontSize: 12 }}
-                >
-                  {showAllGenres ? "Show fewer" : `Show all (+${hiddenGenreCount})`}
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Feed sequence */}
       <div className="col" style={{ gap: 24, marginTop: 8 }}>
@@ -332,8 +201,6 @@ export function FeedClient({ recommendations, musicPlatform }: FeedClientProps) 
           <button className="btn" onClick={handleGenerateMore} disabled={isGenerating}>
             {isGenerating ? (
               <span className="mono" style={{ fontSize: 12 }}>Generating…</span>
-            ) : genreFilter ? (
-              `More ${genreFilter} artists`
             ) : (
               "Load more artists"
             )}
