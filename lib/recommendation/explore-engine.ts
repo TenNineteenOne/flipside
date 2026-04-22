@@ -621,59 +621,59 @@ export async function leftfieldRail(
   seenIds: Set<string>,
 ): Promise<RailResult> {
   try {
-  const target = input.adventurous ? LEFTFIELD_TARGET_ADVENTUROUS : LEFTFIELD_TARGET
+    const target = input.adventurous ? LEFTFIELD_TARGET_ADVENTUROUS : LEFTFIELD_TARGET
 
-  const topAnchors = computeTopAnchors(ctx.listened) // [] when <2 anchors
-  const excluded = new Set(topAnchors)
+    const topAnchors = computeTopAnchors(ctx.listened) // [] when <2 anchors
+    const excluded = new Set(topAnchors)
 
-  const allLeaves = allLeavesWithAnchor()
-  const pool = allLeaves.filter((l) => !excluded.has(l.anchorId))
-  if (pool.length === 0) return { railKey: 'leftfield', artistIds: [], why: {} }
+    const allLeaves = allLeavesWithAnchor()
+    const pool = allLeaves.filter((l) => !excluded.has(l.anchorId))
+    if (pool.length === 0) return { railKey: 'leftfield', artistIds: [], why: {} }
 
-  const sampleCount = input.adventurous ? LEFTFIELD_SAMPLE_COUNT_ADVENTUROUS : LEFTFIELD_SAMPLE_COUNT
-  const seed = cacheWindowSeed(input.userId, 'leftfield')
-  const sampled = seededShuffle(pool, seed).slice(0, sampleCount)
+    const sampleCount = input.adventurous ? LEFTFIELD_SAMPLE_COUNT_ADVENTUROUS : LEFTFIELD_SAMPLE_COUNT
+    const seed = cacheWindowSeed(input.userId, 'leftfield')
+    const sampled = seededShuffle(pool, seed).slice(0, sampleCount)
 
-  // For each sampled tag, pick one candidate from Last.fm's mid-list slice.
-  // We hash (userId:leafieldTag) to pick a stable offset inside the slice.
-  // Fallback: niche tags often have <10 top artists — when the mid-list
-  // slice is empty, fall back to the whole top-N list so the rail still
-  // produces picks rather than going silently empty.
-  const perTag = await Promise.all(
-    sampled.map(async (leaf) => {
-      const names = await getTagArtistNames(leaf.lastfmTag, LEFTFIELD_MID_END)
-      if (names.length === 0) return null
-      const mid = names.slice(LEFTFIELD_MID_START, LEFTFIELD_MID_END)
-      const slice = mid.length > 0 ? mid : names
-      const offset = cacheWindowSeed(input.userId, 'leftfield') ^ hashString(leaf.lastfmTag)
-      const pick = slice[offset % slice.length]
-      return { tag: leaf.lastfmTag, anchorId: leaf.anchorId, name: pick }
-    }),
-  )
+    // For each sampled tag, pick one candidate from Last.fm's mid-list slice.
+    // We hash (userId:leafieldTag) to pick a stable offset inside the slice.
+    // Fallback: niche tags often have <10 top artists — when the mid-list
+    // slice is empty, fall back to the whole top-N list so the rail still
+    // produces picks rather than going silently empty.
+    const perTag = await Promise.all(
+      sampled.map(async (leaf) => {
+        const names = await getTagArtistNames(leaf.lastfmTag, LEFTFIELD_MID_END)
+        if (names.length === 0) return null
+        const mid = names.slice(LEFTFIELD_MID_START, LEFTFIELD_MID_END)
+        const slice = mid.length > 0 ? mid : names
+        const offset = cacheWindowSeed(input.userId, 'leftfield') ^ hashString(leaf.lastfmTag)
+        const pick = slice[offset % slice.length]
+        return { tag: leaf.lastfmTag, anchorId: leaf.anchorId, name: pick }
+      }),
+    )
 
-  const picks = perTag.filter((p): p is { tag: string; anchorId: string; name: string } => !!p)
-  const namesFlat = picks.map((p) => p.name)
-  const resolved = await resolveAndFilter(namesFlat, input.accessToken, supabase, {
-    listenedIds: ctx.listenedIds,
-    thumbsDownIds: ctx.thumbsDownIds,
-    seenIds,
-  })
-  const artistByName = new Map<string, Artist>()
-  for (const a of resolved) artistByName.set(a.name, a)
+    const picks = perTag.filter((p): p is { tag: string; anchorId: string; name: string } => !!p)
+    const namesFlat = picks.map((p) => p.name)
+    const resolved = await resolveAndFilter(namesFlat, input.accessToken, supabase, {
+      listenedIds: ctx.listenedIds,
+      thumbsDownIds: ctx.thumbsDownIds,
+      seenIds,
+    })
+    const artistByName = new Map<string, Artist>()
+    for (const a of resolved) artistByName.set(a.name, a)
 
-  const artistIds: string[] = []
-  const why: Record<string, RailWhy> = {}
-  const seenArtist = new Set<string>()
-  for (const pick of picks) {
-    if (artistIds.length >= target) break
-    const a = artistByName.get(pick.name)
-    if (!a || seenArtist.has(a.id)) continue
-    seenArtist.add(a.id)
-    artistIds.push(a.id)
-    why[a.id] = { tag: pick.tag, anchor: pick.anchorId }
-  }
+    const artistIds: string[] = []
+    const why: Record<string, RailWhy> = {}
+    const seenArtist = new Set<string>()
+    for (const pick of picks) {
+      if (artistIds.length >= target) break
+      const a = artistByName.get(pick.name)
+      if (!a || seenArtist.has(a.id)) continue
+      seenArtist.add(a.id)
+      artistIds.push(a.id)
+      why[a.id] = { tag: pick.tag, anchor: pick.anchorId }
+    }
 
-  return { railKey: 'leftfield', artistIds, why }
+    return { railKey: 'leftfield', artistIds, why }
   } catch (e) {
     console.error('[leftfield] THREW', e instanceof Error ? e.message : String(e), e instanceof Error ? e.stack : '')
     return { railKey: 'leftfield', artistIds: [], why: {} }
