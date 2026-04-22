@@ -4,6 +4,7 @@ import { createServiceClient } from "@/lib/supabase/server"
 import { getSpotifyClientToken } from "@/lib/spotify-client-token"
 import {
   buildExploreRails,
+  RAIL_META_KEY,
   type RailKey,
   type RailWhy,
 } from "@/lib/recommendation/explore-engine"
@@ -54,6 +55,18 @@ const RAIL_TITLES: Record<RailKey, { title: string; subtitle: string; empty: str
     empty: "Nothing yet — regenerate to sample the map.",
   },
 }
+
+/**
+ * When wildcardsRail has no thumbs-ups to seed from, the engine substitutes
+ * a second left-field sample in that slot and marks it via `why.__meta`.
+ * The page reads the marker and re-titles the rail so the user doesn't see
+ * "From your wildcards" above picks that weren't wildcard-sourced.
+ */
+const WILDCARDS_FALLBACK_META = {
+  title: "More left-field picks",
+  subtitle: "Thumbs-up an artist to unlock your wildcards — until then, another random sample",
+  empty: "Nothing yet — regenerate to sample the map.",
+} as const
 
 export default async function ExplorePage() {
   const session = await auth()
@@ -133,7 +146,11 @@ export default async function ExplorePage() {
   }
 
   const payloads: RailPayload[] = rails.map((r) => {
-    const meta = RAIL_TITLES[r.railKey]
+    const defaultMeta = RAIL_TITLES[r.railKey]
+    const fallbackMarker = (r.why ?? {})[RAIL_META_KEY]
+    const isWildcardsFallback =
+      r.railKey === "wildcards" && fallbackMarker?.fallbackKind === "leftfield-for-wildcards"
+    const meta = isWildcardsFallback ? WILDCARDS_FALLBACK_META : defaultMeta
     return {
       railKey: r.railKey,
       title: meta.title,

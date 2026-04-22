@@ -38,7 +38,16 @@ export interface RailWhy {
   chain?: Array<{ name: string; match: number }> | null
   tag?: string
   anchor?: string
+  /**
+   * Marker stored at the reserved `__meta` key in the why map when this rail
+   * was substituted by a fallback generator. Lets the page re-title the slot
+   * without adding a new column.
+   */
+  fallbackKind?: 'leftfield-for-wildcards'
 }
+
+/** Reserved non-artist key inside RailResult.why to carry meta about the rail. */
+export const RAIL_META_KEY = '__meta'
 
 export interface RailResult {
   railKey: RailKey
@@ -67,10 +76,10 @@ function buildEnrichArtist() {
  * a re-fetch during the same cache window doesn't shuffle results under the
  * user's feet (and can't be exploited to game uniqueness).
  */
-export function cacheWindowSeed(userId: string, railKey: RailKey): number {
+export function cacheWindowSeed(userId: string, seedKey: string): number {
   const weekStart = Math.floor(Date.now() / (7 * 24 * 60 * 60 * 1000))
   let h = 2166136261 >>> 0
-  const s = `${userId}:${railKey}:${weekStart}`
+  const s = `${userId}:${seedKey}:${weekStart}`
   for (let i = 0; i < s.length; i++) {
     h ^= s.charCodeAt(i)
     h = Math.imul(h, 16777619) >>> 0
@@ -619,8 +628,11 @@ export async function leftfieldRail(
   ctx: Awaited<ReturnType<typeof loadUserContext>>,
   supabase: SupabaseClient,
   seenIds: Set<string>,
+  opts: { seedKey?: string; excludeIds?: Set<string> } = {},
 ): Promise<RailResult> {
   try {
+    const seedKey = opts.seedKey ?? 'leftfield'
+    const excludeIds = opts.excludeIds ?? new Set<string>()
     const target = input.adventurous ? LEFTFIELD_TARGET_ADVENTUROUS : LEFTFIELD_TARGET
 
     const topAnchors = computeTopAnchors(ctx.listened) // [] when <2 anchors
@@ -631,7 +643,7 @@ export async function leftfieldRail(
     if (pool.length === 0) return { railKey: 'leftfield', artistIds: [], why: {} }
 
     const sampleCount = input.adventurous ? LEFTFIELD_SAMPLE_COUNT_ADVENTUROUS : LEFTFIELD_SAMPLE_COUNT
-    const seed = cacheWindowSeed(input.userId, 'leftfield')
+    const seed = cacheWindowSeed(input.userId, seedKey)
     const sampled = seededShuffle(pool, seed).slice(0, sampleCount)
 
     // For each sampled tag, pick one candidate from Last.fm's mid-list slice.
@@ -645,7 +657,7 @@ export async function leftfieldRail(
         if (names.length === 0) return null
         const mid = names.slice(LEFTFIELD_MID_START, LEFTFIELD_MID_END)
         const slice = mid.length > 0 ? mid : names
-        const offset = cacheWindowSeed(input.userId, 'leftfield') ^ hashString(leaf.lastfmTag)
+        const offset = seed ^ hashString(leaf.lastfmTag)
         const pick = slice[offset % slice.length]
         return { tag: leaf.lastfmTag, anchorId: leaf.anchorId, name: pick }
       }),
@@ -668,6 +680,7 @@ export async function leftfieldRail(
       if (artistIds.length >= target) break
       const a = artistByName.get(pick.name)
       if (!a || seenArtist.has(a.id)) continue
+      if (excludeIds.has(a.id)) continue
       seenArtist.add(a.id)
       artistIds.push(a.id)
       why[a.id] = { tag: pick.tag, anchor: pick.anchorId }
@@ -740,6 +753,30 @@ export async function buildExploreRails(
     wildcardsRail(input, ctx, supabase, seenIds),
     leftfieldRail(input, ctx, supabase, seenIds),
   ])
+
+  // Wildcards → second-leftfield fallback. When the user has no thumbs-ups,
+  // wildcardsRail returns empty by design. Rather than leave a dead rail, swap
+  // in a second left-field sample using a distinct seed key + excluding the
+  // primary leftfield's picks so the two rails show different artists.
+  if (ctx.thumbsUpIds.size === 0) {
+    const primaryLeftfield = rails.find((r) => r.railKey === 'leftfield')
+    const excludeIds = new Set(primaryLeftfield?.artistIds ?? [])
+    const fallback = await leftfieldRail(input, ctx, supabase, seenIds, {
+      seedKey: 'wildcards-fallback',
+      excludeIds,
+    })
+    const wildcardsIdx = rails.findIndex((r) => r.railKey === 'wildcards')
+    if (wildcardsIdx >= 0) {
+      rails[wildcardsIdx] = {
+        railKey: 'wildcards',
+        artistIds: fallback.artistIds,
+        why: {
+          ...fallback.why,
+          [RAIL_META_KEY]: { fallbackKind: 'leftfield-for-wildcards' },
+        },
+      }
+    }
+  }
 
   const expiresAt = new Date(now.getTime() + EXPLORE_CACHE_TTL_MS).toISOString()
   const rows = rails.map((r) => ({
