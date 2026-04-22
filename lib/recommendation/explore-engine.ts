@@ -17,7 +17,8 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { ArtistNameCache } from './artist-name-cache'
 import { resolveArtistsByName } from './resolve-candidates'
 import { fetchArtistEnrichment } from './enrich-artist'
-import { genreToAnchor } from '@/lib/genre/adjacency'
+import { getTagArtistNames } from './engine'
+import { adjacentGenres, genreToAnchor } from '@/lib/genre/adjacency'
 
 export const RAIL_KEYS = ['adjacent', 'outside', 'wildcards', 'leftfield'] as const
 export type RailKey = typeof RAIL_KEYS[number]
@@ -208,14 +209,135 @@ async function loadSeenIds(supabase: SupabaseClient, userId: string): Promise<Se
 // results so the UI can render shells + empty states, and the cache round-trip
 // can be verified end-to-end.
 
+const ADJACENT_TARGET = 10
+const ADJACENT_TARGET_ADVENTUROUS = 12
+const ADJACENT_PER_TAG = 3
+const ADJACENT_MAX_TAGS = 12
+
+/**
+ * Adjacent rail — genres one hop away from the user's stated taste.
+ *
+ * Seeds are top 5 selected_genres. When empty (new user), we fall back to
+ * deriving primary genres from their `seed_artists`. For each seed genre
+ * we pull close-distance neighbours from the coord map, fetch top artists
+ * per neighbour, and round-robin across source tags so no single neighbour
+ * dominates.
+ */
 export async function adjacentRail(
   input: BuildRailsInput,
   ctx: Awaited<ReturnType<typeof loadUserContext>>,
   supabase: SupabaseClient,
   seenIds: Set<string>,
 ): Promise<RailResult> {
-  void input; void ctx; void supabase; void seenIds
-  return { railKey: 'adjacent', artistIds: [], why: {} }
+  const target = input.adventurous ? ADJACENT_TARGET_ADVENTUROUS : ADJACENT_TARGET
+  const seedTags = await resolveAdjacentSeeds(ctx, supabase)
+  if (seedTags.length === 0) return { railKey: 'adjacent', artistIds: [], why: {} }
+
+  // Collect adjacent tags from the user's top seeds. Cap to keep Last.fm
+  // call budget bounded.
+  const adjacentByTag = new Map<string, string[]>()
+  const ownTagSet = new Set(seedTags.map((t) => t.toLowerCase()))
+  for (const seed of seedTags.slice(0, 5)) {
+    const neighbours = adjacentGenres(seed, 'close')
+    for (const tag of neighbours) {
+      if (ownTagSet.has(tag.toLowerCase())) continue
+      if (adjacentByTag.has(tag)) continue
+      adjacentByTag.set(tag, [])
+      if (adjacentByTag.size >= ADJACENT_MAX_TAGS) break
+    }
+    if (adjacentByTag.size >= ADJACENT_MAX_TAGS) break
+  }
+  if (adjacentByTag.size === 0) return { railKey: 'adjacent', artistIds: [], why: {} }
+
+  // Fetch top artists per adjacent tag in parallel.
+  const tagList = [...adjacentByTag.keys()]
+  const perTagResults = await Promise.all(
+    tagList.map((tag) => getTagArtistNames(tag, ADJACENT_PER_TAG + 2)),
+  )
+  for (let i = 0; i < tagList.length; i++) {
+    adjacentByTag.set(tagList[i], perTagResults[i].slice(0, ADJACENT_PER_TAG + 2))
+  }
+
+  // Round-robin across tags → name list + name→tag map for provenance.
+  const nameToTag = new Map<string, string>()
+  const namesRoundRobin: string[] = []
+  let exhausted = false
+  let idx = 0
+  while (!exhausted) {
+    exhausted = true
+    for (const tag of tagList) {
+      const list = adjacentByTag.get(tag)!
+      if (idx < list.length) {
+        exhausted = false
+        const name = list[idx]
+        if (!nameToTag.has(name)) {
+          nameToTag.set(name, tag)
+          namesRoundRobin.push(name)
+        }
+      }
+    }
+    idx++
+  }
+
+  const resolved = await resolveAndFilter(namesRoundRobin, input.accessToken, supabase, {
+    listenedIds: ctx.listenedIds,
+    thumbsDownIds: ctx.thumbsDownIds,
+    seenIds,
+  })
+
+  // Preserve round-robin name ordering when picking.
+  const artistByName = new Map<string, Artist>()
+  for (const a of resolved) artistByName.set(a.name, a)
+
+  const artistIds: string[] = []
+  const why: Record<string, RailWhy> = {}
+  const seen = new Set<string>()
+  for (const name of namesRoundRobin) {
+    if (artistIds.length >= target) break
+    const a = artistByName.get(name)
+    if (!a || seen.has(a.id)) continue
+    seen.add(a.id)
+    artistIds.push(a.id)
+    const tag = nameToTag.get(name)
+    why[a.id] = tag ? { tag, anchor: genreToAnchor(tag) ?? undefined } : {}
+  }
+
+  return { railKey: 'adjacent', artistIds, why }
+}
+
+/**
+ * Pick the seed tags the adjacent rail should hop from.
+ *
+ * Primary: user's selected_genres (top 5).
+ * Fallback: primary Spotify genre of their seed_artists. We look those up in
+ * `artist_search_cache` (no fresh Spotify fetch — if a seed artist has never
+ * been resolved, the main feed resolution will populate it, and on a later
+ * Explore build this fallback will pick them up).
+ */
+async function resolveAdjacentSeeds(
+  ctx: Awaited<ReturnType<typeof loadUserContext>>,
+  supabase: SupabaseClient,
+): Promise<string[]> {
+  if (ctx.selectedGenres.length > 0) return ctx.selectedGenres.slice(0, 5)
+  if (ctx.seedArtists.length === 0) return []
+
+  const ids = ctx.seedArtists.map((s) => s.spotify_artist_id)
+  const { data } = await supabase
+    .from('artist_search_cache')
+    .select('spotify_artist_id, artist_data')
+    .in('spotify_artist_id', ids)
+
+  const genres: string[] = []
+  const seen = new Set<string>()
+  for (const row of data ?? []) {
+    const artist = row.artist_data as { genres?: string[] } | null
+    const primary = artist?.genres?.[0]
+    if (primary && !seen.has(primary)) {
+      seen.add(primary)
+      genres.push(primary)
+    }
+  }
+  return genres.slice(0, 5)
 }
 
 export async function outsideRail(
