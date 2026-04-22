@@ -75,7 +75,9 @@ export function ExploreClient({
       const res = await fetch("/api/feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ spotifyArtistId: artistId, signal }),
+        // railKey lets the server narrow-invalidate only the owning rail; other
+        // rails pick up the signal on their own TTL via the persisted feedback row.
+        body: JSON.stringify({ spotifyArtistId: artistId, signal, railKey: activeKey }),
       })
       if (!res.ok) throw new Error("server")
     } catch {
@@ -86,7 +88,7 @@ export function ExploreClient({
       })
       toast.error("Couldn't save feedback — try again")
     }
-  }, [])
+  }, [activeKey])
 
   const handleSave = useCallback(async (artistId: string) => {
     const isCurrentlySaved = savedIds.has(artistId)

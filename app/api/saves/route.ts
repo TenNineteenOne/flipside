@@ -78,8 +78,11 @@ export async function POST(request: NextRequest) {
 
   // A save is a strong positive signal — invalidate the explore rail cache so
   // the next /explore load picks fresh candidates (the saved artist should
-  // not reappear, and adjacent picks may shift).
-  void invalidateExploreCache(userId)
+  // not reappear, and adjacent picks may shift). Awaited so the serverless
+  // function doesn't terminate mid-delete after the response is sent.
+  await invalidateExploreCache(userId).catch((err) => {
+    console.error("[saves] explore-invalidate failed", err)
+  })
 
   const { error: seenError } = await supabase
     .from("recommendation_cache")
@@ -197,7 +200,9 @@ export async function DELETE(request: NextRequest) {
 
   if (error) return dbError(error, "saves/delete")
 
-  void invalidateExploreCache(userId)
+  await invalidateExploreCache(userId).catch((err) => {
+    console.error("[saves] explore-invalidate failed", err)
+  })
 
   console.log(`[saves] DELETE artistId=${spotifyArtistId}`)
   return Response.json({ success: true })

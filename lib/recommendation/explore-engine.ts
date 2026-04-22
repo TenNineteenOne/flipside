@@ -883,13 +883,22 @@ export async function buildExploreRails(
 }
 
 /**
- * Invalidate the user's entire explore cache. Called on thumbs-up,
- * thumbs-down, seed change, selected_genres change, and Adventurous toggle.
- * Delete-all is cheap (≤ 4 rows) and simpler than per-rail targeting.
+ * Invalidate cached Explore rails for a user. Omit `rails` to wipe every rail
+ * (settings / seed / Adventurous changes — the full taste model shifted).
+ * Pass `rails` to narrow-invalidate just those rail rows (Explore feedback
+ * where the signal is owned by a single rail; other rails pick the signal up
+ * on their own 24h TTL via the persisted feedback row).
  */
-export async function invalidateExploreCache(userId: string): Promise<void> {
+export async function invalidateExploreCache(
+  userId: string,
+  rails?: RailKey[],
+): Promise<void> {
   const supabase = createServiceClient()
-  const { error } = await supabase.from('explore_cache').delete().eq('user_id', userId)
+  let query = supabase.from('explore_cache').delete().eq('user_id', userId)
+  if (rails && rails.length > 0) {
+    query = query.in('rail_key', rails)
+  }
+  const { error } = await query
   if (error) console.error('[explore-engine] invalidate failed', error.message)
 }
 
