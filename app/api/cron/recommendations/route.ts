@@ -22,19 +22,39 @@ export async function GET(req: NextRequest) {
   const threeDaysAgo = new Date(now)
   threeDaysAgo.setDate(threeDaysAgo.getDate() - 3)
 
-  const { data, error } = await supabase
+  // Step 1: mark stale unseen entries as expired (so they won't surface).
+  const { data: expiredRows, error: expireErr } = await supabase
     .from("recommendation_cache")
     .update({ expires_at: now.toISOString() })
     .is("seen_at", null)
     .lt("created_at", threeDaysAgo.toISOString())
     .select("id")
 
-  if (error) {
-    console.error("[cron/recommendations] Error:", error.message)
+  if (expireErr) {
+    console.error("[cron/recommendations] Expire error:", expireErr.message)
     return Response.json({ error: "An unexpected error occurred" }, { status: 500 })
   }
 
-  const count = data?.length ?? 0
-  console.log(`[cron/recommendations] Expired ${count} stale cache entries`)
-  return Response.json({ success: true, expired: count })
+  // Step 2: hard-delete anything that's been expired for > 30 days, regardless
+  // of seen_at. Prevents unbounded table growth over months of production use.
+  const thirtyDaysAgo = new Date(now)
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+
+  const { data: deletedRows, error: deleteErr } = await supabase
+    .from("recommendation_cache")
+    .delete()
+    .lt("expires_at", thirtyDaysAgo.toISOString())
+    .select("id")
+
+  if (deleteErr) {
+    console.error("[cron/recommendations] Delete error:", deleteErr.message)
+    // Don't fail the whole job — expiration already succeeded.
+  }
+
+  const expiredCount = expiredRows?.length ?? 0
+  const deletedCount = deletedRows?.length ?? 0
+  console.log(
+    `[cron/recommendations] Expired ${expiredCount} stale entries; deleted ${deletedCount} > 30d old`,
+  )
+  return Response.json({ success: true, expired: expiredCount, deleted: deletedCount })
 }

@@ -174,7 +174,7 @@ export function ArtistSearch({ selected, onAdd, onRemove, cap, minForHint = 3 }:
               >
                 {artist.imageUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={artist.imageUrl} alt="" style={{ width: 32, height: 32, borderRadius: 6, objectFit: "cover", flexShrink: 0 }} />
+                  <img src={artist.imageUrl} alt={artist.name} style={{ width: 32, height: 32, borderRadius: 6, objectFit: "cover", flexShrink: 0 }} />
                 ) : (
                   <div style={{ width: 32, height: 32, borderRadius: 6, background: "rgba(255,255,255,0.06)", flexShrink: 0 }} />
                 )}

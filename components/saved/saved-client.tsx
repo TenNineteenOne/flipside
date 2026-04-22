@@ -73,8 +73,17 @@ export function SavedClient({ artists, hasLastfm, musicPlatform }: SavedClientPr
           <div style={{ fontSize: 14 }}>
             Bookmark artists from your feed to keep them here.
           </div>
+          <div style={{ marginTop: 16 }}>
+            <a
+              href="/feed"
+              className="btn"
+              style={{ display: "inline-block", textDecoration: "none" }}
+            >
+              Go to your feed
+            </a>
+          </div>
           {!hasLastfm && (
-            <div style={{ fontSize: 12, marginTop: 8, lineHeight: 1.5 }}>
+            <div style={{ fontSize: 12, marginTop: 14, lineHeight: 1.5 }}>
               Connect Last.fm in{" "}
               <a href="/settings" style={{ color: "var(--accent)" }}>
                 Settings

@@ -35,7 +35,7 @@ export async function POST(request: Request): Promise<Response> {
 
   if (userError) {
     console.error("[history/accumulate] User lookup error:", userError.message)
-    return apiError(`Failed to load user profile: ${userError.message}`, 500)
+    return apiError("Failed to load user profile", 500)
   }
   if (!user) return apiError("User not found", 404)
 

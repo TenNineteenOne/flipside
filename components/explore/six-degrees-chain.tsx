@@ -28,7 +28,7 @@ export function SixDegreesChain({ chain }: SixDegreesChainProps) {
       aria-label="Similarity chain"
     >
       {chain.map((hop, i) => (
-        <span key={i} style={{ whiteSpace: "nowrap" }}>
+        <span key={`${i}-${hop.name}`} style={{ whiteSpace: "nowrap" }}>
           {i > 0 && <span aria-hidden> → </span>}
           {hop.name}
         </span>

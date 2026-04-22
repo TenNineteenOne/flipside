@@ -214,7 +214,7 @@ describe("resolveArtistsByName", () => {
   it("merges enrichment into Spotify result when Spotify genres/popularity are empty", async () => {
     const writes = new Map<string, Artist>()
     const search = async (name: string): Promise<Artist[] | RateLimited> => [artist(`id-${name}`, name, 0)]
-    const enrichArtist = vi.fn(async (name: string): Promise<ArtistEnrichment | null> => ({
+    const enrichArtist = vi.fn(async (): Promise<ArtistEnrichment | null> => ({
       genres: ["indie rock", "post-rock"],
       popularity: 55,
     }))

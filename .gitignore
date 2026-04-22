@@ -35,6 +35,10 @@ scripts/*.log
 scripts/*.checkpoint.json
 scripts/*.report.json
 scripts/*.old-*
+scripts/*.applied.json
+
+# local backups created by scripts (validator, migrations, etc.)
+data/*.backup*
 
 # env files
 .env*

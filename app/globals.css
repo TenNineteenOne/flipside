@@ -203,7 +203,22 @@ body::after {
 }
 .tabbar a.active { color: var(--accent); }
 .tabbar a svg { width: 22px; height: 22px; }
+/* Very narrow viewports (< 360px, i.e. iPhone SE & smaller): shrink labels so
+   nothing clips. 6 tabs at ~53px each can't comfortably fit "Settings" at 11px. */
+@media (max-width: 359px) {
+  .tabbar a { font-size: 9.5px; gap: 2px; }
+  .tabbar a svg { width: 20px; height: 20px; }
+}
 @media (min-width: 900px) { .tabbar { display: none; } }
+
+/* Mini-player pill — lift above the bottom tabbar on mobile so controls
+   and tab labels don't overlap. On desktop the tabbar is hidden so the
+   pill can sit at the usual float offset. */
+@media (max-width: 899px) {
+  .mini-player-pill {
+    bottom: calc(72px + env(safe-area-inset-bottom)) !important;
+  }
+}
 
 /* ── Desktop top nav ───────────────────────────────────────────── */
 .topnav {

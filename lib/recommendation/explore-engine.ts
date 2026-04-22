@@ -747,12 +747,21 @@ export async function buildExploreRails(
     loadSeenIds(supabase, input.userId),
   ])
 
-  const rails = await Promise.all([
-    adjacentRail(input, ctx, supabase, seenIds),
-    outsideRail(input, ctx, supabase, seenIds),
-    wildcardsRail(input, ctx, supabase, seenIds),
-    leftfieldRail(input, ctx, supabase, seenIds),
-  ])
+  // allSettled so one rail throwing doesn't nuke the whole explore generation.
+  // Each rail already has its own internal try/catch for Last.fm calls; this is
+  // belt-and-braces against unexpected DB / null-deref errors.
+  const railFns: Array<{ key: RailKey; run: () => Promise<RailResult> }> = [
+    { key: "adjacent", run: () => adjacentRail(input, ctx, supabase, seenIds) },
+    { key: "outside", run: () => outsideRail(input, ctx, supabase, seenIds) },
+    { key: "wildcards", run: () => wildcardsRail(input, ctx, supabase, seenIds) },
+    { key: "leftfield", run: () => leftfieldRail(input, ctx, supabase, seenIds) },
+  ]
+  const settled = await Promise.allSettled(railFns.map((r) => r.run()))
+  const rails: RailResult[] = settled.map((s, i) => {
+    if (s.status === "fulfilled") return s.value
+    console.error(`[explore-engine] rail=${railFns[i].key} failed:`, s.reason)
+    return { railKey: railFns[i].key, artistIds: [], why: {} }
+  })
 
   // Wildcards → second-leftfield fallback. When the user has no thumbs-ups,
   // wildcardsRail returns empty by design. Rather than leave a dead rail, swap

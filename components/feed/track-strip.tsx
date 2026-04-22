@@ -25,8 +25,6 @@ export interface TrackStripProps {
 
 export function TrackStrip({
   tracks,
-  artistId,
-  artistName,
   artistColor = "#8b5cf6",
   compact = false,
   onPlay,

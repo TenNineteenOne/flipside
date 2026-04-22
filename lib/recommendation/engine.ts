@@ -200,7 +200,11 @@ export async function runDeepHop(
         hopItems: await fetchSimilar(niche.name),
       }))
   )
-  const hops = await Promise.all(tasks)
+  // allSettled so one failed Last.fm lookup doesn't nuke the whole hop batch.
+  const settled = await Promise.allSettled(tasks)
+  const hops = settled
+    .filter((r): r is PromiseFulfilledResult<{ parentSeed: string; hopItems: SimilarArtistRef[] }> => r.status === "fulfilled")
+    .map((r) => r.value)
 
   for (const { parentSeed, hopItems } of hops) {
     const existing = bySeed.get(parentSeed)

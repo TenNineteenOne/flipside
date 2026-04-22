@@ -276,10 +276,17 @@ export async function POST(req: NextRequest): Promise<Response> {
 
       const artistIds = cachedRecs.map((r) => r.spotify_artist_id)
 
-      await Promise.all([
+      // allSettled so a color-extraction failure doesn't prevent track prewarm
+      // (and vice versa). Both are best-effort decoration jobs.
+      const decoResults = await Promise.allSettled([
         runColorExtraction(supabase, user.id, cachedRecs, artistIds),
         runTrackPrewarm(supabase, accessToken, cachedRecs, artistIds),
       ])
+      for (const r of decoResults) {
+        if (r.status === "rejected") {
+          console.error("[generate] decoration-task failed", r.reason)
+        }
+      }
     })
 
     return Response.json({ success: true, count: recCount, softenedFilters })

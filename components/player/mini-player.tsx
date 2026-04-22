@@ -18,7 +18,7 @@ export function MiniPlayer() {
            animate={{ y: -24, opacity: 1, x: "-50%" }} // Floating off bottom
            exit={{ y: "150%", opacity: 0, x: "-50%" }}
            transition={{ type: "spring", damping: 30, stiffness: 300 }}
-           className="fixed bottom-0 left-1/2 z-50 w-[92%] max-w-[480px] overflow-hidden"
+           className="mini-player-pill fixed bottom-0 left-1/2 z-50 w-[92%] max-w-[480px] overflow-hidden"
            style={{
              background: "rgba(10, 10, 10, 0.8)",
              backdropFilter: "blur(40px)",

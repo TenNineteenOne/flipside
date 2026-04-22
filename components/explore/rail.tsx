@@ -215,7 +215,7 @@ function ExploreCard({ artist, musicPlatform, isSaved, onFeedback, onSave }: Exp
 
       <div style={{ padding: 10, display: "flex", flexDirection: "column", gap: 6 }}>
         <div style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.2 }}>{artist.name}</div>
-        {artist.genres.length > 0 && (
+        {(artist.genres?.length ?? 0) > 0 && (
           <div className="muted" style={{ fontSize: 11, lineHeight: 1.3 }}>
             {artist.genres.slice(0, 2).join(" · ")}
           </div>

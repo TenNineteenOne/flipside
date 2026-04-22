@@ -78,17 +78,28 @@ export function ArtistCard({
 
   useEffect(() => {
     if (artist_data.topTracks.length === 0 && localTracks.length === 0 && !isFetchingTracks) {
+      const ctrl = new AbortController()
       setIsFetchingTracks(true)
-      fetch(`/api/artists/${recommendation.spotify_artist_id}/tracks?name=${encodeURIComponent(artist_data.name)}`)
+      fetch(
+        `/api/artists/${recommendation.spotify_artist_id}/tracks?name=${encodeURIComponent(artist_data.name)}`,
+        { signal: ctrl.signal },
+      )
         .then((r) => {
           if (!r.ok) throw new Error("fetch failed")
           return r.json()
         })
         .then((data) => {
+          if (ctrl.signal.aborted) return
           if (data.tracks?.length > 0) setLocalTracks(data.tracks)
         })
-        .catch(() => {})
-        .finally(() => setIsFetchingTracks(false))
+        .catch((err: unknown) => {
+          if (err instanceof DOMException && err.name === "AbortError") return
+          // Silent — user still sees "No tracks available" fallback.
+        })
+        .finally(() => {
+          if (!ctrl.signal.aborted) setIsFetchingTracks(false)
+        })
+      return () => ctrl.abort()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only fetch once when tracks are empty
   }, [artist_data.topTracks.length, artist_data.name, recommendation.spotify_artist_id])
@@ -235,7 +246,7 @@ export function ArtistCard({
 
         {/* Genre + name */}
         <div style={{ position: "absolute", left: 24, right: 24, bottom: 20 }}>
-          {artist_data.genres.length > 0 && (
+          {(artist_data.genres?.length ?? 0) > 0 && artist_data.genres?.[0] && (
             <div
               className="mono"
               style={{

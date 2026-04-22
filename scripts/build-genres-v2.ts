@@ -65,6 +65,7 @@ function toTag(s: string): string {
     .replace(/^-+|-+$/g, "")
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function walkLeaves(node: Node, cb: (leaf: Node, cluster: Node, anchor: Node) => void, cluster?: Node, anchor?: Node) {
   if (!anchor) anchor = node
   if (!node.children || node.children.length === 0) {

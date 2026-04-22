@@ -142,7 +142,12 @@ export async function resolveArtistsByName(
             result.backoffBudgetExhausted = true
             break
           }
-          const requested = Math.max(1, res.retryAfterSec) * 1000
+          // Guard against undefined / NaN retryAfterSec — `Math.max(1, undefined)`
+          // returns NaN, which propagates through the sleep and defeats backoff.
+          const retryAfterSec = typeof res.retryAfterSec === "number" && Number.isFinite(res.retryAfterSec)
+            ? res.retryAfterSec
+            : 10
+          const requested = Math.max(1, retryAfterSec) * 1000
           const waitMs = Math.min(requested, maxRetryBackoffMs, budgetLeft)
           // Reserve before sleeping so concurrent workers see the updated budget
           spentBackoffMs += waitMs
