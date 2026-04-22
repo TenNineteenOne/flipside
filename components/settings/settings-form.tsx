@@ -20,6 +20,7 @@ interface SettingsFormProps {
   initialLastfmArtistCount: number
   initialUndergroundMode: boolean
   initialDeepDiscovery: boolean
+  initialAdventurous: boolean
   initialSelectedGenres: string[]
   initialSeedArtists: SpotifyArtist[]
   initialMusicPlatform: MusicPlatform
@@ -47,6 +48,7 @@ export function SettingsForm({
   initialLastfmArtistCount,
   initialUndergroundMode,
   initialDeepDiscovery,
+  initialAdventurous,
   initialSelectedGenres,
   initialSeedArtists,
   initialMusicPlatform,
@@ -59,6 +61,7 @@ export function SettingsForm({
   const [statsfmUsername, setStatsfmUsername] = useState(initialStatsfmUsername ?? "")
   const [undergroundMode, setUndergroundMode] = useState(initialUndergroundMode)
   const [deepDiscovery, setDeepDiscovery] = useState(initialDeepDiscovery)
+  const [adventurous, setAdventurous] = useState(initialAdventurous)
   const [musicPlatform, setMusicPlatform] = useState<MusicPlatform>(initialMusicPlatform)
   const [syncingSource, setSyncingSource] = useState<null | "lastfm" | "statsfm">(null)
   const [isGenerating, setIsGenerating] = useState(false)
@@ -147,6 +150,17 @@ export function SettingsForm({
     }
   }
 
+  async function handleAdventurousToggle() {
+    const next = !adventurous
+    setAdventurous(next)
+    try {
+      await patchSettings({ adventurous: next })
+    } catch {
+      setAdventurous(!next)
+      toast.error("Failed to save setting")
+    }
+  }
+
   async function handleMusicPlatformChange(next: MusicPlatform) {
     if (next === musicPlatform) return
     const prev = musicPlatform
@@ -209,6 +223,21 @@ export function SettingsForm({
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         throw new Error((data as { error?: string }).error ?? "Generate failed")
+      }
+      const data = (await res.json().catch(() => ({}))) as {
+        softenedFilters?: { playThreshold?: boolean; undergroundMode?: boolean; coldStart?: boolean }
+      }
+      if (data.softenedFilters) {
+        const s = data.softenedFilters
+        const bits: string[] = []
+        if (s.coldStart) bits.push("falling back to starter picks")
+        else {
+          if (s.playThreshold) bits.push("loosening the familiarity cap")
+          if (s.undergroundMode) bits.push("turning off the hard pop-50 cutoff")
+        }
+        if (bits.length > 0) {
+          toast(`Widened the search for this batch — ${bits.join(" and ")}.`)
+        }
       }
       router.push("/feed")
     } catch (err) {
@@ -612,6 +641,56 @@ export function SettingsForm({
                       position: "absolute",
                       top: 3,
                       left: deepDiscovery ? 23 : 3,
+                      transition: "left 0.2s",
+                    }}
+                  />
+                </button>
+              </div>
+
+              <div className="divider" />
+
+              {/* Adventurous toggle */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 16,
+                }}
+              >
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
+                    Adventurous
+                  </div>
+                  <div className="muted" style={{ fontSize: 12, lineHeight: 1.5 }}>
+                    Broadens your feed with adjacent genres and softens the mainstream bias. Explore tab gets amplified too. You can always turn this off.
+                  </div>
+                </div>
+                <button
+                  onClick={handleAdventurousToggle}
+                  role="switch"
+                  aria-checked={adventurous}
+                  style={{
+                    width: 48,
+                    height: 28,
+                    borderRadius: 14,
+                    border: 0,
+                    cursor: "pointer",
+                    flexShrink: 0,
+                    background: adventurous ? "var(--accent)" : "rgba(255,255,255,0.10)",
+                    position: "relative",
+                    transition: "background 0.2s",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 22,
+                      height: 22,
+                      borderRadius: "50%",
+                      background: "#fff",
+                      position: "absolute",
+                      top: 3,
+                      left: adventurous ? 23 : 3,
                       transition: "left 0.2s",
                     }}
                   />

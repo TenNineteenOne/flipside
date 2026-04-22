@@ -17,6 +17,7 @@ export async function PATCH(request: Request) {
     selectedGenres?: string[]
     undergroundMode?: boolean
     deepDiscovery?: boolean
+    adventurous?: boolean
     preferredMusicPlatform?: string
   }
   try {
@@ -73,6 +74,10 @@ export async function PATCH(request: Request) {
 
   if (body.deepDiscovery !== undefined) {
     update.deep_discovery = !!body.deepDiscovery
+  }
+
+  if (body.adventurous !== undefined) {
+    update.adventurous = !!body.adventurous
   }
 
   if (body.preferredMusicPlatform !== undefined) {
