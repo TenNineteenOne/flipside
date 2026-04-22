@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, apiUnauthorized, dbError } from "@/lib/errors"
 import { isValidSpotifyId } from "@/lib/spotify-ids"
+import { invalidateExploreCache } from "@/lib/recommendation/explore-engine"
 
 export async function POST(request: Request): Promise<Response> {
   const session = await auth()
@@ -33,6 +34,15 @@ export async function POST(request: Request): Promise<Response> {
   })
 
   if (rpcError) return dbError(rpcError, "feedback/rpc")
+
+  // Thumbs change the user's taste signal — invalidate Explore rails so the
+  // next /explore visit reflects the new signal. Skip doesn't invalidate
+  // (30-day cooldown is rail-local via the shared seen_at gate).
+  if (signal === "thumbs_up" || signal === "thumbs_down") {
+    await invalidateExploreCache(userId).catch((err) => {
+      console.error("[feedback] explore-invalidate failed", err)
+    })
+  }
 
   return Response.json({ success: true })
 }

@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, apiUnauthorized, dbError } from "@/lib/errors"
 import { isMusicPlatform } from "@/lib/music-links"
+import { invalidateExploreCache } from "@/lib/recommendation/explore-engine"
 
 export async function PATCH(request: Request) {
   const session = await auth()
@@ -96,6 +97,16 @@ export async function PATCH(request: Request) {
   const { error } = await supabase.from("users").update(update).eq("id", userId)
 
   if (error) return dbError(error, "settings/update")
+
+  // Explore rails are derived from selected_genres + adventurous. Changing
+  // either invalidates all four rails.
+  const invalidates =
+    body.selectedGenres !== undefined || body.adventurous !== undefined
+  if (invalidates) {
+    await invalidateExploreCache(userId).catch((err) => {
+      console.error("[settings] explore-invalidate failed", err)
+    })
+  }
 
   return Response.json({ success: true })
 }

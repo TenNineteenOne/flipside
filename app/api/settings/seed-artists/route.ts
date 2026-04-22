@@ -4,6 +4,7 @@ import { apiError, apiUnauthorized, dbError } from "@/lib/errors"
 import { createServiceClient } from "@/lib/supabase/server"
 import { isValidSpotifyId } from "@/lib/spotify-ids"
 import { validateSeedArtists } from "@/lib/seed-artist-validation"
+import { invalidateExploreCache } from "@/lib/recommendation/explore-engine"
 
 const MAX_SEED_ARTISTS = 200
 
@@ -72,6 +73,10 @@ export async function POST(req: NextRequest) {
 
   if (error) return dbError(error, "settings/seed-artists/upsert")
 
+  await invalidateExploreCache(userId).catch((err) => {
+    console.error("[seed-artists] explore-invalidate failed", err)
+  })
+
   return Response.json({ success: true })
 }
 
@@ -92,6 +97,10 @@ export async function DELETE(req: NextRequest) {
     .eq("spotify_artist_id", id)
 
   if (error) return dbError(error, "settings/seed-artists/delete")
+
+  await invalidateExploreCache(session.user.id).catch((err) => {
+    console.error("[seed-artists] explore-invalidate failed", err)
+  })
 
   return Response.json({ success: true })
 }

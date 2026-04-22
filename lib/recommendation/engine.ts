@@ -36,14 +36,19 @@ export function tierMultiplier(popularity: number, curveK = 0.95): number {
   return Math.pow(curveK, popularity)
 }
 
-/** Fetch artist names for a Last.fm genre tag. */
-async function getTagArtistNames(tag: string): Promise<string[]> {
+/**
+ * Fetch artist names for a Last.fm genre tag. `limit` controls how many top
+ * artists to request; default 20 matches the engine's main-pool seeding. The
+ * Explore "Left-field" rail passes `limit=30` so it can sample from positions
+ * 10-30 (deeper cuts). Return order matches Last.fm's rank order.
+ */
+export async function getTagArtistNames(tag: string, limit = 20): Promise<string[]> {
   const apiKey = process.env.LASTFM_API_KEY
   if (!apiKey) return []
   try {
     const url =
       `${LASTFM_BASE}/?method=tag.gettopartists` +
-      `&tag=${encodeURIComponent(tag)}&api_key=${apiKey}&format=json&limit=20`
+      `&tag=${encodeURIComponent(tag)}&api_key=${apiKey}&format=json&limit=${limit}`
     const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
     if (!res.ok) return []
     const data = await res.json()

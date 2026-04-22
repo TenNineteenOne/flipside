@@ -2,11 +2,12 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Music2, Bookmark, Settings, Clock, BarChart3 } from "lucide-react"
+import { Music2, Bookmark, Settings, Clock, BarChart3, Compass } from "lucide-react"
 import { IdenticonAvatar } from "@/components/ui/identicon-avatar"
 
 const navLinks = [
   { href: "/feed",     label: "Feed",     icon: Music2    },
+  { href: "/explore",  label: "Explore",  icon: Compass   },
   { href: "/history",  label: "History",  icon: Clock     },
   { href: "/saved",    label: "Saved",    icon: Bookmark  },
   { href: "/stats",    label: "Stats",    icon: BarChart3 },
