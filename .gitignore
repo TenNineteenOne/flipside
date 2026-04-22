@@ -30,6 +30,12 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
+# generated script artifacts (regenerated locally; not source of truth)
+scripts/*.log
+scripts/*.checkpoint.json
+scripts/*.report.json
+scripts/*.old-*
+
 # env files
 .env*
 !.env.example

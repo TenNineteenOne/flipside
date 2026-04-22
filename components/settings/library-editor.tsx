@@ -6,14 +6,21 @@ import { ChevronDown, ChevronUp } from "lucide-react"
 import type { GenreNode } from "@/lib/types"
 import { GenrePicker, ALL_GENRES } from "@/components/onboarding/genre-picker"
 import { ArtistSearch, type SpotifyArtist } from "@/components/onboarding/artist-search"
+import { normalizeGenre } from "@/lib/genre/normalize"
 
 const GENRE_CAP = 200
 const ARTIST_CAP = 200
 const GENRE_SAVE_DEBOUNCE_MS = 400
 
-function buildTagLookup(nodes: GenreNode[], acc = new Map<string, GenreNode>()): Map<string, GenreNode> {
+// Build a normalized-key lookup so "indie-rock", "Indie Rock", and "indie_rock"
+// all resolve to the same node. Survives format drift between the stored tag
+// format and the tree's lastfmTag format.
+export function buildTagLookup(nodes: GenreNode[], acc = new Map<string, GenreNode>()): Map<string, GenreNode> {
   for (const node of nodes) {
-    acc.set(node.lastfmTag, node)
+    if (node.lastfmTag) {
+      const key = normalizeGenre(node.lastfmTag)
+      if (key && !acc.has(key)) acc.set(key, node)
+    }
     if (node.children.length) buildTagLookup(node.children, acc)
   }
   return acc
@@ -28,10 +35,16 @@ export interface LibraryEditorProps {
 export function LibraryEditor({ initialGenreTags, initialSeedArtists, flat = false }: LibraryEditorProps) {
   const tagLookup = useMemo(() => buildTagLookup(ALL_GENRES), [])
 
-  const initialGenreNodes = useMemo(
-    () => initialGenreTags.map((tag) => tagLookup.get(tag)).filter((g): g is GenreNode => !!g),
-    [initialGenreTags, tagLookup],
-  )
+  const { initialGenreNodes, orphanCount } = useMemo(() => {
+    const nodes: GenreNode[] = []
+    let orphans = 0
+    for (const tag of initialGenreTags) {
+      const node = tagLookup.get(normalizeGenre(tag))
+      if (node) nodes.push(node)
+      else orphans += 1
+    }
+    return { initialGenreNodes: nodes, orphanCount: orphans }
+  }, [initialGenreTags, tagLookup])
 
   const [genres, setGenres] = useState<GenreNode[]>(initialGenreNodes)
   const [artists, setArtists] = useState<SpotifyArtist[]>(initialSeedArtists)
@@ -40,6 +53,19 @@ export function LibraryEditor({ initialGenreTags, initialSeedArtists, flat = fal
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const saveAborter = useRef<AbortController | null>(null)
+  const orphanNoticeShown = useRef(false)
+
+  // One-shot toast when the genre taxonomy rebuild dropped some of the user's
+  // previously-selected tags. Fires once per mount so reloads don't spam.
+  useEffect(() => {
+    if (orphanCount > 0 && !orphanNoticeShown.current) {
+      orphanNoticeShown.current = true
+      toast.info(
+        `${orphanCount} previously-selected genre${orphanCount === 1 ? "" : "s"} ` +
+          `no longer map to our updated taxonomy and will be removed on your next save.`,
+      )
+    }
+  }, [orphanCount])
 
   useEffect(() => {
     return () => {

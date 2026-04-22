@@ -9,7 +9,11 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "build:genres": "npx tsx scripts/build-genre-taxonomy.ts"
+    "build:genres": "npx tsx scripts/build-genres-v2.ts",
+    "build:subclusters": "npx tsx scripts/build-subclusters.ts",
+    "validate:genres": "npx tsx scripts/validate-genre-tree.ts",
+    "seed:cache": "npx tsx scripts/seed-artist-cache.ts",
+    "backfill:genres": "npx tsx scripts/backfill-artist-genres.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",
