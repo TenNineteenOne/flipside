@@ -20,6 +20,7 @@ import { fetchArtistEnrichment } from './enrich-artist'
 import { getTagArtistNames } from './engine'
 import {
   adjacentGenres,
+  allLeavesWithAnchor,
   genreToAnchor,
   leafTagsInAnchor,
   listAnchors,
@@ -572,14 +573,84 @@ export async function wildcardsRail(
   return { railKey: 'wildcards', artistIds, why }
 }
 
+const LEFTFIELD_TARGET = 6
+const LEFTFIELD_TARGET_ADVENTUROUS = 12
+const LEFTFIELD_SAMPLE_COUNT = 18 // over-sample so filtering still yields enough picks
+const LEFTFIELD_MID_START = 10
+const LEFTFIELD_MID_END = 30
+
+/**
+ * Left-field wildcards — uniform long-tail sampling of the leaf-tag universe
+ * with a light guardrail: exclude tags in the user's top 2 most-played
+ * anchors so the rail actually feels "out there".
+ *
+ * Per sampled tag we pull Last.fm top-30, pick a seeded-deterministic
+ * mid-list position (10-30 range) so the choice is stable within the cache
+ * window but varies across windows. No provenance chain — the whole point
+ * is "here's a leaf from the sonic map".
+ */
 export async function leftfieldRail(
   input: BuildRailsInput,
   ctx: Awaited<ReturnType<typeof loadUserContext>>,
   supabase: SupabaseClient,
   seenIds: Set<string>,
 ): Promise<RailResult> {
-  void input; void ctx; void supabase; void seenIds
-  return { railKey: 'leftfield', artistIds: [], why: {} }
+  const target = input.adventurous ? LEFTFIELD_TARGET_ADVENTUROUS : LEFTFIELD_TARGET
+
+  const topAnchors = computeTopAnchors(ctx.listened) // [] when <2 anchors
+  const excluded = new Set(topAnchors)
+
+  const pool = allLeavesWithAnchor().filter((l) => !excluded.has(l.anchorId))
+  if (pool.length === 0) return { railKey: 'leftfield', artistIds: [], why: {} }
+
+  const seed = cacheWindowSeed(input.userId, 'leftfield')
+  const sampled = seededShuffle(pool, seed).slice(0, LEFTFIELD_SAMPLE_COUNT)
+
+  // For each sampled tag, pick one candidate from Last.fm's mid-list slice.
+  // We hash (userId:leafieldTag) to pick a stable offset inside the slice.
+  const perTag = await Promise.all(
+    sampled.map(async (leaf) => {
+      const names = await getTagArtistNames(leaf.lastfmTag, LEFTFIELD_MID_END)
+      const slice = names.slice(LEFTFIELD_MID_START, LEFTFIELD_MID_END)
+      if (slice.length === 0) return null
+      const offset = cacheWindowSeed(input.userId, 'leftfield') ^ hashString(leaf.lastfmTag)
+      const pick = slice[offset % slice.length]
+      return { tag: leaf.lastfmTag, anchorId: leaf.anchorId, name: pick }
+    }),
+  )
+
+  const picks = perTag.filter((p): p is { tag: string; anchorId: string; name: string } => !!p)
+  const namesFlat = picks.map((p) => p.name)
+  const resolved = await resolveAndFilter(namesFlat, input.accessToken, supabase, {
+    listenedIds: ctx.listenedIds,
+    thumbsDownIds: ctx.thumbsDownIds,
+    seenIds,
+  })
+  const artistByName = new Map<string, Artist>()
+  for (const a of resolved) artistByName.set(a.name, a)
+
+  const artistIds: string[] = []
+  const why: Record<string, RailWhy> = {}
+  const seenArtist = new Set<string>()
+  for (const pick of picks) {
+    if (artistIds.length >= target) break
+    const a = artistByName.get(pick.name)
+    if (!a || seenArtist.has(a.id)) continue
+    seenArtist.add(a.id)
+    artistIds.push(a.id)
+    why[a.id] = { tag: pick.tag, anchor: pick.anchorId }
+  }
+
+  return { railKey: 'leftfield', artistIds, why }
+}
+
+function hashString(s: string): number {
+  let h = 2166136261 >>> 0
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i)
+    h = Math.imul(h, 16777619) >>> 0
+  }
+  return h
 }
 
 // ── Orchestrator ────────────────────────────────────────────────────────────

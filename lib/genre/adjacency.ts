@@ -185,6 +185,19 @@ export function leafTagsInAnchor(anchorId: string): string[] {
 }
 
 /**
+ * Every leaf across the whole tree, with its anchor id. Used by the
+ * Left-field rail to uniformly sample the long tail while honoring the
+ * "exclude top 2 anchors" guardrail.
+ */
+export function allLeavesWithAnchor(): Array<{ lastfmTag: string; anchorId: string }> {
+  const out: Array<{ lastfmTag: string; anchorId: string }> = []
+  for (const rec of leafByKey.values()) {
+    out.push({ lastfmTag: rec.lastfmTag, anchorId: rec.anchorId })
+  }
+  return out
+}
+
+/**
  * Pairwise adjacency score in [0, 1]:
  *   1.0  same tag (after normalization)
  *   continuous  when both tags have everynoise x/y coords:
