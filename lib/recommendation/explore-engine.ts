@@ -464,14 +464,112 @@ export async function outsideRail(
   return { railKey: 'outside', artistIds, why }
 }
 
+const WILDCARDS_TARGET = 10
+const WILDCARDS_TARGET_ADVENTUROUS = 12
+const WILDCARDS_SEED_COUNT = 3
+const WILDCARDS_PER_SEED = 4 // tail-bias the similars per seed
+
+/**
+ * From your wildcards — deep cuts inspired by the user's thumbs-ups.
+ *
+ * Pick 3 random thumbs-up seeds (stable within the cache window), pull
+ * Last.fm similar artists for each, tail-bias (sort match ascending and
+ * take the least-similar 3-4) so the results actually surprise. Bypasses
+ * other seeds — the point is to amplify the user's explicit likes.
+ *
+ * Rail hides (returns empty) when the user has no thumbs-ups. The UI
+ * substitutes a second Left-field rail in that case.
+ */
 export async function wildcardsRail(
   input: BuildRailsInput,
   ctx: Awaited<ReturnType<typeof loadUserContext>>,
   supabase: SupabaseClient,
   seenIds: Set<string>,
 ): Promise<RailResult> {
-  void input; void ctx; void supabase; void seenIds
-  return { railKey: 'wildcards', artistIds: [], why: {} }
+  const thumbsUpIds = [...ctx.thumbsUpIds]
+  if (thumbsUpIds.length === 0) return { railKey: 'wildcards', artistIds: [], why: {} }
+
+  const target = input.adventurous ? WILDCARDS_TARGET_ADVENTUROUS : WILDCARDS_TARGET
+
+  const shuffledIds = seededShuffle(thumbsUpIds, cacheWindowSeed(input.userId, 'wildcards'))
+  const seedIds = shuffledIds.slice(0, WILDCARDS_SEED_COUNT)
+
+  // Resolve seed ids → seed names via artist_search_cache (plus seed_artists as
+  // a fallback since those live in `seed_artists` and may pre-date any cache row).
+  const seedNameById = new Map<string, string>()
+  for (const s of ctx.seedArtists) seedNameById.set(s.spotify_artist_id, s.name)
+  const missingIds = seedIds.filter((id) => !seedNameById.has(id))
+  if (missingIds.length > 0) {
+    const { data } = await supabase
+      .from('artist_search_cache')
+      .select('spotify_artist_id, artist_data')
+      .in('spotify_artist_id', missingIds)
+    for (const row of data ?? []) {
+      const a = row.artist_data as { name?: string } | null
+      if (a?.name) seedNameById.set(row.spotify_artist_id as string, a.name)
+    }
+  }
+
+  const seedPairs = seedIds
+    .map((id) => ({ id, name: seedNameById.get(id) }))
+    .filter((p): p is { id: string; name: string } => !!p.name)
+  if (seedPairs.length === 0) return { railKey: 'wildcards', artistIds: [], why: {} }
+
+  // Fetch similars per seed in parallel. Tail-bias = sort ascending by match.
+  const perSeed = await Promise.all(
+    seedPairs.map(async (seed) => {
+      const similars = await musicProvider.getSimilarArtistNames(seed.name)
+      const tailFirst = [...similars].sort((a, b) => a.match - b.match).slice(0, WILDCARDS_PER_SEED)
+      return { seed, tailFirst }
+    }),
+  )
+
+  // Round-robin across seeds with provenance map.
+  const nameToSeed = new Map<string, { id: string; name: string }>()
+  const namesRoundRobin: string[] = []
+  let idx = 0
+  let exhausted = false
+  while (!exhausted) {
+    exhausted = true
+    for (const { seed, tailFirst } of perSeed) {
+      if (idx < tailFirst.length) {
+        exhausted = false
+        const name = tailFirst[idx].name
+        if (name && !nameToSeed.has(name)) {
+          nameToSeed.set(name, seed)
+          namesRoundRobin.push(name)
+        }
+      }
+    }
+    idx++
+  }
+
+  const resolved = await resolveAndFilter(namesRoundRobin, input.accessToken, supabase, {
+    listenedIds: ctx.listenedIds,
+    thumbsDownIds: ctx.thumbsDownIds,
+    seenIds,
+  })
+  const artistByName = new Map<string, Artist>()
+  for (const a of resolved) artistByName.set(a.name, a)
+
+  const artistIds: string[] = []
+  const why: Record<string, RailWhy> = {}
+  const seenArtist = new Set<string>()
+  for (const name of namesRoundRobin) {
+    if (artistIds.length >= target) break
+    const a = artistByName.get(name)
+    if (!a || seenArtist.has(a.id)) continue
+    seenArtist.add(a.id)
+    // Don't surface the thumbs-up seed itself.
+    if (ctx.thumbsUpIds.has(a.id)) continue
+    artistIds.push(a.id)
+    const seed = nameToSeed.get(name)
+    why[a.id] = seed
+      ? { sourceArtist: seed.name, sourceArtistId: seed.id }
+      : {}
+  }
+
+  return { railKey: 'wildcards', artistIds, why }
 }
 
 export async function leftfieldRail(
