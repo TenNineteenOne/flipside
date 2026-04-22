@@ -4,7 +4,16 @@ import { useState, useTransition, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Rail, type RailArtist } from "@/components/explore/rail"
+import { ChallengeCard } from "@/components/explore/challenge-card"
 import type { MusicPlatform } from "@/lib/music-links"
+
+export interface ChallengePayload {
+  title: string
+  description: string
+  progress: number
+  target: number
+  completed: boolean
+}
 
 export type RailKey = "adjacent" | "outside" | "wildcards" | "leftfield"
 
@@ -21,6 +30,7 @@ export interface ExploreClientProps {
   musicPlatform: MusicPlatform
   adventurous: boolean
   initialSavedIds: string[]
+  challenge: ChallengePayload | null
 }
 
 export function ExploreClient({
@@ -28,6 +38,7 @@ export function ExploreClient({
   musicPlatform,
   adventurous,
   initialSavedIds,
+  challenge,
 }: ExploreClientProps) {
   const router = useRouter()
   const [, startTransition] = useTransition()
@@ -118,6 +129,16 @@ export function ExploreClient({
           {adventurous ? " · Adventurous on" : ""}
         </span>
       </div>
+
+      {challenge && (
+        <ChallengeCard
+          title={challenge.title}
+          description={challenge.description}
+          progress={challenge.progress}
+          target={challenge.target}
+          completed={challenge.completed}
+        />
+      )}
 
       <div>
         {orderedRails.map((rail) => (

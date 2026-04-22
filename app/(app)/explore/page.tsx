@@ -7,13 +7,21 @@ import {
   type RailKey,
   type RailWhy,
 } from "@/lib/recommendation/explore-engine"
-import { ExploreClient, type RailPayload } from "@/components/explore/explore-client"
+import {
+  ExploreClient,
+  type RailPayload,
+  type ChallengePayload,
+} from "@/components/explore/explore-client"
 import type { RailArtist } from "@/components/explore/rail"
 import {
   DEFAULT_MUSIC_PLATFORM,
   isMusicPlatform,
   type MusicPlatform,
 } from "@/lib/music-links"
+import {
+  buildApplicabilityCtx,
+  ensureWeeklyChallenge,
+} from "@/lib/challenges/engine"
 
 interface ArtistData {
   id: string
@@ -135,12 +143,63 @@ export default async function ExplorePage() {
     }
   })
 
+  // Weekly challenge: ensure one is assigned for this ISO week, compute
+  // applicability from the same signals rails use. Best-effort — if the DB
+  // write fails we just render without a challenge card.
+  const challenge = await loadChallenge(supabase, user.id)
+
   return (
     <ExploreClient
       rails={payloads}
       musicPlatform={musicPlatform}
       adventurous={adventurous}
       initialSavedIds={initialSavedIds}
+      challenge={challenge}
     />
   )
+}
+
+async function loadChallenge(
+  supabase: ReturnType<typeof createServiceClient>,
+  userId: string,
+): Promise<ChallengePayload | null> {
+  // Pull just enough context to judge applicability. Matches what the engine
+  // reads internally but scoped narrower so this stays cheap.
+  const [{ data: userRow }, { data: listenedRows }, { data: thumbsUp }] = await Promise.all([
+    supabase.from("users").select("selected_genres").eq("id", userId).maybeSingle(),
+    supabase.from("listened_artists").select("spotify_artist_id").eq("user_id", userId).limit(500),
+    supabase.from("feedback").select("spotify_artist_id").eq("user_id", userId).eq("signal", "thumbs_up").is("deleted_at", null).limit(1),
+  ])
+
+  const listenedIds = (listenedRows ?? []).map((r) => r.spotify_artist_id as string)
+  const genresById = new Map<string, string[]>()
+  for (let i = 0; i < listenedIds.length; i += 200) {
+    const chunk = listenedIds.slice(i, i + 200)
+    if (chunk.length === 0) continue
+    const { data } = await supabase
+      .from("artist_search_cache")
+      .select("spotify_artist_id, artist_data")
+      .in("spotify_artist_id", chunk)
+    for (const row of data ?? []) {
+      const a = row.artist_data as { genres?: string[] } | null
+      genresById.set(row.spotify_artist_id as string, a?.genres ?? [])
+    }
+  }
+
+  const ctx = buildApplicabilityCtx({
+    selectedGenres: (userRow?.selected_genres as string[]) ?? [],
+    listened: listenedIds.map((id) => ({ genres: genresById.get(id) ?? [] })),
+    hasThumbsUp: (thumbsUp ?? []).length > 0,
+  })
+
+  const challenge = await ensureWeeklyChallenge(supabase, userId, ctx)
+  if (!challenge || !challenge.template) return null
+
+  return {
+    title: challenge.template.title,
+    description: challenge.template.description,
+    progress: challenge.progress,
+    target: challenge.target,
+    completed: !!challenge.completedAt,
+  }
 }
