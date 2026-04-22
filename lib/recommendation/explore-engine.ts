@@ -620,12 +620,14 @@ export async function leftfieldRail(
   supabase: SupabaseClient,
   seenIds: Set<string>,
 ): Promise<RailResult> {
+  try {
   const target = input.adventurous ? LEFTFIELD_TARGET_ADVENTUROUS : LEFTFIELD_TARGET
 
   const topAnchors = computeTopAnchors(ctx.listened) // [] when <2 anchors
   const excluded = new Set(topAnchors)
 
-  const pool = allLeavesWithAnchor().filter((l) => !excluded.has(l.anchorId))
+  const allLeaves = allLeavesWithAnchor()
+  const pool = allLeaves.filter((l) => !excluded.has(l.anchorId))
   if (pool.length === 0) return { railKey: 'leftfield', artistIds: [], why: {} }
 
   const sampleCount = input.adventurous ? LEFTFIELD_SAMPLE_COUNT_ADVENTUROUS : LEFTFIELD_SAMPLE_COUNT
@@ -634,11 +636,15 @@ export async function leftfieldRail(
 
   // For each sampled tag, pick one candidate from Last.fm's mid-list slice.
   // We hash (userId:leafieldTag) to pick a stable offset inside the slice.
+  // Fallback: niche tags often have <10 top artists — when the mid-list
+  // slice is empty, fall back to the whole top-N list so the rail still
+  // produces picks rather than going silently empty.
   const perTag = await Promise.all(
     sampled.map(async (leaf) => {
       const names = await getTagArtistNames(leaf.lastfmTag, LEFTFIELD_MID_END)
-      const slice = names.slice(LEFTFIELD_MID_START, LEFTFIELD_MID_END)
-      if (slice.length === 0) return null
+      if (names.length === 0) return null
+      const mid = names.slice(LEFTFIELD_MID_START, LEFTFIELD_MID_END)
+      const slice = mid.length > 0 ? mid : names
       const offset = cacheWindowSeed(input.userId, 'leftfield') ^ hashString(leaf.lastfmTag)
       const pick = slice[offset % slice.length]
       return { tag: leaf.lastfmTag, anchorId: leaf.anchorId, name: pick }
@@ -668,6 +674,10 @@ export async function leftfieldRail(
   }
 
   return { railKey: 'leftfield', artistIds, why }
+  } catch (e) {
+    console.error('[leftfield] THREW', e instanceof Error ? e.message : String(e), e instanceof Error ? e.stack : '')
+    return { railKey: 'leftfield', artistIds: [], why: {} }
+  }
 }
 
 function hashString(s: string): number {
