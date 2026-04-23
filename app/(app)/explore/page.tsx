@@ -199,48 +199,54 @@ async function loadChallenge(
   supabase: ReturnType<typeof createServiceClient>,
   userId: string,
 ): Promise<ChallengePayload | null> {
-  const [{ data: userRow }, { data: listenedRows }, { data: thumbsUp }] = await Promise.all([
-    supabase.from("users").select("selected_genres").eq("id", userId).maybeSingle(),
-    supabase.from("listened_artists").select("spotify_artist_id").eq("user_id", userId).limit(500),
-    supabase.from("feedback").select("spotify_artist_id").eq("user_id", userId).eq("signal", "thumbs_up").is("deleted_at", null).limit(1),
-  ])
+  // Best-effort: challenge is a secondary surface, never block the page on it.
+  try {
+    const [{ data: userRow }, { data: listenedRows }, { data: thumbsUp }] = await Promise.all([
+      supabase.from("users").select("selected_genres").eq("id", userId).maybeSingle(),
+      supabase.from("listened_artists").select("spotify_artist_id").eq("user_id", userId).limit(500),
+      supabase.from("feedback").select("spotify_artist_id").eq("user_id", userId).eq("signal", "thumbs_up").is("deleted_at", null).limit(1),
+    ])
 
-  const listenedIds = (listenedRows ?? []).map((r) => r.spotify_artist_id as string)
-  const genresById = new Map<string, string[]>()
+    const listenedIds = (listenedRows ?? []).map((r) => r.spotify_artist_id as string)
+    const genresById = new Map<string, string[]>()
 
-  const chunks: string[][] = []
-  for (let i = 0; i < listenedIds.length; i += 200) {
-    chunks.push(listenedIds.slice(i, i + 200))
-  }
-  const chunkResults = await Promise.all(
-    chunks.map((chunk) =>
-      supabase
-        .from("artist_search_cache")
-        .select("spotify_artist_id, artist_data")
-        .in("spotify_artist_id", chunk),
-    ),
-  )
-  for (const { data } of chunkResults) {
-    for (const row of data ?? []) {
-      const a = row.artist_data as { genres?: string[] } | null
-      genresById.set(row.spotify_artist_id as string, a?.genres ?? [])
+    const chunks: string[][] = []
+    for (let i = 0; i < listenedIds.length; i += 200) {
+      chunks.push(listenedIds.slice(i, i + 200))
     }
-  }
+    const chunkResults = await Promise.all(
+      chunks.map((chunk) =>
+        supabase
+          .from("artist_search_cache")
+          .select("spotify_artist_id, artist_data")
+          .in("spotify_artist_id", chunk),
+      ),
+    )
+    for (const { data } of chunkResults) {
+      for (const row of data ?? []) {
+        const a = row.artist_data as { genres?: string[] } | null
+        genresById.set(row.spotify_artist_id as string, a?.genres ?? [])
+      }
+    }
 
-  const ctx = buildApplicabilityCtx({
-    selectedGenres: (userRow?.selected_genres as string[]) ?? [],
-    listened: listenedIds.map((id) => ({ genres: genresById.get(id) ?? [] })),
-    hasThumbsUp: (thumbsUp ?? []).length > 0,
-  })
+    const ctx = buildApplicabilityCtx({
+      selectedGenres: (userRow?.selected_genres as string[]) ?? [],
+      listened: listenedIds.map((id) => ({ genres: genresById.get(id) ?? [] })),
+      hasThumbsUp: (thumbsUp ?? []).length > 0,
+    })
 
-  const challenge = await ensureWeeklyChallenge(supabase, userId, ctx)
-  if (!challenge || !challenge.template) return null
+    const challenge = await ensureWeeklyChallenge(supabase, userId, ctx)
+    if (!challenge || !challenge.template) return null
 
-  return {
-    title: challenge.template.title,
-    description: challenge.template.description,
-    progress: challenge.progress,
-    target: challenge.target,
-    completed: !!challenge.completedAt,
+    return {
+      title: challenge.template.title,
+      description: challenge.template.description,
+      progress: challenge.progress,
+      target: challenge.target,
+      completed: !!challenge.completedAt,
+    }
+  } catch (err) {
+    console.error("[explore-page] loadChallenge failed", err instanceof Error ? err.message : err)
+    return null
   }
 }

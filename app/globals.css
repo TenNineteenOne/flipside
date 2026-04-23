@@ -500,6 +500,12 @@ body::after {
   0%   { background-position: -200% 0; }
   100% { background-position: 200% 0; }
 }
+
+/* ── Adventurous "Apply" CTA pulse (explore-client.tsx) ───────── */
+@keyframes adv-apply-pulse {
+  0%, 100% { box-shadow: 0 0 20px rgba(245,176,71,0.18); }
+  50%      { box-shadow: 0 0 36px rgba(245,176,71,0.36); }
+}
 .fs-skeleton {
   background: linear-gradient(
     90deg,

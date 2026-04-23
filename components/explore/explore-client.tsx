@@ -30,6 +30,14 @@ export interface RailPayload {
   emptyCaption?: string
 }
 
+// Rail identity — icon + accent color. Module-scope so it isn't rebuilt per render.
+const RAIL_META: Record<RailKey, { icon: LucideIcon; rgb: string }> = {
+  adjacent:  { icon: Moon,     rgb: "129, 140, 248" },  // indigo (After hours)
+  outside:   { icon: Mountain, rgb: "139, 92, 246" },   // violet
+  wildcards: { icon: Flame,    rgb: "245, 176, 71" },   // amber
+  leftfield: { icon: Dices,    rgb: "236, 111, 181" },  // magenta
+}
+
 export interface ExploreClientProps {
   rails: RailPayload[]
   musicPlatform: MusicPlatform
@@ -113,7 +121,10 @@ export function ExploreClient({
   }, [rails, adventurous])
 
   const [activeKey, setActiveKey] = useState<RailKey>(orderedRails[0]?.railKey ?? "adjacent")
-  const activeRail = orderedRails.find((r) => r.railKey === activeKey) ?? orderedRails[0]
+  const activeRail = useMemo(
+    () => orderedRails.find((r) => r.railKey === activeKey) ?? orderedRails[0],
+    [orderedRails, activeKey],
+  )
 
   const handleFeedback = useCallback(async (artistId: string, signal: string) => {
     setDismissedSignals((prev) => new Map(prev).set(artistId, signal))
@@ -138,8 +149,13 @@ export function ExploreClient({
     }
   }, [activeKey])
 
+  // Ref lets handleSave stay identity-stable across saves — otherwise every
+  // setSavedIds would re-create the callback and bust React.memo on every row.
+  const savedIdsRef = useRef(savedIds)
+  savedIdsRef.current = savedIds
+
   const handleSave = useCallback(async (artistId: string) => {
-    const isCurrentlySaved = savedIds.has(artistId)
+    const isCurrentlySaved = savedIdsRef.current.has(artistId)
     setSavedIds((prev) => {
       const n = new Set(prev)
       if (isCurrentlySaved) n.delete(artistId)
@@ -169,7 +185,7 @@ export function ExploreClient({
         toast.error(isCurrentlySaved ? "Couldn't unsave — try again" : "Couldn't save — try again")
       }
     })
-  }, [savedIds])
+  }, [])
 
   async function handleShuffle() {
     if (isRegenerating) return
@@ -192,35 +208,37 @@ export function ExploreClient({
     }
   }
 
-  const totalDiscoveries = orderedRails.reduce((n, r) => n + r.artists.length, 0)
+  const totalDiscoveries = useMemo(
+    () => orderedRails.reduce((n, r) => n + r.artists.length, 0),
+    [orderedRails],
+  )
 
-  // Rail identity — icon + accent color
-  const RAIL_META: Record<RailKey, { icon: LucideIcon; rgb: string }> = {
-    adjacent:  { icon: Moon,     rgb: "129, 140, 248" },  // indigo (After hours)
-    outside:   { icon: Mountain, rgb: "139, 92, 246" },   // violet
-    wildcards: { icon: Flame,    rgb: "245, 176, 71" },   // amber
-    leftfield: { icon: Dices,    rgb: "236, 111, 181" },  // magenta
-  }
   const activeAccentRgb = activeRail ? RAIL_META[activeRail.railKey].rgb : "139, 92, 246"
 
   // OFF — rail color dominant, rainbow whisper. Two large rail-color anchors
   // drive the page mood; two small warm hints (amber + magenta) keep it from
   // feeling monochromatic.
-  const palette = `
+  const palette = useMemo(
+    () => `
     radial-gradient(75% 60% at 18% 14%, rgba(${activeAccentRgb}, 0.40) 0%, transparent 70%),
     radial-gradient(55% 48% at 84% 26%, rgba(${activeAccentRgb}, 0.30) 0%, transparent 72%),
     radial-gradient(40% 32% at 50% 92%, rgba(255,138,46,0.14) 0%, transparent 75%),
     radial-gradient(38% 30% at 10% 86%, rgba(236,111,181,0.14) 0%, transparent 72%)
-  `
+  `,
+    [activeAccentRgb],
+  )
 
   // ON — rainbow sunset takes the lead, rail color is one of many voices.
   // The warm amber/hot-pink/coral glow dominates; rail tints the bottom.
-  const adventurousPalette = `
+  const adventurousPalette = useMemo(
+    () => `
     radial-gradient(65% 50% at 18% 10%, rgba(255,138,46,0.40) 0%, transparent 72%),
     radial-gradient(58% 48% at 85% 26%, rgba(255,74,130,0.36) 0%, transparent 72%),
     radial-gradient(60% 48% at 50% 92%, rgba(${activeAccentRgb}, 0.32) 0%, transparent 75%),
     radial-gradient(50% 40% at 10% 86%, rgba(255,184,92,0.28) 0%, transparent 72%)
-  `
+  `,
+    [activeAccentRgb],
+  )
 
   return (
     <div>
@@ -350,11 +368,6 @@ export function ExploreClient({
           />
         </div>
       </button>
-
-      <style>{`@keyframes adv-apply-pulse {
-        0%, 100% { box-shadow: 0 0 20px rgba(245,176,71,0.18); }
-        50%      { box-shadow: 0 0 36px rgba(245,176,71,0.36); }
-      }`}</style>
 
       {isAdvDirty && (
         <button
