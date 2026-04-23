@@ -21,13 +21,13 @@ async function searchCachedArtists(query: string, limit = 10): Promise<Artist[]>
       .ilike("name_lower", pattern)
       .limit(limit)
     if (error) {
-      console.error(`[onboard-search] cache-fallback read-fail err="${error.message}"`)
+      console.log(`[onboard-search] cache-fallback read-fail err="${error.message}"`)
       return []
     }
     return (data ?? []).map((r) => r.artist_data as Artist)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    console.error(`[onboard-search] cache-fallback throw err="${msg}"`)
+    console.log(`[onboard-search] cache-fallback throw err="${msg}"`)
     return []
   }
 }
@@ -35,7 +35,10 @@ async function searchCachedArtists(query: string, limit = 10): Promise<Artist[]>
 // Artist search during onboarding uses server-side client credentials (no user OAuth needed).
 export async function GET(req: NextRequest) {
   const session = await auth()
-  if (!session?.user?.id) return apiUnauthorized()
+  if (!session?.user?.id) {
+    console.log("[onboard-search] unauth")
+    return apiUnauthorized()
+  }
 
   const query = req.nextUrl.searchParams.get("q")
   if (!query || query.trim().length === 0) {
@@ -56,11 +59,16 @@ export async function GET(req: NextRequest) {
 
   if (!Array.isArray(result)) {
     const cached = await searchCachedArtists(trimmed)
+    console.log(
+      `[onboard-search] 429 query="${trimmed}" retry-after=${result.retryAfterSec}s ` +
+      `fallback-cache-n=${cached.length}`
+    )
     if (cached.length > 0) {
       return Response.json({ artists: cached, degraded: true })
     }
     return apiError("Rate limited, try again in a moment", 429)
   }
 
+  console.log(`[onboard-search] q="${trimmed}" n=${result.length}`)
   return Response.json({ artists: result })
 }
