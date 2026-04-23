@@ -177,15 +177,19 @@ body::after {
 /* ── Mobile bottom tab bar ─────────────────────────────────────── */
 .tabbar {
   position: fixed;
-  inset: auto 0 0 0;
-  height: 72px;
-  padding-bottom: env(safe-area-inset-bottom);
+  left: 12px;
+  right: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  height: 64px;
   background: rgba(8,8,8,0.85);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  border-top: 1px solid var(--border);
+  backdrop-filter: blur(18px) saturate(1.15);
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+  border: 1px solid var(--border);
+  border-radius: 28px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.35), 0 2px 8px rgba(0,0,0,0.25);
   display: flex;
   z-index: 50;
+  overflow: hidden;
 }
 .tabbar a {
   flex: 1;
@@ -201,8 +205,31 @@ body::after {
   letter-spacing: 0.04em;
   transition: color .2s var(--easing);
 }
-.tabbar a.active { color: var(--accent); }
+.tabbar a.active { color: var(--text-primary); }
 .tabbar a svg { width: 22px; height: 22px; }
+
+/* Adventurous-mode treatment: brighter glass + static rainbow ring drawn
+   via a pseudo-element so the 28px border-radius is preserved (border-image
+   does not follow border-radius). */
+.tabbar.adventurous {
+  backdrop-filter: blur(18px) saturate(1.5) brightness(1.08);
+  -webkit-backdrop-filter: blur(18px) saturate(1.5) brightness(1.08);
+  overflow: visible;
+}
+.tabbar.adventurous::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 2px;
+  background: linear-gradient(90deg, #f5b047, #ec6fb5, #7dd9c6, #a8c7fa);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+          mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  pointer-events: none;
+}
+
 /* Very narrow viewports (< 360px, i.e. iPhone SE & smaller): shrink labels so
    nothing clips. 6 tabs at ~53px each can't comfortably fit "Settings" at 11px. */
 @media (max-width: 359px) {
@@ -212,11 +239,11 @@ body::after {
 @media (min-width: 900px) { .tabbar { display: none; } }
 
 /* Mini-player pill — lift above the bottom tabbar on mobile so controls
-   and tab labels don't overlap. On desktop the tabbar is hidden so the
-   pill can sit at the usual float offset. */
+   and tab labels don't overlap. The tabbar is now a floating pill with
+   12px top + bottom margins, so total vertical footprint is 64 + 24 = 88. */
 @media (max-width: 899px) {
   .mini-player-pill {
-    bottom: calc(72px + env(safe-area-inset-bottom)) !important;
+    bottom: calc(88px + env(safe-area-inset-bottom)) !important;
   }
 }
 

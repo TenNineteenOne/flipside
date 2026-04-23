@@ -24,7 +24,8 @@ const svgX = (pop: number) => 20 + (pop / 100) * 360
 const svgY = (score: number) => 170 - score * 160
 
 export function CurvePreview({ popularityCurve, undergroundMode, adventurous, exampleArtists }: CurvePreviewProps) {
-  const lineColor = adventurous ? "#f5b047" : "var(--accent)"
+  const lineColor = "var(--accent)"
+  const dottedColor = adventurous ? "#f5b047" : "#a78bfa"
   const fillUrl = adventurous ? "url(#curvePreviewFillAdventurous)" : "url(#curvePreviewFill)"
 
   const { defaultPath, defaultFill, undergroundPath } = useMemo(() => {
@@ -66,11 +67,9 @@ export function CurvePreview({ popularityCurve, undergroundMode, adventurous, ex
               <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.4" />
               <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
             </linearGradient>
-            <linearGradient id="curvePreviewFillAdventurous" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stopColor="#f5b047" stopOpacity="0.55" />
-              <stop offset="45%" stopColor="#ec6fb5" stopOpacity="0.42" />
-              <stop offset="80%" stopColor="#7dd9c6" stopOpacity="0.30" />
-              <stop offset="100%" stopColor="#a8c7fa" stopOpacity="0.18" />
+            <linearGradient id="curvePreviewFillAdventurous" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#f5b047" stopOpacity="0.4" />
+              <stop offset="100%" stopColor="#f5b047" stopOpacity="0" />
             </linearGradient>
             <pattern
               id="undergroundCutoff"
@@ -160,13 +159,13 @@ export function CurvePreview({ popularityCurve, undergroundMode, adventurous, ex
           <path
             d={undergroundPath}
             fill="none"
-            stroke="#a78bfa"
+            stroke={dottedColor}
             strokeWidth="2"
             strokeDasharray="4 4"
             strokeLinejoin="round"
             style={{
               opacity: undergroundMode ? 1 : 0,
-              transition: "opacity 0.4s ease, d 0.15s ease",
+              transition: "opacity 0.4s ease, d 0.15s ease, stroke 0.3s ease",
             }}
           />
 

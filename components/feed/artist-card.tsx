@@ -246,23 +246,8 @@ export function ArtistCard({
           }}
         />
 
-        {/* Genre + name */}
+        {/* Name + genre */}
         <div style={{ position: "absolute", left: 24, right: 24, bottom: 20 }}>
-          {(artist_data.genres?.length ?? 0) > 0 && artist_data.genres?.[0] && (
-            <div
-              className="mono"
-              style={{
-                fontSize: 10.5,
-                fontWeight: 600,
-                letterSpacing: "0.2em",
-                textTransform: "uppercase",
-                color: artistColor,
-                marginBottom: 10,
-              }}
-            >
-              {artist_data.genres[0]} · popularity {artist_data.popularity}
-            </div>
-          )}
           <div
             className="display"
             style={{
@@ -274,6 +259,21 @@ export function ArtistCard({
           >
             {artist_data.name}
           </div>
+          {(artist_data.genres?.length ?? 0) > 0 && artist_data.genres?.[0] && (
+            <div
+              className="mono"
+              style={{
+                fontSize: 10.5,
+                fontWeight: 600,
+                letterSpacing: "0.2em",
+                textTransform: "uppercase",
+                color: artistColor,
+                marginTop: 10,
+              }}
+            >
+              {artist_data.genres[0]} · popularity {artist_data.popularity}
+            </div>
+          )}
         </div>
       </div>
 
