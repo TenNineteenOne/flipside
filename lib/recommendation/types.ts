@@ -8,6 +8,18 @@ export interface RecommendationInput {
   genre?: string        // optional genre filter for targeted generation
   undergroundMode?: boolean // when true, applies additional discoveryScore penalty
   deepDiscovery?: boolean   // when true, take a 2nd-hop walk from each seed's lowest-match similars
+  adventurous?: boolean     // when true, broadens For You (more adjacent bleed, softer mainstream-seed penalty)
+}
+
+/**
+ * Surfaced alongside a BuildResult when we auto-softened filters because the
+ * normal pipeline produced an empty pool. The client shows a matching toast
+ * so the user knows the feed was widened for this batch.
+ */
+export interface SoftenedFilters {
+  playThreshold: boolean
+  undergroundMode: boolean
+  coldStart: boolean
 }
 
 export interface ScoredArtist {
@@ -32,4 +44,9 @@ export interface BuildResult {
    * to `recommendation_cache` without blocking the initial response.
    */
   runSecondary: (() => Promise<number>) | null
+  /**
+   * Set when the pipeline auto-softened filters to avoid an empty pool.
+   * `undefined` on normal (non-softened) runs.
+   */
+  softenedFilters?: SoftenedFilters
 }

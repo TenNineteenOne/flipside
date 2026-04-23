@@ -2,9 +2,12 @@ import { type NextRequest } from "next/server"
 import { auth } from "@/lib/auth"
 import { apiError, apiUnauthorized } from "@/lib/errors"
 import { createServiceClient } from "@/lib/supabase/server"
+import { enforceSameOrigin } from "@/lib/csrf"
 import { validateSeedArtists } from "@/lib/seed-artist-validation"
 
 export async function POST(req: NextRequest) {
+  const blocked = enforceSameOrigin(req)
+  if (blocked) return blocked
   const session = await auth()
   if (!session?.user?.id) return apiUnauthorized()
 

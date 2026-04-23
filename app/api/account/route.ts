@@ -1,8 +1,11 @@
 import { auth, signOut } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiUnauthorized, apiError } from "@/lib/errors"
+import { enforceSameOrigin } from "@/lib/csrf"
 
-export async function DELETE(): Promise<Response> {
+export async function DELETE(request: Request): Promise<Response> {
+  const blocked = enforceSameOrigin(request)
+  if (blocked) return blocked
   const session = await auth()
   if (!session?.user?.id) return apiUnauthorized()
 

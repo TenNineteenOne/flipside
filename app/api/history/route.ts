@@ -20,18 +20,23 @@ export async function GET(request: NextRequest): Promise<Response> {
   const offset = Math.max(0, parseInt(url.searchParams.get("offset") ?? "0", 10) || 0)
   const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get("limit") ?? "50", 10) || 50))
 
-  // 1. Paginated seen recommendations
-  const { data: seen, error: seenErr } = await supabase
+  // Fetch limit+1 and trim so hasMore is accurate at the exact boundary —
+  // the previous `length === limit` heuristic reported hasMore=true even when
+  // the page we just returned was the last, causing a spurious empty page
+  // request from the client.
+  const { data: seenRaw, error: seenErr } = await supabase
     .from("recommendation_cache")
     .select("spotify_artist_id, artist_data, score, why, seen_at")
     .eq("user_id", userId)
     .not("seen_at", "is", null)
     .order("seen_at", { ascending: false })
-    .range(offset, offset + limit - 1)
+    .range(offset, offset + limit)
 
   if (seenErr) return dbError(seenErr, "history/seen")
 
-  const seenArtistIds = (seen ?? []).map((r) => r.spotify_artist_id)
+  const hasMore = (seenRaw ?? []).length > limit
+  const seen = (seenRaw ?? []).slice(0, limit)
+  const seenArtistIds = seen.map((r) => r.spotify_artist_id)
 
   if (seenArtistIds.length === 0) {
     return Response.json({ history: [], hasMore: false })

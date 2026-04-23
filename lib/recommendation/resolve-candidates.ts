@@ -2,6 +2,7 @@ import type { Artist } from "@/lib/music-provider/types"
 import type { RateLimited } from "@/lib/music-provider"
 import { isRateLimited } from "@/lib/music-provider"
 import type { ArtistNameCache } from "./artist-name-cache"
+import { mergeEnrichment, type ArtistEnrichment } from "./enrich-artist"
 
 export interface ResolveDeps {
   cache: Pick<ArtistNameCache, "batchRead" | "write">
@@ -10,6 +11,14 @@ export interface ResolveDeps {
    * array on no-match, or a `RateLimited` sentinel on 429.
    */
   searchArtists: (name: string) => Promise<Artist[] | RateLimited>
+  /**
+   * Optional enrichment — called by name in parallel with the Spotify
+   * search and merged into the resolved Artist before the cache write.
+   * Fills `genres` + `popularity` since Spotify's /search endpoint returns
+   * neither. A null result is survivable: the cache write still happens
+   * with whatever Spotify returned.
+   */
+  enrichArtist?: (name: string) => Promise<ArtistEnrichment | null>
   /** Delay between successful searches (ms). Default 200. Pass 0 in tests. */
   delayMs?: number
   /** Max single-retry backoff (ms). Default 20_000. */
@@ -110,6 +119,13 @@ export async function resolveArtistsByName(
         await sleep(delayMs)
       }
 
+      // Fire enrichment in parallel with Spotify search. The Spotify retry
+      // loop below may take multiple round-trips; enrichment resolves
+      // (or fails silently) in the background either way.
+      const enrichmentPromise: Promise<ArtistEnrichment | null> = deps.enrichArtist
+        ? deps.enrichArtist(name).catch(() => null)
+        : Promise.resolve(null)
+
       let attempt = 0
       let resolvedArtist: Artist | null = null
 
@@ -126,7 +142,12 @@ export async function resolveArtistsByName(
             result.backoffBudgetExhausted = true
             break
           }
-          const requested = Math.max(1, res.retryAfterSec) * 1000
+          // Guard against undefined / NaN retryAfterSec — `Math.max(1, undefined)`
+          // returns NaN, which propagates through the sleep and defeats backoff.
+          const retryAfterSec = typeof res.retryAfterSec === "number" && Number.isFinite(res.retryAfterSec)
+            ? res.retryAfterSec
+            : 10
+          const requested = Math.max(1, retryAfterSec) * 1000
           const waitMs = Math.min(requested, maxRetryBackoffMs, budgetLeft)
           // Reserve before sleeping so concurrent workers see the updated budget
           spentBackoffMs += waitMs
@@ -142,11 +163,15 @@ export async function resolveArtistsByName(
       }
 
       if (resolvedArtist) {
+        const enrichment = await enrichmentPromise
+        resolvedArtist = mergeEnrichment(resolvedArtist, enrichment)
         result.searchOk++
         result.resolved.set(name, resolvedArtist)
         await deps.cache.write(name, resolvedArtist)
         firstSuccessfulSearch = false
       } else {
+        // Avoid unhandled-rejection warnings on the enrichment promise.
+        void enrichmentPromise.catch(() => {})
         result.searchFail++
       }
     }

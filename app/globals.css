@@ -203,7 +203,22 @@ body::after {
 }
 .tabbar a.active { color: var(--accent); }
 .tabbar a svg { width: 22px; height: 22px; }
+/* Very narrow viewports (< 360px, i.e. iPhone SE & smaller): shrink labels so
+   nothing clips. 6 tabs at ~53px each can't comfortably fit "Settings" at 11px. */
+@media (max-width: 359px) {
+  .tabbar a { font-size: 9.5px; gap: 2px; }
+  .tabbar a svg { width: 20px; height: 20px; }
+}
 @media (min-width: 900px) { .tabbar { display: none; } }
+
+/* Mini-player pill — lift above the bottom tabbar on mobile so controls
+   and tab labels don't overlap. On desktop the tabbar is hidden so the
+   pill can sit at the usual float offset. */
+@media (max-width: 899px) {
+  .mini-player-pill {
+    bottom: calc(72px + env(safe-area-inset-bottom)) !important;
+  }
+}
 
 /* ── Desktop top nav ───────────────────────────────────────────── */
 .topnav {
@@ -284,6 +299,13 @@ body::after {
   flex-shrink: 0;
   margin-left: 16px;
 }
+.page-head .sub .serif {
+  font-family: var(--font-serif), 'Instrument Serif', serif;
+  font-style: italic;
+  text-transform: none;
+  letter-spacing: 0;
+  white-space: normal;
+}
 @media (min-width: 900px) {
   .page-head h1 { font-size: 38px; }
 }
@@ -362,6 +384,14 @@ body::after {
   padding: 20px;
 }
 
+@supports ((backdrop-filter: blur(30px)) or (-webkit-backdrop-filter: blur(30px))) {
+  .fs-card {
+    background: rgba(15, 15, 15, 0.65);
+    backdrop-filter: blur(30px) saturate(1.1);
+    -webkit-backdrop-filter: blur(30px) saturate(1.1);
+  }
+}
+
 /* ── Chips ─────────────────────────────────────────────────────── */
 .chip {
   display: inline-flex;
@@ -413,7 +443,7 @@ body::after {
   font-feature-settings: "ss01";
 }
 .display-bold { font-weight: 700; }
-.serif { font-family: 'Instrument Serif', serif; font-style: italic; }
+.serif { font-family: var(--font-serif), 'Instrument Serif', serif; font-style: italic; }
 .mono { font-family: var(--font-mono); }
 .muted { color: var(--text-secondary); }
 .faint { color: var(--text-muted); }
@@ -435,6 +465,57 @@ body::after {
 @keyframes pulse-ring {
   0%, 100% { box-shadow: 0 0 0 0 var(--accent-soft); }
   50%       { box-shadow: 0 0 0 6px transparent; }
+}
+
+/* ── Navigation progress bar ──────────────────────────────────── */
+@keyframes navprog-trickle {
+  0%   { transform: scaleX(0); }
+  15%  { transform: scaleX(0.3); }
+  100% { transform: scaleX(0.85); }
+}
+.nav-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent-glow);
+  transform-origin: left;
+  transform: scaleX(0);
+  z-index: 9999;
+  pointer-events: none;
+}
+.nav-progress-pending {
+  animation: navprog-trickle 600ms ease-out forwards;
+}
+.nav-progress-done {
+  transform: scaleX(1);
+  opacity: 0;
+  transition: transform 180ms ease-out, opacity 220ms ease-out 80ms;
+}
+
+/* ── Skeleton shimmer (loading.tsx) ───────────────────────────── */
+@keyframes fs-shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* ── Adventurous "Apply" CTA pulse (explore-client.tsx) ───────── */
+@keyframes adv-apply-pulse {
+  0%, 100% { box-shadow: 0 0 20px rgba(245,176,71,0.18); }
+  50%      { box-shadow: 0 0 36px rgba(245,176,71,0.36); }
+}
+.fs-skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(255,255,255,0.03) 0%,
+    rgba(255,255,255,0.08) 50%,
+    rgba(255,255,255,0.03) 100%
+  );
+  background-size: 200% 100%;
+  animation: fs-shimmer 1.6s linear infinite;
+  border-radius: 8px;
 }
 
 /* Splash gradient aura */

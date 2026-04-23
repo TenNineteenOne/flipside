@@ -111,6 +111,42 @@ describe("ArtistNameCache.batchRead", () => {
     expect(result.size).toBe(0)
   })
 
+  it("chunks large inputs so a single .in() call can't trip URI-too-large", async () => {
+    // Seed 1,500 rows across three 500-row chunks; the fake records how many
+    // times `in()` was invoked so we can assert the chunking happened.
+    const initialRows: FakeRow[] = Array.from({ length: 1500 }, (_, i) => ({
+      name_lower: `artist ${i}`,
+      spotify_artist_id: `id${i}`,
+      artist_name: `Artist ${i}`,
+      artist_data: artist(`id${i}`, `Artist ${i}`),
+    }))
+    const rows = [...initialRows]
+    let inCalls = 0
+    const client: CacheSupabaseClient = {
+      from() {
+        return {
+          select() {
+            return {
+              in: async (_column: string, values: string[]) => {
+                inCalls++
+                const data = rows
+                  .filter((r) => values.includes(r.name_lower))
+                  .map((r) => ({ name_lower: r.name_lower, artist_data: r.artist_data }))
+                return { data, error: null }
+              },
+            }
+          },
+          upsert: async () => ({ error: null }),
+        }
+      },
+    }
+    const cache = new ArtistNameCache(client)
+    const inputNames = Array.from({ length: 1500 }, (_, i) => `Artist ${i}`)
+    const result = await cache.batchRead(inputNames)
+    expect(result.size).toBe(1500)
+    expect(inCalls).toBe(3) // 1500 / 500 = 3 chunks
+  })
+
   it("lowercases the lookup so case differences hit", async () => {
     const { client } = makeFakeClient({
       initialRows: [

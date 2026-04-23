@@ -1,6 +1,7 @@
 "use client"
 
 import { AnimatePresence, motion } from "framer-motion"
+import Image from "next/image"
 import { Pause, Play, X } from "lucide-react"
 import { useAudio } from "@/lib/audio-context"
 
@@ -18,7 +19,7 @@ export function MiniPlayer() {
            animate={{ y: -24, opacity: 1, x: "-50%" }} // Floating off bottom
            exit={{ y: "150%", opacity: 0, x: "-50%" }}
            transition={{ type: "spring", damping: 30, stiffness: 300 }}
-           className="fixed bottom-0 left-1/2 z-50 w-[92%] max-w-[480px] overflow-hidden"
+           className="mini-player-pill fixed bottom-0 left-1/2 z-50 w-[92%] max-w-[480px] overflow-hidden"
            style={{
              background: "rgba(10, 10, 10, 0.8)",
              backdropFilter: "blur(40px)",
@@ -40,14 +41,16 @@ export function MiniPlayer() {
             {/* Album art */}
             <div className="shrink-0 relative">
               {currentTrack.albumImageUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
+                <Image
                   src={currentTrack.albumImageUrl}
                   alt={currentTrack.albumName}
+                  width={48}
+                  height={48}
                   className="size-12 object-cover shadow-lg"
                   style={{
                     borderRadius: 10,
                   }}
+                  unoptimized
                 />
               ) : (
                 <div

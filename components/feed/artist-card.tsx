@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
+import Image from "next/image"
 import { motion } from "framer-motion"
 import { SkipForward, Bookmark, Check, Share2 } from "lucide-react"
 import { toast } from "sonner"
@@ -78,17 +79,28 @@ export function ArtistCard({
 
   useEffect(() => {
     if (artist_data.topTracks.length === 0 && localTracks.length === 0 && !isFetchingTracks) {
+      const ctrl = new AbortController()
       setIsFetchingTracks(true)
-      fetch(`/api/artists/${recommendation.spotify_artist_id}/tracks?name=${encodeURIComponent(artist_data.name)}`)
+      fetch(
+        `/api/artists/${recommendation.spotify_artist_id}/tracks?name=${encodeURIComponent(artist_data.name)}`,
+        { signal: ctrl.signal },
+      )
         .then((r) => {
           if (!r.ok) throw new Error("fetch failed")
           return r.json()
         })
         .then((data) => {
+          if (ctrl.signal.aborted) return
           if (data.tracks?.length > 0) setLocalTracks(data.tracks)
         })
-        .catch(() => {})
-        .finally(() => setIsFetchingTracks(false))
+        .catch((err: unknown) => {
+          if (err instanceof DOMException && err.name === "AbortError") return
+          // Silent — user still sees "No tracks available" fallback.
+        })
+        .finally(() => {
+          if (!ctrl.signal.aborted) setIsFetchingTracks(false)
+        })
+      return () => ctrl.abort()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only fetch once when tracks are empty
   }, [artist_data.topTracks.length, artist_data.name, recommendation.spotify_artist_id])
@@ -113,7 +125,9 @@ export function ArtistCard({
 
   const reasonText =
     why.sourceArtists.length > 0
-      ? `Similar to ${why.sourceArtists.join(" & ")}`
+      ? why.genres.length > 0
+        ? `Similar to ${why.sourceArtists.join(" & ")} · genre · ${why.genres[0]}`
+        : `Similar to ${why.sourceArtists.join(" & ")}`
       : why.genres.length > 0
         ? `Because you like ${why.genres.join(", ")}`
         : null
@@ -191,13 +205,12 @@ export function ArtistCard({
       {/* Hero image */}
       <div style={{ position: "relative", height: 340, overflow: "hidden" }}>
         {artist_data.imageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <Image
             src={artist_data.imageUrl}
             alt={artist_data.name}
+            fill
+            sizes="(min-width: 900px) 680px, 100vw"
             style={{
-              width: "100%",
-              height: "100%",
               objectFit: "cover",
               filter: "saturate(0.85) contrast(1.05)",
             }}
@@ -235,7 +248,7 @@ export function ArtistCard({
 
         {/* Genre + name */}
         <div style={{ position: "absolute", left: 24, right: 24, bottom: 20 }}>
-          {artist_data.genres.length > 0 && (
+          {(artist_data.genres?.length ?? 0) > 0 && artist_data.genres?.[0] && (
             <div
               className="mono"
               style={{
@@ -247,7 +260,7 @@ export function ArtistCard({
                 marginBottom: 10,
               }}
             >
-              {artist_data.genres[0]} · pop {artist_data.popularity}
+              {artist_data.genres[0]} · popularity {artist_data.popularity}
             </div>
           )}
           <div
@@ -297,13 +310,12 @@ export function ArtistCard({
 
         {reasonText && (
           <div
-            className="serif"
             style={{
               marginTop: 18,
               padding: "14px 16px",
               background: "rgba(255,255,255,0.025)",
               borderRadius: 12,
-              fontSize: 15,
+              fontSize: 14,
               textAlign: "center",
               color: "var(--text-secondary)",
               lineHeight: 1.4,

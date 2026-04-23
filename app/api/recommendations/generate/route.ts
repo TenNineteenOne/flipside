@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, apiUnauthorized } from "@/lib/errors"
+import { enforceSameOrigin } from "@/lib/csrf"
 import { getAccessToken } from "@/lib/get-access-token"
 import { getSpotifyClientToken } from "@/lib/spotify-client-token"
 import { buildRecommendations } from "@/lib/recommendation/engine"
@@ -72,7 +73,7 @@ async function runColorExtraction(
         .eq("spotify_artist_id", r.spotify_artist_id)
 
       if (colorErr) {
-        console.log(`[generate] color-update-fail id=${r.spotify_artist_id} err=${colorErr.message}`)
+        console.error(`[generate] color-update-fail id=${r.spotify_artist_id} err=${colorErr.message}`)
       }
     })
     await pLimit(colorTasks, 5)
@@ -127,7 +128,6 @@ async function runTrackPrewarm(
         },
         { onConflict: "spotify_artist_id" }
       )
-      console.log(`[generate] prewarm-itunes artistId=${r.spotify_artist_id} count=${itunesTracks.length}`)
       return
     }
 
@@ -148,11 +148,10 @@ async function runTrackPrewarm(
           },
           { onConflict: "spotify_artist_id" }
         )
-        console.log(`[generate] prewarm-spotify artistId=${r.spotify_artist_id} count=${spotifyTracks.length}`)
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      console.log(`[generate] prewarm-fail artistId=${r.spotify_artist_id} err="${msg}"`)
+      console.error(`[generate] prewarm-fail artistId=${r.spotify_artist_id} err="${msg}"`)
     }
   })
 
@@ -160,7 +159,8 @@ async function runTrackPrewarm(
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
-  console.log(`[generate] POST`)
+  const blocked = enforceSameOrigin(req)
+  if (blocked) return blocked
   const session = await auth()
   if (!session?.user?.id) return apiUnauthorized()
 
@@ -174,7 +174,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   // Read user row including play_threshold
   const { data: user, error: userError } = await supabase
     .from("users")
-    .select("id, play_threshold, popularity_curve, underground_mode, deep_discovery, last_generated_at")
+    .select("id, play_threshold, popularity_curve, underground_mode, deep_discovery, adventurous, last_generated_at")
     .eq("id", userId)
     .maybeSingle()
 
@@ -232,14 +232,21 @@ export async function POST(req: NextRequest): Promise<Response> {
     // This allows users to request "more" natively and gracefully append them to their existing batch.
     // Replace mode (above) wipes unseen first so Settings-driven regen reflects new anchors.
 
-    // Use user's Spotify token if available, otherwise fall back to client credentials
-    const accessToken = userAccessToken ?? await getSpotifyClientToken() ?? ""
+    // Use user's Spotify token if available, otherwise fall back to client
+    // credentials. Fail loudly if neither is available — silently passing an
+    // empty bearer to Spotify would return 401 on every downstream call and
+    // produce a batch of empty recommendations the client can't diagnose.
+    const accessToken = userAccessToken ?? (await getSpotifyClientToken())
+    if (!accessToken) {
+      console.error("[generate] no Spotify token available (user + client credentials both failed)")
+      return apiError("Music service temporarily unavailable", 503)
+    }
 
     // Optional genre filter from query params
     const rawGenre = req.nextUrl.searchParams.get("genre")
     const genre = rawGenre && rawGenre.length <= 80 ? rawGenre : undefined
 
-    const { count: recCount, runSecondary } = await buildRecommendations({
+    const { count: recCount, runSecondary, softenedFilters } = await buildRecommendations({
       userId: user.id,
       accessToken,
       playThreshold,
@@ -247,6 +254,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       genre,
       undergroundMode: user.underground_mode ?? false,
       deepDiscovery: user.deep_discovery ?? false,
+      adventurous: user.adventurous ?? false,
     })
 
     // Decorations (colour extraction + track pre-warming) and secondary
@@ -261,7 +269,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         try {
           await runSecondary()
         } catch (err) {
-          console.log(`[generate] secondary-fail err=${err instanceof Error ? err.message : err}`)
+          console.error(`[generate] secondary-fail err=${err instanceof Error ? err.message : err}`)
         }
       }
 
@@ -275,15 +283,22 @@ export async function POST(req: NextRequest): Promise<Response> {
 
       const artistIds = cachedRecs.map((r) => r.spotify_artist_id)
 
-      await Promise.all([
+      // allSettled so a color-extraction failure doesn't prevent track prewarm
+      // (and vice versa). Both are best-effort decoration jobs.
+      const decoResults = await Promise.allSettled([
         runColorExtraction(supabase, user.id, cachedRecs, artistIds),
         runTrackPrewarm(supabase, accessToken, cachedRecs, artistIds),
       ])
+      for (const r of decoResults) {
+        if (r.status === "rejected") {
+          console.error("[generate] decoration-task failed", r.reason)
+        }
+      }
     })
 
-    return Response.json({ success: true, count: recCount })
+    return Response.json({ success: true, count: recCount, softenedFilters })
   } catch (err) {
-    console.log(`[generate] fail err=${err instanceof Error ? err.message : err}`)
+    console.error(`[generate] fail err=${err instanceof Error ? err.message : err}`)
     return apiError("Recommendation generation failed", 500)
   }
 }

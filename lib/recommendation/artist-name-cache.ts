@@ -28,6 +28,15 @@ export interface CacheSupabaseClient {
 const TABLE = "artist_search_cache"
 
 /**
+ * Max names per `.in()` call. PostgREST encodes `.in()` into the URL
+ * query string, so very large lists trip Cloudflare's 414 URI-too-large
+ * limit (observed in practice around ~2-3k names, depending on average
+ * name length). 500 is well under that and still means one request per
+ * 500 cache lookups — ample for any realistic caller.
+ */
+const BATCH_READ_CHUNK_SIZE = 500
+
+/**
  * Global cache of artist-name → Spotify-artist lookups.
  * Backed by the `artist_search_cache` Supabase table.
  *
@@ -53,24 +62,33 @@ export class ArtistNameCache {
 
     const lowered = names.map((n) => n.toLowerCase())
 
-    try {
-      const { data, error } = await this.client
-        .from(TABLE)
-        .select("name_lower, artist_data")
-        .in("name_lower", lowered)
+    for (let i = 0; i < lowered.length; i += BATCH_READ_CHUNK_SIZE) {
+      const chunk = lowered.slice(i, i + BATCH_READ_CHUNK_SIZE)
+      try {
+        const { data, error } = await this.client
+          .from(TABLE)
+          .select("name_lower, artist_data")
+          .in("name_lower", chunk)
 
-      if (error) {
-        console.log(`[cache-search] read-fail err="${error.message}" total=${names.length}`)
+        if (error) {
+          console.log(
+            `[cache-search] read-fail err="${error.message}" ` +
+            `chunk=${i}-${i + chunk.length} total=${names.length}`
+          )
+          return out
+        }
+
+        for (const row of data ?? []) {
+          out.set(row.name_lower, row.artist_data)
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        console.log(
+          `[cache-search] read-throw err="${msg}" ` +
+          `chunk=${i}-${i + chunk.length} total=${names.length}`
+        )
         return out
       }
-
-      for (const row of data ?? []) {
-        out.set(row.name_lower, row.artist_data)
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      console.log(`[cache-search] read-throw err="${msg}" total=${names.length}`)
-      return out
     }
 
     const hit = out.size

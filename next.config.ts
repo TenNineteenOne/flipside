@@ -9,6 +9,9 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "*.mzstatic.com" },
     ],
   },
+  experimental: {
+    optimizePackageImports: ["lucide-react", "framer-motion", "sonner"],
+  },
 };
 
 export default nextConfig;

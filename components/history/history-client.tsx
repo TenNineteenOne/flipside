@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useMemo } from "react"
+import Image from "next/image"
 import { toast } from "sonner"
 import { ThumbsUp, ThumbsDown, SkipForward, Bookmark, Undo2 } from "lucide-react"
 import { stringToVibrantHex, hexToRgba, sanitizeHex } from "@/lib/color-utils"
@@ -266,11 +267,13 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
                         }}
                       >
                         {entry.artist_data.imageUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
+                          <Image
                             src={entry.artist_data.imageUrl}
                             alt={entry.artist_data.name}
+                            width={36}
+                            height={36}
                             style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                            unoptimized
                           />
                         ) : null}
                       </div>
@@ -282,7 +285,7 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
                         </div>
                         <div className="mono" style={{ fontSize: 11, color: "var(--text-muted)" }}>
                           {timeAgo(entry.seen_at)}
-                          {entry.artist_data.popularity > 0 && ` · pop ${entry.artist_data.popularity}`}
+                          {entry.artist_data.popularity > 0 && ` · popularity ${entry.artist_data.popularity}`}
                         </div>
                       </div>
 

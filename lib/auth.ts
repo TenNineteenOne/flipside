@@ -1,6 +1,7 @@
 import NextAuth from "next-auth"
 import Credentials from "next-auth/providers/credentials"
 import { createHmac } from "crypto"
+import { cookies } from "next/headers"
 import { createServiceClient } from "@/lib/supabase/server"
 import { isRateLimited } from "@/lib/rate-limiter"
 
@@ -70,3 +71,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
   pages: { signIn: "/sign-in" },
 })
+
+export async function safeAuth() {
+  try {
+    return await auth()
+  } catch (err) {
+    console.warn("[auth] session decryption failed, clearing stale cookie:", (err as Error)?.message)
+    try {
+      const store = await cookies()
+      store.delete("authjs.session-token")
+      store.delete("__Secure-authjs.session-token")
+    } catch {
+      // cookies() may be read-only in some contexts; best-effort cleanup
+    }
+    return null
+  }
+}

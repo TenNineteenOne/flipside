@@ -1,11 +1,11 @@
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { auth } from "@/lib/auth"
+import { safeAuth } from "@/lib/auth"
 import { hasFreshRecs } from "@/lib/recommendation/freshness"
 import { SplashClient } from "@/components/splash/splash-client"
 
 export default async function LandingPage() {
-  const session = await auth()
+  const session = await safeAuth()
 
   if (session?.user?.id) {
     // Logged-in: if there are fresh recs waiting, skip straight to the feed

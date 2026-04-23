@@ -1,5 +1,6 @@
 import type { MusicProvider, RateLimited, SimilarArtistRef } from "./index"
 import type { Artist, PlayHistory, Track } from "./types"
+import { cachedSimilarArtistNames } from "@/lib/lastfm-cache"
 
 const SPOTIFY_BASE = "https://api.spotify.com/v1"
 const LASTFM_BASE = "https://ws.audioscrobbler.com/2.0"
@@ -150,32 +151,14 @@ export class SpotifyProvider implements MusicProvider {
   }
 
   // -------------------------------------------------------------------------
-  // getSimilarArtists
-  // -------------------------------------------------------------------------
-  async getSimilarArtists(accessToken: string, artistId: string, artistName: string, genres: string[] = []): Promise<Artist[]> {
-    const lastFmArtists = await this._getSimilarViaLastFm(accessToken, artistName)
-    const genreArtists = lastFmArtists.length < 5
-      ? await this._getSimilarViaGenreSearch(accessToken, genres)
-      : []
-
-    // Merge: Last.fm results first, then genre search not already included
-    const seen = new Set<string>()
-    const merged: Artist[] = []
-
-    for (const a of [...lastFmArtists, ...genreArtists]) {
-      if (!seen.has(a.id)) {
-        seen.add(a.id)
-        merged.push(a)
-      }
-    }
-
-    return merged
-  }
-
-  // -------------------------------------------------------------------------
   // getSimilarArtistNames — Last.fm only, no Spotify call, no access token
+  // Results pass through a shared 7-day Supabase cache (lastfm_cache).
   // -------------------------------------------------------------------------
   async getSimilarArtistNames(artistName: string): Promise<SimilarArtistRef[]> {
+    return cachedSimilarArtistNames(artistName, (name) => this._fetchSimilarArtistNames(name))
+  }
+
+  private async _fetchSimilarArtistNames(artistName: string): Promise<SimilarArtistRef[]> {
     const apiKey = process.env.LASTFM_API_KEY
     if (!apiKey) {
       if (!SpotifyProvider._lastFmKeyMissing) {
@@ -214,85 +197,6 @@ export class SpotifyProvider implements MusicProvider {
       }
       return []
     }
-  }
-
-  /** @deprecated Use getSimilarArtistNames + engine-level Spotify resolution instead */
-  private async _getSimilarViaLastFm(accessToken: string, artistName: string): Promise<Artist[]> {
-    const refs = await this.getSimilarArtistNames(artistName)
-    if (!refs.length) return []
-    const names = refs.map((r) => r.name)
-    const resolved: Artist[] = []
-    for (let i = 0; i < names.length; i += 5) {
-      const batch = names.slice(i, i + 5)
-      const settled = await Promise.allSettled(batch.map((n) => this._searchOneArtist(accessToken, n)))
-      for (const r of settled) {
-        if (r.status === "fulfilled" && r.value) resolved.push(r.value)
-      }
-    }
-    return resolved
-  }
-
-  /** Search Spotify for a single artist by name. Uses the caller's access token. */
-  private async _searchOneArtist(accessToken: string, name: string): Promise<Artist | null> {
-    const res = await spotifyFetch(
-      `${SPOTIFY_BASE}/search?q=${encodeURIComponent(name)}&type=artist&limit=5`,
-      accessToken
-    )
-    if (!res) {
-      console.error(`[search] "${name}": 401 (token rejected)`)
-      return null
-    }
-    if (!res.ok) {
-      console.error(`[search] "${name}": HTTP ${res.status}`)
-      return null
-    }
-
-    const data = (await res.json()) as SpotifySearchResponse
-    const items = data.artists?.items ?? []
-    if (!items.length) return null
-
-    // Prefer exact name match, then fall back to highest popularity.
-    const lower = name.toLowerCase()
-    const exact = items.find((a) => a.name.toLowerCase() === lower)
-    // Fall back to items[0] — Spotify's own relevance ranking for the name query
-    const best = exact ?? items[0]
-    return best ? mapArtist(best) : null
-  }
-
-  /** Search Spotify for artists by genre when Last.fm returns few results. */
-  private async _getSimilarViaGenreSearch(accessToken: string, genres: string[]): Promise<Artist[]> {
-    if (!genres.length) return []
-
-    const toSearch = [...new Set(genres)].slice(0, 2)
-
-    const results = await Promise.allSettled(
-      toSearch.map(async (genre) => {
-        const res = await spotifyFetch(
-          `${SPOTIFY_BASE}/search?q=genre:${encodeURIComponent(`"${genre}"`)}&type=artist&limit=10`,
-          accessToken
-        )
-        if (!res || !res.ok) {
-          console.log(`[genreSearch] ${res?.status ?? 401} genre="${genre}"`)
-          return [] as Artist[]
-        }
-        const data = (await res.json()) as SpotifySearchResponse
-        return (data.artists?.items ?? []).map(mapArtist)
-      })
-    )
-
-    const artists: Artist[] = []
-    const seen = new Set<string>()
-    for (const r of results) {
-      if (r.status === "fulfilled") {
-        for (const a of r.value) {
-          if (!seen.has(a.id)) {
-            seen.add(a.id)
-            artists.push(a)
-          }
-        }
-      }
-    }
-    return artists
   }
 
   // -------------------------------------------------------------------------

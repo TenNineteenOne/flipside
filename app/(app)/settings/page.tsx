@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { SettingsForm } from "@/components/settings/settings-form"
 import { DEFAULT_MUSIC_PLATFORM, isMusicPlatform } from "@/lib/music-links"
+import { decryptUsername } from "@/lib/crypto/username"
 
 export default async function SettingsPage() {
   const session = await auth()
@@ -14,16 +15,29 @@ export default async function SettingsPage() {
   const supabase = createServiceClient()
   const { data: user } = await supabase
     .from("users")
-    .select("id, play_threshold, popularity_curve, lastfm_username, statsfm_username, underground_mode, deep_discovery, selected_genres, preferred_music_platform")
+    .select("play_threshold, popularity_curve, lastfm_username, statsfm_username, underground_mode, deep_discovery, adventurous, selected_genres, preferred_music_platform")
     .eq("id", userId)
     .maybeSingle()
 
+  let lastfmUsername: string | null = null
+  let statsfmUsername: string | null = null
+  try {
+    lastfmUsername = decryptUsername(user?.lastfm_username ?? null)
+  } catch (err) {
+    console.error(`[settings-page] lastfm decrypt failed userId=${userId} err="${err instanceof Error ? err.message : err}"`)
+  }
+  try {
+    statsfmUsername = decryptUsername(user?.statsfm_username ?? null)
+  } catch (err) {
+    console.error(`[settings-page] statsfm decrypt failed userId=${userId} err="${err instanceof Error ? err.message : err}"`)
+  }
+
   let lastfmArtistCount = 0
-  if (user?.id && user?.lastfm_username) {
+  if (user?.lastfm_username) {
     const { count } = await supabase
       .from("listened_artists")
       .select("id", { count: "exact", head: true })
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .eq("source", "lastfm")
     lastfmArtistCount = count ?? 0
   }
@@ -98,11 +112,12 @@ export default async function SettingsPage() {
       userSeed={userId}
       initialPlayThreshold={user?.play_threshold ?? 5}
       initialPopularityCurve={user?.popularity_curve ?? 0.95}
-      initialLastfmUsername={user?.lastfm_username ?? null}
-      initialStatsfmUsername={user?.statsfm_username ?? null}
+      initialLastfmUsername={lastfmUsername}
+      initialStatsfmUsername={statsfmUsername}
       initialLastfmArtistCount={lastfmArtistCount}
       initialUndergroundMode={user?.underground_mode ?? false}
       initialDeepDiscovery={user?.deep_discovery ?? false}
+      initialAdventurous={user?.adventurous ?? false}
       initialSelectedGenres={(user?.selected_genres as string[] | null) ?? []}
       initialSeedArtists={seedArtists}
       initialMusicPlatform={

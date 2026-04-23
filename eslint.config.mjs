@@ -12,6 +12,12 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Stale agent worktrees shouldn't pollute CI.
+    ".claude/**",
+    // Committed snapshot checked into the repo; not application code.
+    "data/genres.json.backup*",
+    // Manual test harness (CommonJS)
+    "test-colour.js",
   ]),
 ]);
 

@@ -1,9 +1,11 @@
 import { type NextRequest } from "next/server"
 import { auth } from "@/lib/auth"
 import { apiError, apiUnauthorized, dbError } from "@/lib/errors"
+import { enforceSameOrigin } from "@/lib/csrf"
 import { createServiceClient } from "@/lib/supabase/server"
 import { isValidSpotifyId } from "@/lib/spotify-ids"
 import { validateSeedArtists } from "@/lib/seed-artist-validation"
+import { invalidateExploreCache } from "@/lib/recommendation/explore-engine"
 
 const MAX_SEED_ARTISTS = 200
 
@@ -29,6 +31,8 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const blocked = enforceSameOrigin(req)
+  if (blocked) return blocked
   const session = await auth()
   if (!session?.user?.id) return apiUnauthorized()
 
@@ -72,10 +76,16 @@ export async function POST(req: NextRequest) {
 
   if (error) return dbError(error, "settings/seed-artists/upsert")
 
+  await invalidateExploreCache(userId).catch((err) => {
+    console.error("[seed-artists] explore-invalidate failed", err)
+  })
+
   return Response.json({ success: true })
 }
 
 export async function DELETE(req: NextRequest) {
+  const blocked = enforceSameOrigin(req)
+  if (blocked) return blocked
   const session = await auth()
   if (!session?.user?.id) return apiUnauthorized()
 
@@ -92,6 +102,10 @@ export async function DELETE(req: NextRequest) {
     .eq("spotify_artist_id", id)
 
   if (error) return dbError(error, "settings/seed-artists/delete")
+
+  await invalidateExploreCache(session.user.id).catch((err) => {
+    console.error("[seed-artists] explore-invalidate failed", err)
+  })
 
   return Response.json({ success: true })
 }

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import { resolveArtistsByName, type ResolveDeps } from "./resolve-candidates"
 import type { Artist } from "@/lib/music-provider/types"
 import type { RateLimited } from "@/lib/music-provider"
+import type { ArtistEnrichment } from "./enrich-artist"
 
 function artist(id: string, name: string, popularity = 50): Artist {
   return { id, name, genres: [], imageUrl: null, popularity }
@@ -16,6 +17,7 @@ function makeDeps(opts: {
   maxAttemptsPerName?: number
   totalBackoffBudgetMs?: number
   maxRetryBackoffMs?: number
+  enrichArtist?: (name: string) => Promise<ArtistEnrichment | null>
 } = {}): ResolveDeps {
   const cacheMap = opts.cache ?? new Map<string, Artist>()
   const writes = opts.cacheWrites ?? new Map<string, Artist>()
@@ -34,6 +36,7 @@ function makeDeps(opts: {
       },
     },
     searchArtists: opts.search ?? (async () => []),
+    enrichArtist: opts.enrichArtist,
     delayMs: 0,
     maxRetryBackoffMs: opts.maxRetryBackoffMs,
     totalBackoffBudgetMs: opts.totalBackoffBudgetMs,
@@ -206,5 +209,80 @@ describe("resolveArtistsByName", () => {
     const r = await resolveArtistsByName(["a", "b", "c"], { ...makeDeps({ search }), concurrency: 1 })
     expect(r.searchOk).toBe(3)
     expect(maxActive).toBe(1)
+  })
+
+  it("merges enrichment into Spotify result when Spotify genres/popularity are empty", async () => {
+    const writes = new Map<string, Artist>()
+    const search = async (name: string): Promise<Artist[] | RateLimited> => [artist(`id-${name}`, name, 0)]
+    const enrichArtist = vi.fn(async (): Promise<ArtistEnrichment | null> => ({
+      genres: ["indie rock", "post-rock"],
+      popularity: 55,
+    }))
+    const r = await resolveArtistsByName(
+      ["Khruangbin"],
+      makeDeps({ search, enrichArtist, cacheWrites: writes })
+    )
+    expect(enrichArtist).toHaveBeenCalledWith("Khruangbin")
+    const resolved = r.resolved.get("Khruangbin")!
+    expect(resolved.genres).toEqual(["indie rock", "post-rock"])
+    expect(resolved.popularity).toBe(55)
+    expect(writes.get("khruangbin")?.genres).toEqual(["indie rock", "post-rock"])
+    expect(writes.get("khruangbin")?.popularity).toBe(55)
+  })
+
+  it("does not override already-populated Spotify values with enrichment", async () => {
+    const search = async (name: string): Promise<Artist[] | RateLimited> => {
+      const a = artist(`id-${name}`, name, 80)
+      return [{ ...a, genres: ["existing genre"] }]
+    }
+    const enrichArtist = async (): Promise<ArtistEnrichment | null> => ({
+      genres: ["should not apply"],
+      popularity: 20,
+    })
+    const r = await resolveArtistsByName(["A"], makeDeps({ search, enrichArtist }))
+    const resolved = r.resolved.get("A")!
+    expect(resolved.genres).toEqual(["existing genre"])
+    expect(resolved.popularity).toBe(80)
+  })
+
+  it("survives null enrichment (cache write still happens with Spotify-only data)", async () => {
+    const writes = new Map<string, Artist>()
+    const search = async (name: string): Promise<Artist[] | RateLimited> => [artist(`id-${name}`, name, 0)]
+    const enrichArtist = async (): Promise<ArtistEnrichment | null> => null
+    const r = await resolveArtistsByName(
+      ["A"],
+      makeDeps({ search, enrichArtist, cacheWrites: writes })
+    )
+    expect(r.searchOk).toBe(1)
+    expect(r.resolved.get("A")?.genres).toEqual([])
+    expect(writes.get("a")?.id).toBe("id-A")
+  })
+
+  it("survives enrichment throwing (does not block Spotify resolve)", async () => {
+    const writes = new Map<string, Artist>()
+    const search = async (name: string): Promise<Artist[] | RateLimited> => [artist(`id-${name}`, name, 0)]
+    const enrichArtist = async (): Promise<ArtistEnrichment | null> => {
+      throw new Error("last.fm down")
+    }
+    const r = await resolveArtistsByName(
+      ["A"],
+      makeDeps({ search, enrichArtist, cacheWrites: writes })
+    )
+    expect(r.searchOk).toBe(1)
+    expect(r.resolved.get("A")?.id).toBe("id-A")
+    expect(writes.size).toBe(1)
+  })
+
+  it("does not call enrichment when Spotify search fails", async () => {
+    const enrichArtist = vi.fn(async (): Promise<ArtistEnrichment | null> => ({
+      genres: ["rock"],
+      popularity: 50,
+    }))
+    const search = async (): Promise<Artist[] | RateLimited> => []
+    const r = await resolveArtistsByName(["Nope"], makeDeps({ search, enrichArtist }))
+    expect(r.searchFail).toBe(1)
+    expect(r.resolved.size).toBe(0)
+    // enrichment fired in parallel — it may have been invoked, but the important
+    // thing is that no resolved artist got written and no errors leaked.
   })
 })

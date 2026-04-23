@@ -65,7 +65,7 @@ export default async function FeedPage() {
     .maybeSingle()
 
   if (userError) {
-    console.log(`[feed-page] user lookup err="${userError.message}" userId=${userId}`)
+    console.error(`[feed-page] user lookup err="${userError.message}" userId=${userId}`)
     throw new Error(`Failed to load your account: ${userError.message}`)
   }
   if (!user) {
@@ -83,7 +83,7 @@ export default async function FeedPage() {
     .limit(20)
 
   if (recsError) {
-    console.log(`[feed-page] recs err="${recsError.message}" userId=${user.id}`)
+    console.error(`[feed-page] recs err="${recsError.message}" userId=${user.id}`)
     throw new Error(`Failed to load recommendations: ${recsError.message}`)
   }
 
@@ -120,5 +120,12 @@ export default async function FeedPage() {
     return { ...rec, artist_color }
   })
 
-  return <FeedClient recommendations={interleave(recsWithColor)} musicPlatform={musicPlatform} />
+  const [{ count: artistCount }, { count: feedbackCount }, { count: saveCount }] = await Promise.all([
+    supabase.from("listened_artists").select("*", { count: "exact", head: true }).eq("user_id", user.id),
+    supabase.from("feedback").select("*", { count: "exact", head: true }).eq("user_id", user.id).is("deleted_at", null),
+    supabase.from("saves").select("*", { count: "exact", head: true }).eq("user_id", user.id),
+  ])
+  const signalCount = (artistCount ?? 0) + (feedbackCount ?? 0) + (saveCount ?? 0)
+
+  return <FeedClient recommendations={interleave(recsWithColor)} musicPlatform={musicPlatform} signalCount={signalCount} />
 }

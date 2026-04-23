@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import Image from "next/image"
 import { Search, X } from "lucide-react"
 
 type SearchError =
@@ -60,8 +61,13 @@ export function ArtistSearch({ selected, onAdd, onRemove, cap, minForHint = 3 }:
           `/api/onboarding/search?q=${encodeURIComponent(query.trim())}`,
           { signal: aborter.signal },
         )
+        // If the user typed again (or the component unmounted) between fetch
+        // issue and resolution, this aborter has been superseded. Ignore the
+        // response — the replacement fetch will set fresh state.
+        if (aborter.signal.aborted) return
         if (res.ok) {
           const data = await res.json()
+          if (aborter.signal.aborted) return
           setResults(data.artists ?? [])
           setDegraded(!!data.degraded)
           return
@@ -74,10 +80,11 @@ export function ArtistSearch({ selected, onAdd, onRemove, cap, minForHint = 3 }:
         else setError("unknown")
       } catch (err) {
         if ((err as { name?: string } | null)?.name === "AbortError") return
+        if (aborter.signal.aborted) return
         console.error("[artist-search] network", err)
         setError("network")
       } finally {
-        setSearching(false)
+        if (!aborter.signal.aborted) setSearching(false)
       }
     }, 350)
 
@@ -173,8 +180,7 @@ export function ArtistSearch({ selected, onAdd, onRemove, cap, minForHint = 3 }:
                 }}
               >
                 {artist.imageUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={artist.imageUrl} alt="" style={{ width: 32, height: 32, borderRadius: 6, objectFit: "cover", flexShrink: 0 }} />
+                  <Image src={artist.imageUrl} alt={artist.name} width={32} height={32} unoptimized style={{ borderRadius: 6, objectFit: "cover", flexShrink: 0 }} />
                 ) : (
                   <div style={{ width: 32, height: 32, borderRadius: 6, background: "rgba(255,255,255,0.06)", flexShrink: 0 }} />
                 )}

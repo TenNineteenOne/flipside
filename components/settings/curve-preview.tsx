@@ -8,6 +8,8 @@ export interface CurvePreviewProps {
   popularityCurve: number
   /** When true, overlays the ((100-pop)/100)^2 extra-obscurity penalty. */
   undergroundMode: boolean
+  /** When true, paints the main curve amber with a rainbow fill instead of accent purple. */
+  adventurous: boolean
   /**
    * Distinct example artists at anchor popularity values. Render order matches
    * input order. Artist may be null when the user's cache has no good match
@@ -21,7 +23,10 @@ const ANCHORS = [0, 30, 70, 100]
 const svgX = (pop: number) => 20 + (pop / 100) * 360
 const svgY = (score: number) => 170 - score * 160
 
-export function CurvePreview({ popularityCurve, undergroundMode, exampleArtists }: CurvePreviewProps) {
+export function CurvePreview({ popularityCurve, undergroundMode, adventurous, exampleArtists }: CurvePreviewProps) {
+  const lineColor = adventurous ? "#f5b047" : "var(--accent)"
+  const fillUrl = adventurous ? "url(#curvePreviewFillAdventurous)" : "url(#curvePreviewFill)"
+
   const { defaultPath, defaultFill, undergroundPath } = useMemo(() => {
     const defaultPoints = Array.from({ length: 51 }, (_, i) => {
       const p = i * 2
@@ -60,6 +65,12 @@ export function CurvePreview({ popularityCurve, undergroundMode, exampleArtists 
             <linearGradient id="curvePreviewFill" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.4" />
               <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
+            </linearGradient>
+            <linearGradient id="curvePreviewFillAdventurous" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="#f5b047" stopOpacity="0.55" />
+              <stop offset="45%" stopColor="#ec6fb5" stopOpacity="0.42" />
+              <stop offset="80%" stopColor="#7dd9c6" stopOpacity="0.30" />
+              <stop offset="100%" stopColor="#a8c7fa" stopOpacity="0.18" />
             </linearGradient>
             <pattern
               id="undergroundCutoff"
@@ -136,14 +147,14 @@ export function CurvePreview({ popularityCurve, undergroundMode, exampleArtists 
             popularity
           </text>
 
-          <path d={defaultFill} fill="url(#curvePreviewFill)" style={{ transition: "d 0.15s ease" }} />
+          <path d={defaultFill} fill={fillUrl} style={{ transition: "d 0.15s ease" }} />
           <path
             d={defaultPath}
             fill="none"
-            stroke="var(--accent)"
+            stroke={lineColor}
             strokeWidth="2"
             strokeLinejoin="round"
-            style={{ transition: "d 0.15s ease" }}
+            style={{ transition: "d 0.15s ease, stroke 0.3s ease" }}
           />
 
           <path
@@ -167,10 +178,10 @@ export function CurvePreview({ popularityCurve, undergroundMode, exampleArtists 
                 cx={svgX(a)}
                 cy={svgY(y)}
                 r="4"
-                fill="var(--accent)"
+                fill={lineColor}
                 stroke="var(--bg-card)"
                 strokeWidth="2"
-                style={{ transition: "cy 0.15s ease" }}
+                style={{ transition: "cy 0.15s ease, fill 0.3s ease" }}
               />
             )
           })}

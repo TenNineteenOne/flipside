@@ -5,8 +5,11 @@ import { getAccessToken } from "@/lib/get-access-token"
 import { musicProvider } from "@/lib/music-provider/provider"
 import { isValidSpotifyId } from "@/lib/spotify-ids"
 import { apiError, apiUnauthorized } from "@/lib/errors"
+import { enforceSameOrigin } from "@/lib/csrf"
 
 export async function POST(req: NextRequest): Promise<Response> {
+  const blocked = enforceSameOrigin(req)
+  if (blocked) return blocked
   const session = await auth()
   if (!session?.user?.id) return apiUnauthorized()
 
@@ -25,24 +28,22 @@ export async function POST(req: NextRequest): Promise<Response> {
     return apiError("Valid trackId required", 400)
   }
 
-  console.log(`[like] start trackId=${trackId}`)
-
-  const token = await getToken({
-    req,
-    secret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET,
-    secureCookie: process.env.NODE_ENV === "production",
-  })
-  const expiresAt = token?.expiresAt as number | undefined
-  const expiresIn = expiresAt ? Math.round(expiresAt - Date.now() / 1000) : null
-  console.log(`[like] token-state expiresIn=${expiresIn}s tokenError=${token?.error ?? 'none'}`)
-
   try {
     await musicProvider.likeTrack(accessToken, trackId)
-    console.log(`[like] ok trackId=${trackId}`)
     return Response.json({ success: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'unknown'
-    console.log(`[like] fail trackId=${trackId} err=${msg}`)
+    // On failure, surface token state so we can triage expired-scope vs stale-token.
+    const token = await getToken({
+      req,
+      secret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET,
+      secureCookie: process.env.NODE_ENV === "production",
+    })
+    const expiresAt = token?.expiresAt as number | undefined
+    const expiresIn = expiresAt ? Math.round(expiresAt - Date.now() / 1000) : null
+    console.error(
+      `[like] fail trackId=${trackId} err=${msg} expiresIn=${expiresIn}s tokenError=${token?.error ?? 'none'}`
+    )
     if (msg === 'scope_missing') {
       return apiError("scope_missing", 403)
     }

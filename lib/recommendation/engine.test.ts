@@ -1,7 +1,15 @@
 import { describe, it, expect, vi } from "vitest"
-import { buildRoundRobinNames, greedyPickTop, runDeepHop } from "./engine"
-import type { ScoredArtist } from "./types"
-import type { ArtistWithTracks } from "@/lib/music-provider/types"
+import {
+  buildRoundRobinNames,
+  greedyPickTop,
+  runDeepHop,
+  isEligibleForCooldown,
+  augmentWithAdjacent,
+  runWithSoftening,
+  type RunPipelineOpts,
+} from "./engine"
+import type { BuildResult, ScoredArtist } from "./types"
+import type { Artist, ArtistWithTracks } from "@/lib/music-provider/types"
 import type { SimilarArtistRef } from "@/lib/music-provider"
 
 function artist(id: string, name: string, popularity = 50, genre = "rock"): ArtistWithTracks {
@@ -297,5 +305,350 @@ describe("runDeepHop", () => {
     const result = await runDeepHop([{ seed: "Seed", items: [] }], fetchSimilar, 3)
     expect(fetchSimilar).not.toHaveBeenCalled()
     expect(result[0].items).toEqual([])
+  })
+})
+
+describe("isEligibleForCooldown", () => {
+  const now = new Date("2026-04-20T00:00:00Z")
+
+  it("allows candidates with no history", () => {
+    expect(isEligibleForCooldown(null, null, now)).toBe(true)
+    expect(isEligibleForCooldown(undefined, undefined, now)).toBe(true)
+  })
+
+  it("blocks when seen_at is within 7 days", () => {
+    const sixDays = new Date(now.getTime() - 6 * 86400_000).toISOString()
+    expect(isEligibleForCooldown(sixDays, null, now)).toBe(false)
+  })
+
+  it("allows when seen_at is past 7 days", () => {
+    const eightDays = new Date(now.getTime() - 8 * 86400_000).toISOString()
+    expect(isEligibleForCooldown(eightDays, null, now)).toBe(true)
+  })
+
+  it("blocks when skip_at is within 30 days", () => {
+    const fifteenDays = new Date(now.getTime() - 15 * 86400_000).toISOString()
+    expect(isEligibleForCooldown(null, fifteenDays, now)).toBe(false)
+  })
+
+  it("allows when skip_at is past 30 days", () => {
+    const thirtyFiveDays = new Date(now.getTime() - 35 * 86400_000).toISOString()
+    expect(isEligibleForCooldown(null, thirtyFiveDays, now)).toBe(true)
+  })
+
+  it("skip cooldown outranks seen cooldown (fresh seen, old skip → blocked)", () => {
+    const seen = new Date(now.getTime() - 1 * 86400_000).toISOString()
+    const skip = new Date(now.getTime() - 28 * 86400_000).toISOString()
+    expect(isEligibleForCooldown(seen, skip, now)).toBe(false)
+  })
+})
+
+describe("greedyPickTop diversity strength", () => {
+  it("homogeneous 40-rock pool produces ≤12 rocks in top 20 at 0.05 penalty", () => {
+    // 40 candidates, 30 rock (score 0.5 descending) + 10 other genres (score 0.4 descending).
+    // At 0.02 penalty the top would skew heavy-rock; at 0.05 the penalty
+    // after 5-6 rock picks exceeds the 0.1 score gap and diversity wins.
+    const pool: ScoredArtist[] = [
+      ...Array.from({ length: 30 }, (_, i) => scored(`r${i}`, 0.5 - i * 0.001, [`S${i}`], "rock")),
+      ...Array.from({ length: 10 }, (_, i) => scored(`o${i}`, 0.4 - i * 0.001, [`T${i}`], `genre_${i}`)),
+    ]
+    const top = greedyPickTop(pool, 20)
+    const rocks = top.filter((t) => t.artist.genres[0] === "rock").length
+    expect(rocks).toBeLessThanOrEqual(12)
+  })
+})
+
+function mkArtist(id: string, pop = 40, genre = "indie"): Artist {
+  return { id, name: id, genres: [genre], imageUrl: null, popularity: pop }
+}
+
+describe("augmentWithAdjacent", () => {
+  function makeBase(n: number): ScoredArtist[] {
+    return Array.from({ length: n }, (_, i) =>
+      scored(`base${i}`, 0.9 - i * 0.01, [`Seed${i}`], "indie-rock")
+    )
+  }
+
+  const emptySet = new Set<string>()
+
+  it("non-adventurous: injects ≤2 adjacent picks at positions ≥5", async () => {
+    const base = makeBase(20)
+    const result = await augmentWithAdjacent(base, {
+      userGenres: ["indie-rock"],
+      adventurous: false,
+      popularityCurve: 0.95,
+      thumbsDownIds: emptySet,
+      overThresholdIds: emptySet,
+      overThresholdNames: emptySet,
+      fetchTagArtists: async () => ["adj1", "adj2", "adj3"],
+      resolveArtists: async (names) => {
+        const m = new Map<string, Artist>()
+        for (const n of names) m.set(n, mkArtist(`id_${n}`, 30, "indie-pop"))
+        return m
+      },
+    })
+    const bleedIdxs = result
+      .map((r, i) => ({ r, i }))
+      .filter(({ r }) => r.source === "adjacent_bleed")
+      .map(({ i }) => i)
+    expect(bleedIdxs.length).toBeLessThanOrEqual(2)
+    for (const i of bleedIdxs) expect(i).toBeGreaterThanOrEqual(5)
+    // Positions 0-4 are untouched.
+    for (let i = 0; i < 5; i++) expect(result[i].source).toBe("test")
+  })
+
+  it("adventurous: injects ≤4 adjacent picks at positions ≥3", async () => {
+    const base = makeBase(20)
+    const result = await augmentWithAdjacent(base, {
+      userGenres: ["indie-rock"],
+      adventurous: true,
+      popularityCurve: 0.95,
+      thumbsDownIds: emptySet,
+      overThresholdIds: emptySet,
+      overThresholdNames: emptySet,
+      fetchTagArtists: async () => ["adj1", "adj2", "adj3", "adj4", "adj5", "adj6"],
+      resolveArtists: async (names) => {
+        const m = new Map<string, Artist>()
+        for (const n of names) m.set(n, mkArtist(`id_${n}`, 30, "indie-pop"))
+        return m
+      },
+    })
+    const bleedIdxs = result
+      .map((r, i) => ({ r, i }))
+      .filter(({ r }) => r.source === "adjacent_bleed")
+      .map(({ i }) => i)
+    expect(bleedIdxs.length).toBeLessThanOrEqual(4)
+    for (const i of bleedIdxs) expect(i).toBeGreaterThanOrEqual(3)
+    // Positions 0-2 are untouched.
+    for (let i = 0; i < 3; i++) expect(result[i].source).toBe("test")
+  })
+
+  it("skips bleed when user has no selected genres", async () => {
+    const base = makeBase(20)
+    const fetchTagArtists = vi.fn(async () => ["x"])
+    const resolveArtists = vi.fn(async () => new Map<string, Artist>())
+    const result = await augmentWithAdjacent(base, {
+      userGenres: [],
+      popularityCurve: 0.95,
+      thumbsDownIds: emptySet,
+      overThresholdIds: emptySet,
+      overThresholdNames: emptySet,
+      fetchTagArtists,
+      resolveArtists,
+    })
+    expect(result).toEqual(base)
+    expect(fetchTagArtists).not.toHaveBeenCalled()
+    expect(resolveArtists).not.toHaveBeenCalled()
+  })
+
+  it("excludes tags already in user's selected_genres", async () => {
+    const base = makeBase(20)
+    // User already selected both indie-rock and indie-pop. Adjacency would
+    // normally return indie-pop as a close sibling, but it should be filtered.
+    const fetchedTags: string[] = []
+    const fetchTagArtists = vi.fn(async (tag: string) => {
+      fetchedTags.push(tag)
+      return ["someArtist"]
+    })
+    await augmentWithAdjacent(base, {
+      userGenres: ["indie-rock", "indie-pop"],
+      popularityCurve: 0.95,
+      thumbsDownIds: emptySet,
+      overThresholdIds: emptySet,
+      overThresholdNames: emptySet,
+      fetchTagArtists,
+      resolveArtists: async () => new Map<string, Artist>(),
+    })
+    // indie-pop is in user's own selection — should not be queried.
+    expect(fetchedTags).not.toContain("indie-pop")
+  })
+
+  it("does not inject artists already in the base", async () => {
+    const base = makeBase(20)
+    const result = await augmentWithAdjacent(base, {
+      userGenres: ["indie-rock"],
+      popularityCurve: 0.95,
+      thumbsDownIds: emptySet,
+      overThresholdIds: emptySet,
+      overThresholdNames: emptySet,
+      fetchTagArtists: async () => ["base5", "base10"],  // names collide with base[5], base[10]
+      resolveArtists: async () => new Map<string, Artist>(),
+    })
+    // Name-level dedup happens before resolution, so nothing is resolved/injected.
+    expect(result.every((r) => r.source === "test")).toBe(true)
+  })
+
+  it("filters thumbs-down candidates", async () => {
+    const base = makeBase(20)
+    const result = await augmentWithAdjacent(base, {
+      userGenres: ["indie-rock"],
+      popularityCurve: 0.95,
+      thumbsDownIds: new Set(["id_adj1"]),
+      overThresholdIds: emptySet,
+      overThresholdNames: emptySet,
+      fetchTagArtists: async () => ["adj1", "adj2"],
+      resolveArtists: async (names) => {
+        const m = new Map<string, Artist>()
+        for (const n of names) m.set(n, mkArtist(`id_${n}`, 30, "indie-pop"))
+        return m
+      },
+    })
+    const injected = result.filter((r) => r.source === "adjacent_bleed")
+    // id_adj1 was thumbs-down; only id_adj2 can be injected.
+    expect(injected.every((r) => r.artist.id !== "id_adj1")).toBe(true)
+  })
+
+  it("adventurous mainstream penalty orders low-pop injections ahead of high-pop", async () => {
+    const base = makeBase(20)
+    const result = await augmentWithAdjacent(base, {
+      userGenres: ["indie-rock"],
+      adventurous: true,
+      popularityCurve: 0.95,
+      thumbsDownIds: emptySet,
+      overThresholdIds: emptySet,
+      overThresholdNames: emptySet,
+      fetchTagArtists: async () => ["low1", "low2", "low3", "low4", "high1"],
+      resolveArtists: async (names) => {
+        const m = new Map<string, Artist>()
+        for (const n of names) {
+          const pop = n.startsWith("high") ? 80 : 20
+          m.set(n, mkArtist(`id_${n}`, pop, "indie-pop"))
+        }
+        return m
+      },
+    })
+    const injected = result.filter((r) => r.source === "adjacent_bleed")
+    // With 4-pick slots and 4 low + 1 high candidates, all 4 low beat the high.
+    expect(injected.every((r) => r.artist.popularity <= 50)).toBe(true)
+  })
+
+  it("returns base unchanged when base has ≤ startPos items", async () => {
+    const tinyBase = makeBase(4)  // 4 items, startPos=5 (non-adventurous)
+    const result = await augmentWithAdjacent(tinyBase, {
+      userGenres: ["indie-rock"],
+      popularityCurve: 0.95,
+      thumbsDownIds: emptySet,
+      overThresholdIds: emptySet,
+      overThresholdNames: emptySet,
+      fetchTagArtists: async () => ["x"],
+      resolveArtists: async () => new Map([["x", mkArtist("id_x")]]),
+    })
+    expect(result).toEqual(tinyBase)
+  })
+})
+
+// ── runWithSoftening (auto-soften cascade) ────────────────────────────────
+
+describe("runWithSoftening cascade order", () => {
+  // runWithSoftening only reads userId and playThreshold from baseOpts and
+  // spreads the rest through to `run`. The non-test fields (supabase client,
+  // accessToken, etc.) are irrelevant here because `run` is stubbed; stubbing
+  // them as `undefined` under the real type keeps the cast narrow.
+  const baseOpts: RunPipelineOpts = {
+    userId: "u1",
+    playThreshold: 5,
+    seedNames: ["A", "B"],
+    undergroundMode: true,
+    source: "multi_source",
+    accessToken: "",
+    popularityCurve: 0.95,
+    supabase: undefined as unknown as RunPipelineOpts["supabase"],
+  }
+
+  const coldSeeds = () => ["ColdA", "ColdB", "ColdC"]
+
+  interface CallRecord {
+    source: string
+    playThreshold: number
+    undergroundMode: boolean | undefined
+    seedNames: string[]
+  }
+
+  function makeRunner(results: number[]): {
+    run: (opts: RunPipelineOpts) => Promise<BuildResult>
+    calls: CallRecord[]
+  } {
+    const calls: CallRecord[] = []
+    let idx = 0
+    const run = async (opts: RunPipelineOpts): Promise<BuildResult> => {
+      calls.push({
+        source: opts.source,
+        playThreshold: opts.playThreshold,
+        undergroundMode: opts.undergroundMode,
+        seedNames: opts.seedNames,
+      })
+      const count = results[idx++] ?? 0
+      return { count, runSecondary: null }
+    }
+    return { run, calls }
+  }
+
+  it("returns primary result unchanged when primary succeeds", async () => {
+    const { run, calls } = makeRunner([7])
+    const result = await runWithSoftening(baseOpts, true, { run, coldStartSeeds: coldSeeds })
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0].source).toBe("multi_source")
+    expect(result.count).toBe(7)
+    expect(result.softenedFilters).toBeUndefined()
+  })
+
+  it("applies playThreshold+5 first; stops when it succeeds", async () => {
+    const { run, calls } = makeRunner([0, 5])
+    const result = await runWithSoftening(baseOpts, true, { run, coldStartSeeds: coldSeeds })
+
+    expect(calls).toHaveLength(2)
+    expect(calls[1].source).toBe("soften_play_threshold")
+    expect(calls[1].playThreshold).toBe(10)  // 5 + 5
+    expect(calls[1].undergroundMode).toBe(true)  // not yet dropped
+    expect(result.count).toBe(5)
+    expect(result.softenedFilters).toEqual({ playThreshold: true, undergroundMode: false, coldStart: false })
+  })
+
+  it("drops undergroundMode second; stops when it succeeds", async () => {
+    const { run, calls } = makeRunner([0, 0, 3])
+    const result = await runWithSoftening(baseOpts, true, { run, coldStartSeeds: coldSeeds })
+
+    expect(calls).toHaveLength(3)
+    expect(calls[2].source).toBe("soften_disable_underground")
+    expect(calls[2].playThreshold).toBe(10)
+    expect(calls[2].undergroundMode).toBe(false)
+    expect(result.count).toBe(3)
+    expect(result.softenedFilters).toEqual({ playThreshold: true, undergroundMode: true, coldStart: false })
+  })
+
+  it("falls through to cold-start with all flags set when prior steps fail", async () => {
+    const { run, calls } = makeRunner([0, 0, 0, 12])
+    const result = await runWithSoftening(baseOpts, true, { run, coldStartSeeds: coldSeeds })
+
+    expect(calls).toHaveLength(4)
+    expect(calls[3].source).toBe("soften_cold_start")
+    expect(calls[3].seedNames).toEqual(["ColdA", "ColdB", "ColdC"])
+    expect(calls[3].undergroundMode).toBe(false)
+    expect(result.count).toBe(12)
+    expect(result.softenedFilters).toEqual({ playThreshold: true, undergroundMode: true, coldStart: true })
+  })
+
+  it("skips the disable-underground step when undergroundMode was already off", async () => {
+    const offBase = { ...baseOpts, undergroundMode: false }
+    const { run, calls } = makeRunner([0, 0, 8])
+    const result = await runWithSoftening(offBase, false, { run, coldStartSeeds: coldSeeds })
+
+    expect(calls).toHaveLength(3)
+    expect(calls.map((c) => c.source)).toEqual([
+      "multi_source",
+      "soften_play_threshold",
+      "soften_cold_start",  // NOT soften_disable_underground
+    ])
+    expect(result.softenedFilters).toEqual({ playThreshold: true, undergroundMode: false, coldStart: true })
+  })
+
+  it("returns zero from cold-start with flags still set when nothing works", async () => {
+    const { run, calls } = makeRunner([0, 0, 0, 0])
+    const result = await runWithSoftening(baseOpts, true, { run, coldStartSeeds: coldSeeds })
+
+    expect(calls).toHaveLength(4)
+    expect(result.count).toBe(0)
+    expect(result.softenedFilters).toEqual({ playThreshold: true, undergroundMode: true, coldStart: true })
   })
 })
