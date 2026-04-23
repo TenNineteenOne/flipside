@@ -698,9 +698,42 @@ function hashString(s: string): number {
 
 // ── Orchestrator ────────────────────────────────────────────────────────────
 
+export interface HydratedRailArtist {
+  id: string
+  name: string
+  genres?: string[]
+  imageUrl?: string | null
+  popularity?: number
+  artist_color?: string | null
+}
+
 export interface BuildRailsResult {
   rails: RailResult[]
   cacheHit: boolean
+  /** Populated when `opts.hydrate === true`. Maps spotify_artist_id → cached artist record. */
+  hydrated?: Map<string, HydratedRailArtist>
+}
+
+async function hydrateRailArtists(
+  supabase: SupabaseClient,
+  rails: RailResult[],
+): Promise<Map<string, HydratedRailArtist>> {
+  const allIds = Array.from(new Set(rails.flatMap((r) => r.artistIds)))
+  const byId = new Map<string, HydratedRailArtist>()
+  if (allIds.length === 0) return byId
+  const { data: rows } = await supabase
+    .from('artist_search_cache')
+    .select('spotify_artist_id, artist_data, artist_color')
+    .in('spotify_artist_id', allIds)
+  for (const row of rows ?? []) {
+    const a = (row.artist_data ?? {}) as Omit<HydratedRailArtist, 'id' | 'artist_color'>
+    byId.set(row.spotify_artist_id as string, {
+      ...a,
+      id: row.spotify_artist_id as string,
+      artist_color: (row.artist_color as string | null) ?? null,
+    })
+  }
+  return byId
 }
 
 /**
@@ -709,10 +742,13 @@ export interface BuildRailsResult {
  * results, and returns them.
  *
  * `force = true` bypasses the cache (used by the Regenerate button).
+ * `hydrate = true` additionally resolves each rail's artist IDs against
+ * `artist_search_cache` and returns a `hydrated` Map, in parallel with the
+ * cache upsert so it doesn't add serial latency on cache misses.
  */
 export async function buildExploreRails(
   input: BuildRailsInput,
-  opts: { force?: boolean } = {},
+  opts: { force?: boolean; hydrate?: boolean } = {},
 ): Promise<BuildRailsResult> {
   const supabase = createServiceClient()
   const now = new Date()
@@ -725,14 +761,13 @@ export async function buildExploreRails(
       .gt('expires_at', now.toISOString())
 
     if (cached && cached.length === RAIL_KEYS.length) {
-      return {
-        cacheHit: true,
-        rails: cached.map((row) => ({
-          railKey: row.rail_key as RailKey,
-          artistIds: (row.artist_ids ?? []) as string[],
-          why: (row.why ?? {}) as Record<string, RailWhy>,
-        })),
-      }
+      const rails: RailResult[] = cached.map((row) => ({
+        railKey: row.rail_key as RailKey,
+        artistIds: (row.artist_ids ?? []) as string[],
+        why: (row.why ?? {}) as Record<string, RailWhy>,
+      }))
+      const hydrated = opts.hydrate ? await hydrateRailArtists(supabase, rails) : undefined
+      return { cacheHit: true, rails, hydrated }
     }
   }
 
@@ -791,15 +826,17 @@ export async function buildExploreRails(
     expires_at: expiresAt,
   }))
 
-  const { error } = await supabase
-    .from('explore_cache')
-    .upsert(rows, { onConflict: 'user_id,rail_key' })
+  // Upsert + hydration are independent — fire in parallel to save a roundtrip.
+  const [{ error }, hydrated] = await Promise.all([
+    supabase.from('explore_cache').upsert(rows, { onConflict: 'user_id,rail_key' }),
+    opts.hydrate ? hydrateRailArtists(supabase, rails) : Promise.resolve(undefined),
+  ])
 
   if (error) {
     console.error('[explore-engine] cache upsert failed', error.message)
   }
 
-  return { rails, cacheHit: false }
+  return { rails, cacheHit: false, hydrated }
 }
 
 /**

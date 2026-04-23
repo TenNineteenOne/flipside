@@ -6,6 +6,7 @@ import { getSpotifyClientToken } from "@/lib/spotify-client-token"
 import {
   buildExploreRails,
   RAIL_META_KEY,
+  type HydratedRailArtist,
   type RailKey,
   type RailWhy,
 } from "@/lib/recommendation/explore-engine"
@@ -25,15 +26,6 @@ import {
   ensureWeeklyChallenge,
 } from "@/lib/challenges/engine"
 import ExploreLoading from "./loading"
-
-interface ArtistData {
-  id: string
-  name: string
-  genres?: string[]
-  imageUrl?: string | null
-  popularity?: number
-  artist_color?: string | null
-}
 
 const RAIL_TITLES: Record<RailKey, { title: string; subtitle: string; empty: string }> = {
   adjacent: {
@@ -125,31 +117,16 @@ async function ExploreRailsSection({
 }: RailsSectionProps) {
   const supabase = createServiceClient()
 
-  // Rails + challenge are independent — fire them in parallel. The challenge
-  // load is best-effort; its failure is swallowed so it cannot block the page.
+  // Rails (now including hydrated artists) + challenge fire in parallel. The
+  // hydration used to run as a serial DB roundtrip after the rails resolved;
+  // it now runs inside buildExploreRails alongside the cache upsert, so it
+  // also runs in parallel with loadChallenge here.
   const [buildResult, challenge] = await Promise.all([
-    buildExploreRails({ userId, accessToken, adventurous }),
+    buildExploreRails({ userId, accessToken, adventurous }, { hydrate: true }),
     loadChallenge(supabase, userId),
   ])
-  const { rails } = buildResult
-
-  // Hydrate artist IDs into full Artist records for the UI. Needs rail data.
-  const allIds = Array.from(new Set(rails.flatMap((r) => r.artistIds)))
-  const artistById = new Map<string, ArtistData>()
-  if (allIds.length > 0) {
-    const { data: rows } = await supabase
-      .from("artist_search_cache")
-      .select("spotify_artist_id, artist_data, artist_color")
-      .in("spotify_artist_id", allIds)
-    for (const row of rows ?? []) {
-      const a = (row.artist_data ?? {}) as ArtistData
-      artistById.set(row.spotify_artist_id as string, {
-        ...a,
-        id: row.spotify_artist_id as string,
-        artist_color: (row.artist_color as string | null) ?? null,
-      })
-    }
-  }
+  const { rails, hydrated } = buildResult
+  const artistById: Map<string, HydratedRailArtist> = hydrated ?? new Map()
 
   function hydrate(ids: string[], why: Record<string, RailWhy>): RailArtist[] {
     const out: RailArtist[] = []

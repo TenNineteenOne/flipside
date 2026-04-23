@@ -2,6 +2,7 @@ import { redirect } from "next/navigation"
 import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { FeedClient } from "@/components/feed/feed-client"
+import { ExplorePrewarm } from "@/components/feed/explore-prewarm"
 import { RecommendationsLoader } from "@/components/feed/recommendations-loader"
 import { DEFAULT_MUSIC_PLATFORM, isMusicPlatform, type MusicPlatform } from "@/lib/music-links"
 
@@ -98,7 +99,12 @@ export default async function FeedPage() {
 
   // No valid recommendations — client component triggers generation and refreshes
   if (validRecs.length === 0) {
-    return <RecommendationsLoader />
+    return (
+      <>
+        <RecommendationsLoader />
+        <ExplorePrewarm />
+      </>
+    )
   }
 
   // Fetch tracks for the recommendations
@@ -127,5 +133,10 @@ export default async function FeedPage() {
   ])
   const signalCount = (artistCount ?? 0) + (feedbackCount ?? 0) + (saveCount ?? 0)
 
-  return <FeedClient recommendations={interleave(recsWithColor)} musicPlatform={musicPlatform} signalCount={signalCount} />
+  return (
+    <>
+      <FeedClient recommendations={interleave(recsWithColor)} musicPlatform={musicPlatform} signalCount={signalCount} />
+      <ExplorePrewarm />
+    </>
+  )
 }
