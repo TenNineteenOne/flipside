@@ -585,7 +585,7 @@ describe("runWithSoftening cascade order", () => {
 
   it("returns primary result unchanged when primary succeeds", async () => {
     const { run, calls } = makeRunner([7])
-    const result = await runWithSoftening(baseOpts, true, { run, coldStartSeeds: coldSeeds })
+    const result = await runWithSoftening(baseOpts, { run, coldStartSeeds: coldSeeds })
 
     expect(calls).toHaveLength(1)
     expect(calls[0].source).toBe("multi_source")
@@ -595,60 +595,55 @@ describe("runWithSoftening cascade order", () => {
 
   it("applies playThreshold+5 first; stops when it succeeds", async () => {
     const { run, calls } = makeRunner([0, 5])
-    const result = await runWithSoftening(baseOpts, true, { run, coldStartSeeds: coldSeeds })
+    const result = await runWithSoftening(baseOpts, { run, coldStartSeeds: coldSeeds })
 
     expect(calls).toHaveLength(2)
     expect(calls[1].source).toBe("soften_play_threshold")
     expect(calls[1].playThreshold).toBe(10)  // 5 + 5
-    expect(calls[1].undergroundMode).toBe(true)  // not yet dropped
+    expect(calls[1].undergroundMode).toBe(true)  // underground cap is preserved
     expect(result.count).toBe(5)
-    expect(result.softenedFilters).toEqual({ playThreshold: true, undergroundMode: false, coldStart: false })
+    expect(result.softenedFilters).toEqual({ playThreshold: true, coldStart: false })
   })
 
-  it("drops undergroundMode second; stops when it succeeds", async () => {
-    const { run, calls } = makeRunner([0, 0, 3])
-    const result = await runWithSoftening(baseOpts, true, { run, coldStartSeeds: coldSeeds })
-
-    expect(calls).toHaveLength(3)
-    expect(calls[2].source).toBe("soften_disable_underground")
-    expect(calls[2].playThreshold).toBe(10)
-    expect(calls[2].undergroundMode).toBe(false)
-    expect(result.count).toBe(3)
-    expect(result.softenedFilters).toEqual({ playThreshold: true, undergroundMode: true, coldStart: false })
-  })
-
-  it("falls through to cold-start with all flags set when prior steps fail", async () => {
-    const { run, calls } = makeRunner([0, 0, 0, 12])
-    const result = await runWithSoftening(baseOpts, true, { run, coldStartSeeds: coldSeeds })
-
-    expect(calls).toHaveLength(4)
-    expect(calls[3].source).toBe("soften_cold_start")
-    expect(calls[3].seedNames).toEqual(["ColdA", "ColdB", "ColdC"])
-    expect(calls[3].undergroundMode).toBe(false)
-    expect(result.count).toBe(12)
-    expect(result.softenedFilters).toEqual({ playThreshold: true, undergroundMode: true, coldStart: true })
-  })
-
-  it("skips the disable-underground step when undergroundMode was already off", async () => {
-    const offBase = { ...baseOpts, undergroundMode: false }
-    const { run, calls } = makeRunner([0, 0, 8])
-    const result = await runWithSoftening(offBase, false, { run, coldStartSeeds: coldSeeds })
+  it("never disables undergroundMode — falls through to cold-start on second miss", async () => {
+    const { run, calls } = makeRunner([0, 0, 12])
+    const result = await runWithSoftening(baseOpts, { run, coldStartSeeds: coldSeeds })
 
     expect(calls).toHaveLength(3)
     expect(calls.map((c) => c.source)).toEqual([
       "multi_source",
       "soften_play_threshold",
-      "soften_cold_start",  // NOT soften_disable_underground
+      "soften_cold_start",
     ])
-    expect(result.softenedFilters).toEqual({ playThreshold: true, undergroundMode: false, coldStart: true })
+    // undergroundMode stays true through play-threshold soften; cold-start
+    // disables it because starter picks are the degenerate-case escape hatch.
+    expect(calls[1].undergroundMode).toBe(true)
+    expect(calls[2].undergroundMode).toBe(false)
+    expect(calls[2].seedNames).toEqual(["ColdA", "ColdB", "ColdC"])
+    expect(result.count).toBe(12)
+    expect(result.softenedFilters).toEqual({ playThreshold: true, coldStart: true })
+  })
+
+  it("falls through to cold-start when underground was already off", async () => {
+    const offBase = { ...baseOpts, undergroundMode: false }
+    const { run, calls } = makeRunner([0, 0, 8])
+    const result = await runWithSoftening(offBase, { run, coldStartSeeds: coldSeeds })
+
+    expect(calls).toHaveLength(3)
+    expect(calls.map((c) => c.source)).toEqual([
+      "multi_source",
+      "soften_play_threshold",
+      "soften_cold_start",
+    ])
+    expect(result.softenedFilters).toEqual({ playThreshold: true, coldStart: true })
   })
 
   it("returns zero from cold-start with flags still set when nothing works", async () => {
-    const { run, calls } = makeRunner([0, 0, 0, 0])
-    const result = await runWithSoftening(baseOpts, true, { run, coldStartSeeds: coldSeeds })
+    const { run, calls } = makeRunner([0, 0, 0])
+    const result = await runWithSoftening(baseOpts, { run, coldStartSeeds: coldSeeds })
 
-    expect(calls).toHaveLength(4)
+    expect(calls).toHaveLength(3)
     expect(result.count).toBe(0)
-    expect(result.softenedFilters).toEqual({ playThreshold: true, undergroundMode: true, coldStart: true })
+    expect(result.softenedFilters).toEqual({ playThreshold: true, coldStart: true })
   })
 })

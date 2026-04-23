@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache"
 import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, apiUnauthorized, dbError } from "@/lib/errors"
@@ -107,14 +108,33 @@ export async function PATCH(request: Request) {
 
   if (error) return dbError(error, "settings/update")
 
-  // Explore rails are derived from selected_genres + adventurous. Changing
-  // either invalidates all four rails.
+  // Server Component for /settings reads users.* as initial form props; force a
+  // re-render so navigating back doesn't resurrect stale toggle/slider values.
+  revalidatePath("/settings")
+
+  // Explore rails + Feed cache derive from selected_genres, adventurous,
+  // underground_mode, and deep_discovery. Any of those changing invalidates
+  // cached rails AND wipes unseen Feed rows so the next page load regenerates
+  // from scratch under the new settings.
   const invalidates =
-    body.selectedGenres !== undefined || body.adventurous !== undefined
+    body.selectedGenres !== undefined ||
+    body.adventurous !== undefined ||
+    body.undergroundMode !== undefined ||
+    body.deepDiscovery !== undefined
   if (invalidates) {
-    await invalidateExploreCache(userId).catch((err) => {
-      console.error("[settings] explore-invalidate failed", err)
-    })
+    await Promise.all([
+      invalidateExploreCache(userId).catch((err) => {
+        console.error("[settings] explore-invalidate failed", err)
+      }),
+      supabase
+        .from("recommendation_cache")
+        .delete()
+        .eq("user_id", userId)
+        .is("seen_at", null)
+        .then(({ error: delErr }) => {
+          if (delErr) console.error("[settings] feed-cache-wipe failed", delErr.message)
+        }),
+    ])
   }
 
   return Response.json({ success: true })

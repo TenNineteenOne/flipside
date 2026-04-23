@@ -114,16 +114,13 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
         throw new Error((data as { error?: string }).error ?? "Generation failed")
       }
       const data = (await res.json().catch(() => ({}))) as {
-        softenedFilters?: { playThreshold?: boolean; undergroundMode?: boolean; coldStart?: boolean }
+        softenedFilters?: { playThreshold?: boolean; coldStart?: boolean }
       }
       if (data.softenedFilters) {
         const s = data.softenedFilters
         const bits: string[] = []
         if (s.coldStart) bits.push("falling back to starter picks")
-        else {
-          if (s.playThreshold) bits.push("loosening the familiarity cap")
-          if (s.undergroundMode) bits.push("turning off the hard pop-50 cutoff")
-        }
+        else if (s.playThreshold) bits.push("loosening the familiarity cap")
         if (bits.length > 0) {
           toast(`Widened the search for this batch — ${bits.join(" and ")}.`)
         }

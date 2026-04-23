@@ -378,7 +378,7 @@ export async function augmentWithAdjacent(
     if (opts.thumbsDownIds.has(artist.id)) continue
     if (opts.overThresholdIds.has(artist.id)) continue
     if (opts.overThresholdNames.has(normalizeArtistName(artist.name))) continue
-    if (opts.undergroundMode && artist.popularity > UNDERGROUND_MAX_POPULARITY) continue
+    if (opts.undergroundMode && (artist.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) continue
 
     const tag = nameToTag.get(name.toLowerCase()) ?? ''
     const seedRelevance = 0.3
@@ -548,7 +548,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
       if (thumbsDownIds.has(id)) return false
       if (overThresholdIds.has(id)) { filtListened++; return false }
       if (overThresholdNames.has(normalizeArtistName(val.artist.name))) { filtListened++; return false }
-      if (undergroundMode && val.artist.popularity > UNDERGROUND_MAX_POPULARITY) return false
+      if (undergroundMode && (val.artist.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) return false
       if (genre && !val.artist.genres.some((g) => normalizedIncludes(g, genre))) return false
       return true
     })
@@ -703,7 +703,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
           if (thumbsDownIds.has(artist.id)) continue
           if (overThresholdIds.has(artist.id)) continue
           if (overThresholdNames.has(normalizeArtistName(artist.name))) continue
-          if (undergroundMode && artist.popularity > UNDERGROUND_MAX_POPULARITY) continue
+          if (undergroundMode && (artist.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) continue
           if (genre && !artist.genres.some((g) => normalizedIncludes(g, genre))) continue
           const seedArtists = nameToSeeds.get(name) ?? []
           secondaryCandidates.push({ artist, seedArtists })
@@ -808,9 +808,12 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
  * Order:
  *   1. Retry with playThreshold + 5 (in-memory re-filter) — users with
  *      heavy listening history often have everything filtered out.
- *   2. Retry with undergroundMode disabled — hard cap may be killing the pool.
- *      Skipped when undergroundMode was already off (nothing to drop).
- *   3. Cold-start fallback — no candidates at all, seed from curated list.
+ *   2. Cold-start fallback — no candidates at all, seed from curated list.
+ *
+ * The undergroundMode cap is a hard promise: softening never disables it.
+ * If no pop≤50 candidates survive, the feed goes short (or falls through
+ * to cold-start, which is a separate curated-seed path not subject to
+ * the cap — see `soften_cold_start` below).
  *
  * Pure in the sense that all effects flow through the injected `run` and
  * `coldStartSeeds` deps, making the cascade order deterministically testable.
@@ -822,13 +825,12 @@ export interface SoftenDeps {
 
 export async function runWithSoftening(
   baseOpts: RunPipelineOpts,
-  originalUndergroundMode: boolean | undefined,
   deps: SoftenDeps
 ): Promise<BuildResult> {
   const primary = await deps.run(baseOpts)
   if (primary.count > 0) return primary
 
-  const softened: SoftenedFilters = { playThreshold: false, undergroundMode: false, coldStart: false }
+  const softened: SoftenedFilters = { playThreshold: false, coldStart: false }
   const originalPlayThreshold = baseOpts.playThreshold
 
   // Soften 1: bump play threshold.
@@ -841,20 +843,9 @@ export async function runWithSoftening(
   })
   if (r1.count > 0) return { ...r1, softenedFilters: softened }
 
-  // Soften 2: disable underground_mode (only if it was on to begin with).
-  if (originalUndergroundMode) {
-    console.log(`[engine] soften_disable_underground userId=${baseOpts.userId}`)
-    softened.undergroundMode = true
-    const r2 = await deps.run({
-      ...baseOpts,
-      playThreshold: originalPlayThreshold + 5,
-      undergroundMode: false,
-      source: 'soften_disable_underground',
-    })
-    if (r2.count > 0) return { ...r2, softenedFilters: softened }
-  }
-
-  // Soften 3: cold-start fallback.
+  // Soften 2: cold-start fallback. undergroundMode is intentionally off here —
+  // cold-start is the degenerate escape hatch for users with no seeds; its
+  // curated starter picks are treated as an exception to the cap promise.
   console.log(`[engine] soften_cold_start userId=${baseOpts.userId}`)
   softened.coldStart = true
   const r3 = await deps.run({
@@ -901,7 +892,7 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
       `[engine] start userId=${userId} seeds=${seedNames.length}${genre ? ` genre=${genre}` : ""} ` +
       `adventurous=${!!adventurous} userGenres=${userGenres.length}`
     )
-    return runWithSoftening(makeBaseOpts({}), undergroundMode, {
+    return runWithSoftening(makeBaseOpts({}), {
       run: runPipeline,
       coldStartSeeds: sampleColdStartSeeds,
     })

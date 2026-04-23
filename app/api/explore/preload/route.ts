@@ -21,7 +21,11 @@ export async function GET(req: NextRequest): Promise<Response> {
   const supabase = createServiceClient()
 
   const [{ data: user, error: userError }, userAccessToken] = await Promise.all([
-    supabase.from("users").select("id, adventurous").eq("id", userId).maybeSingle(),
+    supabase
+      .from("users")
+      .select("id, adventurous, underground_mode, popularity_curve, play_threshold")
+      .eq("id", userId)
+      .maybeSingle(),
     getAccessToken(req),
   ])
   if (userError || !user) return apiError("User not found", 404)
@@ -34,6 +38,9 @@ export async function GET(req: NextRequest): Promise<Response> {
         userId: user.id,
         accessToken,
         adventurous: user.adventurous ?? false,
+        undergroundMode: user.underground_mode ?? false,
+        popularityCurve: typeof user.popularity_curve === "number" ? user.popularity_curve : undefined,
+        playThreshold: typeof user.play_threshold === "number" ? user.play_threshold : undefined,
       },
       { hydrate: true },
     )
