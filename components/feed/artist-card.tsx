@@ -125,7 +125,9 @@ export function ArtistCard({
 
   const reasonText =
     why.sourceArtists.length > 0
-      ? `Similar to ${why.sourceArtists.join(" & ")}`
+      ? why.genres.length > 0
+        ? `Similar to ${why.sourceArtists.join(" & ")} · genre · ${why.genres[0]}`
+        : `Similar to ${why.sourceArtists.join(" & ")}`
       : why.genres.length > 0
         ? `Because you like ${why.genres.join(", ")}`
         : null
@@ -258,7 +260,7 @@ export function ArtistCard({
                 marginBottom: 10,
               }}
             >
-              {artist_data.genres[0]} · pop {artist_data.popularity}
+              {artist_data.genres[0]} · popularity {artist_data.popularity}
             </div>
           )}
           <div
@@ -308,13 +310,12 @@ export function ArtistCard({
 
         {reasonText && (
           <div
-            className="serif"
             style={{
               marginTop: 18,
               padding: "14px 16px",
               background: "rgba(255,255,255,0.025)",
               borderRadius: 12,
-              fontSize: 15,
+              fontSize: 14,
               textAlign: "center",
               color: "var(--text-secondary)",
               lineHeight: 1.4,

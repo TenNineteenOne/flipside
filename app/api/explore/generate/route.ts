@@ -1,12 +1,15 @@
 import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, apiUnauthorized } from "@/lib/errors"
+import { enforceSameOrigin } from "@/lib/csrf"
 import { getAccessToken } from "@/lib/get-access-token"
 import { getSpotifyClientToken } from "@/lib/spotify-client-token"
 import { buildExploreRails, type BuildRailsResult } from "@/lib/recommendation/explore-engine"
 import type { NextRequest } from "next/server"
 
 export async function POST(req: NextRequest): Promise<Response> {
+  const blocked = enforceSameOrigin(req)
+  if (blocked) return blocked
   const session = await auth()
   if (!session?.user?.id) return apiUnauthorized()
 

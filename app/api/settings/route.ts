@@ -1,10 +1,14 @@
 import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, apiUnauthorized, dbError } from "@/lib/errors"
+import { enforceSameOrigin } from "@/lib/csrf"
 import { isMusicPlatform } from "@/lib/music-links"
 import { invalidateExploreCache } from "@/lib/recommendation/explore-engine"
+import { encryptUsername } from "@/lib/crypto/username"
 
 export async function PATCH(request: Request) {
+  const blocked = enforceSameOrigin(request)
+  if (blocked) return blocked
   const session = await auth()
   if (!session?.user?.id) return apiUnauthorized()
 
@@ -20,6 +24,7 @@ export async function PATCH(request: Request) {
     deepDiscovery?: boolean
     adventurous?: boolean
     preferredMusicPlatform?: string
+    onboardingCompleted?: boolean
   }
   try {
     body = await request.json()
@@ -51,7 +56,7 @@ export async function PATCH(request: Request) {
     if (lfmUsername && !/^[a-zA-Z][a-zA-Z0-9_-]{0,24}$/.test(lfmUsername)) {
       return apiError("Invalid Last.fm username format", 400)
     }
-    update.lastfm_username = lfmUsername || null
+    update.lastfm_username = encryptUsername(lfmUsername || null)
   }
 
   if (body.statsfmUsername !== undefined) {
@@ -59,7 +64,7 @@ export async function PATCH(request: Request) {
     if (sfmUsername && !/^[a-zA-Z0-9._-]{1,30}$/.test(sfmUsername)) {
       return apiError("Invalid stats.fm username format", 400)
     }
-    update.statsfm_username = sfmUsername || null
+    update.statsfm_username = encryptUsername(sfmUsername || null)
   }
 
   if (body.selectedGenres !== undefined) {
@@ -86,6 +91,10 @@ export async function PATCH(request: Request) {
       return apiError("Invalid preferredMusicPlatform", 400)
     }
     update.preferred_music_platform = body.preferredMusicPlatform
+  }
+
+  if (body.onboardingCompleted === true) {
+    update.onboarding_completed_at = new Date().toISOString()
   }
 
 

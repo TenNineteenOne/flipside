@@ -37,9 +37,9 @@ interface ArtistData {
 
 const RAIL_TITLES: Record<RailKey, { title: string; subtitle: string; empty: string }> = {
   adjacent: {
-    title: "Close cousins",
-    subtitle: "One hop over from what you already love",
-    empty: "Pick a few genres or artists first — this rail grows with your taste.",
+    title: "After hours",
+    subtitle: "Ambient, hushed, and late-night — a dimmer shelf to browse",
+    empty: "Hang tight — the moodier corners are loading.",
   },
   outside: {
     title: "Uncharted territory",

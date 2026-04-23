@@ -299,6 +299,13 @@ body::after {
   flex-shrink: 0;
   margin-left: 16px;
 }
+.page-head .sub .serif {
+  font-family: var(--font-serif), 'Instrument Serif', serif;
+  font-style: italic;
+  text-transform: none;
+  letter-spacing: 0;
+  white-space: normal;
+}
 @media (min-width: 900px) {
   .page-head h1 { font-size: 38px; }
 }
@@ -377,6 +384,14 @@ body::after {
   padding: 20px;
 }
 
+@supports ((backdrop-filter: blur(30px)) or (-webkit-backdrop-filter: blur(30px))) {
+  .fs-card {
+    background: rgba(15, 15, 15, 0.65);
+    backdrop-filter: blur(30px) saturate(1.1);
+    -webkit-backdrop-filter: blur(30px) saturate(1.1);
+  }
+}
+
 /* ── Chips ─────────────────────────────────────────────────────── */
 .chip {
   display: inline-flex;
@@ -428,7 +443,7 @@ body::after {
   font-feature-settings: "ss01";
 }
 .display-bold { font-weight: 700; }
-.serif { font-family: 'Instrument Serif', serif; font-style: italic; }
+.serif { font-family: var(--font-serif), 'Instrument Serif', serif; font-style: italic; }
 .mono { font-family: var(--font-mono); }
 .muted { color: var(--text-secondary); }
 .faint { color: var(--text-muted); }

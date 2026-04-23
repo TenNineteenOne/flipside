@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, apiUnauthorized, dbError } from "@/lib/errors"
+import { enforceSameOrigin } from "@/lib/csrf"
 import { getAccessToken } from "@/lib/get-access-token"
 import { isValidSpotifyId } from "@/lib/spotify-ids"
 import { invalidateExploreCache } from "@/lib/recommendation/explore-engine"
@@ -19,7 +20,8 @@ async function spotifyFetch(url: string, accessToken: string, options: RequestIn
 }
 
 export async function POST(request: NextRequest) {
-  console.log(`[saves] POST`)
+  const blocked = enforceSameOrigin(request)
+  if (blocked) return blocked
   const session = await auth()
   if (!session?.user?.id) return apiUnauthorized()
 
@@ -41,8 +43,6 @@ export async function POST(request: NextRequest) {
     return apiError("Invalid spotifyTrackId format", 400)
   }
 
-  console.log(`[saves] start artistId=${spotifyArtistId} trackId=${spotifyTrackId ?? 'none'} addToPlaylist=${addToPlaylist}`)
-
   const supabase = createServiceClient()
 
   // Resolve artist name from cache
@@ -58,7 +58,6 @@ export async function POST(request: NextRequest) {
       resolvedArtistName = cached.artist_data.name
     }
   }
-  console.log(`[saves] artistName="${resolvedArtistName || '(not found in cache)'}"`)
 
   // Upsert the artist bookmark (idempotent — unique on user_id + spotify_artist_id)
   const { error: saveError } = await supabase
@@ -74,7 +73,6 @@ export async function POST(request: NextRequest) {
     )
 
   if (saveError) return dbError(saveError, "saves/upsert")
-  console.log(`[saves] db-upsert ok`)
 
   // A save is a strong positive signal — invalidate the explore rail cache so
   // the next /explore load picks fresh candidates (the saved artist should
@@ -89,7 +87,7 @@ export async function POST(request: NextRequest) {
     .update({ seen_at: new Date().toISOString() })
     .eq("user_id", userId)
     .eq("spotify_artist_id", spotifyArtistId)
-  if (seenError) console.log(`[saves] seen_at err=${seenError.message}`)
+  if (seenError) console.error(`[saves] seen_at err=${seenError.message}`)
 
   // Only add to Spotify playlist when explicitly requested and user has Spotify access
   let playlistId: string | null = null
@@ -104,7 +102,6 @@ export async function POST(request: NextRequest) {
 
       if (user?.spotify_id) {
         playlistId = user.flipside_playlist_id ?? null
-        console.log(`[saves] playlist-start playlistId=${playlistId ?? 'none (will create)'}`)
 
         if (!playlistId) {
           const createRes = await spotifyFetch(
@@ -133,7 +130,6 @@ export async function POST(request: NextRequest) {
               .from("users")
               .update({ flipside_playlist_id: playlistId })
               .eq("id", userId)
-            console.log(`[saves] playlist-created id=${playlistId}`)
           }
         }
 
@@ -149,31 +145,27 @@ export async function POST(request: NextRequest) {
 
           if (addRes.status === 401) {
             console.warn("[saves] Spotify 401 on track add — token expired")
-            console.log(`[saves] done (saved, playlist failed)`)
             return Response.json({ success: true, saved: true, playlistError: "Spotify token expired" })
           }
           if (addRes.status === 403) {
             console.warn("[saves] Spotify 403 on track add — scope missing or app not approved")
-            console.log(`[saves] done (saved, playlist failed)`)
             return Response.json({ success: true, saved: true, playlistError: "Spotify permission denied for playlist" })
           }
           if (addRes.status === 429) {
             console.warn("[saves] Spotify rate limit hit when adding track — skipping")
-            console.log(`[saves] done (saved, playlist rate-limited)`)
             return Response.json({ success: true, saved: true, playlistError: "Spotify rate limit — try again later" })
-          } else if (addRes.ok) {
-            console.log(`[saves] track-added ok`)
           }
         }
       }
     }
   }
 
-  console.log(`[saves] done`)
   return Response.json({ success: true, saved: true, playlistId: playlistId ?? null })
 }
 
 export async function DELETE(request: NextRequest) {
+  const blocked = enforceSameOrigin(request)
+  if (blocked) return blocked
   const session = await auth()
   if (!session?.user?.id) return apiUnauthorized()
 
@@ -204,6 +196,5 @@ export async function DELETE(request: NextRequest) {
     console.error("[saves] explore-invalidate failed", err)
   })
 
-  console.log(`[saves] DELETE artistId=${spotifyArtistId}`)
   return Response.json({ success: true })
 }

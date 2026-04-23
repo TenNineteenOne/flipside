@@ -1,11 +1,13 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { ArtistCard } from "@/components/feed/artist-card"
-import { hexToRgba, sanitizeHex } from "@/lib/color-utils"
+import { ColdStartBanner } from "@/components/feed/cold-start-banner"
+import { Ambient } from "@/components/visual/ambient"
 import type { MusicPlatform } from "@/lib/music-links"
+import { createKeyedSerializer } from "@/lib/keyed-serializer"
 
 interface Track {
   id: string
@@ -42,6 +44,7 @@ interface Recommendation {
 interface FeedClientProps {
   recommendations: Recommendation[]
   musicPlatform: MusicPlatform
+  signalCount: number
 }
 
 // ---------------------------------------------------------------------------
@@ -58,14 +61,22 @@ function buildSequence(recs: Recommendation[]): FeedItem[] {
 // Main component
 // ---------------------------------------------------------------------------
 
-export function FeedClient({ recommendations, musicPlatform }: FeedClientProps) {
+export function FeedClient({ recommendations, musicPlatform, signalCount }: FeedClientProps) {
   const [dismissedSignals, setDismissedSignals] = useState<Map<string, string>>(new Map())
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set())
   const [isGenerating, setIsGenerating] = useState(false)
+  // Synchronous guard: React state updates are batched, so a hair-trigger
+  // double-click can slip past `disabled={isGenerating}` and fire two requests
+  // before the first render commits. The ref blocks the second call instantly.
+  const isGeneratingRef = useRef(false)
+  const saveQueueRef = useRef(createKeyedSerializer())
   const router = useRouter()
 
-  const activeRec = recommendations.find((r) => !dismissedSignals.has(r.spotify_artist_id))
-  const activeAuraColor = sanitizeHex(activeRec?.artist_color)
+  const palette = `
+    radial-gradient(50% 40% at 18% 20%, rgba(139, 92, 246, 0.22) 0%, transparent 70%),
+    radial-gradient(55% 45% at 82% 30%, rgba(236, 111, 181, 0.18) 0%, transparent 70%),
+    radial-gradient(70% 55% at 50% 90%, rgba(125, 217, 198, 0.14) 0%, transparent 70%)
+  `
 
   const sequence = useMemo(() => buildSequence(recommendations), [recommendations])
 
@@ -89,6 +100,8 @@ export function FeedClient({ recommendations, musicPlatform }: FeedClientProps) 
   }
 
   async function handleGenerateMore() {
+    if (isGeneratingRef.current) return
+    isGeneratingRef.current = true
     setIsGenerating(true)
     try {
       const res = await fetch("/api/recommendations/generate", { method: "POST" })
@@ -119,58 +132,45 @@ export function FeedClient({ recommendations, musicPlatform }: FeedClientProps) 
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Generation failed")
     } finally {
+      isGeneratingRef.current = false
       setIsGenerating(false)
     }
   }
 
   async function handleSave(artistId: string) {
-    if (savedIds.has(artistId)) {
-      setSavedIds((prev) => { const n = new Set(prev); n.delete(artistId); return n })
+    const willUnsave = savedIds.has(artistId)
+    setSavedIds((prev) => {
+      const n = new Set(prev)
+      if (willUnsave) n.delete(artistId)
+      else n.add(artistId)
+      return n
+    })
+    // Serialize per-artist so rapid save/unsave clicks hit the server in
+    // click order. Without this, POST/DELETE can interleave and the final
+    // server state can disagree with the user's last intent.
+    return saveQueueRef.current(artistId, async () => {
       try {
         const res = await fetch("/api/saves", {
-          method: "DELETE",
+          method: willUnsave ? "DELETE" : "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ spotifyArtistId: artistId }),
         })
         if (!res.ok) throw new Error("Server error")
       } catch {
-        setSavedIds((prev) => new Set(prev).add(artistId))
-        toast.error("Couldn't unsave — try again")
-      }
-    } else {
-      setSavedIds((prev) => new Set(prev).add(artistId))
-      try {
-        const res = await fetch("/api/saves", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ spotifyArtistId: artistId }),
+        setSavedIds((prev) => {
+          const n = new Set(prev)
+          if (willUnsave) n.add(artistId)
+          else n.delete(artistId)
+          return n
         })
-        if (!res.ok) throw new Error("Server error")
-      } catch {
-        setSavedIds((prev) => { const n = new Set(prev); n.delete(artistId); return n })
-        toast.error("Couldn't save — try again")
+        toast.error(willUnsave ? "Couldn't unsave — try again" : "Couldn't save — try again")
       }
-    }
+    })
   }
 
   return (
     <div style={{ position: "relative" }}>
-      {/* Ambient aura */}
-      <div
-        aria-hidden
-        style={{
-          position: "fixed",
-          top: "15%",
-          left: "50%",
-          transform: "translateX(-50%)",
-          width: 700,
-          height: 700,
-          pointerEvents: "none",
-          zIndex: -1,
-          background: `radial-gradient(circle, ${hexToRgba(activeAuraColor, 0.4)} 0%, transparent 65%)`,
-          transition: "background 1s",
-        }}
-      />
+      <Ambient palette={palette} />
 
       {/* Page header */}
       <div className="page-head">
@@ -180,6 +180,7 @@ export function FeedClient({ recommendations, musicPlatform }: FeedClientProps) 
 
       {/* Feed sequence */}
       <div className="col" style={{ gap: 24, marginTop: 8 }}>
+        <ColdStartBanner signalCount={signalCount} />
         {sequence.map((item) => {
           const { rec } = item
           return (

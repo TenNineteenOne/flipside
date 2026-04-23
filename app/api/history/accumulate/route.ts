@@ -1,14 +1,18 @@
 import { auth } from "@/lib/auth"
 import { apiError, apiUnauthorized } from "@/lib/errors"
 import { createServiceClient } from "@/lib/supabase/server"
+import { enforceSameOrigin } from "@/lib/csrf"
 import { accumulateLastFmHistory } from "@/lib/listened-artists"
 import { accumulateStatsFmHistory } from "@/lib/statsfm-listened-artists"
 import { getSpotifyClientToken } from "@/lib/spotify-client-token"
+import { decryptUsername } from "@/lib/crypto/username"
 
 const COOLDOWN_MS = 15 * 60_000
 type Source = "lastfm" | "statsfm"
 
 export async function POST(request: Request): Promise<Response> {
+  const blocked = enforceSameOrigin(request)
+  if (blocked) return blocked
   const session = await auth()
   if (!session?.user?.id) return apiUnauthorized()
 
@@ -39,10 +43,21 @@ export async function POST(request: Request): Promise<Response> {
   }
   if (!user) return apiError("User not found", 404)
 
-  const username = source === "lastfm" ? user.lastfm_username : user.statsfm_username
+  const storedUsername = source === "lastfm" ? user.lastfm_username : user.statsfm_username
   const cooldownField = source === "lastfm" ? "last_accumulated_lastfm_at" : "last_accumulated_statsfm_at"
   const lastAt = source === "lastfm" ? user.last_accumulated_lastfm_at : user.last_accumulated_statsfm_at
 
+  if (!storedUsername) {
+    return apiError(`No ${source === "lastfm" ? "Last.fm" : "stats.fm"} account connected`, 400)
+  }
+
+  let username: string | null
+  try {
+    username = decryptUsername(storedUsername)
+  } catch (err) {
+    console.error(`[history/accumulate] ${source} decrypt failed userId=${userId} err="${err instanceof Error ? err.message : err}"`)
+    return apiError(`${source === "lastfm" ? "Last.fm" : "stats.fm"} sync failed — verify your username in settings`, 500)
+  }
   if (!username) {
     return apiError(`No ${source === "lastfm" ? "Last.fm" : "stats.fm"} account connected`, 400)
   }

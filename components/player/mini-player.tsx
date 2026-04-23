@@ -1,6 +1,7 @@
 "use client"
 
 import { AnimatePresence, motion } from "framer-motion"
+import Image from "next/image"
 import { Pause, Play, X } from "lucide-react"
 import { useAudio } from "@/lib/audio-context"
 
@@ -40,14 +41,16 @@ export function MiniPlayer() {
             {/* Album art */}
             <div className="shrink-0 relative">
               {currentTrack.albumImageUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
+                <Image
                   src={currentTrack.albumImageUrl}
                   alt={currentTrack.albumName}
+                  width={48}
+                  height={48}
                   className="size-12 object-cover shadow-lg"
                   style={{
                     borderRadius: 10,
                   }}
+                  unoptimized
                 />
               ) : (
                 <div

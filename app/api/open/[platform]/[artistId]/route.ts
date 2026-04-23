@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
+import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
-import { apiError } from "@/lib/errors"
+import { apiError, apiUnauthorized } from "@/lib/errors"
 import { isValidSpotifyId } from "@/lib/spotify-ids"
 
 interface ITunesArtistResult {
@@ -51,18 +52,18 @@ async function resolveAppleMusicUrl(name: string): Promise<string | null> {
   try {
     res = await fetch(url, { signal: AbortSignal.timeout(5000) })
   } catch (err) {
-    console.log(`[open/apple_music] itunes fetch failed name="${name}" err=${String(err)}`)
+    console.error(`[open/apple_music] itunes fetch failed name="${name}" err=${String(err)}`)
     return null
   }
   if (!res.ok) {
-    console.log(`[open/apple_music] itunes status=${res.status} name="${name}"`)
+    console.error(`[open/apple_music] itunes status=${res.status} name="${name}"`)
     return null
   }
   let data: ITunesResponse
   try {
     data = (await res.json()) as ITunesResponse
   } catch (err) {
-    console.log(`[open/apple_music] itunes json parse failed name="${name}" err=${String(err)}`)
+    console.error(`[open/apple_music] itunes json parse failed name="${name}" err=${String(err)}`)
     return null
   }
   const hit = data.results?.[0]
@@ -71,7 +72,7 @@ async function resolveAppleMusicUrl(name: string): Promise<string | null> {
   }
   if (normalizeName(hit.artistName) !== normalizeName(name)) return null
   if (!isSafeAppleUrl(hit.artistLinkUrl)) {
-    console.log(`[open/apple_music] unsafe redirect rejected url="${hit.artistLinkUrl}"`)
+    console.error(`[open/apple_music] unsafe redirect rejected url="${hit.artistLinkUrl}"`)
     return null
   }
   return hit.artistLinkUrl
@@ -81,6 +82,12 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ platform: string; artistId: string }> }
 ) {
+  // proxy.ts already gates /api/* behind auth, but this route uses the
+  // service role to touch a shared cache and redirect; require an explicit
+  // session here so a future proxy config change can't silently expose it.
+  const session = await auth()
+  if (!session?.user?.id) return apiUnauthorized()
+
   const { platform, artistId } = await params
 
   if (platform !== "apple_music") {
@@ -135,7 +142,7 @@ export async function GET(
       { onConflict: "spotify_artist_id" }
     )
   if (upsertError) {
-    console.log(`[open/apple_music] cache upsert failed id=${artistId} err="${upsertError.message}"`)
+    console.error(`[open/apple_music] cache upsert failed id=${artistId} err="${upsertError.message}"`)
   }
 
   return NextResponse.redirect(resolved ?? appleMusicSearchUrl(name), 302)

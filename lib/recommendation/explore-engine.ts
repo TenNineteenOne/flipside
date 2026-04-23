@@ -19,7 +19,6 @@ import { resolveArtistsByName } from './resolve-candidates'
 import { fetchArtistEnrichment } from './enrich-artist'
 import { getTagArtistNames } from './engine'
 import {
-  adjacentGenres,
   allLeavesWithAnchor,
   genreToAnchor,
   leafTagsInAnchor,
@@ -232,21 +231,28 @@ async function loadSeenIds(supabase: SupabaseClient, userId: string): Promise<Se
 // results so the UI can render shells + empty states, and the cache round-trip
 // can be verified end-to-end.
 
-const ADJACENT_TARGET = 10
-const ADJACENT_TARGET_ADVENTUROUS = 12
-const ADJACENT_PER_TAG = 5
-const ADJACENT_PER_TAG_ADVENTUROUS = 5
-const ADJACENT_MAX_TAGS = 15
-const ADJACENT_MAX_TAGS_ADVENTUROUS = 18
+const AFTERHOURS_TARGET = 10
+const AFTERHOURS_TARGET_ADVENTUROUS = 12
+const AFTERHOURS_PER_TAG = 4
+const AFTERHOURS_PICK_COUNT = 6
+
+// Mood tags for the After Hours rail — late-night / ambient / atmospheric.
+// Rotated per user per week so pickups feel fresh without thrashing. Broad
+// tags like "ambient" and "downtempo" are intentionally excluded — Last.fm
+// users apply them too liberally (classical, film score, mainstream EDM all
+// leak in), so we stick to narrower, mood-cohesive tags.
+const AFTERHOURS_TAGS = [
+  'dream pop', 'shoegaze', 'slowcore', 'drone', 'dark ambient',
+  'ethereal wave', 'chillwave', 'post-rock', 'trip hop', 'sadcore',
+  'cold wave', 'dungeon synth', 'gothic rock', 'dreamgaze', 'ambient black metal',
+] as const
 
 /**
- * Adjacent rail — genres one hop away from the user's stated taste.
- *
- * Seeds are top 5 selected_genres. When empty (new user), we fall back to
- * deriving primary genres from their `seed_artists`. For each seed genre
- * we pull close-distance neighbours from the coord map, fetch top artists
- * per neighbour, and round-robin across source tags so no single neighbour
- * dominates.
+ * After Hours rail — ambient / late-night / atmospheric picks, independent of
+ * the user's stated taste so it reads as an editorial mood shelf rather than
+ * "more of what you already have." Pulls a rotating 6-tag subset per user per
+ * week, fetches top artists per tag, round-robins for breadth, filters out
+ * already-known / thumbs-down / already-seen artists.
  */
 export async function adjacentRail(
   input: BuildRailsInput,
@@ -254,57 +260,22 @@ export async function adjacentRail(
   supabase: SupabaseClient,
   seenIds: Set<string>,
 ): Promise<RailResult> {
-  const target = input.adventurous ? ADJACENT_TARGET_ADVENTUROUS : ADJACENT_TARGET
-  const perTag = input.adventurous ? ADJACENT_PER_TAG_ADVENTUROUS : ADJACENT_PER_TAG
-  const maxTags = input.adventurous ? ADJACENT_MAX_TAGS_ADVENTUROUS : ADJACENT_MAX_TAGS
-  const seedTags = await resolveAdjacentSeeds(ctx, supabase)
-  if (seedTags.length === 0) return { railKey: 'adjacent', artistIds: [], why: {} }
+  const target = input.adventurous ? AFTERHOURS_TARGET_ADVENTUROUS : AFTERHOURS_TARGET
+  const perTag = AFTERHOURS_PER_TAG
 
-  // Collect adjacent tags from the user's top seeds. Cap to keep Last.fm
-  // call budget bounded.
-  const adjacentByTag = new Map<string, string[]>()
-  const ownTagSet = new Set(seedTags.map((t) => t.toLowerCase()))
-  function collectFromDistance(distance: 'close' | 'medium') {
-    for (const seed of seedTags.slice(0, 5)) {
-      const neighbours = adjacentGenres(seed, distance)
-      for (const tag of neighbours) {
-        if (ownTagSet.has(tag.toLowerCase())) continue
-        if (adjacentByTag.has(tag)) continue
-        adjacentByTag.set(tag, [])
-        if (adjacentByTag.size >= maxTags) break
-      }
-      if (adjacentByTag.size >= maxTags) break
-    }
+  // Stable 6-tag rotation — same week + same user = same seed tags.
+  const startIdx = cacheWindowSeed(input.userId, 'afterhours') % AFTERHOURS_TAGS.length
+  const chosenTags: string[] = []
+  for (let i = 0; i < AFTERHOURS_PICK_COUNT; i++) {
+    chosenTags.push(AFTERHOURS_TAGS[(startIdx + i) % AFTERHOURS_TAGS.length])
   }
-  collectFromDistance('close')
-  // Seeds derived from listened_artists aren't always coord-mapped leaves, so
-  // `close` can come back empty. Fall back to medium-distance neighbours, then
-  // to same-anchor sibling leaves so the rail always has something to chew on.
-  if (adjacentByTag.size === 0) collectFromDistance('medium')
-  if (adjacentByTag.size === 0) {
-    const seenAnchors = new Set<string>()
-    for (const seed of seedTags.slice(0, 5)) {
-      const anchor = genreToAnchor(seed)
-      if (!anchor || seenAnchors.has(anchor)) continue
-      seenAnchors.add(anchor)
-      for (const leaf of leafTagsInAnchor(anchor)) {
-        if (ownTagSet.has(leaf.toLowerCase())) continue
-        if (adjacentByTag.has(leaf)) continue
-        adjacentByTag.set(leaf, [])
-        if (adjacentByTag.size >= maxTags) break
-      }
-      if (adjacentByTag.size >= maxTags) break
-    }
-  }
-  if (adjacentByTag.size === 0) return { railKey: 'adjacent', artistIds: [], why: {} }
 
-  // Fetch top artists per adjacent tag in parallel.
-  const tagList = [...adjacentByTag.keys()]
   const perTagResults = await Promise.all(
-    tagList.map((tag) => getTagArtistNames(tag, perTag + 2)),
+    chosenTags.map((tag) => getTagArtistNames(tag, perTag + 2)),
   )
-  for (let i = 0; i < tagList.length; i++) {
-    adjacentByTag.set(tagList[i], perTagResults[i].slice(0, perTag + 2))
+  const tagToNames = new Map<string, string[]>()
+  for (let i = 0; i < chosenTags.length; i++) {
+    tagToNames.set(chosenTags[i], perTagResults[i].slice(0, perTag + 2))
   }
 
   // Round-robin across tags → name list + name→tag map for provenance.
@@ -314,8 +285,8 @@ export async function adjacentRail(
   let idx = 0
   while (!exhausted) {
     exhausted = true
-    for (const tag of tagList) {
-      const list = adjacentByTag.get(tag)!
+    for (const tag of chosenTags) {
+      const list = tagToNames.get(tag)!
       if (idx < list.length) {
         exhausted = false
         const name = list[idx]
@@ -334,7 +305,6 @@ export async function adjacentRail(
     seenIds,
   })
 
-  // Preserve round-robin name ordering when picking.
   const artistByName = new Map<string, Artist>()
   for (const a of resolved) artistByName.set(a.name, a)
 
@@ -352,56 +322,6 @@ export async function adjacentRail(
   }
 
   return { railKey: 'adjacent', artistIds, why }
-}
-
-/**
- * Pick the seed tags the adjacent rail should hop from.
- *
- * Primary: user's selected_genres (top 5).
- * Fallback: primary Spotify genre of their seed_artists. We look those up in
- * `artist_search_cache` (no fresh Spotify fetch — if a seed artist has never
- * been resolved, the main feed resolution will populate it, and on a later
- * Explore build this fallback will pick them up).
- */
-async function resolveAdjacentSeeds(
-  ctx: Awaited<ReturnType<typeof loadUserContext>>,
-  supabase: SupabaseClient,
-): Promise<string[]> {
-  if (ctx.selectedGenres.length > 0) return ctx.selectedGenres.slice(0, 5)
-
-  if (ctx.seedArtists.length > 0) {
-    const ids = ctx.seedArtists.map((s) => s.spotify_artist_id)
-    const { data } = await supabase
-      .from('artist_search_cache')
-      .select('spotify_artist_id, artist_data')
-      .in('spotify_artist_id', ids)
-
-    const genres: string[] = []
-    const seen = new Set<string>()
-    for (const row of data ?? []) {
-      const artist = row.artist_data as { genres?: string[] } | null
-      const primary = artist?.genres?.[0]
-      if (primary && !seen.has(primary)) {
-        seen.add(primary)
-        genres.push(primary)
-      }
-    }
-    if (genres.length > 0) return genres.slice(0, 5)
-  }
-
-  // Final fallback: top primary genres from listened_artists, ranked by
-  // total play_count. Lets the rail populate for users who have sync'd
-  // Last.fm / stats.fm but haven't picked seeds or genres manually.
-  const genrePlays = new Map<string, number>()
-  for (const row of ctx.listened) {
-    const primary = row.genres[0]
-    if (!primary) continue
-    genrePlays.set(primary, (genrePlays.get(primary) ?? 0) + (row.play_count ?? 1))
-  }
-  return [...genrePlays.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
-    .map(([g]) => g)
 }
 
 const OUTSIDE_TARGET = 10

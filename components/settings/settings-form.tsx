@@ -1,13 +1,14 @@
 "use client"
 
 import { useState } from "react"
-import { useRouter } from "next/navigation"
 import { signOut } from "next-auth/react"
 import { toast } from "sonner"
 import { IdenticonAvatar } from "@/components/ui/identicon-avatar"
 import { LibraryEditor } from "@/components/settings/library-editor"
 import { CurvePreview } from "@/components/settings/curve-preview"
 import { PlatformPicker } from "@/components/settings/platform-picker"
+import { Ambient } from "@/components/visual/ambient"
+import { hexToRgba } from "@/lib/color-utils"
 import type { SpotifyArtist } from "@/components/onboarding/artist-search"
 import type { MusicPlatform } from "@/lib/music-links"
 
@@ -39,6 +40,37 @@ async function patchSettings(payload: Record<string, unknown>) {
   }
 }
 
+const ACCENT = "#8b5cf6"
+const MINT = "#7dd9c6"
+const BLUE = "#a8c7fa"
+const AMBER = "#f5b047"
+const ROSE = "#ec6fb5"
+const LASTFM_RED = "#d7002a"
+const STATSFM_PURPLE = "#8b5cf6"
+
+// Obscurity model: threshold maps directly to the mock's four-stop ladder.
+// Low threshold = strict niche cap = "Deep underground". High threshold = loose
+// familiarity cap = "Familiar". Same copy as before; labels refreshed to the
+// design's crisper framing. DB column stays `play_threshold`.
+function obscurityLabel(t: number): string {
+  if (t < 5) return "Deep underground"
+  if (t < 15) return "Offbeat"
+  if (t < 30) return "Curious"
+  return "Familiar"
+}
+function obscurityHelp(t: number): string {
+  if (t < 5) return "Almost nothing you\u2019ve heard before will appear."
+  if (t < 15) return "Mostly unfamiliar names with the occasional half-known artist."
+  if (t < 30) return "A balanced mix \u2014 some discovery, some comfort."
+  return "Includes artists you already play often."
+}
+function obscurityColor(t: number): string {
+  if (t < 5) return MINT
+  if (t < 15) return BLUE
+  if (t < 30) return ACCENT
+  return AMBER
+}
+
 export function SettingsForm({
   userSeed,
   initialPlayThreshold,
@@ -54,7 +86,6 @@ export function SettingsForm({
   initialMusicPlatform,
   exampleArtists,
 }: SettingsFormProps) {
-  const router = useRouter()
   const [threshold, setThreshold] = useState(initialPlayThreshold)
   const [popularityCurve, setPopularityCurve] = useState(initialPopularityCurve)
   const [lastfmUsername, setLastfmUsername] = useState(initialLastfmUsername ?? "")
@@ -71,36 +102,20 @@ export function SettingsForm({
   const isConnected = lastfmUsername.trim().length > 0
   const isStatsfmConnected = statsfmUsername.trim().length > 0
 
-  const familiarPct = Math.round((threshold / 50) * 100)
-  const familiarBg = `linear-gradient(to right, var(--accent) ${familiarPct}%, rgba(255,255,255,0.10) ${familiarPct}%)`
+  const obsColor = obscurityColor(threshold)
+  const obsLabel = obscurityLabel(threshold)
+  const obsHelp = obscurityHelp(threshold)
+  const obsPct = Math.round((threshold / 50) * 100)
+  const obsSliderBg = `linear-gradient(to right, ${obsColor} ${obsPct}%, rgba(255,255,255,0.10) ${obsPct}%)`
 
-  const familiarityLabel =
-    threshold < 5  ? "Nothing familiar"
-    : threshold < 15 ? "Mostly new"
-    : threshold < 30 ? "Some favorites"
-    : "All familiar"
-
-  const familiarityHelp =
-    threshold < 5
-      ? "Almost nothing you\u2019ve heard before will appear."
-      : threshold < 15
-      ? "Mostly unfamiliar names with the occasional half-known artist."
-      : threshold < 30
-      ? "A balanced mix \u2014 some discovery, some comfort."
-      : "Includes artists you already play often."
-
-  // Popularity curve slider: store as 0.90–1.00 (k value).
-  // Smaller k = steeper curve = stronger niche preference.
   const curvePct = Math.round(((popularityCurve - 0.9) / 0.1) * 100)
   const curveBg = `linear-gradient(to right, var(--accent) ${curvePct}%, rgba(255,255,255,0.10) ${curvePct}%)`
-
   const curveLabel =
     popularityCurve < 0.92 ? "Niche only"
     : popularityCurve < 0.95 ? "Mostly niche"
     : popularityCurve < 0.97 ? "Balanced"
     : popularityCurve < 0.99 ? "Mostly popular"
     : "Mainstream"
-
   const curveHelp =
     popularityCurve < 0.92
       ? "The steepest curve — popularity is punished hard. Expect deep cuts only."
@@ -111,6 +126,12 @@ export function SettingsForm({
       : popularityCurve < 0.99
       ? "Popularity barely hurts. Expect familiar names alongside some discoveries."
       : "The curve flattens — popularity is nearly ignored."
+
+  const palette = `
+    radial-gradient(50% 40% at 18% 20%, ${hexToRgba(ACCENT, 0.20)} 0%, transparent 70%),
+    radial-gradient(55% 45% at 82% 35%, ${hexToRgba(MINT, 0.14)} 0%, transparent 70%),
+    radial-gradient(60% 50% at 50% 95%, ${hexToRgba(ROSE, 0.12)} 0%, transparent 70%)
+  `
 
   async function handleThresholdRelease() {
     try {
@@ -155,6 +176,10 @@ export function SettingsForm({
     setAdventurous(next)
     try {
       await patchSettings({ adventurous: next })
+      try {
+        localStorage.setItem("flipside.adventurous", next ? "1" : "0")
+        window.dispatchEvent(new Event("flipside:adventurous-change"))
+      } catch { /* noop */ }
     } catch {
       setAdventurous(!next)
       toast.error("Failed to save setting")
@@ -215,33 +240,45 @@ export function SettingsForm({
     }
   }
 
-  async function handleGenerate() {
+  async function handleRegenerateBoth() {
     if (isGenerating) return
     setIsGenerating(true)
     try {
-      const res = await fetch("/api/recommendations/generate?replace=true", { method: "POST" })
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error((data as { error?: string }).error ?? "Generate failed")
-      }
-      const data = (await res.json().catch(() => ({}))) as {
-        softenedFilters?: { playThreshold?: boolean; undergroundMode?: boolean; coldStart?: boolean }
-      }
-      if (data.softenedFilters) {
-        const s = data.softenedFilters
-        const bits: string[] = []
-        if (s.coldStart) bits.push("falling back to starter picks")
-        else {
-          if (s.playThreshold) bits.push("loosening the familiarity cap")
-          if (s.undergroundMode) bits.push("turning off the hard pop-50 cutoff")
+      const [feedRes, exploreRes] = await Promise.all([
+        fetch("/api/recommendations/generate?replace=true", { method: "POST" }),
+        fetch("/api/explore/generate?force=true", { method: "POST" }),
+      ])
+
+      if (feedRes.ok) {
+        const data = (await feedRes.json().catch(() => ({}))) as {
+          softenedFilters?: { playThreshold?: boolean; undergroundMode?: boolean; coldStart?: boolean }
         }
-        if (bits.length > 0) {
-          toast(`Widened the search for this batch — ${bits.join(" and ")}.`)
+        if (data.softenedFilters) {
+          const s = data.softenedFilters
+          const bits: string[] = []
+          if (s.coldStart) bits.push("falling back to starter picks")
+          else {
+            if (s.playThreshold) bits.push("loosening the familiarity cap")
+            if (s.undergroundMode) bits.push("turning off the hard pop-50 cutoff")
+          }
+          if (bits.length > 0) {
+            toast(`Widened the search for this batch — ${bits.join(" and ")}.`)
+          }
         }
       }
-      router.push("/feed")
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't generate")
+
+      if (!feedRes.ok && !exploreRes.ok) {
+        toast.error("Couldn't rebuild — try again")
+      } else if (!feedRes.ok) {
+        toast.error("Explore rebuilt, but feed failed")
+      } else if (!exploreRes.ok) {
+        toast.error("Feed rebuilt, but Explore failed")
+      } else {
+        toast.success("Feed & Explore rebuilt")
+      }
+    } catch {
+      toast.error("Couldn't rebuild — try again")
+    } finally {
       setIsGenerating(false)
     }
   }
@@ -269,9 +306,43 @@ export function SettingsForm({
     }
   }
 
+  function ToggleSwitch({ checked, onClick, tint = ACCENT }: { checked: boolean; onClick: () => void; tint?: string }) {
+    return (
+      <button
+        onClick={onClick}
+        role="switch"
+        aria-checked={checked}
+        style={{
+          width: 48,
+          height: 28,
+          borderRadius: 14,
+          border: 0,
+          cursor: "pointer",
+          flexShrink: 0,
+          background: checked ? tint : "rgba(255,255,255,0.10)",
+          position: "relative",
+          transition: "background 0.2s",
+          boxShadow: checked ? `0 0 16px ${hexToRgba(tint, 0.45)}` : "none",
+        }}
+      >
+        <div
+          style={{
+            width: 22,
+            height: 22,
+            borderRadius: "50%",
+            background: "#fff",
+            position: "absolute",
+            top: 3,
+            left: checked ? 23 : 3,
+            transition: "left 0.2s",
+          }}
+        />
+      </button>
+    )
+  }
+
   return (
     <>
-      {/* Slider CSS — shared by familiarity and popularity dials */}
       <style>{`
         .obs-slider {
           -webkit-appearance: none;
@@ -299,204 +370,70 @@ export function SettingsForm({
         }
       `}</style>
 
+      <Ambient palette={palette} />
+
       <div>
-        {/* Page header */}
         <div className="page-head">
           <h1>Settings</h1>
-          <span className="sub">no email · no password</span>
+          <span className="sub">
+            <span className="serif" style={{ fontSize: 15, color: "var(--text-secondary)" }}>
+              Your preferences, politely tuned.
+            </span>
+            <span style={{ display: "block", marginTop: 4 }}>no email · no password</span>
+          </span>
         </div>
 
         <div className="col gap-16" style={{ marginTop: 8 }}>
 
           {/* ── Profile ─────────────────────────────────────────────── */}
           <div>
-            <div className="eyebrow" style={{ marginBottom: 10 }}>Profile</div>
+            <div className="eyebrow" style={{ marginBottom: 10, color: ACCENT }}>Profile</div>
             <div
-              className="fs-card"
-              style={{ display: "flex", alignItems: "center", gap: 14 }}
-            >
-              <IdenticonAvatar seed={userSeed} size={44} />
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 14, fontWeight: 700 }}>
-                  your account
-                </div>
-                <div
-                  style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 3, lineHeight: 1.45 }}
-                >
-                  your username is your only login — we store a hash, not the name itself
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* ── How familiar? ─────────────────────────────────────── */}
-          <div>
-            <div className="eyebrow" style={{ marginBottom: 10 }}>How familiar?</div>
-            <div className="fs-card">
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "baseline",
-                  justifyContent: "space-between",
-                  marginBottom: 14,
-                }}
-              >
-                <div className="serif" style={{ fontSize: 22, color: "var(--accent)" }}>
-                  {familiarityLabel}
-                </div>
-                <div className="mono" style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                  hide if played &gt; {threshold}&times;
-                </div>
-              </div>
-              <input
-                type="range"
-                className="obs-slider"
-                min={0}
-                max={50}
-                step={1}
-                value={threshold}
-                onChange={(e) => setThreshold(Number(e.target.value))}
-                onPointerUp={handleThresholdRelease}
-                onKeyUp={handleThresholdRelease}
-                style={{ background: familiarBg }}
-              />
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  marginTop: 8,
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 10.5,
-                  color: "var(--text-muted)",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.1em",
-                }}
-              >
-                <span>&larr; nothing familiar</span>
-                <span>all familiar &rarr;</span>
-              </div>
-              <div className="muted" style={{ fontSize: 12, marginTop: 10, lineHeight: 1.5 }}>
-                {familiarityHelp}
-              </div>
-            </div>
-          </div>
-
-          {/* ── Taste anchors ────────────────────────────────────────── */}
-          <div>
-            <div className="eyebrow" style={{ marginBottom: 10 }}>Taste anchors</div>
-            <div
-              className="fs-card col gap-14"
               style={{
-                borderColor: "rgba(139,92,246,0.45)",
-                borderWidth: 2,
-                background: "rgba(139,92,246,0.04)",
+                display: "flex",
+                alignItems: "center",
+                gap: 14,
+                padding: "16px 18px",
+                borderRadius: "var(--radius-lg)",
+                background: `linear-gradient(135deg, ${hexToRgba(ACCENT, 0.10)} 0%, rgba(15,15,15,0.65) 60%)`,
+                backdropFilter: "blur(30px) saturate(1.1)",
+                WebkitBackdropFilter: "blur(30px) saturate(1.1)",
+                border: `1px solid ${hexToRgba(ACCENT, 0.22)}`,
               }}
             >
-              <LibraryEditor
-                initialGenreTags={initialSelectedGenres}
-                initialSeedArtists={initialSeedArtists}
-                flat
-              />
-
-              <div className="divider" />
-
-              {/* Last.fm */}
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{ fontSize: 18, flexShrink: 0 }}>♫</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600 }}>Last.fm</div>
-                  <div
-                    className="mono"
-                    style={{
-                      fontSize: 11,
-                      color: isConnected ? "var(--like)" : "var(--text-muted)",
-                    }}
-                  >
-                    {isConnected
-                      ? `connected · @${lastfmUsername.trim()} · ${initialLastfmArtistCount} artists`
-                      : "not connected"}
-                  </div>
-                  <div className="field" style={{ height: 40, marginTop: 8 }}>
-                    <input
-                      type="text"
-                      placeholder="your-lastfm-username"
-                      value={lastfmUsername}
-                      onChange={(e) => setLastfmUsername(e.target.value)}
-                      onBlur={handleLastfmBlur}
-                    />
-                  </div>
-                </div>
-                <button
-                  className="btn btn-sm"
-                  onClick={() => handleSync("lastfm")}
-                  disabled={syncingSource !== null || !isConnected}
-                  style={{ flexShrink: 0, opacity: !isConnected ? 0.4 : 1 }}
-                >
-                  {syncingSource === "lastfm" ? "Syncing…" : "Sync now"}
-                </button>
+              <div style={{ position: "relative" }}>
+                <IdenticonAvatar seed={userSeed} size={48} />
+                <span
+                  aria-hidden
+                  style={{
+                    position: "absolute",
+                    bottom: -2,
+                    right: -2,
+                    width: 14,
+                    height: 14,
+                    borderRadius: "50%",
+                    background: MINT,
+                    border: "2px solid var(--bg-base)",
+                  }}
+                />
               </div>
-
-              <div className="divider" />
-
-              {/* stats.fm */}
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{ fontSize: 18, flexShrink: 0 }}>📊</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600 }}>stats.fm</div>
-                  <div
-                    className="mono"
-                    style={{
-                      fontSize: 11,
-                      color: isStatsfmConnected ? "var(--like)" : "var(--text-muted)",
-                    }}
-                  >
-                    {isStatsfmConnected
-                      ? `connected · @${statsfmUsername.trim()}`
-                      : "not connected"}
-                  </div>
-                  <div className="field" style={{ height: 40, marginTop: 8 }}>
-                    <input
-                      type="text"
-                      placeholder="your-statsfm-username"
-                      value={statsfmUsername}
-                      onChange={(e) => setStatsfmUsername(e.target.value)}
-                      onBlur={handleStatsfmBlur}
-                    />
-                  </div>
-                </div>
-                <button
-                  className="btn btn-sm"
-                  onClick={() => handleSync("statsfm")}
-                  disabled={syncingSource !== null || !isStatsfmConnected}
-                  style={{ flexShrink: 0, opacity: !isStatsfmConnected ? 0.4 : 1 }}
-                >
-                  {syncingSource === "statsfm" ? "Syncing…" : "Sync now"}
-                </button>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>Your profile</div>
               </div>
-
-              <button
-                className="btn btn-primary"
-                onClick={handleGenerate}
-                disabled={isGenerating}
-                style={{ width: "100%", marginTop: 4 }}
-              >
-                {isGenerating ? "Generating…" : "Generate my feed →"}
-              </button>
             </div>
           </div>
 
-          {/* ── Discovery ────────────────────────────────────────────── */}
+          {/* ── How underground? (Obscurity) ────────────────────────── */}
           <div>
-            <div className="eyebrow" style={{ marginBottom: 10 }}>Discovery</div>
+            <div className="eyebrow" style={{ marginBottom: 10, color: obsColor }}>How underground?</div>
             <div
               className="fs-card col gap-16"
               style={{
-                borderColor: "rgba(139,92,246,0.45)",
-                borderWidth: 2,
-                background: "rgba(139,92,246,0.04)",
+                background: `linear-gradient(135deg, ${hexToRgba(obsColor, 0.12)} 0%, rgba(15,15,15,0.65) 70%)`,
+                borderColor: hexToRgba(obsColor, 0.24),
+                transition: "background 0.6s, border-color 0.6s",
               }}
             >
-              {/* Popularity preference dial */}
               <div>
                 <div
                   style={{
@@ -506,10 +443,71 @@ export function SettingsForm({
                     marginBottom: 14,
                   }}
                 >
-                  <div className="serif" style={{ fontSize: 22, color: "var(--accent)" }}>
-                    {curveLabel}
+                  <div
+                    className="serif"
+                    style={{
+                      fontSize: 24,
+                      color: obsColor,
+                      letterSpacing: "-0.01em",
+                      fontWeight: 500,
+                      transition: "color 0.4s",
+                    }}
+                  >
+                    {obsLabel}
                   </div>
-                  <div className="mono" style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                  <div className="mono" style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                    hide if played &gt; {threshold}&times;
+                  </div>
+                </div>
+                <input
+                  type="range"
+                  className="obs-slider"
+                  min={0}
+                  max={50}
+                  step={1}
+                  value={threshold}
+                  onChange={(e) => setThreshold(Number(e.target.value))}
+                  onPointerUp={handleThresholdRelease}
+                  onKeyUp={handleThresholdRelease}
+                  style={{ background: obsSliderBg }}
+                />
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    marginTop: 8,
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 10.5,
+                    color: "var(--text-muted)",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.1em",
+                  }}
+                >
+                  <span>&larr; deep underground</span>
+                  <span>familiar &rarr;</span>
+                </div>
+                <div className="muted" style={{ fontSize: 12, marginTop: 10, lineHeight: 1.5 }}>
+                  {obsHelp}
+                </div>
+              </div>
+
+              <div className="divider" />
+
+              {/* Fine-tune sub-controls */}
+              <div className="eyebrow" style={{ color: "var(--text-muted)" }}>Fine-tune</div>
+
+              {/* Popularity curve */}
+              <div>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "baseline",
+                    justifyContent: "space-between",
+                    marginBottom: 12,
+                  }}
+                >
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>{curveLabel}</div>
+                  <div className="mono" style={{ fontSize: 11, color: "var(--text-muted)" }}>
                     k = {popularityCurve.toFixed(3)}
                   </div>
                 </div>
@@ -545,173 +543,207 @@ export function SettingsForm({
                 </div>
               </div>
 
-              <div className="divider" />
-
-              {/* Live curve preview */}
               <CurvePreview
                 popularityCurve={popularityCurve}
                 undergroundMode={undergroundMode}
+                adventurous={adventurous}
                 exampleArtists={exampleArtists}
               />
 
               <div className="divider" />
 
-              {/* Extra obscure toggle */}
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 16,
-                }}
-              >
+              {/* Extra obscure */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
-                    Extra obscure
-                  </div>
+                  <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Extra obscure</div>
                   <div className="muted" style={{ fontSize: 12, lineHeight: 1.5 }}>
-                    Drops every artist above pop 50 entirely, and penalizes the rest on top of the curve above. The striped region is excluded; the dashed overlay shows the combined effect.
+                    Drops every artist above pop 50 entirely, and penalizes the rest on top of the curve above.
                   </div>
                 </div>
-                <button
-                  onClick={handleUndergroundToggle}
-                  role="switch"
-                  aria-checked={undergroundMode}
-                  style={{
-                    width: 48,
-                    height: 28,
-                    borderRadius: 14,
-                    border: 0,
-                    cursor: "pointer",
-                    flexShrink: 0,
-                    background: undergroundMode ? "var(--accent)" : "rgba(255,255,255,0.10)",
-                    position: "relative",
-                    transition: "background 0.2s",
-                  }}
-                >
-                  <div
-                    style={{
-                      width: 22,
-                      height: 22,
-                      borderRadius: "50%",
-                      background: "#fff",
-                      position: "absolute",
-                      top: 3,
-                      left: undergroundMode ? 23 : 3,
-                      transition: "left 0.2s",
-                    }}
-                  />
-                </button>
+                <ToggleSwitch checked={undergroundMode} onClick={handleUndergroundToggle} />
               </div>
 
               <div className="divider" />
 
-              {/* Deep discovery toggle */}
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 16,
-                }}
-              >
+              {/* Deep discovery */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
-                    Deep discovery
-                  </div>
+                  <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Deep discovery</div>
                   <div className="muted" style={{ fontSize: 12, lineHeight: 1.5 }}>
                     Walks two artists deep into similar-artist chains. More obscure picks; occasional genre drift.
                   </div>
                 </div>
-                <button
-                  onClick={handleDeepDiscoveryToggle}
-                  role="switch"
-                  aria-checked={deepDiscovery}
+                <ToggleSwitch checked={deepDiscovery} onClick={handleDeepDiscoveryToggle} />
+              </div>
+
+              <div className="divider" />
+
+              {/* Adventurous mode */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4, color: adventurous ? AMBER : undefined, transition: "color 0.3s" }}>
+                    Adventurous mode
+                  </div>
+                  <div className="muted" style={{ fontSize: 12, lineHeight: 1.5 }}>
+                    Pulls in adjacent genres, adds extra variety, and leads with less-familiar picks across your feed and Explore.
+                  </div>
+                </div>
+                <ToggleSwitch checked={adventurous} onClick={handleAdventurousToggle} tint={AMBER} />
+              </div>
+
+              <button
+                onClick={handleRegenerateBoth}
+                disabled={isGenerating}
+                className="btn"
+                style={{
+                  width: "100%",
+                  marginTop: 4,
+                  color: "#0a0a0a",
+                  fontWeight: 600,
+                  border: 0,
+                  cursor: isGenerating ? "default" : "pointer",
+                  opacity: isGenerating ? 0.75 : 1,
+                  background: adventurous
+                    ? "linear-gradient(135deg, rgba(245,176,71,0.95) 0%, rgba(236,111,181,0.85) 45%, rgba(125,217,198,0.75) 80%, rgba(168,199,250,0.70) 100%)"
+                    : AMBER,
+                  boxShadow: adventurous ? "0 0 24px rgba(245,176,71,0.28)" : "none",
+                  transition: "background 0.3s, box-shadow 0.3s",
+                }}
+              >
+                {isGenerating ? "Regenerating…" : "Regenerate feed & Explore →"}
+              </button>
+            </div>
+          </div>
+
+          {/* ── Seeds ──────────────────────────────────────────────── */}
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 10 }}>Seeds</div>
+            <div className="fs-card">
+              <LibraryEditor
+                initialGenreTags={initialSelectedGenres}
+                initialSeedArtists={initialSeedArtists}
+                flat
+              />
+            </div>
+          </div>
+
+          {/* ── Connected sources ──────────────────────────────────── */}
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 10 }}>Connected sources</div>
+            <div className="fs-card col gap-14">
+              {/* Last.fm */}
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div
                   style={{
-                    width: 48,
-                    height: 28,
-                    borderRadius: 14,
-                    border: 0,
-                    cursor: "pointer",
+                    width: 34,
+                    height: 34,
+                    borderRadius: 8,
+                    background: hexToRgba(LASTFM_RED, 0.12),
+                    color: "#ff6b6b",
+                    border: `1px solid ${hexToRgba(LASTFM_RED, 0.24)}`,
+                    display: "grid",
+                    placeItems: "center",
+                    fontSize: 16,
+                    fontWeight: 700,
                     flexShrink: 0,
-                    background: deepDiscovery ? "var(--accent)" : "rgba(255,255,255,0.10)",
-                    position: "relative",
-                    transition: "background 0.2s",
                   }}
                 >
+                  ♫
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>Last.fm</div>
                   <div
+                    className="mono"
                     style={{
-                      width: 22,
-                      height: 22,
-                      borderRadius: "50%",
-                      background: "#fff",
-                      position: "absolute",
-                      top: 3,
-                      left: deepDiscovery ? 23 : 3,
-                      transition: "left 0.2s",
+                      fontSize: 11,
+                      color: isConnected ? MINT : "var(--text-muted)",
                     }}
-                  />
+                  >
+                    {isConnected
+                      ? `connected · @${lastfmUsername.trim()} · ${initialLastfmArtistCount} artists`
+                      : "not connected"}
+                  </div>
+                  <div className="field" style={{ height: 40, marginTop: 8 }}>
+                    <input
+                      type="text"
+                      placeholder="your-lastfm-username"
+                      value={lastfmUsername}
+                      onChange={(e) => setLastfmUsername(e.target.value)}
+                      onBlur={handleLastfmBlur}
+                    />
+                  </div>
+                </div>
+                <button
+                  className="btn btn-sm"
+                  onClick={() => handleSync("lastfm")}
+                  disabled={syncingSource !== null || !isConnected}
+                  style={{ flexShrink: 0, opacity: !isConnected ? 0.4 : 1 }}
+                >
+                  {syncingSource === "lastfm" ? "Syncing…" : "Sync now"}
                 </button>
               </div>
 
               <div className="divider" />
 
-              {/* Adventurous toggle */}
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 16,
-                }}
-              >
+              {/* stats.fm */}
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div
+                  style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: 8,
+                    background: hexToRgba(STATSFM_PURPLE, 0.12),
+                    color: STATSFM_PURPLE,
+                    border: `1px solid ${hexToRgba(STATSFM_PURPLE, 0.24)}`,
+                    display: "grid",
+                    placeItems: "center",
+                    fontSize: 15,
+                    flexShrink: 0,
+                  }}
+                >
+                  📊
+                </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
-                    Adventurous
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>stats.fm</div>
+                  <div
+                    className="mono"
+                    style={{
+                      fontSize: 11,
+                      color: isStatsfmConnected ? MINT : "var(--text-muted)",
+                    }}
+                  >
+                    {isStatsfmConnected
+                      ? `connected · @${statsfmUsername.trim()}`
+                      : "not connected"}
                   </div>
-                  <div className="muted" style={{ fontSize: 12, lineHeight: 1.5 }}>
-                    Broadens your feed with adjacent genres and softens the mainstream bias. Explore tab gets amplified too. You can always turn this off.
+                  <div className="field" style={{ height: 40, marginTop: 8 }}>
+                    <input
+                      type="text"
+                      placeholder="your-statsfm-username"
+                      value={statsfmUsername}
+                      onChange={(e) => setStatsfmUsername(e.target.value)}
+                      onBlur={handleStatsfmBlur}
+                    />
                   </div>
                 </div>
                 <button
-                  onClick={handleAdventurousToggle}
-                  role="switch"
-                  aria-checked={adventurous}
-                  style={{
-                    width: 48,
-                    height: 28,
-                    borderRadius: 14,
-                    border: 0,
-                    cursor: "pointer",
-                    flexShrink: 0,
-                    background: adventurous ? "var(--accent)" : "rgba(255,255,255,0.10)",
-                    position: "relative",
-                    transition: "background 0.2s",
-                  }}
+                  className="btn btn-sm"
+                  onClick={() => handleSync("statsfm")}
+                  disabled={syncingSource !== null || !isStatsfmConnected}
+                  style={{ flexShrink: 0, opacity: !isStatsfmConnected ? 0.4 : 1 }}
                 >
-                  <div
-                    style={{
-                      width: 22,
-                      height: 22,
-                      borderRadius: "50%",
-                      background: "#fff",
-                      position: "absolute",
-                      top: 3,
-                      left: adventurous ? 23 : 3,
-                      transition: "left 0.2s",
-                    }}
-                  />
+                  {syncingSource === "statsfm" ? "Syncing…" : "Sync now"}
                 </button>
               </div>
 
-              <button
-                className="btn btn-primary"
-                onClick={handleGenerate}
-                disabled={isGenerating}
-                style={{ width: "100%", marginTop: 4 }}
+              <div
+                className="muted"
+                style={{ fontSize: 11, lineHeight: 1.5, marginTop: 4 }}
               >
-                {isGenerating ? "Generating…" : "Regenerate feed →"}
-              </button>
+                Your Last.fm and stats.fm usernames are encrypted at rest. We keep
+                them recoverable because we need the originals to call Last.fm and
+                stats.fm on sync — they&rsquo;re public handles, not credentials.
+              </div>
             </div>
           </div>
 

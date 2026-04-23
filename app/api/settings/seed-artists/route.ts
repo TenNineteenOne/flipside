@@ -1,6 +1,7 @@
 import { type NextRequest } from "next/server"
 import { auth } from "@/lib/auth"
 import { apiError, apiUnauthorized, dbError } from "@/lib/errors"
+import { enforceSameOrigin } from "@/lib/csrf"
 import { createServiceClient } from "@/lib/supabase/server"
 import { isValidSpotifyId } from "@/lib/spotify-ids"
 import { validateSeedArtists } from "@/lib/seed-artist-validation"
@@ -30,6 +31,8 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const blocked = enforceSameOrigin(req)
+  if (blocked) return blocked
   const session = await auth()
   if (!session?.user?.id) return apiUnauthorized()
 
@@ -81,6 +84,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const blocked = enforceSameOrigin(req)
+  if (blocked) return blocked
   const session = await auth()
   if (!session?.user?.id) return apiUnauthorized()
 

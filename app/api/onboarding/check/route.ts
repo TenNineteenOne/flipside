@@ -18,12 +18,13 @@ export async function GET() {
 
   const { data: user } = await supabase
     .from("users")
-    .select("lastfm_username")
+    .select("lastfm_username, onboarding_completed_at")
     .eq("id", userId)
     .maybeSingle()
 
   const hasSeeds = (seedCount ?? 0) > 0
   const hasLastfm = !!user?.lastfm_username
+  const hasCompleted = !!user?.onboarding_completed_at
 
-  return Response.json({ needsOnboarding: !hasSeeds && !hasLastfm })
+  return Response.json({ needsOnboarding: !hasSeeds && !hasLastfm && !hasCompleted })
 }

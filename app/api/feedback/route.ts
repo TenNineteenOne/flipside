@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, apiUnauthorized, dbError } from "@/lib/errors"
+import { enforceSameOrigin } from "@/lib/csrf"
 import { isValidSpotifyId } from "@/lib/spotify-ids"
 import { invalidateExploreCache } from "@/lib/recommendation/explore-engine"
 import type { RailKey } from "@/lib/recommendation/explore-engine"
@@ -11,6 +12,8 @@ function isRailKey(v: unknown): v is RailKey {
 }
 
 export async function POST(request: Request): Promise<Response> {
+  const blocked = enforceSameOrigin(request)
+  if (blocked) return blocked
   const session = await auth()
   if (!session?.user?.id) return apiUnauthorized()
 
@@ -30,8 +33,6 @@ export async function POST(request: Request): Promise<Response> {
     return apiError("signal must be thumbs_up, thumbs_down, or skip", 400)
   if (railKey !== undefined && !isRailKey(railKey))
     return apiError("railKey must be one of adjacent | outside | wildcards | leftfield", 400)
-
-  console.log(`[feedback] ${signal} artistId=${spotifyArtistId}${railKey ? ` rail=${railKey}` : ""}`)
 
   const supabase = createServiceClient()
 

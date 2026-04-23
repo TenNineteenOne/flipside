@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth"
 import { getAccessToken } from "@/lib/get-access-token"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, apiUnauthorized } from "@/lib/errors"
+import { enforceSameOrigin } from "@/lib/csrf"
 import type { Track } from "@/lib/music-provider/types"
 
 const SPOTIFY_BASE = "https://api.spotify.com/v1"
@@ -27,6 +28,8 @@ interface SpotifyTrackSearch {
  * Returns: { spotifyTrackId: string } or 404 if not found on Spotify
  */
 export async function POST(req: NextRequest): Promise<Response> {
+  const blocked = enforceSameOrigin(req)
+  if (blocked) return blocked
   const session = await auth()
   if (!session?.user?.id) return apiUnauthorized()
 
@@ -97,7 +100,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (res.status === 401) return apiError("Spotify session expired", 401)
   if (res.status === 429) return apiError("Spotify rate-limited", 429)
   if (!res.ok) {
-    console.log(`[resolve-track] http_${res.status} q="${q}"`)
+    console.error(`[resolve-track] http_${res.status} q="${q}"`)
     return apiError("Spotify search failed", 502)
   }
 
@@ -111,12 +114,10 @@ export async function POST(req: NextRequest): Promise<Response> {
     ) ?? items[0]
 
   if (!match) {
-    console.log(`[resolve-track] miss artist="${artistName}" track="${trackName}"`)
     return apiError("Track not found on Spotify", 404)
   }
 
   const spotifyTrackId = match.id
-  console.log(`[resolve-track] ok artist="${artistName}" → ${spotifyTrackId}`)
 
   // ── Persist back into the cached track row, if we can locate it ─────────
   if (spotifyArtistId && localTrackId) {

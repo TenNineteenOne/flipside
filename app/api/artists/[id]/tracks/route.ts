@@ -31,7 +31,7 @@ export async function GET(
     .maybeSingle()
 
   if (error) {
-    console.log(`[tracks] db-err artistId=${artistId} err=${error.message}`)
+    console.error(`[tracks] db-err artistId=${artistId} err=${error.message}`)
     return apiError("Failed to load tracks", 500)
   }
 
@@ -41,7 +41,6 @@ export async function GET(
 
   if (isMissing || isStale) {
     if (artistName) {
-      console.log(`[tracks] Cache miss! Lazy loading from iTunes API for ${artistName}...`)
       try {
         const liveTracks = await searchTracksByArtist(artistName, "US", 5)
         if (liveTracks && liveTracks.length > 0) {
@@ -57,7 +56,7 @@ export async function GET(
           return Response.json({ tracks: liveTracks })
         }
       } catch (err) {
-        console.log(`[tracks] API fallback failed:`, err)
+        console.error(`[tracks] API fallback failed:`, err)
       }
     }
 
@@ -66,6 +65,5 @@ export async function GET(
   }
 
   const tracks = (cached.tracks ?? []) as Track[]
-  console.log(`[tracks] cache-hit artistId=${artistId} source=${cached.source} count=${tracks.length}`)
   return Response.json({ tracks })
 }

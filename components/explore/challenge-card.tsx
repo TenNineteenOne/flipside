@@ -8,10 +8,24 @@ export interface ChallengeCardProps {
   progress: number
   target: number
   completed: boolean
+  adventurous?: boolean
 }
 
-export function ChallengeCard({ title, description, progress, target, completed }: ChallengeCardProps) {
+export function ChallengeCard({
+  title,
+  description,
+  progress,
+  target,
+  completed,
+  adventurous = false,
+}: ChallengeCardProps) {
   const pct = Math.min(100, Math.round((progress / target) * 100))
+
+  const accent = completed
+    ? { base: "rgb(34,197,94)", tint: "rgba(34,197,94,0.16)", border: "rgba(34,197,94,0.28)" }
+    : adventurous
+      ? { base: "rgb(255,138,46)", tint: "rgba(255,138,46,0.14)", border: "rgba(255,138,46,0.28)" }
+      : { base: "rgb(139,92,246)", tint: "rgba(139,92,246,0.14)", border: "rgba(139,92,246,0.22)" }
 
   return (
     <section
@@ -20,33 +34,44 @@ export function ChallengeCard({ title, description, progress, target, completed 
         display: "flex",
         alignItems: "center",
         gap: 14,
-        padding: 14,
+        padding: "14px 16px",
         marginBottom: 24,
-        borderRadius: 12,
-        background: completed ? "var(--bg-card-muted, var(--bg-card))" : "var(--bg-card)",
-        border: "1px solid var(--border)",
+        borderRadius: 14,
+        background: "rgba(15,15,15,0.55)",
+        backdropFilter: "blur(18px)",
+        WebkitBackdropFilter: "blur(18px)",
+        border: `1px solid ${accent.border}`,
       }}
     >
       <div
         aria-hidden
         style={{
           flex: "0 0 auto",
-          width: 36,
-          height: 36,
-          borderRadius: 18,
-          background: completed ? "rgba(34,197,94,0.15)" : "rgba(139,92,246,0.15)",
-          color: completed ? "rgb(34,197,94)" : "rgb(139,92,246)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
+          width: 38,
+          height: 38,
+          borderRadius: 13,
+          background: accent.tint,
+          border: `1px solid ${accent.border}`,
+          color: accent.base,
+          display: "grid",
+          placeItems: "center",
         }}
       >
         <Sparkles size={18} />
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-          <div style={{ fontSize: 14, fontWeight: 600 }}>{title}</div>
-          <div className="muted" style={{ fontSize: 12 }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+          <div
+            style={{
+              fontSize: 15,
+              fontWeight: 600,
+              lineHeight: 1.2,
+              color: "var(--text-primary)",
+            }}
+          >
+            {title}
+          </div>
+          <div className="muted" style={{ fontSize: 12, lineHeight: 1.3 }}>
             {description}
           </div>
         </div>
@@ -61,9 +86,9 @@ export function ChallengeCard({ title, description, progress, target, completed 
           <div
             style={{
               flex: 1,
-              height: 4,
-              background: "var(--border)",
-              borderRadius: 2,
+              height: 3,
+              background: "rgba(255,255,255,0.06)",
+              borderRadius: 999,
               overflow: "hidden",
             }}
           >
@@ -71,12 +96,22 @@ export function ChallengeCard({ title, description, progress, target, completed 
               style={{
                 width: `${pct}%`,
                 height: "100%",
-                background: completed ? "rgb(34,197,94)" : "rgb(139,92,246)",
-                transition: "width 200ms ease",
+                background: accent.base,
+                borderRadius: 999,
+                transition: "width 0.6s var(--easing)",
               }}
             />
           </div>
-          <div className="muted" style={{ fontSize: 11, minWidth: 36, textAlign: "right" }}>
+          <div
+            className="mono"
+            style={{
+              fontSize: 10.5,
+              letterSpacing: "0.08em",
+              minWidth: 36,
+              textAlign: "right",
+              color: "var(--text-muted)",
+            }}
+          >
             {progress}/{target}
           </div>
         </div>
