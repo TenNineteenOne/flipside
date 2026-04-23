@@ -55,17 +55,37 @@ export function LibraryEditor({ initialGenreTags, initialSeedArtists, flat = fal
   const saveAborter = useRef<AbortController | null>(null)
   const orphanNoticeShown = useRef(false)
 
-  // One-shot toast when the genre taxonomy rebuild dropped some of the user's
-  // previously-selected tags. Fires once per mount so reloads don't spam.
+  // When the genre taxonomy rebuild dropped some of the user's previously-
+  // selected tags, PATCH the pruned list back right away so subsequent loads
+  // don't keep flagging the same orphans — and surface a one-shot confirmation.
   useEffect(() => {
-    if (orphanCount > 0 && !orphanNoticeShown.current) {
-      orphanNoticeShown.current = true
-      toast.info(
-        `${orphanCount} previously-selected genre${orphanCount === 1 ? "" : "s"} ` +
-          `no longer map to our updated taxonomy and will be removed on your next save.`,
-      )
-    }
-  }, [orphanCount])
+    if (orphanCount <= 0 || orphanNoticeShown.current) return
+    orphanNoticeShown.current = true
+    const valid = initialGenreNodes.map((g) => g.lastfmTag)
+    const aborter = new AbortController()
+    void (async () => {
+      try {
+        const res = await fetch("/api/settings", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ selectedGenres: valid }),
+          signal: aborter.signal,
+        })
+        if (!res.ok) throw new Error("prune failed")
+        toast.info(
+          `Cleaned up ${orphanCount} old genre tag${orphanCount === 1 ? "" : "s"} from the updated taxonomy.`,
+        )
+      } catch (err) {
+        if ((err as { name?: string } | null)?.name === "AbortError") return
+        // Fall back to the old "heads up" toast if the auto-prune didn't land.
+        toast.info(
+          `${orphanCount} previously-selected genre${orphanCount === 1 ? "" : "s"} ` +
+            `no longer map to our updated taxonomy and will be removed on your next save.`,
+        )
+      }
+    })()
+    return () => aborter.abort()
+  }, [orphanCount, initialGenreNodes])
 
   useEffect(() => {
     return () => {

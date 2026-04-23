@@ -24,6 +24,7 @@ import {
   leafTagsInAnchor,
   listAnchors,
 } from '@/lib/genre/adjacency'
+import { UNDERGROUND_MAX_POPULARITY } from './types'
 
 export const RAIL_KEYS = ['adjacent', 'outside', 'wildcards', 'leftfield'] as const
 export type RailKey = typeof RAIL_KEYS[number]
@@ -58,6 +59,18 @@ export interface BuildRailsInput {
   userId: string
   accessToken: string
   adventurous: boolean
+  undergroundMode?: boolean
+  /**
+   * k in [0.90, 1.00] from users.popularity_curve. Used to rank rail
+   * candidates by k^popularity (lower pop scores higher when k < 1). Left-
+   * field rail intentionally ignores this — its identity is uniform sampling.
+   */
+  popularityCurve?: number
+  /**
+   * users.play_threshold. Threaded through for future use; Explore today
+   * excludes all listened artists regardless, so it's a no-op in rails.
+   */
+  playThreshold?: number
 }
 
 type SupabaseClient = ReturnType<typeof createServiceClient>
@@ -99,6 +112,27 @@ export function seededShuffle<T>(arr: T[], seed: number): T[] {
     ;[out[i], out[j]] = [out[j], out[i]]
   }
   return out
+}
+
+/**
+ * Re-rank a candidate-name list by k^popularity so lower-popularity picks
+ * win when the user's `popularity_curve` < 1. Stable: ties preserve the
+ * caller's original order (round-robin breadth). No-op when k is undefined
+ * or ≥ 1.0 (mainstream / default — preserves today's character).
+ */
+export function rankByCurve(
+  names: string[],
+  byName: Map<string, { popularity?: number }>,
+  k: number | undefined,
+): string[] {
+  if (!k || k >= 1.0) return names
+  const scored = names.map((n, i) => {
+    const a = byName.get(n)
+    const pop = a?.popularity ?? 50
+    return { n, i, score: Math.pow(k, pop) }
+  })
+  scored.sort((a, b) => b.score - a.score || a.i - b.i)
+  return scored.map((s) => s.n)
 }
 
 async function loadUserContext(supabase: SupabaseClient, userId: string) {
@@ -186,7 +220,12 @@ async function resolveAndFilter(
   names: string[],
   accessToken: string,
   supabase: SupabaseClient,
-  filters: { listenedIds: Set<string>; thumbsDownIds: Set<string>; seenIds: Set<string> },
+  filters: {
+    listenedIds: Set<string>
+    thumbsDownIds: Set<string>
+    seenIds: Set<string>
+    undergroundMode?: boolean
+  },
 ): Promise<Artist[]> {
   const unique = [...new Set(names.filter(Boolean))]
   if (unique.length === 0) return []
@@ -203,6 +242,7 @@ async function resolveAndFilter(
     if (filters.listenedIds.has(artist.id)) continue
     if (filters.thumbsDownIds.has(artist.id)) continue
     if (filters.seenIds.has(artist.id)) continue
+    if (filters.undergroundMode && (artist.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) continue
     out.push(artist)
   }
   return out
@@ -303,15 +343,18 @@ export async function adjacentRail(
     listenedIds: ctx.listenedIds,
     thumbsDownIds: ctx.thumbsDownIds,
     seenIds,
+    undergroundMode: input.undergroundMode,
   })
 
   const artistByName = new Map<string, Artist>()
   for (const a of resolved) artistByName.set(a.name, a)
 
+  const ranked = rankByCurve(namesRoundRobin, artistByName, input.popularityCurve)
+
   const artistIds: string[] = []
   const why: Record<string, RailWhy> = {}
   const seen = new Set<string>()
-  for (const name of namesRoundRobin) {
+  for (const name of ranked) {
     if (artistIds.length >= target) break
     const a = artistByName.get(name)
     if (!a || seen.has(a.id)) continue
@@ -423,15 +466,18 @@ export async function outsideRail(
     listenedIds: ctx.listenedIds,
     thumbsDownIds: ctx.thumbsDownIds,
     seenIds,
+    undergroundMode: input.undergroundMode,
   })
 
   const artistByName = new Map<string, Artist>()
   for (const a of resolved) artistByName.set(a.name, a)
 
+  const ranked = rankByCurve(namesRoundRobin, artistByName, input.popularityCurve)
+
   const artistIds: string[] = []
   const why: Record<string, RailWhy> = {}
   const seenArtist = new Set<string>()
-  for (const name of namesRoundRobin) {
+  for (const name of ranked) {
     if (artistIds.length >= target) break
     const a = artistByName.get(name)
     if (!a || seenArtist.has(a.id)) continue
@@ -535,14 +581,17 @@ export async function wildcardsRail(
     listenedIds: ctx.listenedIds,
     thumbsDownIds: ctx.thumbsDownIds,
     seenIds,
+    undergroundMode: input.undergroundMode,
   })
   const artistByName = new Map<string, Artist>()
   for (const a of resolved) artistByName.set(a.name, a)
 
+  const ranked = rankByCurve(namesRoundRobin, artistByName, input.popularityCurve)
+
   const artistIds: string[] = []
   const why: Record<string, RailWhy> = {}
   const seenArtist = new Set<string>()
-  for (const name of namesRoundRobin) {
+  for (const name of ranked) {
     if (artistIds.length >= target) break
     const a = artistByName.get(name)
     if (!a || seenArtist.has(a.id)) continue
@@ -661,6 +710,7 @@ export async function leftfieldRail(
       listenedIds: ctx.listenedIds,
       thumbsDownIds: ctx.thumbsDownIds,
       seenIds,
+      undergroundMode: input.undergroundMode,
     })
     const artistByName = new Map<string, Artist>()
     for (const a of resolved) artistByName.set(a.name, a)
@@ -737,6 +787,29 @@ async function hydrateRailArtists(
 }
 
 /**
+ * Belt-and-braces pop cap. Runs after hydration so it catches (a) stale
+ * explore_cache rows from before filter fixes, (b) artist_search_cache
+ * popularity drift from ≤50 → >50 after caching, and (c) any future filter
+ * bypass we haven't thought of. Purely DB-local — zero Spotify/Last.fm calls.
+ * No-op without hydration data or when undergroundMode is off.
+ */
+function enforceUndergroundCap(
+  rails: RailResult[],
+  hydrated: Map<string, HydratedRailArtist> | undefined,
+  undergroundMode: boolean | undefined,
+): void {
+  if (!undergroundMode || !hydrated) return
+  for (const rail of rails) {
+    rail.artistIds = rail.artistIds.filter((id) => {
+      const a = hydrated.get(id)
+      // When hydration is missing (cache miss), drop — we can't prove ≤50.
+      if (!a) return false
+      return (a.popularity ?? 0) <= UNDERGROUND_MAX_POPULARITY
+    })
+  }
+}
+
+/**
  * Top-level entrypoint. Reads `explore_cache`, returns cached rails when
  * fresh, otherwise runs all four rail generators in parallel, writes the
  * results, and returns them.
@@ -767,6 +840,7 @@ export async function buildExploreRails(
         why: (row.why ?? {}) as Record<string, RailWhy>,
       }))
       const hydrated = opts.hydrate ? await hydrateRailArtists(supabase, rails) : undefined
+      enforceUndergroundCap(rails, hydrated, input.undergroundMode)
       return { cacheHit: true, rails, hydrated }
     }
   }
@@ -836,6 +910,7 @@ export async function buildExploreRails(
     console.error('[explore-engine] cache upsert failed', error.message)
   }
 
+  enforceUndergroundCap(rails, hydrated, input.undergroundMode)
   return { rails, cacheHit: false, hydrated }
 }
 

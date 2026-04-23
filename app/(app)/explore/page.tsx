@@ -66,7 +66,7 @@ export default async function ExplorePage() {
   const [userResult, savesResult, accessTokenRaw] = await Promise.all([
     supabase
       .from("users")
-      .select("id, adventurous, preferred_music_platform")
+      .select("id, adventurous, underground_mode, popularity_curve, play_threshold, preferred_music_platform")
       .eq("id", userId)
       .maybeSingle(),
     supabase.from("saves").select("spotify_artist_id").eq("user_id", userId),
@@ -84,6 +84,9 @@ export default async function ExplorePage() {
     ? user.preferred_music_platform
     : DEFAULT_MUSIC_PLATFORM
   const adventurous = !!user.adventurous
+  const undergroundMode = !!user.underground_mode
+  const popularityCurve = typeof user.popularity_curve === "number" ? user.popularity_curve : undefined
+  const playThreshold = typeof user.play_threshold === "number" ? user.play_threshold : undefined
   const initialSavedIds = (savesResult.data ?? []).map((r) => r.spotify_artist_id as string)
   const accessToken = accessTokenRaw ?? ""
 
@@ -93,6 +96,9 @@ export default async function ExplorePage() {
         userId={user.id}
         accessToken={accessToken}
         adventurous={adventurous}
+        undergroundMode={undergroundMode}
+        popularityCurve={popularityCurve}
+        playThreshold={playThreshold}
         musicPlatform={musicPlatform}
         initialSavedIds={initialSavedIds}
       />
@@ -104,6 +110,9 @@ interface RailsSectionProps {
   userId: string
   accessToken: string
   adventurous: boolean
+  undergroundMode: boolean
+  popularityCurve: number | undefined
+  playThreshold: number | undefined
   musicPlatform: MusicPlatform
   initialSavedIds: string[]
 }
@@ -112,6 +121,9 @@ async function ExploreRailsSection({
   userId,
   accessToken,
   adventurous,
+  undergroundMode,
+  popularityCurve,
+  playThreshold,
   musicPlatform,
   initialSavedIds,
 }: RailsSectionProps) {
@@ -122,7 +134,10 @@ async function ExploreRailsSection({
   // it now runs inside buildExploreRails alongside the cache upsert, so it
   // also runs in parallel with loadChallenge here.
   const [buildResult, challenge] = await Promise.all([
-    buildExploreRails({ userId, accessToken, adventurous }, { hydrate: true }),
+    buildExploreRails(
+      { userId, accessToken, adventurous, undergroundMode, popularityCurve, playThreshold },
+      { hydrate: true },
+    ),
     loadChallenge(supabase, userId),
   ])
   const { rails, hydrated } = buildResult

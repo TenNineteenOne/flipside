@@ -20,7 +20,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const { data: user, error: userError } = await supabase
     .from("users")
-    .select("id, adventurous")
+    .select("id, adventurous, underground_mode, popularity_curve, play_threshold")
     .eq("id", userId)
     .maybeSingle()
 
@@ -35,6 +35,9 @@ export async function POST(req: NextRequest): Promise<Response> {
         userId: user.id,
         accessToken,
         adventurous: user.adventurous ?? false,
+        undergroundMode: user.underground_mode ?? false,
+        popularityCurve: typeof user.popularity_curve === "number" ? user.popularity_curve : undefined,
+        playThreshold: typeof user.play_threshold === "number" ? user.play_threshold : undefined,
       },
       { force },
     )

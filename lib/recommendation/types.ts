@@ -18,7 +18,6 @@ export interface RecommendationInput {
  */
 export interface SoftenedFilters {
   playThreshold: boolean
-  undergroundMode: boolean
   coldStart: boolean
 }
 

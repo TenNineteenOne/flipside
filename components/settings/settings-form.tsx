@@ -40,6 +40,27 @@ async function patchSettings(payload: Record<string, unknown>) {
   }
 }
 
+/**
+ * Translate a failed feed regenerate response into an actionable toast.
+ * Explore has no cooldown, so when the combined regenerate lands during the
+ * feed's 30s cooldown the user used to see a vague "Explore rebuilt, but feed
+ * failed" — now they see the actual reason.
+ */
+async function describeFeedFailure(res: Response): Promise<string> {
+  const data = (await res.json().catch(() => ({}))) as { error?: string }
+  const msg = (data.error ?? "").toLowerCase()
+  if (res.status === 429) {
+    if (msg.includes("discovery queue") || msg.includes("queue")) {
+      return "Queue is full — review some artists first"
+    }
+    return "Cooling down — wait a few seconds and try again"
+  }
+  if (res.status === 503) {
+    return "Music service temporarily unavailable — try again in a moment"
+  }
+  return "Explore rebuilt, but feed failed"
+}
+
 const ACCENT = "#8b5cf6"
 const MINT = "#7dd9c6"
 const BLUE = "#a8c7fa"
@@ -154,6 +175,7 @@ export function SettingsForm({
     setUndergroundMode(next)
     try {
       await patchSettings({ undergroundMode: next })
+      void handleRegenerateBoth()
     } catch {
       setUndergroundMode(!next)
       toast.error("Failed to save setting")
@@ -165,6 +187,7 @@ export function SettingsForm({
     setDeepDiscovery(next)
     try {
       await patchSettings({ deepDiscovery: next })
+      void handleRegenerateBoth()
     } catch {
       setDeepDiscovery(!next)
       toast.error("Failed to save setting")
@@ -180,6 +203,7 @@ export function SettingsForm({
         localStorage.setItem("flipside.adventurous", next ? "1" : "0")
         window.dispatchEvent(new Event("flipside:adventurous-change"))
       } catch { /* noop */ }
+      void handleRegenerateBoth()
     } catch {
       setAdventurous(!next)
       toast.error("Failed to save setting")
@@ -251,16 +275,13 @@ export function SettingsForm({
 
       if (feedRes.ok) {
         const data = (await feedRes.json().catch(() => ({}))) as {
-          softenedFilters?: { playThreshold?: boolean; undergroundMode?: boolean; coldStart?: boolean }
+          softenedFilters?: { playThreshold?: boolean; coldStart?: boolean }
         }
         if (data.softenedFilters) {
           const s = data.softenedFilters
           const bits: string[] = []
           if (s.coldStart) bits.push("falling back to starter picks")
-          else {
-            if (s.playThreshold) bits.push("loosening the familiarity cap")
-            if (s.undergroundMode) bits.push("turning off the hard pop-50 cutoff")
-          }
+          else if (s.playThreshold) bits.push("loosening the familiarity cap")
           if (bits.length > 0) {
             toast(`Widened the search for this batch — ${bits.join(" and ")}.`)
           }
@@ -270,7 +291,7 @@ export function SettingsForm({
       if (!feedRes.ok && !exploreRes.ok) {
         toast.error("Couldn't rebuild — try again")
       } else if (!feedRes.ok) {
-        toast.error("Explore rebuilt, but feed failed")
+        toast.error(await describeFeedFailure(feedRes))
       } else if (!exploreRes.ok) {
         toast.error("Feed rebuilt, but Explore failed")
       } else {
