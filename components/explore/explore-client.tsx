@@ -226,9 +226,6 @@ export function ExploreClient({
           body: JSON.stringify({ spotifyArtistId: artistId }),
         })
         if (!res.ok) throw new Error("server")
-        if (!isCurrentlySaved) {
-          setDismissedSignals((prev) => new Map(prev).set(artistId, "saved"))
-        }
       } catch {
         setSavedIds((prev) => {
           const n = new Set(prev)
@@ -247,12 +244,21 @@ export function ExploreClient({
     try {
       const res = await fetch("/api/explore/generate?force=true", { method: "POST" })
       if (!res.ok) throw new Error("generate failed")
-      // Clear dismissed for the active tab's artists so a fresh roll isn't hidden.
+      // Drop stale thumbs_up entries so a refreshed roll doesn't carry over the
+      // green outline from the previous deck. thumbs_down and skip (Dismiss)
+      // stay put — the server filter now permanently excludes them anyway, and
+      // retaining the local entries is defensive for any in-flight writes.
       setDismissedSignals((prev) => {
         if (!activeRail) return prev
+        let changed = false
         const n = new Map(prev)
-        for (const a of activeRail.artists) n.delete(a.id)
-        return n
+        for (const a of activeRail.artists) {
+          if (n.get(a.id) === "thumbs_up") {
+            n.delete(a.id)
+            changed = true
+          }
+        }
+        return changed ? n : prev
       })
       startTransition(() => router.refresh())
     } catch {

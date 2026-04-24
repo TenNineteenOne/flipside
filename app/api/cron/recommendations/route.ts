@@ -37,6 +37,8 @@ export async function GET(req: NextRequest) {
 
   // Step 2: hard-delete anything that's been expired for > 30 days, regardless
   // of seen_at. Prevents unbounded table growth over months of production use.
+  // Exception: rows with skip_at set are permanent dismissals — deleting them
+  // would let the artist resurface in Explore/Feed ~60 days after dismissal.
   const thirtyDaysAgo = new Date(now)
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
 
@@ -44,6 +46,7 @@ export async function GET(req: NextRequest) {
     .from("recommendation_cache")
     .delete()
     .lt("expires_at", thirtyDaysAgo.toISOString())
+    .is("skip_at", null)
     .select("id")
 
   if (deleteErr) {

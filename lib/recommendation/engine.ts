@@ -231,14 +231,17 @@ export async function runDeepHop(
 
 /**
  * Greedy pick with soft per-genre AND per-source-seed diversity penalties.
- * genreWeight raised 0.02 → 0.05 so the 6th same-genre pick takes a ~0.25
- * hit — enough to actually dominate score deltas in a homogeneous pool.
+ * genreWeight raised 0.05 → 0.10 (and sourceWeight 0.04 → 0.08) as a near-term
+ * nudge against session-echo from thumbs-up-heavy seed pools — the 6th
+ * same-genre pick now takes a ~0.50 hit, well above typical score deltas, so
+ * a homogeneous pool breaks up earlier. The full "quiet signal + rolling
+ * sample + cross-rail budget" overhaul lives in its own PRD.
  */
 export function greedyPickTop(
   pool: ScoredArtist[],
   maxSize = 20,
-  genreWeight = 0.05,
-  sourceWeight = 0.04
+  genreWeight = 0.10,
+  sourceWeight = 0.08
 ): ScoredArtist[] {
   const working = [...pool]
   const top: ScoredArtist[] = []
@@ -272,19 +275,16 @@ export function greedyPickTop(
 }
 
 /**
- * Cooldown gate: `skip_at` wins over `seen_at` because a deliberate skip
- * signals stronger disinterest than a passive surface, so the window is
- * longer (30d vs 7d).
+ * Cooldown gate: a `skip_at` timestamp is a permanent hide ("Dismiss" button).
+ * Undo is available from the History page, which clears skip_at via the
+ * dismiss RPC. A passive `seen_at` is a 7-day soft cooldown.
  */
 export function isEligibleForCooldown(
   seenAt: string | null | undefined,
   skipAt: string | null | undefined,
   now: Date = new Date()
 ): boolean {
-  if (skipAt) {
-    const days = (now.getTime() - new Date(skipAt).getTime()) / (1000 * 60 * 60 * 24)
-    if (days < 30) return false
-  }
+  if (skipAt) return false
   if (seenAt) {
     const days = (now.getTime() - new Date(seenAt).getTime()) / (1000 * 60 * 60 * 24)
     if (days < 7) return false

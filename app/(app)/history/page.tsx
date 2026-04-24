@@ -15,7 +15,7 @@ export default async function HistoryPage() {
   // 1. All seen recommendations
   const { data: seen } = await supabase
     .from("recommendation_cache")
-    .select("spotify_artist_id, artist_data, score, why, seen_at")
+    .select("spotify_artist_id, artist_data, score, why, seen_at, skip_at")
     .eq("user_id", userId)
     .not("seen_at", "is", null)
     .order("seen_at", { ascending: false })
@@ -49,22 +49,30 @@ export default async function HistoryPage() {
 
   const savedSet = new Set(((savesRes.data ?? []) as { spotify_artist_id: string }[]).map((s) => s.spotify_artist_id))
 
-  const history = (seen ?? []).map((rec) => ({
-    spotify_artist_id: rec.spotify_artist_id,
-    artist_data: rec.artist_data as {
-      id: string
-      name: string
-      genres: string[]
-      imageUrl: string | null
-      popularity: number
-    },
-    score: rec.score as number,
-    why: rec.why as { sourceArtists: string[]; genres: string[]; friendBoost: string[] },
-    artist_color: (rec.artist_data as Record<string, unknown>).artist_color as string | null ?? null,
-    seen_at: rec.seen_at as string,
-    signal: feedbackMap.get(rec.spotify_artist_id) ?? "skip",
-    bookmarked: savedSet.has(rec.spotify_artist_id),
-  }))
+  const history = (seen ?? []).map((rec) => {
+    const feedbackSignal = feedbackMap.get(rec.spotify_artist_id)
+    const signal = feedbackSignal
+      ? feedbackSignal
+      : rec.skip_at
+        ? "dismissed"
+        : "skip"
+    return {
+      spotify_artist_id: rec.spotify_artist_id,
+      artist_data: rec.artist_data as {
+        id: string
+        name: string
+        genres: string[]
+        imageUrl: string | null
+        popularity: number
+      },
+      score: rec.score as number,
+      why: rec.why as { sourceArtists: string[]; genres: string[]; friendBoost: string[] },
+      artist_color: (rec.artist_data as Record<string, unknown>).artist_color as string | null ?? null,
+      seen_at: rec.seen_at as string,
+      signal,
+      bookmarked: savedSet.has(rec.spotify_artist_id),
+    }
+  })
 
   const hasMore = (seen ?? []).length === 50
 
