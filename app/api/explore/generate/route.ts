@@ -15,18 +15,21 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const userId = session.user.id
 
-  const userAccessToken = await getAccessToken(req)
   const supabase = createServiceClient()
 
-  const { data: user, error: userError } = await supabase
-    .from("users")
-    .select("id, adventurous, underground_mode, popularity_curve, play_threshold")
-    .eq("id", userId)
-    .maybeSingle()
+  const [userAccessToken, clientToken, { data: user, error: userError }] = await Promise.all([
+    getAccessToken(req),
+    getSpotifyClientToken(),
+    supabase
+      .from("users")
+      .select("id, adventurous, underground_mode, popularity_curve, play_threshold")
+      .eq("id", userId)
+      .maybeSingle(),
+  ])
 
   if (userError || !user) return apiError("User not found", 404)
 
-  const accessToken = userAccessToken ?? (await getSpotifyClientToken()) ?? ""
+  const accessToken = userAccessToken ?? clientToken ?? ""
   const force = req.nextUrl.searchParams.get("force") === "true"
 
   try {

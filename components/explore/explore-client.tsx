@@ -489,6 +489,26 @@ export function ExploreClient({
         })}
       </div>
 
+      {orderedRails.length === 0 && (
+        <div
+          className="muted"
+          style={{
+            padding: "48px 18px",
+            fontSize: 13,
+            lineHeight: 1.5,
+            textAlign: "center",
+            border: "1px dashed var(--border)",
+            borderRadius: 12,
+            background: "rgba(15,15,15,0.45)",
+          }}
+        >
+          <div style={{ fontWeight: 600, color: "var(--text-primary)", marginBottom: 6 }}>
+            Not enough signal yet
+          </div>
+          Save a few artists or mark some thumbs-up in your feed, then shuffle to generate richer rails here.
+        </div>
+      )}
+
       {activeRail && (
         <div>
           <div

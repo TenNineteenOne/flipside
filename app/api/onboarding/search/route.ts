@@ -6,6 +6,28 @@ import { musicProvider } from "@/lib/music-provider/provider"
 import { createServiceClient } from "@/lib/supabase/server"
 import type { Artist } from "@/lib/music-provider/types"
 
+// Per-user in-memory rate limit. Protects the shared Spotify client-credentials
+// quota from a single authenticated user who could otherwise burn through it
+// (debounced UI already throttles ~3 rps, cap is 120/min to stay well above
+// legitimate typing). In-memory is fine for a hobby-scale deploy — it's
+// per-instance, which is a good-enough speed bump against abuse and doesn't
+// need any infrastructure to maintain.
+const SEARCH_MAX_PER_MIN = 120
+const SEARCH_WINDOW_MS = 60_000
+const searchBuckets = new Map<string, { count: number; windowStart: number }>()
+
+function isSearchRateLimited(userId: string): boolean {
+  const now = Date.now()
+  const bucket = searchBuckets.get(userId)
+  if (!bucket || now - bucket.windowStart > SEARCH_WINDOW_MS) {
+    searchBuckets.set(userId, { count: 1, windowStart: now })
+    return false
+  }
+  if (bucket.count >= SEARCH_MAX_PER_MIN) return true
+  bucket.count += 1
+  return false
+}
+
 // Escape %/_/\ so user input can't turn into a wildcard in ILIKE.
 function escapeIlike(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_")
@@ -38,6 +60,11 @@ export async function GET(req: NextRequest) {
   if (!session?.user?.id) {
     console.log("[onboard-search] unauth")
     return apiUnauthorized()
+  }
+
+  if (isSearchRateLimited(session.user.id)) {
+    console.log(`[onboard-search] self-rate-limited userId=${session.user.id}`)
+    return apiError("Too many searches — slow down for a moment", 429)
   }
 
   const query = req.nextUrl.searchParams.get("q")

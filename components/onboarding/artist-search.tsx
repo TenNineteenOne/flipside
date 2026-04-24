@@ -146,6 +146,11 @@ export function ArtistSearch({ selected, onAdd, onRemove, cap, minForHint = 3 }:
           Showing cached results — live search is rate-limited
         </div>
       )}
+      {!error && !searching && query.trim().length > 0 && results.length === 0 && (
+        <div className="mono muted" style={{ fontSize: 11, textAlign: "center", padding: "12px 0" }}>
+          No artists found for &ldquo;{query.trim()}&rdquo; — try a different spelling
+        </div>
+      )}
       {results.length > 0 && (
         <div
           style={{

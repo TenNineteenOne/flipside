@@ -88,6 +88,13 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (!artistName || !trackName) {
     return apiError("artistName and trackName required", 400)
   }
+  // Length cap matches /api/onboarding/search — prevents oversized Spotify
+  // query strings on the untrusted path (when no cached spotifyArtistId+
+  // localTrackId pair was supplied, artistName/trackName come straight from
+  // the client).
+  if (artistName.length > 200 || trackName.length > 200) {
+    return apiError("artistName and trackName must be 200 chars or fewer", 400)
+  }
 
   const q = `track:"${trackName}" artist:"${artistName}"`
   const url = `${SPOTIFY_BASE}/search?q=${encodeURIComponent(q)}&type=track&limit=5`

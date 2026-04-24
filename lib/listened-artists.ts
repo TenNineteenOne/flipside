@@ -562,16 +562,33 @@ async function batchUpsertLastFmArtists(
 
   const now = new Date().toISOString()
 
-  // Batch SELECT: find existing Last.fm rows (both resolved and unresolved)
-  const { data: existingRows, error: selectError } = await supabase
-    .from("listened_artists")
-    .select("id, lastfm_artist_name, play_count")
-    .eq("user_id", userId)
-    .in("lastfm_artist_name", artistNames)
-
-  if (selectError) {
-    console.error("[accumulateLastFmHistory] Batch select error:", selectError.message)
-    return
+  // Batch SELECT: find existing Last.fm rows (both resolved and unresolved).
+  // Chunk the IN-list so Last.fm lifetime imports (up to ~2000 names) don't
+  // produce an oversized WHERE clause. Chunks run in parallel; errors from
+  // any chunk abort the whole pass.
+  const CHUNK = 500
+  const existingRows: Array<{ id: string; lastfm_artist_name: string | null; play_count: number }> = []
+  {
+    const chunks: string[][] = []
+    for (let i = 0; i < artistNames.length; i += CHUNK) {
+      chunks.push(artistNames.slice(i, i + CHUNK))
+    }
+    const chunkResults = await Promise.all(
+      chunks.map((chunk) =>
+        supabase
+          .from("listened_artists")
+          .select("id, lastfm_artist_name, play_count")
+          .eq("user_id", userId)
+          .in("lastfm_artist_name", chunk)
+      )
+    )
+    for (const { data, error } of chunkResults) {
+      if (error) {
+        console.error("[accumulateLastFmHistory] Batch select error:", error.message)
+        return
+      }
+      if (data) existingRows.push(...data)
+    }
   }
 
   const existingMap = new Map<string, { id: string; play_count: number }>()

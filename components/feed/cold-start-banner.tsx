@@ -1,5 +1,3 @@
-"use client"
-
 interface ColdStartBannerProps {
   signalCount: number
   threshold?: number

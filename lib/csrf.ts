@@ -27,6 +27,13 @@ function knownOrigins(): Set<string> {
   add(process.env.AUTH_URL)
   add(process.env.NEXTAUTH_URL)
   add(process.env.NEXT_PUBLIC_APP_URL)
+  // Vercel auto-injects VERCEL_URL on every deploy (without scheme); and
+  // VERCEL_PROJECT_PRODUCTION_URL on production. Accept both so a hobby
+  // deploy without AUTH_URL explicitly set still passes CSRF.
+  if (process.env.VERCEL_URL) add(`https://${process.env.VERCEL_URL}`)
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+    add(`https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`)
+  }
   if (process.env.NODE_ENV !== "production") {
     origins.add("http://localhost:3000")
     origins.add("http://127.0.0.1:3000")
@@ -36,7 +43,16 @@ function knownOrigins(): Set<string> {
 
 export function isSameOrigin(request: Request): boolean {
   const allowed = knownOrigins()
-  if (allowed.size === 0) return true // No config → fail open in dev/preview.
+  if (allowed.size === 0) {
+    // In production a missing origin allowlist is a misconfiguration that
+    // would silently disable CSRF protection — fail closed so the error is
+    // loud and the gap can't be exploited.
+    if (process.env.NODE_ENV === "production") {
+      console.error("[csrf] no known origins configured in production — rejecting request")
+      return false
+    }
+    return true // No config → fail open in dev/preview.
+  }
 
   const origin = request.headers.get("origin")
   if (origin) return allowed.has(origin)
