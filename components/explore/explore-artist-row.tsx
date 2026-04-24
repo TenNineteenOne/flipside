@@ -72,7 +72,6 @@ export const ExploreArtistRow = memo(function ExploreArtistRow({
     [artist.id, onFeedback],
   )
   const recommendation = useMemo(() => railArtistToRecommendation(artist), [artist])
-  const isDismissed = dismissSignal !== null
 
   return (
     <motion.div
@@ -88,7 +87,6 @@ export const ExploreArtistRow = memo(function ExploreArtistRow({
         onSave={handleSave}
         onFeedback={handleFeedback}
         isSaved={isSaved}
-        isDismissed={isDismissed}
         dismissSignal={dismissSignal}
       />
     </motion.div>

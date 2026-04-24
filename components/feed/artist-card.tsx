@@ -47,8 +47,16 @@ export interface ArtistCardProps {
   musicPlatform: MusicPlatform
   onSave: () => void
   onFeedback: (signal: string) => void
-  isDismissed?: boolean
   isSaved?: boolean
+  /**
+   * Last signal received for this artist. Drives both the collapsed dismiss
+   * state and the in-place "Liked" affordance:
+   *   - null           → expanded card, default buttons
+   *   - "thumbs_up"    → expanded card, green outline + "Liked" button (keep playing)
+   *   - "thumbs_down"  → collapsed 56px bar, red-tinted "Passed"
+   *   - "skip"         → collapsed 56px bar, neutral "Maybe later"
+   *   - "saved"        → collapsed 56px bar, accent "Saved"
+   */
   dismissSignal?: string | null
 }
 
@@ -56,15 +64,22 @@ export interface ArtistCardProps {
 // Component
 // ---------------------------------------------------------------------------
 
+// Collapse the card for thumbs_down / skip / saved, but NOT thumbs_up — we
+// keep the card visible after a like so the user can keep listening.
+function signalCollapses(signal: string | null | undefined): boolean {
+  return signal != null && signal !== "thumbs_up"
+}
+
 function ArtistCardImpl({
   recommendation,
   musicPlatform,
   onSave,
   onFeedback,
-  isDismissed = false,
   isSaved = false,
   dismissSignal = null,
 }: ArtistCardProps) {
+  const isLiked = dismissSignal === "thumbs_up"
+  const isCollapsed = signalCollapses(dismissSignal)
   const { artist_data, why, artist_color } = recommendation
   const artistColor = useMemo(() => {
     const c = sanitizeHex(artist_color)
@@ -133,14 +148,15 @@ function ArtistCardImpl({
         : null
 
   // ------------------------------------------------------------------
-  // Collapsed (slim bar) state — no emoji, colour-coded labels
+  // Collapsed (slim bar) state — no emoji, colour-coded labels. Only applies
+  // to thumbs_down / skip / saved. Thumbs_up keeps the card expanded below so
+  // the user can keep listening after liking.
   // ------------------------------------------------------------------
-  if (isDismissed) {
-    const labelMap: Record<string, { text: string; color: string }> = {
-      thumbs_up:   { text: "Liked",       color: "var(--like)"     },
-      thumbs_down: { text: "Passed",      color: "var(--dislike)"  },
-      skip:        { text: "Maybe later", color: "var(--text-muted)" },
-      saved:       { text: "Saved",       color: "var(--accent)"   },
+  if (isCollapsed) {
+    const labelMap: Record<string, { text: string; color: string; border: string }> = {
+      thumbs_down: { text: "Passed",      color: "var(--dislike)",    border: "rgba(255,75,75,0.35)" },
+      skip:        { text: "Maybe later", color: "var(--text-muted)", border: "var(--border)" },
+      saved:       { text: "Saved",       color: "var(--accent)",     border: "rgba(139,92,246,0.35)" },
     }
     const signal = labelMap[dismissSignal ?? "skip"] ?? labelMap.skip
 
@@ -154,7 +170,7 @@ function ArtistCardImpl({
         style={{
           padding: "14px 18px",
           background: "rgba(15,15,15,0.6)",
-          border: "1px solid var(--border)",
+          border: `1px solid ${signal.border}`,
           borderRadius: 16,
           display: "flex",
           alignItems: "center",
@@ -182,7 +198,9 @@ function ArtistCardImpl({
   }
 
   // ------------------------------------------------------------------
-  // Expanded hero card
+  // Expanded hero card (also rendered after thumbs_up — card stays visible so
+  // the user can keep playing tracks. The 'liked' affordance is a subtle green
+  // outline + glow + the + More like this button swapping to ✓ Liked.)
   // ------------------------------------------------------------------
   return (
     <motion.div
@@ -198,8 +216,13 @@ function ArtistCardImpl({
         background: "rgba(15,15,15,0.65)",
         backdropFilter: "blur(30px)",
         WebkitBackdropFilter: "blur(30px)",
-        border: "1px solid rgba(255,255,255,0.08)",
-        boxShadow: "0 30px 80px rgba(0,0,0,0.55)",
+        border: isLiked
+          ? "2px solid rgba(34,197,94,0.55)"
+          : "1px solid rgba(255,255,255,0.08)",
+        boxShadow: isLiked
+          ? "0 0 0 4px rgba(34,197,94,0.12), 0 30px 80px rgba(0,0,0,0.55)"
+          : "0 30px 80px rgba(0,0,0,0.55)",
+        transition: "border-color 0.25s ease, box-shadow 0.25s ease",
       }}
     >
       {/* Hero image */}
@@ -410,6 +433,7 @@ function ArtistCardImpl({
             </button>
             <button
               onClick={() => onFeedback("thumbs_up")}
+              aria-pressed={isLiked}
               className="btn"
               style={{
                 flex: 1.2,
@@ -417,14 +441,21 @@ function ArtistCardImpl({
                 fontSize: 13,
                 whiteSpace: "nowrap",
                 color: "var(--like)",
-                background: "rgba(34,197,94,0.07)",
-                borderColor: "rgba(34,197,94,0.22)",
+                background: isLiked ? "rgba(34,197,94,0.22)" : "rgba(34,197,94,0.07)",
+                borderColor: isLiked ? "rgba(34,197,94,0.55)" : "rgba(34,197,94,0.22)",
+                fontWeight: isLiked ? 700 : undefined,
               }}
             >
-              <span className="mono" style={{ fontSize: 13, fontWeight: 700 }}>
-                +
-              </span>{" "}
-              More like this
+              {isLiked ? (
+                <>
+                  <Check size={15} strokeWidth={2.5} /> Liked
+                </>
+              ) : (
+                <>
+                  <span className="mono" style={{ fontSize: 13, fontWeight: 700 }}>+</span>{" "}
+                  More like this
+                </>
+              )}
             </button>
           </div>
         </div>

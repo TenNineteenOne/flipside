@@ -150,7 +150,29 @@ export function ExploreClient({
     [orderedRails, activeKey],
   )
 
+  const dismissedSignalsRef = useRef(dismissedSignals)
+  dismissedSignalsRef.current = dismissedSignals
+
   const handleFeedback = useCallback(async (artistId: string, signal: string) => {
+    const currentSignal = dismissedSignalsRef.current.get(artistId)
+
+    // Thumbs-up toggle: tapping 'Liked' again un-likes via DELETE.
+    if (signal === "thumbs_up" && currentSignal === "thumbs_up") {
+      setDismissedSignals((prev) => {
+        const n = new Map(prev)
+        n.delete(artistId)
+        return n
+      })
+      try {
+        const res = await fetch(`/api/feedback/${encodeURIComponent(artistId)}`, { method: "DELETE" })
+        if (!res.ok && res.status !== 204) throw new Error("server")
+      } catch {
+        setDismissedSignals((prev) => new Map(prev).set(artistId, "thumbs_up"))
+        toast.error("Couldn't undo — try again")
+      }
+      return
+    }
+
     setDismissedSignals((prev) => new Map(prev).set(artistId, signal))
     // "skip" is local-only in Explore — no server call, no recommendation_cache write.
     if (signal !== "thumbs_up" && signal !== "thumbs_down") return
@@ -166,7 +188,8 @@ export function ExploreClient({
     } catch {
       setDismissedSignals((prev) => {
         const n = new Map(prev)
-        n.delete(artistId)
+        if (currentSignal === undefined) n.delete(artistId)
+        else n.set(artistId, currentSignal)
         return n
       })
       toast.error("Couldn't save feedback — try again")

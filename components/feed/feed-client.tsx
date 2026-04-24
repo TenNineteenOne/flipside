@@ -80,7 +80,33 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
 
   const sequence = useMemo(() => buildSequence(recommendations), [recommendations])
 
+  // Ref mirrors dismissedSignals so handleFeedback can read the current state
+  // without re-creating its identity on every dismiss (preserves FeedCardRow
+  // memoization).
+  const dismissedSignalsRef = useRef(dismissedSignals)
+  dismissedSignalsRef.current = dismissedSignals
+
   const handleFeedback = useCallback(async (artistId: string, signal: string) => {
+    // Thumbs-up toggle: if already liked, tapping again un-likes (soft-deletes
+    // the feedback row via rpc_delete_feedback). seen_at stays set so the card
+    // still won't return on next refresh — undo is session-only.
+    const currentSignal = dismissedSignalsRef.current.get(artistId)
+    if (signal === "thumbs_up" && currentSignal === "thumbs_up") {
+      setDismissedSignals((prev) => {
+        const next = new Map(prev)
+        next.delete(artistId)
+        return next
+      })
+      try {
+        const res = await fetch(`/api/feedback/${encodeURIComponent(artistId)}`, { method: "DELETE" })
+        if (!res.ok && res.status !== 204) throw new Error("Server error")
+      } catch {
+        setDismissedSignals((prev) => new Map(prev).set(artistId, "thumbs_up"))
+        toast.error("Couldn't undo — try again")
+      }
+      return
+    }
+
     setDismissedSignals((prev) => new Map(prev).set(artistId, signal))
     try {
       const res = await fetch("/api/feedback", {
@@ -92,7 +118,8 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
     } catch {
       setDismissedSignals((prev) => {
         const next = new Map(prev)
-        next.delete(artistId)
+        if (currentSignal === undefined) next.delete(artistId)
+        else next.set(artistId, currentSignal)
         return next
       })
       toast.error("Couldn't save feedback — try again")
@@ -192,7 +219,6 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
               rec={rec}
               musicPlatform={musicPlatform}
               isSaved={savedIds.has(id)}
-              isDismissed={dismissedSignals.has(id)}
               dismissSignal={dismissedSignals.get(id) ?? null}
               onSaveAction={handleSave}
               onFeedbackAction={handleFeedback}
@@ -222,7 +248,6 @@ interface FeedCardRowProps {
   rec: Recommendation
   musicPlatform: MusicPlatform
   isSaved: boolean
-  isDismissed: boolean
   dismissSignal: string | null
   onSaveAction: (artistId: string) => Promise<void> | void
   onFeedbackAction: (artistId: string, signal: string) => Promise<void> | void
@@ -232,7 +257,6 @@ const FeedCardRow = memo(function FeedCardRow({
   rec,
   musicPlatform,
   isSaved,
-  isDismissed,
   dismissSignal,
   onSaveAction,
   onFeedbackAction,
@@ -245,7 +269,6 @@ const FeedCardRow = memo(function FeedCardRow({
       recommendation={rec}
       musicPlatform={musicPlatform}
       isSaved={isSaved}
-      isDismissed={isDismissed}
       dismissSignal={dismissSignal}
       onSave={onSave}
       onFeedback={onFeedback}
