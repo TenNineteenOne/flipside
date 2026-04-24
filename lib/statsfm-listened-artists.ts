@@ -82,15 +82,29 @@ async function batchUpsertStatsFmResolved(
   const now = new Date().toISOString()
   const ids = entries.map((e) => e.spotifyId)
 
-  const { data: existingRows, error: selectError } = await supabase
-    .from("listened_artists")
-    .select("id, spotify_artist_id, play_count")
-    .eq("user_id", userId)
-    .in("spotify_artist_id", ids)
-
-  if (selectError) {
-    console.error("[accumulateStatsFmHistory] Batch select error:", selectError.message)
-    return
+  // Chunk the IN-list so stats.fm lifetime imports don't produce an oversized
+  // WHERE clause. Chunks run in parallel; any chunk error aborts the pass.
+  const CHUNK = 500
+  const existingRows: Array<{ id: string; spotify_artist_id: string | null; play_count: number }> = []
+  {
+    const chunks: string[][] = []
+    for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK))
+    const chunkResults = await Promise.all(
+      chunks.map((chunk) =>
+        supabase
+          .from("listened_artists")
+          .select("id, spotify_artist_id, play_count")
+          .eq("user_id", userId)
+          .in("spotify_artist_id", chunk)
+      )
+    )
+    for (const { data, error } of chunkResults) {
+      if (error) {
+        console.error("[accumulateStatsFmHistory] Batch select error:", error.message)
+        return
+      }
+      if (data) existingRows.push(...data)
+    }
   }
 
   const existingMap = new Map<string, { id: string; play_count: number }>()
@@ -153,15 +167,28 @@ async function batchUpsertStatsFmNames(
 ): Promise<void> {
   const now = new Date().toISOString()
 
-  const { data: existingRows, error: selectError } = await supabase
-    .from("listened_artists")
-    .select("id, lastfm_artist_name, play_count")
-    .eq("user_id", userId)
-    .in("lastfm_artist_name", artistNames)
-
-  if (selectError) {
-    console.error("[accumulateStatsFmHistory] Batch select (names) error:", selectError.message)
-    return
+  // Chunk the IN-list (see batchUpsertStatsFmResolved above for rationale).
+  const CHUNK = 500
+  const existingRows: Array<{ id: string; lastfm_artist_name: string | null; play_count: number }> = []
+  {
+    const chunks: string[][] = []
+    for (let i = 0; i < artistNames.length; i += CHUNK) chunks.push(artistNames.slice(i, i + CHUNK))
+    const chunkResults = await Promise.all(
+      chunks.map((chunk) =>
+        supabase
+          .from("listened_artists")
+          .select("id, lastfm_artist_name, play_count")
+          .eq("user_id", userId)
+          .in("lastfm_artist_name", chunk)
+      )
+    )
+    for (const { data, error } of chunkResults) {
+      if (error) {
+        console.error("[accumulateStatsFmHistory] Batch select (names) error:", error.message)
+        return
+      }
+      if (data) existingRows.push(...data)
+    }
   }
 
   const existingMap = new Map<string, { id: string; play_count: number }>()

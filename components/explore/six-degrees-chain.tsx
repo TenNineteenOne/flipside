@@ -1,5 +1,3 @@
-"use client"
-
 export interface SixDegreesChainProps {
   chain: Array<{ name: string; match: number }> | null | undefined
 }

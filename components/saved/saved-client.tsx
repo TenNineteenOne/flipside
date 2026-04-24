@@ -152,7 +152,6 @@ export function SavedClient({ artists, hasLastfm, musicPlatform }: SavedClientPr
                       fill
                       sizes="(max-width: 640px) 50vw, 220px"
                       style={{ objectFit: "cover" }}
-                      unoptimized
                     />
                   ) : (
                     <div

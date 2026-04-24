@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useRef } from "react"
+import { memo, useCallback, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { ArtistCard } from "@/components/feed/artist-card"
@@ -80,7 +80,7 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
 
   const sequence = useMemo(() => buildSequence(recommendations), [recommendations])
 
-  async function handleFeedback(artistId: string, signal: string) {
+  const handleFeedback = useCallback(async (artistId: string, signal: string) => {
     setDismissedSignals((prev) => new Map(prev).set(artistId, signal))
     try {
       const res = await fetch("/api/feedback", {
@@ -97,7 +97,7 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
       })
       toast.error("Couldn't save feedback — try again")
     }
-  }
+  }, [])
 
   async function handleGenerateMore() {
     if (isGeneratingRef.current) return
@@ -134,8 +134,13 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
     }
   }
 
-  async function handleSave(artistId: string) {
-    const willUnsave = savedIds.has(artistId)
+  // Ref mirrors savedIds so handleSave stays identity-stable across renders —
+  // otherwise every setSavedIds would bust memoization on every card.
+  const savedIdsRef = useRef(savedIds)
+  savedIdsRef.current = savedIds
+
+  const handleSave = useCallback(async (artistId: string) => {
+    const willUnsave = savedIdsRef.current.has(artistId)
     setSavedIds((prev) => {
       const n = new Set(prev)
       if (willUnsave) n.delete(artistId)
@@ -163,7 +168,7 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
         toast.error(willUnsave ? "Couldn't unsave — try again" : "Couldn't save — try again")
       }
     })
-  }
+  }, [])
 
   return (
     <div style={{ position: "relative" }}>
@@ -180,16 +185,17 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
         <ColdStartBanner signalCount={signalCount} />
         {sequence.map((item) => {
           const { rec } = item
+          const id = rec.spotify_artist_id
           return (
-            <ArtistCard
+            <FeedCardRow
               key={item.key}
-              recommendation={rec}
+              rec={rec}
               musicPlatform={musicPlatform}
-              onSave={() => handleSave(rec.spotify_artist_id)}
-              isSaved={savedIds.has(rec.spotify_artist_id)}
-              onFeedback={(signal) => handleFeedback(rec.spotify_artist_id, signal)}
-              isDismissed={dismissedSignals.has(rec.spotify_artist_id)}
-              dismissSignal={dismissedSignals.get(rec.spotify_artist_id) ?? null}
+              isSaved={savedIds.has(id)}
+              isDismissed={dismissedSignals.has(id)}
+              dismissSignal={dismissedSignals.get(id) ?? null}
+              onSaveAction={handleSave}
+              onFeedbackAction={handleFeedback}
             />
           )
         })}
@@ -208,3 +214,41 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
     </div>
   )
 }
+
+// Per-row wrapper that binds the stable parent actions to this row's artistId.
+// Memoized so a parent re-render (e.g. on save of a different card) doesn't
+// re-render this row unless its own props actually changed.
+interface FeedCardRowProps {
+  rec: Recommendation
+  musicPlatform: MusicPlatform
+  isSaved: boolean
+  isDismissed: boolean
+  dismissSignal: string | null
+  onSaveAction: (artistId: string) => Promise<void> | void
+  onFeedbackAction: (artistId: string, signal: string) => Promise<void> | void
+}
+
+const FeedCardRow = memo(function FeedCardRow({
+  rec,
+  musicPlatform,
+  isSaved,
+  isDismissed,
+  dismissSignal,
+  onSaveAction,
+  onFeedbackAction,
+}: FeedCardRowProps) {
+  const id = rec.spotify_artist_id
+  const onSave = useCallback(() => { void onSaveAction(id) }, [id, onSaveAction])
+  const onFeedback = useCallback((signal: string) => { void onFeedbackAction(id, signal) }, [id, onFeedbackAction])
+  return (
+    <ArtistCard
+      recommendation={rec}
+      musicPlatform={musicPlatform}
+      isSaved={isSaved}
+      isDismissed={isDismissed}
+      dismissSignal={dismissSignal}
+      onSave={onSave}
+      onFeedback={onFeedback}
+    />
+  )
+})

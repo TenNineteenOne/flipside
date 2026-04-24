@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { memo, useCallback, useState } from "react"
 import Link from "next/link"
 import { toast } from "sonner"
 import { RefreshCw, ThumbsUp, ThumbsDown, Bookmark, Check, ExternalLink } from "lucide-react"
@@ -138,13 +138,13 @@ export function Rail({
           }}
         >
           {visible.map((artist) => (
-            <ExploreCard
+            <ExploreCardRow
               key={artist.id}
               artist={artist}
               musicPlatform={musicPlatform}
               isSaved={savedIds.has(artist.id)}
-              onFeedback={(sig) => onFeedback(artist.id, sig)}
-              onSave={() => onSave(artist.id)}
+              onFeedbackAction={onFeedback}
+              onSaveAction={onSave}
             />
           ))}
         </div>
@@ -152,6 +152,41 @@ export function Rail({
     </section>
   )
 }
+
+// Per-row wrapper that binds the rail's shared onFeedback/onSave actions
+// to this card's artist id. Memoized so dismissing or saving one card
+// doesn't cascade a re-render to every sibling in the horizontal scroll.
+interface ExploreCardRowProps {
+  artist: RailArtist
+  musicPlatform: MusicPlatform
+  isSaved: boolean
+  onFeedbackAction: (artistId: string, signal: "thumbs_up" | "thumbs_down") => void
+  onSaveAction: (artistId: string) => void
+}
+
+const ExploreCardRow = memo(function ExploreCardRow({
+  artist,
+  musicPlatform,
+  isSaved,
+  onFeedbackAction,
+  onSaveAction,
+}: ExploreCardRowProps) {
+  const id = artist.id
+  const onFeedback = useCallback(
+    (signal: "thumbs_up" | "thumbs_down") => onFeedbackAction(id, signal),
+    [id, onFeedbackAction],
+  )
+  const onSave = useCallback(() => onSaveAction(id), [id, onSaveAction])
+  return (
+    <ExploreCard
+      artist={artist}
+      musicPlatform={musicPlatform}
+      isSaved={isSaved}
+      onFeedback={onFeedback}
+      onSave={onSave}
+    />
+  )
+})
 
 interface ExploreCardProps {
   artist: RailArtist
@@ -161,7 +196,7 @@ interface ExploreCardProps {
   onSave: () => void
 }
 
-function ExploreCard({ artist, musicPlatform, isSaved, onFeedback, onSave }: ExploreCardProps) {
+const ExploreCard = memo(function ExploreCard({ artist, musicPlatform, isSaved, onFeedback, onSave }: ExploreCardProps) {
   const color = (() => {
     const c = sanitizeHex(artist.artistColor)
     if (c === "#8b5cf6") return stringToVibrantHex(artist.name)
@@ -261,7 +296,7 @@ function ExploreCard({ artist, musicPlatform, isSaved, onFeedback, onSave }: Exp
       </div>
     </article>
   )
-}
+})
 
 const iconBtnStyle: React.CSSProperties = {
   display: "flex",

@@ -20,17 +20,18 @@ export async function GET(req: NextRequest): Promise<Response> {
   const userId = session.user.id
   const supabase = createServiceClient()
 
-  const [{ data: user, error: userError }, userAccessToken] = await Promise.all([
+  const [{ data: user, error: userError }, userAccessToken, clientToken] = await Promise.all([
     supabase
       .from("users")
       .select("id, adventurous, underground_mode, popularity_curve, play_threshold")
       .eq("id", userId)
       .maybeSingle(),
     getAccessToken(req),
+    getSpotifyClientToken(),
   ])
   if (userError || !user) return apiError("User not found", 404)
 
-  const accessToken = userAccessToken ?? (await getSpotifyClientToken()) ?? ""
+  const accessToken = userAccessToken ?? clientToken ?? ""
 
   try {
     await buildExploreRails(

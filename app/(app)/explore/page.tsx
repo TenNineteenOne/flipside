@@ -2,6 +2,7 @@ import { Suspense } from "react"
 import { redirect } from "next/navigation"
 import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
+import { getCachedUser } from "@/lib/user-cache"
 import { getSpotifyClientToken } from "@/lib/spotify-client-token"
 import {
   buildExploreRails,
@@ -63,21 +64,12 @@ export default async function ExplorePage() {
   const userId = session.user.id
   const supabase = createServiceClient()
 
-  const [userResult, savesResult, accessTokenRaw] = await Promise.all([
-    supabase
-      .from("users")
-      .select("id, adventurous, underground_mode, popularity_curve, play_threshold, preferred_music_platform")
-      .eq("id", userId)
-      .maybeSingle(),
+  const [user, savesResult, accessTokenRaw] = await Promise.all([
+    getCachedUser(userId),
     supabase.from("saves").select("spotify_artist_id").eq("user_id", userId),
     getSpotifyClientToken(),
   ])
 
-  const { data: user, error: userErr } = userResult
-  if (userErr) {
-    console.error("[explore-page] user lookup err", userErr.message)
-    throw new Error(`Failed to load your account: ${userErr.message}`)
-  }
   if (!user) redirect("/sign-in")
 
   const musicPlatform: MusicPlatform = isMusicPlatform(user.preferred_music_platform)
@@ -129,17 +121,16 @@ async function ExploreRailsSection({
 }: RailsSectionProps) {
   const supabase = createServiceClient()
 
-  // Rails (now including hydrated artists) + challenge fire in parallel. The
-  // hydration used to run as a serial DB roundtrip after the rails resolved;
-  // it now runs inside buildExploreRails alongside the cache upsert, so it
-  // also runs in parallel with loadChallenge here.
-  const [buildResult, challenge] = await Promise.all([
-    buildExploreRails(
-      { userId, accessToken, adventurous, undergroundMode, popularityCurve, playThreshold },
-      { hydrate: true },
-    ),
-    loadChallenge(supabase, userId),
-  ])
+  // Fire challenge in parallel but do NOT await it here — we pass the unawaited
+  // promise down to ExploreClient, which wraps the challenge slot in Suspense
+  // via React 19's `use` hook. Rails render as soon as they're ready; challenge
+  // streams in when it finishes. Cold /explore stops waiting on the slower of
+  // the two, which is usually the challenge's genre hydration.
+  const challengePromise = loadChallenge(supabase, userId)
+  const buildResult = await buildExploreRails(
+    { userId, accessToken, adventurous, undergroundMode, popularityCurve, playThreshold },
+    { hydrate: true },
+  )
   const { rails, hydrated } = buildResult
   const artistById: Map<string, HydratedRailArtist> = hydrated ?? new Map()
 
@@ -182,7 +173,7 @@ async function ExploreRailsSection({
       musicPlatform={musicPlatform}
       adventurous={adventurous}
       initialSavedIds={initialSavedIds}
-      challenge={challenge}
+      challengePromise={challengePromise}
     />
   )
 }
@@ -193,8 +184,10 @@ async function loadChallenge(
 ): Promise<ChallengePayload | null> {
   // Best-effort: challenge is a secondary surface, never block the page on it.
   try {
-    const [{ data: userRow }, { data: listenedRows }, { data: thumbsUp }] = await Promise.all([
-      supabase.from("users").select("selected_genres").eq("id", userId).maybeSingle(),
+    // getCachedUser is request-scoped — this hits the cache from the main page
+    // fetch rather than issuing another users-table query.
+    const [userRow, { data: listenedRows }, { data: thumbsUp }] = await Promise.all([
+      getCachedUser(userId),
       supabase.from("listened_artists").select("spotify_artist_id").eq("user_id", userId).limit(500),
       supabase.from("feedback").select("spotify_artist_id").eq("user_id", userId).eq("signal", "thumbs_up").is("deleted_at", null).limit(1),
     ])

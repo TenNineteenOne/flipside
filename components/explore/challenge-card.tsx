@@ -1,5 +1,3 @@
-"use client"
-
 import { Sparkles } from "lucide-react"
 
 export interface ChallengeCardProps {
