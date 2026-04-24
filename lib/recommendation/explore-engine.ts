@@ -25,6 +25,8 @@ import {
   listAnchors,
 } from '@/lib/genre/adjacency'
 import { UNDERGROUND_MAX_POPULARITY } from './types'
+import { cacheWindowSeed, seededShuffle, sampleLikes } from './window'
+import { applyCrossRailClusterCap, primaryGenreOf } from './cluster-cap'
 
 export const RAIL_KEYS = ['adjacent', 'outside', 'wildcards', 'leftfield'] as const
 export type RailKey = typeof RAIL_KEYS[number]
@@ -53,6 +55,14 @@ export interface RailResult {
   railKey: RailKey
   artistIds: string[]
   why: Record<string, RailWhy>
+  /**
+   * Internal-only. Populated during rail generation so the cross-rail cluster
+   * cap can swap over-budget picks with under-budget leftovers without losing
+   * rank order. Omitted from the cache read path (cached rails are already
+   * post-cap so no further swaps are needed).
+   */
+  picks?: Artist[]
+  leftover?: Artist[]
 }
 
 export interface BuildRailsInput {
@@ -83,36 +93,6 @@ function buildEnrichArtist() {
   return (name: string) => fetchArtistEnrichment(name, apiKey)
 }
 
-/**
- * Deterministic cache-window hash. Keeps rail picks stable within the TTL so
- * a re-fetch during the same cache window doesn't shuffle results under the
- * user's feet (and can't be exploited to game uniqueness).
- */
-export function cacheWindowSeed(userId: string, seedKey: string): number {
-  const weekStart = Math.floor(Date.now() / (7 * 24 * 60 * 60 * 1000))
-  let h = 2166136261 >>> 0
-  const s = `${userId}:${seedKey}:${weekStart}`
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i)
-    h = Math.imul(h, 16777619) >>> 0
-  }
-  return h
-}
-
-/**
- * Stable shuffle using the cache-window seed so the same user + same rail
- * produces the same order within a 7-day window.
- */
-export function seededShuffle<T>(arr: T[], seed: number): T[] {
-  const out = [...arr]
-  let s = seed || 1
-  for (let i = out.length - 1; i > 0; i--) {
-    s = (Math.imul(s, 1664525) + 1013904223) >>> 0
-    const j = s % (i + 1)
-    ;[out[i], out[j]] = [out[j], out[i]]
-  }
-  return out
-}
 
 /**
  * Re-rank a candidate-name list by k^popularity so lower-popularity picks
@@ -176,13 +156,18 @@ async function loadUserContext(supabase: SupabaseClient, userId: string) {
     genres: genreById.get(r.spotify_artist_id as string) ?? [],
   }))
 
+  // Rolling like sample: up to 10 random likes per cache window. Prevents
+  // thumbs-up-heavy accounts from flooding every rail with the same cluster.
+  // See docs/prd-diversity-overhaul.md (M1).
+  const allThumbsUp = (thumbsUp ?? []).map((r) => r.spotify_artist_id as string)
+
   return {
     user,
     selectedGenres: ((user?.selected_genres ?? []) as string[]),
     seedArtists: (seedArtists ?? []) as Array<{ spotify_artist_id: string; name: string }>,
     listened,
     listenedIds: new Set(listenedIds),
-    thumbsUpIds: new Set((thumbsUp ?? []).map((r) => r.spotify_artist_id as string)),
+    thumbsUpIds: new Set(sampleLikes(allThumbsUp, userId)),
     thumbsDownIds: new Set((thumbsDown ?? []).map((r) => r.spotify_artist_id as string)),
   }
 }
@@ -371,20 +356,27 @@ export async function adjacentRail(
 
   const ranked = rankByCurve(namesRoundRobin, artistByName, input.popularityCurve)
 
-  const artistIds: string[] = []
+  const picks: Artist[] = []
+  const leftover: Artist[] = []
   const why: Record<string, RailWhy> = {}
   const seen = new Set<string>()
   for (const name of ranked) {
-    if (artistIds.length >= target) break
     const a = artistByName.get(name)
     if (!a || seen.has(a.id)) continue
     seen.add(a.id)
-    artistIds.push(a.id)
     const tag = nameToTag.get(name)
     why[a.id] = tag ? { tag, anchor: genreToAnchor(tag) ?? undefined } : {}
+    if (picks.length < target) picks.push(a)
+    else leftover.push(a)
   }
 
-  return { railKey: 'adjacent', artistIds, why }
+  return {
+    railKey: 'adjacent',
+    artistIds: picks.map((a) => a.id),
+    why,
+    picks,
+    leftover,
+  }
 }
 
 const OUTSIDE_TARGET = 10
@@ -498,21 +490,28 @@ export async function outsideRail(
 
   const ranked = rankByCurve(namesRoundRobin, artistByName, input.popularityCurve)
 
-  const artistIds: string[] = []
+  const picks: Artist[] = []
+  const leftover: Artist[] = []
   const why: Record<string, RailWhy> = {}
   const seenArtist = new Set<string>()
   for (const name of ranked) {
-    if (artistIds.length >= target) break
     const a = artistByName.get(name)
     if (!a || seenArtist.has(a.id)) continue
     seenArtist.add(a.id)
-    artistIds.push(a.id)
     const anchorId = nameToAnchor.get(name)
     const anchorLabel = picked.find((p) => p.id === anchorId)?.label
     why[a.id] = { anchor: anchorLabel ?? anchorId }
+    if (picks.length < target) picks.push(a)
+    else leftover.push(a)
   }
 
-  return { railKey: 'outside', artistIds, why }
+  return {
+    railKey: 'outside',
+    artistIds: picks.map((a) => a.id),
+    why,
+    picks,
+    leftover,
+  }
 }
 
 const WILDCARDS_TARGET = 10
@@ -628,17 +627,16 @@ export async function wildcardsRail(
 
   const ranked = rankByCurve(namesRoundRobin, artistByName, input.popularityCurve)
 
-  const artistIds: string[] = []
+  const picks: Artist[] = []
+  const leftover: Artist[] = []
   const why: Record<string, RailWhy> = {}
   const seenArtist = new Set<string>()
   for (const name of ranked) {
-    if (artistIds.length >= target) break
     const a = artistByName.get(name)
     if (!a || seenArtist.has(a.id)) continue
-    seenArtist.add(a.id)
     // Don't surface the thumbs-up seed itself.
     if (ctx.thumbsUpIds.has(a.id)) continue
-    artistIds.push(a.id)
+    seenArtist.add(a.id)
     const seed = nameToSeed.get(name)
     const match = nameToMatch.get(name)
     why[a.id] = seed
@@ -655,23 +653,37 @@ export async function wildcardsRail(
             : null,
         }
       : {}
+    if (picks.length < target) picks.push(a)
+    else leftover.push(a)
   }
 
-  return { railKey: 'wildcards', artistIds, why }
+  return {
+    railKey: 'wildcards',
+    artistIds: picks.map((a) => a.id),
+    why,
+    picks,
+    leftover,
+  }
 }
 
-const LEFTFIELD_TARGET = 10
-const LEFTFIELD_TARGET_ADVENTUROUS = 12
-const LEFTFIELD_SAMPLE_COUNT = 30 // over-sample so filtering still yields enough picks
-const LEFTFIELD_SAMPLE_COUNT_ADVENTUROUS = 28
+// Exploration budget (M3): leftfield is the unbiased / long-tail rail.
+// Baseline 16 / 46 ≈ 35%; adventurous 40 / 76 ≈ 53%. Values chosen from the
+// PRD's locked decisions (20% baseline / 50% adventurous) — baseline exceeds
+// the literal 20% target because leftfield is already the designated
+// exploration surface and shrinking it would regress existing diversity.
+const LEFTFIELD_TARGET = 16
+const LEFTFIELD_TARGET_ADVENTUROUS = 40
+const LEFTFIELD_SAMPLE_COUNT = 34
+const LEFTFIELD_SAMPLE_COUNT_ADVENTUROUS = 60
 const LEFTFIELD_MID_START = 10
 const LEFTFIELD_MID_END = 30
 // Per-tag pick count: Last.fm timeouts + Spotify-search misses + listened/seen
 // filters can drop 80%+ of candidates. Pulling multiple names per tag (and
 // round-robining so each slot comes from a different tag) gives the filter
-// pipeline enough slack to hit TARGET consistently.
-const LEFTFIELD_PICKS_PER_TAG = 8
-const LEFTFIELD_PICKS_PER_TAG_ADVENTUROUS = 10
+// pipeline enough slack to hit TARGET consistently. Adv target of 40 needs
+// meaningfully more candidates per tag so we don't fall short after attrition.
+const LEFTFIELD_PICKS_PER_TAG = 10
+const LEFTFIELD_PICKS_PER_TAG_ADVENTUROUS = 14
 
 /**
  * Left-field wildcards — uniform long-tail sampling of the leaf-tag universe
@@ -755,22 +767,29 @@ export async function leftfieldRail(
     const artistByName = new Map<string, Artist>()
     for (const a of resolved) artistByName.set(a.name, a)
 
-    const artistIds: string[] = []
+    const railPicks: Artist[] = []
+    const railLeftover: Artist[] = []
     const why: Record<string, RailWhy> = {}
     const seenArtist = new Set<string>()
     for (const name of namesRoundRobin) {
-      if (artistIds.length >= target) break
       const a = artistByName.get(name)
       if (!a || seenArtist.has(a.id)) continue
       if (excludeIds.has(a.id)) continue
       const meta = nameMeta.get(name)
       if (!meta) continue
       seenArtist.add(a.id)
-      artistIds.push(a.id)
       why[a.id] = { tag: meta.tag, anchor: meta.anchorId }
+      if (railPicks.length < target) railPicks.push(a)
+      else railLeftover.push(a)
     }
 
-    return { railKey: 'leftfield', artistIds, why }
+    return {
+      railKey: 'leftfield',
+      artistIds: railPicks.map((a) => a.id),
+      why,
+      picks: railPicks,
+      leftover: railLeftover,
+    }
   } catch (e) {
     console.error('[leftfield] THREW', e instanceof Error ? e.message : String(e), e instanceof Error ? e.stack : '')
     return { railKey: 'leftfield', artistIds: [], why: {} }
@@ -926,7 +945,41 @@ export async function buildExploreRails(
           ...fallback.why,
           [RAIL_META_KEY]: { fallbackKind: 'leftfield-for-wildcards' },
         },
+        picks: fallback.picks,
+        leftover: fallback.leftover,
       }
+    }
+  }
+
+  // Cross-rail cluster cap (M2). After fallback substitution so the swap
+  // budget counts the final rail composition, before the floor-topup so we
+  // don't drop short rails below MIN_PICKS_FLOOR via cap swaps.
+  const capRails = rails
+    .filter((r): r is RailResult & { picks: Artist[]; leftover: Artist[] } =>
+      Array.isArray(r.picks) && Array.isArray(r.leftover),
+    )
+    .map((r) => ({ picks: r.picks, leftover: r.leftover }))
+  const capStats = applyCrossRailClusterCap(capRails, primaryGenreOf)
+  for (const r of rails) {
+    if (r.picks) r.artistIds = r.picks.map((a) => a.id)
+  }
+  console.log(
+    `[explore-engine] cluster-cap swaps=${capStats.swaps} ` +
+    `topGenre=${capStats.topGenre} topShare=${capStats.topShare.toFixed(2)}`
+  )
+
+  // Defensive cross-rail dedup. The fallback substitution above excludes the
+  // *pre-cap* primary leftfield picks; if the cap later promotes an artist
+  // from primary leftfield's leftover that the fallback also chose, both
+  // rails would contain the same id. Keep the earliest-rail occurrence.
+  {
+    const seen = new Set<string>()
+    for (const r of rails) {
+      r.artistIds = r.artistIds.filter((id) => {
+        if (seen.has(id)) return false
+        seen.add(id)
+        return true
+      })
     }
   }
 
