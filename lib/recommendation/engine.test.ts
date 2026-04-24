@@ -371,7 +371,7 @@ describe("augmentWithAdjacent", () => {
 
   const emptySet = new Set<string>()
 
-  it("non-adventurous: injects ≤2 adjacent picks at positions ≥5", async () => {
+  it("non-adventurous: injects ≤4 adjacent picks at positions ≥5", async () => {
     const base = makeBase(20)
     const result = await augmentWithAdjacent(base, {
       userGenres: ["indie-rock"],
@@ -380,33 +380,7 @@ describe("augmentWithAdjacent", () => {
       thumbsDownIds: emptySet,
       overThresholdIds: emptySet,
       overThresholdNames: emptySet,
-      fetchTagArtists: async () => ["adj1", "adj2", "adj3"],
-      resolveArtists: async (names) => {
-        const m = new Map<string, Artist>()
-        for (const n of names) m.set(n, mkArtist(`id_${n}`, 30, "indie-pop"))
-        return m
-      },
-    })
-    const bleedIdxs = result
-      .map((r, i) => ({ r, i }))
-      .filter(({ r }) => r.source === "adjacent_bleed")
-      .map(({ i }) => i)
-    expect(bleedIdxs.length).toBeLessThanOrEqual(2)
-    for (const i of bleedIdxs) expect(i).toBeGreaterThanOrEqual(5)
-    // Positions 0-4 are untouched.
-    for (let i = 0; i < 5; i++) expect(result[i].source).toBe("test")
-  })
-
-  it("adventurous: injects ≤4 adjacent picks at positions ≥3", async () => {
-    const base = makeBase(20)
-    const result = await augmentWithAdjacent(base, {
-      userGenres: ["indie-rock"],
-      adventurous: true,
-      popularityCurve: 0.95,
-      thumbsDownIds: emptySet,
-      overThresholdIds: emptySet,
-      overThresholdNames: emptySet,
-      fetchTagArtists: async () => ["adj1", "adj2", "adj3", "adj4", "adj5", "adj6"],
+      fetchTagArtists: async () => ["adj1", "adj2", "adj3", "adj4", "adj5"],
       resolveArtists: async (names) => {
         const m = new Map<string, Artist>()
         for (const n of names) m.set(n, mkArtist(`id_${n}`, 30, "indie-pop"))
@@ -418,6 +392,33 @@ describe("augmentWithAdjacent", () => {
       .filter(({ r }) => r.source === "adjacent_bleed")
       .map(({ i }) => i)
     expect(bleedIdxs.length).toBeLessThanOrEqual(4)
+    for (const i of bleedIdxs) expect(i).toBeGreaterThanOrEqual(5)
+    // Positions 0-4 are untouched.
+    for (let i = 0; i < 5; i++) expect(result[i].source).toBe("test")
+  })
+
+  it("adventurous: injects ≤10 adjacent picks at positions ≥3", async () => {
+    const base = makeBase(20)
+    const adjNames = Array.from({ length: 12 }, (_, i) => `adj${i}`)
+    const result = await augmentWithAdjacent(base, {
+      userGenres: ["indie-rock"],
+      adventurous: true,
+      popularityCurve: 0.95,
+      thumbsDownIds: emptySet,
+      overThresholdIds: emptySet,
+      overThresholdNames: emptySet,
+      fetchTagArtists: async () => adjNames,
+      resolveArtists: async (names) => {
+        const m = new Map<string, Artist>()
+        for (const n of names) m.set(n, mkArtist(`id_${n}`, 30, "indie-pop"))
+        return m
+      },
+    })
+    const bleedIdxs = result
+      .map((r, i) => ({ r, i }))
+      .filter(({ r }) => r.source === "adjacent_bleed")
+      .map(({ i }) => i)
+    expect(bleedIdxs.length).toBeLessThanOrEqual(10)
     for (const i of bleedIdxs) expect(i).toBeGreaterThanOrEqual(3)
     // Positions 0-2 are untouched.
     for (let i = 0; i < 3; i++) expect(result[i].source).toBe("test")
@@ -500,6 +501,8 @@ describe("augmentWithAdjacent", () => {
 
   it("adventurous mainstream penalty orders low-pop injections ahead of high-pop", async () => {
     const base = makeBase(20)
+    const lowNames = Array.from({ length: 10 }, (_, i) => `low${i}`)
+    const highNames = ["high1"]
     const result = await augmentWithAdjacent(base, {
       userGenres: ["indie-rock"],
       adventurous: true,
@@ -507,7 +510,7 @@ describe("augmentWithAdjacent", () => {
       thumbsDownIds: emptySet,
       overThresholdIds: emptySet,
       overThresholdNames: emptySet,
-      fetchTagArtists: async () => ["low1", "low2", "low3", "low4", "high1"],
+      fetchTagArtists: async () => [...lowNames, ...highNames],
       resolveArtists: async (names) => {
         const m = new Map<string, Artist>()
         for (const n of names) {
@@ -518,7 +521,7 @@ describe("augmentWithAdjacent", () => {
       },
     })
     const injected = result.filter((r) => r.source === "adjacent_bleed")
-    // With 4-pick slots and 4 low + 1 high candidates, all 4 low beat the high.
+    // 10 low + 1 high candidates → all 10 low slots filled ahead of the high.
     expect(injected.every((r) => r.artist.popularity <= 50)).toBe(true)
   })
 

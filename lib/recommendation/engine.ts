@@ -17,6 +17,8 @@ import { normalizedIncludes, normalizeGenre } from '@/lib/genre/normalize'
 import { adjacentGenres } from '@/lib/genre/adjacency'
 import { cachedTagArtistNames } from '@/lib/lastfm-cache'
 import coldStartData from '@/data/cold-start-seeds.json'
+import { sampleLikes, LIKE_SAMPLE_SIZE } from './window'
+import { applyClusterCap } from './cluster-cap'
 
 const LASTFM_BASE = "https://ws.audioscrobbler.com/2.0"
 
@@ -95,13 +97,15 @@ async function gatherSeedContext(
       .eq('user_id', userId)
       .then(({ data }) => (data ?? []).map((r) => r.name as string).filter(Boolean)),
 
+    // Fetch the full thumbs-up set; sampling is applied below via
+    // sampleLikes() so the Feed draws the same 10 random likes Explore uses
+    // within a cache window. See docs/prd-diversity-overhaul.md (M1).
     supabase
       .from('feedback')
       .select('spotify_artist_id')
       .eq('user_id', userId)
       .eq('signal', 'thumbs_up')
       .is('deleted_at', null)
-      .limit(10)
       .then(({ data }) => (data ?? []).map((r) => r.spotify_artist_id as string).filter(Boolean)),
 
     supabase
@@ -114,12 +118,13 @@ async function gatherSeedContext(
 
   const names: string[] = [...dbSeeds]
 
-  if (thumbsUpRows.length > 0) {
+  const sampledThumbsUp = sampleLikes(thumbsUpRows, userId)
+  if (sampledThumbsUp.length > 0) {
     const { data: cached } = await supabase
       .from('recommendation_cache')
       .select('artist_data')
       .eq('user_id', userId)
-      .in('spotify_artist_id', thumbsUpRows)
+      .in('spotify_artist_id', sampledThumbsUp)
     for (const row of cached ?? []) {
       const name = (row.artist_data as { name?: string })?.name
       if (name) names.push(name)
@@ -135,7 +140,9 @@ async function gatherSeedContext(
 
   console.log(
     `[engine] gather userId=${userId} selected_genres=${JSON.stringify(topGenres)} ` +
-    `dbSeeds=${dbSeeds.length} thumbsUp=${thumbsUpRows.length} totalPooled=${names.length}`
+    `dbSeeds=${dbSeeds.length} thumbsUpTotal=${thumbsUpRows.length} ` +
+    `thumbsUpSample=${sampledThumbsUp.length}/${LIKE_SAMPLE_SIZE} ` +
+    `totalPooled=${names.length}`
   )
 
   const deduped = [...new Set(names)]
@@ -231,11 +238,8 @@ export async function runDeepHop(
 
 /**
  * Greedy pick with soft per-genre AND per-source-seed diversity penalties.
- * genreWeight raised 0.05 → 0.10 (and sourceWeight 0.04 → 0.08) as a near-term
- * nudge against session-echo from thumbs-up-heavy seed pools — the 6th
- * same-genre pick now takes a ~0.50 hit, well above typical score deltas, so
- * a homogeneous pool breaks up earlier. The full "quiet signal + rolling
- * sample + cross-rail budget" overhaul lives in its own PRD.
+ * Soft penalties bias the ranking; the hard 25% cluster cap runs downstream
+ * (see applyClusterCap call in buildRecommendations) as a final guarantee.
  */
 export function greedyPickTop(
   pool: ScoredArtist[],
@@ -322,7 +326,8 @@ export async function augmentWithAdjacent(
   const adventurous = !!opts.adventurous
   const adaptive = !!opts.adaptiveBroadening
 
-  const N = adventurous ? 4 : 2
+  // Exploration budget (M3): 4 / 10 injections for 20% / 50% of a 20-item feed.
+  const N = adventurous ? 10 : 4
   const startPos = adventurous ? 3 : 5
   if (base.length <= startPos) return base
 
@@ -344,7 +349,10 @@ export async function augmentWithAdjacent(
     const j = Math.floor(Math.random() * (i + 1))
     ;[tags[i], tags[j]] = [tags[j], tags[i]]
   }
-  const maxTags = adventurous ? 6 : 3
+  // Each tag yields ~20 Last.fm names, from which most filter out. maxTags
+  // needs to scale with N so 10-pick Adventurous has enough surviving
+  // candidates after dedup + thumbs-down + listened filters.
+  const maxTags = adventurous ? 10 : 5
   const sampled = tags.slice(0, maxTags)
   if (sampled.length === 0) return base
 
@@ -605,6 +613,22 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
   )
 
   const baseTop = greedyPickTop(pool, 20)
+
+  // 25% cluster cap (M2) — greedyPickTop's soft penalty nudges diversity, but
+  // a high-signal user with one dominant genre can still exceed the budget.
+  // Apply a hard cap by swapping over-budget picks with the best remaining
+  // pool tail whose primary genre is under-cap.
+  const baseTopIds = new Set(baseTop.map((s) => s.artist.id))
+  const baseLeftover = pool.filter((s) => !baseTopIds.has(s.artist.id))
+  const capStats = applyClusterCap(
+    baseTop,
+    baseLeftover,
+    (s: ScoredArtist) => s.artist.genres[0] ?? 'unknown',
+  )
+  console.log(
+    `[engine] cluster-cap source=${source} swaps=${capStats.swaps} ` +
+    `topGenre=${capStats.topGenre} topShare=${capStats.topShare.toFixed(2)}`
+  )
 
   if (baseTop.length === 0) {
     console.error(
