@@ -273,8 +273,12 @@ async function loadSeenIds(supabase: SupabaseClient, userId: string): Promise<Se
 
 const AFTERHOURS_TARGET = 10
 const AFTERHOURS_TARGET_ADVENTUROUS = 12
-const AFTERHOURS_PER_TAG = 4
-const AFTERHOURS_PICK_COUNT = 6
+// Larger pool to keep the rail robust for users with thin signal state: mood
+// tags often return only 2-4 artists on Last.fm, and listened/seen filters
+// drop more. 10 tags × 6 per tag = 60 theoretical candidates — enough that the
+// rail reliably clears the MIN_PICKS=5 floor after attrition.
+const AFTERHOURS_PER_TAG = 6
+const AFTERHOURS_PICK_COUNT = 10
 
 // Mood tags for the After Hours rail — late-night / ambient / atmospheric.
 // Rotated per user per week so pickups feel fresh without thrashing. Broad
@@ -369,8 +373,12 @@ export async function adjacentRail(
 
 const OUTSIDE_TARGET = 10
 const OUTSIDE_TARGET_ADVENTUROUS = 12
-const OUTSIDE_ANCHORS_PICKED = 3
-const OUTSIDE_ANCHORS_PICKED_ADVENTUROUS = 4
+// Pick more anchors so niche anchors with thin Last.fm results don't starve the
+// rail. The per-anchor target (6) + mid-list slice still preserve the rail's
+// "uncharted" identity — each anchor is genuinely a corner the user hasn't
+// explored; we just sample more of them.
+const OUTSIDE_ANCHORS_PICKED = 5
+const OUTSIDE_ANCHORS_PICKED_ADVENTUROUS = 6
 const OUTSIDE_MID_START = 10 // slice start of Last.fm top artists — skip mainstream head
 const OUTSIDE_MID_END = 40   // exclusive slice end
 const OUTSIDE_PER_ANCHOR_TARGET = 6
@@ -515,15 +523,31 @@ export async function wildcardsRail(
   supabase: SupabaseClient,
   seenIds: Set<string>,
 ): Promise<RailResult> {
-  const thumbsUpIds = [...ctx.thumbsUpIds]
-  if (thumbsUpIds.length === 0) return { railKey: 'wildcards', artistIds: [], why: {} }
-
   const target = input.adventurous ? WILDCARDS_TARGET_ADVENTUROUS : WILDCARDS_TARGET
   const seedCount = input.adventurous ? WILDCARDS_SEED_COUNT_ADVENTUROUS : WILDCARDS_SEED_COUNT
   const perSeedCount = input.adventurous ? WILDCARDS_PER_SEED_ADVENTUROUS : WILDCARDS_PER_SEED
 
-  const shuffledIds = seededShuffle(thumbsUpIds, cacheWindowSeed(input.userId, 'wildcards'))
-  const seedIds = shuffledIds.slice(0, seedCount)
+  // Primary seed pool: artists the user thumbs-up'd. If there are none yet
+  // (cold-start), fall back to the user's most-played listened artists so the
+  // rail still reads as "rabbit holes from your taste" instead of being empty.
+  // Excludes thumbs-down artists so a disliked seed never powers the rail.
+  let seedIds: string[]
+  if (ctx.thumbsUpIds.size > 0) {
+    const shuffledIds = seededShuffle([...ctx.thumbsUpIds], cacheWindowSeed(input.userId, 'wildcards'))
+    seedIds = shuffledIds.slice(0, seedCount)
+  } else {
+    const topListened = [...ctx.listened]
+      .filter((a) => !ctx.thumbsDownIds.has(a.spotify_artist_id))
+      .sort((a, b) => b.play_count - a.play_count)
+      .slice(0, seedCount * 2)
+      .map((a) => a.spotify_artist_id)
+    if (topListened.length === 0) {
+      return { railKey: 'wildcards', artistIds: [], why: {} }
+    }
+    // Stable shuffle over the top pool so the rail rotates week-to-week even
+    // when the user's play counts stay put.
+    seedIds = seededShuffle(topListened, cacheWindowSeed(input.userId, 'wildcards')).slice(0, seedCount)
+  }
 
   // Resolve seed ids → seed names via artist_search_cache (plus seed_artists as
   // a fallback since those live in `seed_artists` and may pre-date any cache row).
@@ -886,6 +910,41 @@ export async function buildExploreRails(
           ...fallback.why,
           [RAIL_META_KEY]: { fallbackKind: 'leftfield-for-wildcards' },
         },
+      }
+    }
+  }
+
+  // Minimum-floor topup. If any rail ends up below MIN_PICKS (matches the
+  // client's visibility cutoff in explore-client.tsx), blend in leftfield-
+  // sampled picks until it clears the floor. Keeps each rail's identity
+  // (original title/subtitle, original native picks first) while guaranteeing
+  // all four rails render for users with thin signal. Excludes IDs already in
+  // any rail so the topup never creates cross-rail duplicates.
+  const MIN_PICKS_FLOOR = 5
+  const shortRails = rails.filter((r) => r.artistIds.length < MIN_PICKS_FLOOR && r.railKey !== 'leftfield')
+  if (shortRails.length > 0) {
+    const existingIds = new Set<string>()
+    for (const r of rails) for (const id of r.artistIds) existingIds.add(id)
+
+    for (const r of shortRails) {
+      const need = MIN_PICKS_FLOOR - r.artistIds.length
+      if (need <= 0) continue
+      const topup = await leftfieldRail(input, ctx, supabase, seenIds, {
+        seedKey: `${r.railKey}-topup`,
+        excludeIds: existingIds,
+      })
+      const added: string[] = []
+      for (const id of topup.artistIds) {
+        if (existingIds.has(id)) continue
+        added.push(id)
+        existingIds.add(id)
+        if (added.length >= need) break
+      }
+      if (added.length > 0) {
+        r.artistIds = [...r.artistIds, ...added]
+        for (const id of added) {
+          if (!r.why[id]) r.why[id] = (topup.why[id] ?? {})
+        }
       }
     }
   }
