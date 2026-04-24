@@ -326,17 +326,17 @@ describe("isEligibleForCooldown", () => {
     expect(isEligibleForCooldown(eightDays, null, now)).toBe(true)
   })
 
-  it("blocks when skip_at is within 30 days", () => {
+  it("blocks when skip_at is set recently (permanent dismiss)", () => {
     const fifteenDays = new Date(now.getTime() - 15 * 86400_000).toISOString()
     expect(isEligibleForCooldown(null, fifteenDays, now)).toBe(false)
   })
 
-  it("allows when skip_at is past 30 days", () => {
-    const thirtyFiveDays = new Date(now.getTime() - 35 * 86400_000).toISOString()
-    expect(isEligibleForCooldown(null, thirtyFiveDays, now)).toBe(true)
+  it("blocks when skip_at is set long ago (permanent dismiss, no expiry)", () => {
+    const hundredDays = new Date(now.getTime() - 100 * 86400_000).toISOString()
+    expect(isEligibleForCooldown(null, hundredDays, now)).toBe(false)
   })
 
-  it("skip cooldown outranks seen cooldown (fresh seen, old skip → blocked)", () => {
+  it("skip cooldown outranks seen cooldown (any skip_at blocks regardless of age)", () => {
     const seen = new Date(now.getTime() - 1 * 86400_000).toISOString()
     const skip = new Date(now.getTime() - 28 * 86400_000).toISOString()
     expect(isEligibleForCooldown(seen, skip, now)).toBe(false)
@@ -344,17 +344,17 @@ describe("isEligibleForCooldown", () => {
 })
 
 describe("greedyPickTop diversity strength", () => {
-  it("homogeneous 40-rock pool produces ≤12 rocks in top 20 at 0.05 penalty", () => {
+  it("homogeneous 40-rock pool produces ≤10 rocks in top 20 at 0.10 penalty", () => {
     // 40 candidates, 30 rock (score 0.5 descending) + 10 other genres (score 0.4 descending).
-    // At 0.02 penalty the top would skew heavy-rock; at 0.05 the penalty
-    // after 5-6 rock picks exceeds the 0.1 score gap and diversity wins.
+    // At 0.10 penalty the 2nd rock already costs 0.10 (landing at 0.399 vs 0.4
+    // for the next other genre), so others sweep in until exhausted.
     const pool: ScoredArtist[] = [
       ...Array.from({ length: 30 }, (_, i) => scored(`r${i}`, 0.5 - i * 0.001, [`S${i}`], "rock")),
       ...Array.from({ length: 10 }, (_, i) => scored(`o${i}`, 0.4 - i * 0.001, [`T${i}`], `genre_${i}`)),
     ]
     const top = greedyPickTop(pool, 20)
     const rocks = top.filter((t) => t.artist.genres[0] === "rock").length
-    expect(rocks).toBeLessThanOrEqual(12)
+    expect(rocks).toBeLessThanOrEqual(10)
   })
 })
 

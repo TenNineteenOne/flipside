@@ -54,8 +54,7 @@ export interface ArtistCardProps {
    *   - null           → expanded card, default buttons
    *   - "thumbs_up"    → expanded card, green outline + "Liked" button (keep playing)
    *   - "thumbs_down"  → collapsed 56px bar, red-tinted "Passed"
-   *   - "skip"         → collapsed 56px bar, neutral "Maybe later"
-   *   - "saved"        → collapsed 56px bar, accent "Saved"
+   *   - "skip"         → collapsed 56px bar, neutral "Dismissed"
    */
   dismissSignal?: string | null
 }
@@ -64,8 +63,9 @@ export interface ArtistCardProps {
 // Component
 // ---------------------------------------------------------------------------
 
-// Collapse the card for thumbs_down / skip / saved, but NOT thumbs_up — we
-// keep the card visible after a like so the user can keep listening.
+// Collapse the card for thumbs_down / skip, but NOT thumbs_up — we keep the
+// card visible after a like so the user can keep listening. Bookmark no
+// longer dismisses: saves only toggle the bookmark icon.
 function signalCollapses(signal: string | null | undefined): boolean {
   return signal != null && signal !== "thumbs_up"
 }
@@ -149,14 +149,12 @@ function ArtistCardImpl({
 
   // ------------------------------------------------------------------
   // Collapsed (slim bar) state — no emoji, colour-coded labels. Only applies
-  // to thumbs_down / skip / saved. Thumbs_up keeps the card expanded below so
-  // the user can keep listening after liking.
+  // to thumbs_down / skip. Thumbs_up and saves keep the card expanded.
   // ------------------------------------------------------------------
   if (isCollapsed) {
     const labelMap: Record<string, { text: string; color: string; border: string }> = {
-      thumbs_down: { text: "Passed",      color: "var(--dislike)",    border: "rgba(255,75,75,0.35)" },
-      skip:        { text: "Maybe later", color: "var(--text-muted)", border: "var(--border)" },
-      saved:       { text: "Saved",       color: "var(--accent)",     border: "rgba(139,92,246,0.35)" },
+      thumbs_down: { text: "Passed",    color: "var(--dislike)",    border: "rgba(255,75,75,0.35)" },
+      skip:        { text: "Dismissed", color: "var(--text-muted)", border: "var(--border)" },
     }
     const signal = labelMap[dismissSignal ?? "skip"] ?? labelMap.skip
 
@@ -429,7 +427,7 @@ function ArtistCardImpl({
               className="btn"
               style={{ flex: 1, minWidth: 0, fontSize: 13, whiteSpace: "nowrap" }}
             >
-              <SkipForward size={15} /> Later
+              <SkipForward size={15} /> Dismiss
             </button>
             <button
               onClick={() => onFeedback("thumbs_up")}

@@ -223,7 +223,7 @@ async function resolveAndFilter(
   filters: {
     listenedIds: Set<string>
     thumbsDownIds: Set<string>
-    seenIds: Set<string>
+    excludedIds: Set<string>
     undergroundMode?: boolean
   },
 ): Promise<Artist[]> {
@@ -241,22 +241,38 @@ async function resolveAndFilter(
   for (const artist of resolved.resolved.values()) {
     if (filters.listenedIds.has(artist.id)) continue
     if (filters.thumbsDownIds.has(artist.id)) continue
-    if (filters.seenIds.has(artist.id)) continue
+    if (filters.excludedIds.has(artist.id)) continue
     if (filters.undergroundMode && (artist.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) continue
     out.push(artist)
   }
   return out
 }
 
-async function loadSeenIds(supabase: SupabaseClient, userId: string): Promise<Set<string>> {
+/**
+ * IDs the explore engine should never resurface this generation:
+ *   - seen_at within the 7-day passive cooldown
+ *   - skip_at set (permanent dismiss via the Dismiss button; undo lives on
+ *     the History page and clears skip_at via rpc_clear_dismiss)
+ */
+async function loadExcludedIds(supabase: SupabaseClient, userId: string): Promise<Set<string>> {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-  const { data } = await supabase
-    .from('recommendation_cache')
-    .select('spotify_artist_id, seen_at')
-    .eq('user_id', userId)
-    .not('seen_at', 'is', null)
-    .gte('seen_at', sevenDaysAgo)
-  return new Set((data ?? []).map((r) => r.spotify_artist_id as string))
+  const [seenRes, skipRes] = await Promise.all([
+    supabase
+      .from('recommendation_cache')
+      .select('spotify_artist_id')
+      .eq('user_id', userId)
+      .not('seen_at', 'is', null)
+      .gte('seen_at', sevenDaysAgo),
+    supabase
+      .from('recommendation_cache')
+      .select('spotify_artist_id')
+      .eq('user_id', userId)
+      .not('skip_at', 'is', null),
+  ])
+  const ids = new Set<string>()
+  for (const r of seenRes.data ?? []) ids.add(r.spotify_artist_id as string)
+  for (const r of skipRes.data ?? []) ids.add(r.spotify_artist_id as string)
+  return ids
 }
 
 // ── Rail implementations ────────────────────────────────────────────────────
@@ -302,7 +318,7 @@ export async function adjacentRail(
   input: BuildRailsInput,
   ctx: Awaited<ReturnType<typeof loadUserContext>>,
   supabase: SupabaseClient,
-  seenIds: Set<string>,
+  excludedIds: Set<string>,
 ): Promise<RailResult> {
   const target = input.adventurous ? AFTERHOURS_TARGET_ADVENTUROUS : AFTERHOURS_TARGET
   const perTag = AFTERHOURS_PER_TAG
@@ -346,7 +362,7 @@ export async function adjacentRail(
   const resolved = await resolveAndFilter(namesRoundRobin, input.accessToken, supabase, {
     listenedIds: ctx.listenedIds,
     thumbsDownIds: ctx.thumbsDownIds,
-    seenIds,
+    excludedIds,
     undergroundMode: input.undergroundMode,
   })
 
@@ -395,7 +411,7 @@ export async function outsideRail(
   input: BuildRailsInput,
   ctx: Awaited<ReturnType<typeof loadUserContext>>,
   supabase: SupabaseClient,
-  seenIds: Set<string>,
+  excludedIds: Set<string>,
 ): Promise<RailResult> {
   void supabase
   const target = input.adventurous ? OUTSIDE_TARGET_ADVENTUROUS : OUTSIDE_TARGET
@@ -473,7 +489,7 @@ export async function outsideRail(
   const resolved = await resolveAndFilter(namesRoundRobin, input.accessToken, supabase, {
     listenedIds: ctx.listenedIds,
     thumbsDownIds: ctx.thumbsDownIds,
-    seenIds,
+    excludedIds,
     undergroundMode: input.undergroundMode,
   })
 
@@ -521,7 +537,7 @@ export async function wildcardsRail(
   input: BuildRailsInput,
   ctx: Awaited<ReturnType<typeof loadUserContext>>,
   supabase: SupabaseClient,
-  seenIds: Set<string>,
+  excludedIds: Set<string>,
 ): Promise<RailResult> {
   const target = input.adventurous ? WILDCARDS_TARGET_ADVENTUROUS : WILDCARDS_TARGET
   const seedCount = input.adventurous ? WILDCARDS_SEED_COUNT_ADVENTUROUS : WILDCARDS_SEED_COUNT
@@ -604,7 +620,7 @@ export async function wildcardsRail(
   const resolved = await resolveAndFilter(namesRoundRobin, input.accessToken, supabase, {
     listenedIds: ctx.listenedIds,
     thumbsDownIds: ctx.thumbsDownIds,
-    seenIds,
+    excludedIds,
     undergroundMode: input.undergroundMode,
   })
   const artistByName = new Map<string, Artist>()
@@ -671,7 +687,7 @@ export async function leftfieldRail(
   input: BuildRailsInput,
   ctx: Awaited<ReturnType<typeof loadUserContext>>,
   supabase: SupabaseClient,
-  seenIds: Set<string>,
+  excludedIds: Set<string>,
   opts: { seedKey?: string; excludeIds?: Set<string> } = {},
 ): Promise<RailResult> {
   try {
@@ -733,7 +749,7 @@ export async function leftfieldRail(
     const resolved = await resolveAndFilter(namesRoundRobin, input.accessToken, supabase, {
       listenedIds: ctx.listenedIds,
       thumbsDownIds: ctx.thumbsDownIds,
-      seenIds,
+      excludedIds,
       undergroundMode: input.undergroundMode,
     })
     const artistByName = new Map<string, Artist>()
@@ -869,19 +885,19 @@ export async function buildExploreRails(
     }
   }
 
-  const [ctx, seenIds] = await Promise.all([
+  const [ctx, excludedIds] = await Promise.all([
     loadUserContext(supabase, input.userId),
-    loadSeenIds(supabase, input.userId),
+    loadExcludedIds(supabase, input.userId),
   ])
 
   // allSettled so one rail throwing doesn't nuke the whole explore generation.
   // Each rail already has its own internal try/catch for Last.fm calls; this is
   // belt-and-braces against unexpected DB / null-deref errors.
   const railFns: Array<{ key: RailKey; run: () => Promise<RailResult> }> = [
-    { key: "adjacent", run: () => adjacentRail(input, ctx, supabase, seenIds) },
-    { key: "outside", run: () => outsideRail(input, ctx, supabase, seenIds) },
-    { key: "wildcards", run: () => wildcardsRail(input, ctx, supabase, seenIds) },
-    { key: "leftfield", run: () => leftfieldRail(input, ctx, supabase, seenIds) },
+    { key: "adjacent", run: () => adjacentRail(input, ctx, supabase, excludedIds) },
+    { key: "outside", run: () => outsideRail(input, ctx, supabase, excludedIds) },
+    { key: "wildcards", run: () => wildcardsRail(input, ctx, supabase, excludedIds) },
+    { key: "leftfield", run: () => leftfieldRail(input, ctx, supabase, excludedIds) },
   ]
   const settled = await Promise.allSettled(railFns.map((r) => r.run()))
   const rails: RailResult[] = settled.map((s, i) => {
@@ -897,7 +913,7 @@ export async function buildExploreRails(
   if (ctx.thumbsUpIds.size === 0) {
     const primaryLeftfield = rails.find((r) => r.railKey === 'leftfield')
     const excludeIds = new Set(primaryLeftfield?.artistIds ?? [])
-    const fallback = await leftfieldRail(input, ctx, supabase, seenIds, {
+    const fallback = await leftfieldRail(input, ctx, supabase, excludedIds, {
       seedKey: 'wildcards-fallback',
       excludeIds,
     })
@@ -929,7 +945,7 @@ export async function buildExploreRails(
     for (const r of shortRails) {
       const need = MIN_PICKS_FLOOR - r.artistIds.length
       if (need <= 0) continue
-      const topup = await leftfieldRail(input, ctx, supabase, seenIds, {
+      const topup = await leftfieldRail(input, ctx, supabase, excludedIds, {
         seedKey: `${r.railKey}-topup`,
         excludeIds: existingIds,
       })

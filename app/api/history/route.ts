@@ -26,7 +26,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   // request from the client.
   const { data: seenRaw, error: seenErr } = await supabase
     .from("recommendation_cache")
-    .select("spotify_artist_id, artist_data, score, why, seen_at")
+    .select("spotify_artist_id, artist_data, score, why, seen_at, skip_at")
     .eq("user_id", userId)
     .not("seen_at", "is", null)
     .order("seen_at", { ascending: false })
@@ -64,17 +64,28 @@ export async function GET(request: NextRequest): Promise<Response> {
 
   const savedSet = new Set((saves ?? []).map((s) => s.spotify_artist_id))
 
-  // 3. Merge into a single response
-  const history = (seen ?? []).map((rec) => ({
-    spotify_artist_id: rec.spotify_artist_id,
-    artist_data: rec.artist_data,
-    score: rec.score,
-    why: rec.why,
-    artist_color: (rec.artist_data as Record<string, unknown>)?.artist_color as string | null ?? null,
-    seen_at: rec.seen_at,
-    signal: feedbackMap.get(rec.spotify_artist_id) ?? "skip",
-    bookmarked: savedSet.has(rec.spotify_artist_id),
-  }))
+  // 3. Merge into a single response.
+  // Signal precedence: explicit feedback (thumbs_up/down) > permanent dismiss
+  // (skip_at) > passive seen (skip). A user can't have both a feedback row and
+  // a skip_at, but preferring feedback is the safe order.
+  const history = (seen ?? []).map((rec) => {
+    const feedbackSignal = feedbackMap.get(rec.spotify_artist_id as string)
+    const signal = feedbackSignal
+      ? feedbackSignal
+      : rec.skip_at
+        ? "dismissed"
+        : "skip"
+    return {
+      spotify_artist_id: rec.spotify_artist_id,
+      artist_data: rec.artist_data,
+      score: rec.score,
+      why: rec.why,
+      artist_color: (rec.artist_data as Record<string, unknown>)?.artist_color as string | null ?? null,
+      seen_at: rec.seen_at,
+      signal,
+      bookmarked: savedSet.has(rec.spotify_artist_id),
+    }
+  })
 
   return Response.json({ history, hasMore: seenArtistIds.length === limit })
 }

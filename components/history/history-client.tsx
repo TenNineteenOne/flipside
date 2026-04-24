@@ -23,7 +23,7 @@ interface HistoryEntry {
   bookmarked: boolean
 }
 
-type FilterTab = "all" | "thumbs_up" | "thumbs_down" | "skip" | "bookmarked"
+type FilterTab = "all" | "thumbs_up" | "thumbs_down" | "skip" | "dismissed" | "bookmarked"
 
 interface HistoryClientProps {
   history: HistoryEntry[]
@@ -31,10 +31,11 @@ interface HistoryClientProps {
 }
 
 const SIG_STYLES: Record<string, { Icon: React.ElementType; color: string; label: string }> = {
-  thumbs_up:   { Icon: ThumbsUp,    color: "var(--like)",      label: "Liked"   },
-  thumbs_down: { Icon: ThumbsDown,  color: "var(--dislike)",   label: "Passed"  },
-  skip:        { Icon: SkipForward, color: "var(--text-muted)", label: "Skipped" },
-  bookmarked:  { Icon: Bookmark,    color: "var(--accent)",    label: "Saved"   },
+  thumbs_up:   { Icon: ThumbsUp,    color: "var(--like)",       label: "Liked"     },
+  thumbs_down: { Icon: ThumbsDown,  color: "var(--dislike)",    label: "Passed"    },
+  skip:        { Icon: SkipForward, color: "var(--text-muted)", label: "Skipped"   },
+  dismissed:   { Icon: SkipForward, color: "var(--text-faint)", label: "Dismissed" },
+  bookmarked:  { Icon: Bookmark,    color: "var(--accent)",     label: "Saved"     },
 }
 
 function timeAgo(dateStr: string): string {
@@ -82,6 +83,7 @@ const FILTER_TABS: { key: FilterTab; label: string }[] = [
   { key: "thumbs_up",   label: "Liked"     },
   { key: "thumbs_down", label: "Passed"    },
   { key: "skip",        label: "Skipped"   },
+  { key: "dismissed",   label: "Dismissed" },
   { key: "bookmarked",  label: "Saved"     },
 ]
 
@@ -103,11 +105,12 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
   }, [history, filter])
 
   const counts = useMemo(() => {
-    const c: Record<FilterTab, number> = { all: history.length, thumbs_up: 0, thumbs_down: 0, skip: 0, bookmarked: 0 }
+    const c: Record<FilterTab, number> = { all: history.length, thumbs_up: 0, thumbs_down: 0, skip: 0, dismissed: 0, bookmarked: 0 }
     for (const h of history) {
       if (h.bookmarked) c.bookmarked++
       else if (h.signal === "thumbs_up") c.thumbs_up++
       else if (h.signal === "thumbs_down") c.thumbs_down++
+      else if (h.signal === "dismissed") c.dismissed++
       else c.skip++
     }
     return c
@@ -115,10 +118,16 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
 
   const groups = useMemo(() => groupByPeriod(filtered), [filtered])
 
-  async function handleUndo(artistId: string) {
+  async function handleUndo(artistId: string, signal: string) {
     setUndoingIds((prev) => new Set(prev).add(artistId))
+    // Dismissed items have no feedback row (the skip RPC only stamps
+    // recommendation_cache.skip_at). Clearing requires a separate endpoint
+    // that wipes skip_at + seen_at so the artist is fully eligible again.
+    const endpoint = signal === "dismissed"
+      ? `/api/dismiss/${artistId}`
+      : `/api/feedback/${artistId}`
     try {
-      const res = await fetch(`/api/feedback/${artistId}`, { method: "DELETE" })
+      const res = await fetch(endpoint, { method: "DELETE" })
       if (!res.ok) throw new Error("Server error")
       setHistory((prev) => prev.filter((h) => h.spotify_artist_id !== artistId))
     } catch {
@@ -297,7 +306,7 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
 
                       {/* Quick actions */}
                       <div style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0 }}>
-                        {entry.signal !== "thumbs_up" && !entry.bookmarked && (
+                        {entry.signal !== "thumbs_up" && entry.signal !== "dismissed" && !entry.bookmarked && (
                           <button
                             onClick={() => handleChangeSignal(entry.spotify_artist_id, "thumbs_up")}
                             title="Change to Liked"
@@ -310,7 +319,7 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
                             <ThumbsUp size={13} />
                           </button>
                         )}
-                        {entry.signal !== "thumbs_down" && !entry.bookmarked && (
+                        {entry.signal !== "thumbs_down" && entry.signal !== "dismissed" && !entry.bookmarked && (
                           <button
                             onClick={() => handleChangeSignal(entry.spotify_artist_id, "thumbs_down")}
                             title="Change to Passed"
@@ -324,9 +333,9 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
                           </button>
                         )}
                         <button
-                          onClick={() => handleUndo(entry.spotify_artist_id)}
+                          onClick={() => handleUndo(entry.spotify_artist_id, entry.signal)}
                           disabled={isUndoing}
-                          title="Undo — return to feed"
+                          title={entry.signal === "dismissed" ? "Unblock — allow in feed again" : "Undo — return to feed"}
                           style={{
                             width: 32, height: 32, borderRadius: 8,
                             background: "transparent", border: 0, cursor: "pointer",
