@@ -82,6 +82,9 @@ export function ExploreClient({
   const [dismissedSignals, setDismissedSignals] = useState<Map<string, string>>(new Map())
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set(initialSavedIds))
   const saveQueueRef = useRef(createKeyedSerializer())
+  // Serialize feedback per artist so rapid like/unlike taps don't race
+  // POST and DELETE against each other on the server.
+  const feedbackQueueRef = useRef(createKeyedSerializer())
   const [isRegenerating, setIsRegenerating] = useState(false)
   const [adventurous, setAdventurous] = useState(initialAdventurous)
   const [isTogglingAdv, setIsTogglingAdv] = useState(false)
@@ -153,47 +156,51 @@ export function ExploreClient({
   const dismissedSignalsRef = useRef(dismissedSignals)
   dismissedSignalsRef.current = dismissedSignals
 
-  const handleFeedback = useCallback(async (artistId: string, signal: string) => {
-    const currentSignal = dismissedSignalsRef.current.get(artistId)
+  const handleFeedback = useCallback((artistId: string, signal: string) => {
+    return feedbackQueueRef.current(artistId, async () => {
+      const currentSignal = dismissedSignalsRef.current.get(artistId)
 
-    // Thumbs-up toggle: tapping 'Liked' again un-likes via DELETE.
-    if (signal === "thumbs_up" && currentSignal === "thumbs_up") {
-      setDismissedSignals((prev) => {
-        const n = new Map(prev)
-        n.delete(artistId)
-        return n
-      })
-      try {
-        const res = await fetch(`/api/feedback/${encodeURIComponent(artistId)}`, { method: "DELETE" })
-        if (!res.ok && res.status !== 204) throw new Error("server")
-      } catch {
-        setDismissedSignals((prev) => new Map(prev).set(artistId, "thumbs_up"))
-        toast.error("Couldn't undo — try again")
+      // Thumbs-up toggle: tapping 'Liked' again un-likes via DELETE. Migration
+      // 0033 leaves seen_at set, so the card still won't return on next
+      // refresh — undo is session-only.
+      if (signal === "thumbs_up" && currentSignal === "thumbs_up") {
+        setDismissedSignals((prev) => {
+          const n = new Map(prev)
+          n.delete(artistId)
+          return n
+        })
+        try {
+          const res = await fetch(`/api/feedback/${encodeURIComponent(artistId)}`, { method: "DELETE" })
+          if (!res.ok && res.status !== 204) throw new Error("server")
+        } catch {
+          setDismissedSignals((prev) => new Map(prev).set(artistId, "thumbs_up"))
+          toast.error("Couldn't undo — try again")
+        }
+        return
       }
-      return
-    }
 
-    setDismissedSignals((prev) => new Map(prev).set(artistId, signal))
-    // "skip" is local-only in Explore — no server call, no recommendation_cache write.
-    if (signal !== "thumbs_up" && signal !== "thumbs_down") return
-    try {
-      const res = await fetch("/api/feedback", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        // railKey lets the server narrow-invalidate only the owning rail; other
-        // rails pick up the signal on their own TTL via the persisted feedback row.
-        body: JSON.stringify({ spotifyArtistId: artistId, signal, railKey: activeKey }),
-      })
-      if (!res.ok) throw new Error("server")
-    } catch {
-      setDismissedSignals((prev) => {
-        const n = new Map(prev)
-        if (currentSignal === undefined) n.delete(artistId)
-        else n.set(artistId, currentSignal)
-        return n
-      })
-      toast.error("Couldn't save feedback — try again")
-    }
+      setDismissedSignals((prev) => new Map(prev).set(artistId, signal))
+      // "skip" is local-only in Explore — no server call, no recommendation_cache write.
+      if (signal !== "thumbs_up" && signal !== "thumbs_down") return
+      try {
+        const res = await fetch("/api/feedback", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          // railKey lets the server narrow-invalidate only the owning rail; other
+          // rails pick up the signal on their own TTL via the persisted feedback row.
+          body: JSON.stringify({ spotifyArtistId: artistId, signal, railKey: activeKey }),
+        })
+        if (!res.ok) throw new Error("server")
+      } catch {
+        setDismissedSignals((prev) => {
+          const n = new Map(prev)
+          if (currentSignal === undefined) n.delete(artistId)
+          else n.set(artistId, currentSignal)
+          return n
+        })
+        toast.error("Couldn't save feedback — try again")
+      }
+    })
   }, [activeKey])
 
   // Ref lets handleSave stay identity-stable across saves — otherwise every

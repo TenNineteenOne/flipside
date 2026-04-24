@@ -70,6 +70,10 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
   // before the first render commits. The ref blocks the second call instantly.
   const isGeneratingRef = useRef(false)
   const saveQueueRef = useRef(createKeyedSerializer())
+  // Mirror queue for feedback so rapid taps on the same artist (like → unlike
+  // → like) serialize on the server. Without this, DELETE and POST can race
+  // and the final server state can disagree with the user's last intent.
+  const feedbackQueueRef = useRef(createKeyedSerializer())
   const router = useRouter()
 
   const palette = `
@@ -86,44 +90,50 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
   const dismissedSignalsRef = useRef(dismissedSignals)
   dismissedSignalsRef.current = dismissedSignals
 
-  const handleFeedback = useCallback(async (artistId: string, signal: string) => {
-    // Thumbs-up toggle: if already liked, tapping again un-likes (soft-deletes
-    // the feedback row via rpc_delete_feedback). seen_at stays set so the card
-    // still won't return on next refresh — undo is session-only.
-    const currentSignal = dismissedSignalsRef.current.get(artistId)
-    if (signal === "thumbs_up" && currentSignal === "thumbs_up") {
-      setDismissedSignals((prev) => {
-        const next = new Map(prev)
-        next.delete(artistId)
-        return next
-      })
-      try {
-        const res = await fetch(`/api/feedback/${encodeURIComponent(artistId)}`, { method: "DELETE" })
-        if (!res.ok && res.status !== 204) throw new Error("Server error")
-      } catch {
-        setDismissedSignals((prev) => new Map(prev).set(artistId, "thumbs_up"))
-        toast.error("Couldn't undo — try again")
+  const handleFeedback = useCallback((artistId: string, signal: string) => {
+    // Serialize per-artist so rapid like/unlike taps hit the server in order;
+    // otherwise POST and DELETE can interleave and the final server state
+    // won't match the user's last intent. Same pattern as handleSave above.
+    return feedbackQueueRef.current(artistId, async () => {
+      // Thumbs-up toggle: if already liked, tapping again un-likes
+      // (soft-deletes the feedback row via rpc_delete_feedback). Migration
+      // 0033 leaves seen_at set, so the card still won't return on next
+      // refresh — undo is session-only.
+      const currentSignal = dismissedSignalsRef.current.get(artistId)
+      if (signal === "thumbs_up" && currentSignal === "thumbs_up") {
+        setDismissedSignals((prev) => {
+          const next = new Map(prev)
+          next.delete(artistId)
+          return next
+        })
+        try {
+          const res = await fetch(`/api/feedback/${encodeURIComponent(artistId)}`, { method: "DELETE" })
+          if (!res.ok && res.status !== 204) throw new Error("Server error")
+        } catch {
+          setDismissedSignals((prev) => new Map(prev).set(artistId, "thumbs_up"))
+          toast.error("Couldn't undo — try again")
+        }
+        return
       }
-      return
-    }
 
-    setDismissedSignals((prev) => new Map(prev).set(artistId, signal))
-    try {
-      const res = await fetch("/api/feedback", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ spotifyArtistId: artistId, signal }),
-      })
-      if (!res.ok) throw new Error("Server error")
-    } catch {
-      setDismissedSignals((prev) => {
-        const next = new Map(prev)
-        if (currentSignal === undefined) next.delete(artistId)
-        else next.set(artistId, currentSignal)
-        return next
-      })
-      toast.error("Couldn't save feedback — try again")
-    }
+      setDismissedSignals((prev) => new Map(prev).set(artistId, signal))
+      try {
+        const res = await fetch("/api/feedback", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ spotifyArtistId: artistId, signal }),
+        })
+        if (!res.ok) throw new Error("Server error")
+      } catch {
+        setDismissedSignals((prev) => {
+          const next = new Map(prev)
+          if (currentSignal === undefined) next.delete(artistId)
+          else next.set(artistId, currentSignal)
+          return next
+        })
+        toast.error("Couldn't save feedback — try again")
+      }
+    })
   }, [])
 
   async function handleGenerateMore() {
