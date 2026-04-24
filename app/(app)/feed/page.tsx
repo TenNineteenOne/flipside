@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation"
 import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
+import { getCachedUser } from "@/lib/user-cache"
 import { FeedClient } from "@/components/feed/feed-client"
 import { ExplorePrewarm } from "@/components/feed/explore-prewarm"
 import { RecommendationsLoader } from "@/components/feed/recommendations-loader"
@@ -58,17 +59,8 @@ export default async function FeedPage() {
   const userId = session.user.id
   const supabase = createServiceClient()
 
-  // Look up user row (created during sign-in via credentials provider)
-  const { data: user, error: userError } = await supabase
-    .from("users")
-    .select("id, preferred_music_platform")
-    .eq("id", userId)
-    .maybeSingle()
-
-  if (userError) {
-    console.error(`[feed-page] user lookup err="${userError.message}" userId=${userId}`)
-    throw new Error(`Failed to load your account: ${userError.message}`)
-  }
+  // Look up user row (request-scoped cache — layout.tsx already fetched this)
+  const user = await getCachedUser(userId)
   if (!user) {
     redirect("/sign-in")
   }

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { memo, useState, useEffect, useMemo } from "react"
 import Image from "next/image"
 import { motion } from "framer-motion"
 import { SkipForward, Bookmark, Check, Share2 } from "lucide-react"
@@ -56,7 +56,7 @@ export interface ArtistCardProps {
 // Component
 // ---------------------------------------------------------------------------
 
-export function ArtistCard({
+function ArtistCardImpl({
   recommendation,
   musicPlatform,
   onSave,
@@ -432,3 +432,8 @@ export function ArtistCard({
     </motion.div>
   )
 }
+
+// Memoized so that toggling a save on one card doesn't re-render every
+// sibling in the feed. Props are all primitives plus two callbacks that
+// FeedClient stabilizes per-artistId via its FeedCardRow wrapper.
+export const ArtistCard = memo(ArtistCardImpl)

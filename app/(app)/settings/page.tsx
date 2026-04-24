@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation"
 import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
+import { getCachedUser } from "@/lib/user-cache"
 import { SettingsForm } from "@/components/settings/settings-form"
 import { DEFAULT_MUSIC_PLATFORM, isMusicPlatform } from "@/lib/music-links"
 import { decryptUsername } from "@/lib/crypto/username"
@@ -13,11 +14,7 @@ export default async function SettingsPage() {
 
   const userId = session.user.id
   const supabase = createServiceClient()
-  const { data: user } = await supabase
-    .from("users")
-    .select("play_threshold, popularity_curve, lastfm_username, statsfm_username, underground_mode, deep_discovery, adventurous, selected_genres, preferred_music_platform")
-    .eq("id", userId)
-    .maybeSingle()
+  const user = await getCachedUser(userId)
 
   let lastfmUsername: string | null = null
   let statsfmUsername: string | null = null

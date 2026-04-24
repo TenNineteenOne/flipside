@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation"
 import { safeAuth } from "@/lib/auth"
-import { createServiceClient } from "@/lib/supabase/server"
+import { getCachedUser } from "@/lib/user-cache"
 import { AppNav } from "@/components/nav/app-nav"
 import { AudioProvider } from "@/lib/audio-context"
 import { MiniPlayer } from "@/components/player/mini-player"
@@ -17,12 +17,7 @@ export default async function AppLayout({
   // Seed the identicon from user ID (deterministic, not PII)
   const userSeed = session.user.id
 
-  const supabase = createServiceClient()
-  const { data: userRow } = await supabase
-    .from("users")
-    .select("adventurous")
-    .eq("id", session.user.id)
-    .maybeSingle()
+  const userRow = await getCachedUser(session.user.id)
   const initialAdventurous = !!userRow?.adventurous
 
   return (

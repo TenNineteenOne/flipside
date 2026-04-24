@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useMemo, useRef, useState, useTransition } from "react"
+import { Suspense, use, useCallback, useMemo, useRef, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { RefreshCw, Sparkles, Moon, Mountain, Flame, Dices, type LucideIcon } from "lucide-react"
@@ -18,6 +18,30 @@ export interface ChallengePayload {
   progress: number
   target: number
   completed: boolean
+}
+
+// Streams the challenge card without blocking rails. Receives a promise from
+// the server; React 19's `use` hook unwraps it. Wrapped in <Suspense fallback=
+// {null}> so rails render first and the challenge appears fractionally later.
+function ChallengeSlot({
+  challengePromise,
+  adventurous,
+}: {
+  challengePromise: Promise<ChallengePayload | null>
+  adventurous: boolean
+}) {
+  const challenge = use(challengePromise)
+  if (!challenge) return null
+  return (
+    <ChallengeCard
+      title={challenge.title}
+      description={challenge.description}
+      progress={challenge.progress}
+      target={challenge.target}
+      completed={challenge.completed}
+      adventurous={adventurous}
+    />
+  )
 }
 
 export type RailKey = "adjacent" | "outside" | "wildcards" | "leftfield"
@@ -43,7 +67,7 @@ export interface ExploreClientProps {
   musicPlatform: MusicPlatform
   adventurous: boolean
   initialSavedIds: string[]
-  challenge: ChallengePayload | null
+  challengePromise: Promise<ChallengePayload | null>
 }
 
 export function ExploreClient({
@@ -51,7 +75,7 @@ export function ExploreClient({
   musicPlatform,
   adventurous: initialAdventurous,
   initialSavedIds,
-  challenge,
+  challengePromise,
 }: ExploreClientProps) {
   const router = useRouter()
   const [, startTransition] = useTransition()
@@ -425,16 +449,9 @@ export function ExploreClient({
         </button>
       )}
 
-      {challenge && (
-        <ChallengeCard
-          title={challenge.title}
-          description={challenge.description}
-          progress={challenge.progress}
-          target={challenge.target}
-          completed={challenge.completed}
-          adventurous={adventurous}
-        />
-      )}
+      <Suspense fallback={null}>
+        <ChallengeSlot challengePromise={challengePromise} adventurous={adventurous} />
+      </Suspense>
 
       <div
         style={{

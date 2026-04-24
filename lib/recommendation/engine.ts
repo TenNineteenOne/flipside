@@ -496,6 +496,20 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const nameCache = new ArtistNameCache(supabase as any)
+
+  // Fire the secondary resolution in parallel with primary. It's still best-
+  // effort and its scoring/write-back happens later in `runSecondary` (from
+  // an `after()` block), but the Spotify/Last.fm round-trips now overlap with
+  // the primary resolve instead of waiting for it to finish first. Shared
+  // `nameCache` — writes are idempotent, names don't overlap between slices.
+  const secondaryResolvePromise = secondaryNames.length === 0
+    ? null
+    : resolveArtistsByName(secondaryNames, {
+        cache: nameCache,
+        searchArtists: (name) => musicProvider.searchArtists(accessToken, name),
+        enrichArtist: buildEnrichArtist(),
+      })
+
   const resolved = await resolveArtistsByName(uniqueNames, {
     cache: nameCache,
     searchArtists: (name) => musicProvider.searchArtists(accessToken, name),
@@ -688,14 +702,11 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
 
   const writtenIds = new Set(rows.map((r) => r.spotify_artist_id))
 
-  const runSecondary = secondaryNames.length === 0
+  const runSecondary = secondaryResolvePromise === null
     ? null
     : async (): Promise<number> => {
-        const secondaryResolved = await resolveArtistsByName(secondaryNames, {
-          cache: nameCache,
-          searchArtists: (name) => musicProvider.searchArtists(accessToken, name),
-          enrichArtist: buildEnrichArtist(),
-        })
+        // Already fetched in parallel with primary — just await the result.
+        const secondaryResolved = await secondaryResolvePromise
 
         const secondaryCandidates: Array<{ artist: Artist; seedArtists: string[] }> = []
         for (const [name, artist] of secondaryResolved.resolved) {
