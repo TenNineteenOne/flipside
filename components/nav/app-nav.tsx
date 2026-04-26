@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, type CSSProperties } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Music2, Bookmark, Settings, Clock, BarChart3, Compass } from "lucide-react"
@@ -45,55 +45,39 @@ export function AppNav({ userSeed = "user", initialAdventurous = false }: AppNav
   const isActive = (href: string) =>
     pathname === href || pathname.startsWith(href + "/")
 
-  const tabbarClass = `tabbar${adventurous ? " adventurous" : ""}`
-
   return (
-    <>
-      {/* ── Desktop top nav (≥ 900px) ── */}
-      <header className="topnav">
-        {/* Brand mark */}
-        <span className="topnav-brand">
+    <header className={`appnav${adventurous ? " adventurous" : ""}`}>
+      <div className="appnav-inner">
+        <span className="appnav-brand">
           <span className="dot" />
-          <span>flipside</span>
+          <span className="wordmark">flipside</span>
         </span>
 
-        {/* Nav links */}
-        <nav className="topnav-links">
-          {navLinks.map(({ href, label }) => (
-            <Link
-              key={href}
-              href={href}
-              prefetch={href === "/explore" ? true : undefined}
-              className={isActive(href) ? "active" : ""}
-            >
-              {label}
-              <NavLinkStatus />
-            </Link>
-          ))}
+        <nav className="appnav-tabs">
+          {navLinks.map(({ href, label, icon: Icon, color }) => {
+            const active = isActive(href)
+            const styleVars = { "--tab-color": color } as CSSProperties
+            return (
+              <Link
+                key={href}
+                href={href}
+                prefetch={href === "/explore" ? true : undefined}
+                aria-current={active ? "page" : undefined}
+                className={active ? "active" : ""}
+                style={styleVars}
+              >
+                <Icon size={22} style={{ color }} />
+                <span>{label}</span>
+                <NavLinkStatus />
+              </Link>
+            )
+          })}
         </nav>
 
-        {/* Avatar */}
-        <IdenticonAvatar seed={userSeed} size={32} />
-      </header>
-
-      {/* ── Mobile bottom tab bar (< 900px) ── */}
-      <nav className={tabbarClass}>
-        {navLinks.map(({ href, label, icon: Icon, color }) => {
-          const active = isActive(href)
-          return (
-            <Link
-              key={href}
-              href={href}
-              prefetch={href === "/explore" ? true : undefined}
-              className={active ? "active" : ""}
-            >
-              <Icon size={22} style={{ color }} />
-              <span>{label}</span>
-              <NavLinkStatus />
-            </Link>
-          )
-        })}
-      </nav>
-    </>
+        <span className="appnav-avatar">
+          <IdenticonAvatar seed={userSeed} size={32} />
+        </span>
+      </div>
+    </header>
   )
 }

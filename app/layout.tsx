@@ -88,7 +88,7 @@ export default function RootLayout({
             __html: `
               @supports ((backdrop-filter: blur(30px)) or (-webkit-backdrop-filter: blur(30px))) {
                 .fs-card { backdrop-filter: blur(30px) saturate(1.1); -webkit-backdrop-filter: blur(30px) saturate(1.1); }
-                .tabbar, .topnav { backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
+                .appnav { backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
               }
             `,
           }}
