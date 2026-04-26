@@ -86,11 +86,11 @@ export default function SignInPage() {
         {/* Brand */}
         <div style={{ marginBottom: 32, textAlign: "center" }}>
           <div
-            className="topnav-brand"
+            className="appnav-brand"
             style={{ justifyContent: "center", marginBottom: 8 }}
           >
             <span className="dot" />
-            flipside
+            <span className="wordmark">flipside</span>
           </div>
           <div className="serif" style={{ fontSize: 22, color: "var(--text-primary)", lineHeight: 1.3 }}>
             Pick a username.

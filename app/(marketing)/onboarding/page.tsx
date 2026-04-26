@@ -146,9 +146,9 @@ export default function OnboardingPage() {
 
         {/* Header */}
         <div style={{ marginBottom: 32, textAlign: "center" }}>
-          <div className="topnav-brand" style={{ justifyContent: "center", marginBottom: 12 }}>
+          <div className="appnav-brand" style={{ justifyContent: "center", marginBottom: 12 }}>
             <span className="dot" />
-            flipside
+            <span className="wordmark">flipside</span>
           </div>
           <div className="serif" style={{ fontSize: 26, lineHeight: 1.25, marginBottom: 8 }}>
             How should we seed your feed?
