@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { memo, useState } from "react"
 import Image from "next/image"
 import { Play } from "lucide-react"
 import { hexToRgba } from "@/lib/color-utils"
@@ -23,7 +23,7 @@ export interface TrackStripProps {
 // Component
 // ---------------------------------------------------------------------------
 
-export function TrackStrip({
+export const TrackStrip = memo(function TrackStrip({
   tracks,
   artistColor = "#8b5cf6",
   compact = false,
@@ -167,4 +167,4 @@ export function TrackStrip({
       )}
     </div>
   )
-}
+})

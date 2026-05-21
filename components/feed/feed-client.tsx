@@ -57,6 +57,13 @@ function buildSequence(recs: Recommendation[]): FeedItem[] {
   return recs.map((rec) => ({ kind: "card", rec, key: `c-${rec.spotify_artist_id}` }))
 }
 
+// Module-scope: zero prop/state deps, so identity stays stable across renders.
+const FEED_PALETTE = `
+    radial-gradient(50% 40% at 18% 20%, rgba(139, 92, 246, 0.22) 0%, transparent 70%),
+    radial-gradient(55% 45% at 82% 30%, rgba(236, 111, 181, 0.18) 0%, transparent 70%),
+    radial-gradient(70% 55% at 50% 90%, rgba(125, 217, 198, 0.14) 0%, transparent 70%)
+  `
+
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
@@ -75,12 +82,6 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
   // and the final server state can disagree with the user's last intent.
   const feedbackQueueRef = useRef(createKeyedSerializer())
   const router = useRouter()
-
-  const palette = `
-    radial-gradient(50% 40% at 18% 20%, rgba(139, 92, 246, 0.22) 0%, transparent 70%),
-    radial-gradient(55% 45% at 82% 30%, rgba(236, 111, 181, 0.18) 0%, transparent 70%),
-    radial-gradient(70% 55% at 50% 90%, rgba(125, 217, 198, 0.14) 0%, transparent 70%)
-  `
 
   const sequence = useMemo(() => buildSequence(recommendations), [recommendations])
 
@@ -209,7 +210,7 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
 
   return (
     <div style={{ position: "relative" }}>
-      <Ambient palette={palette} />
+      <Ambient palette={FEED_PALETTE} />
 
       {/* Page header */}
       <div className="page-head">
@@ -220,7 +221,7 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
       {/* Feed sequence */}
       <div className="col" style={{ gap: 24, marginTop: 8 }}>
         <ColdStartBanner signalCount={signalCount} />
-        {sequence.map((item) => {
+        {sequence.map((item, index) => {
           const { rec } = item
           const id = rec.spotify_artist_id
           return (
@@ -232,6 +233,7 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
               dismissSignal={dismissedSignals.get(id) ?? null}
               onSaveAction={handleSave}
               onFeedbackAction={handleFeedback}
+              priority={index === 0}
             />
           )
         })}
@@ -261,6 +263,7 @@ interface FeedCardRowProps {
   dismissSignal: string | null
   onSaveAction: (artistId: string) => Promise<void> | void
   onFeedbackAction: (artistId: string, signal: string) => Promise<void> | void
+  priority?: boolean
 }
 
 const FeedCardRow = memo(function FeedCardRow({
@@ -270,6 +273,7 @@ const FeedCardRow = memo(function FeedCardRow({
   dismissSignal,
   onSaveAction,
   onFeedbackAction,
+  priority = false,
 }: FeedCardRowProps) {
   const id = rec.spotify_artist_id
   const onSave = useCallback(() => { void onSaveAction(id) }, [id, onSaveAction])
@@ -282,6 +286,7 @@ const FeedCardRow = memo(function FeedCardRow({
       dismissSignal={dismissSignal}
       onSave={onSave}
       onFeedback={onFeedback}
+      priority={priority}
     />
   )
 })

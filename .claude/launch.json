@@ -12,6 +12,15 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 3000
+    },
+    {
+      "name": "dev-worktree",
+      "runtimeExecutable": "/bin/bash",
+      "runtimeArgs": [
+        "-c",
+        "cd /Users/flux/.config/superpowers/worktrees/flipside/fix-itunes-tracks && PORT=3001 npm run dev"
+      ],
+      "port": 3001
     }
   ]
 }

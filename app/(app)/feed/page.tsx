@@ -99,13 +99,25 @@ export default async function FeedPage() {
     )
   }
 
-  // Fetch tracks for the recommendations
+  // Fetch tracks + signal counts in parallel — counts depend only on user.id,
+  // tracks fetch needs artistIds (already known). Saves one DB round-trip vs.
+  // running tracks sequentially before the count Promise.all.
   const artistIds = validRecs.map((r) => r.spotify_artist_id)
-  
-  const { data: tracksCache } = await supabase
-    .from("artist_tracks_cache")
-    .select("spotify_artist_id, tracks")
-    .in("spotify_artist_id", artistIds)
+
+  const [
+    { data: tracksCache },
+    { count: artistCount },
+    { count: feedbackCount },
+    { count: saveCount },
+  ] = await Promise.all([
+    supabase
+      .from("artist_tracks_cache")
+      .select("spotify_artist_id, tracks")
+      .in("spotify_artist_id", artistIds),
+    supabase.from("listened_artists").select("*", { count: "exact", head: true }).eq("user_id", user.id),
+    supabase.from("feedback").select("*", { count: "exact", head: true }).eq("user_id", user.id).is("deleted_at", null),
+    supabase.from("saves").select("*", { count: "exact", head: true }).eq("user_id", user.id),
+  ])
 
   const tracksMap = new Map<string, Rec["artist_data"]["topTracks"]>()
   for (const row of tracksCache ?? []) {
@@ -118,11 +130,6 @@ export default async function FeedPage() {
     return { ...rec, artist_color }
   })
 
-  const [{ count: artistCount }, { count: feedbackCount }, { count: saveCount }] = await Promise.all([
-    supabase.from("listened_artists").select("*", { count: "exact", head: true }).eq("user_id", user.id),
-    supabase.from("feedback").select("*", { count: "exact", head: true }).eq("user_id", user.id).is("deleted_at", null),
-    supabase.from("saves").select("*", { count: "exact", head: true }).eq("user_id", user.id),
-  ])
   const signalCount = (artistCount ?? 0) + (feedbackCount ?? 0) + (saveCount ?? 0)
 
   return (
