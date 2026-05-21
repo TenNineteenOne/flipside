@@ -1,3 +1,4 @@
+import { memo } from "react"
 import { Sparkles } from "lucide-react"
 
 export interface ChallengeCardProps {
@@ -9,7 +10,7 @@ export interface ChallengeCardProps {
   adventurous?: boolean
 }
 
-export function ChallengeCard({
+export const ChallengeCard = memo(function ChallengeCard({
   title,
   description,
   progress,
@@ -116,4 +117,4 @@ export function ChallengeCard({
       </div>
     </section>
   )
-}
+})

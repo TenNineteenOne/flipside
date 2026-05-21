@@ -1,6 +1,6 @@
 "use client"
 
-import { memo, useState, useEffect, useMemo } from "react"
+import { memo, useCallback, useState, useEffect, useMemo } from "react"
 import Image from "next/image"
 import { motion } from "framer-motion"
 import { SkipForward, Bookmark, Check, Share2 } from "lucide-react"
@@ -57,6 +57,57 @@ export interface ArtistCardProps {
    *   - "skip"         → collapsed 56px bar, neutral "Dismissed"
    */
   dismissSignal?: string | null
+  /** When true, hero image is preloaded (set on the LCP card only). */
+  priority?: boolean
+}
+
+// ---------------------------------------------------------------------------
+// Module-scope static styles — hoisted out of the render path. Each object
+// here has zero prop/state references; dynamic styles stay inline below.
+// ---------------------------------------------------------------------------
+
+const heroWrapStyle: React.CSSProperties = {
+  position: "relative",
+  height: 340,
+  overflow: "hidden",
+}
+
+const heroScrimStyle: React.CSSProperties = {
+  position: "absolute",
+  inset: 0,
+  background: "linear-gradient(to top, #000 0%, transparent 65%)",
+}
+
+const heroNameWrapStyle: React.CSSProperties = {
+  position: "absolute",
+  left: 24,
+  right: 24,
+  bottom: 20,
+}
+
+const cardBodyStyle: React.CSSProperties = {
+  padding: "18px 20px 20px",
+}
+
+const noTracksPlaceholderStyle: React.CSSProperties = {
+  height: 64,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  borderRadius: 12,
+  background: "rgba(255,255,255,0.025)",
+  border: "1px solid var(--border)",
+}
+
+const reasonPillStyle: React.CSSProperties = {
+  marginTop: 18,
+  padding: "14px 16px",
+  background: "rgba(255,255,255,0.025)",
+  borderRadius: 12,
+  fontSize: 14,
+  textAlign: "center",
+  color: "var(--text-secondary)",
+  lineHeight: 1.4,
 }
 
 // ---------------------------------------------------------------------------
@@ -77,6 +128,7 @@ function ArtistCardImpl({
   onFeedback,
   isSaved = false,
   dismissSignal = null,
+  priority = false,
 }: ArtistCardProps) {
   const isLiked = dismissSignal === "thumbs_up"
   const isCollapsed = signalCollapses(dismissSignal)
@@ -125,9 +177,12 @@ function ArtistCardImpl({
     onSave()
   }
 
-  function handlePlay(track: Track) {
-    play(track, artist_data.name, artist_data.imageUrl, artistColor)
-  }
+  const handlePlay = useCallback(
+    (track: Track) => {
+      play(track, artist_data.name, artist_data.imageUrl, artistColor)
+    },
+    [play, artist_data.name, artist_data.imageUrl, artistColor],
+  )
 
   function handleShare(e: React.MouseEvent) {
     e.stopPropagation()
@@ -224,13 +279,14 @@ function ArtistCardImpl({
       }}
     >
       {/* Hero image */}
-      <div style={{ position: "relative", height: 340, overflow: "hidden" }}>
+      <div style={heroWrapStyle}>
         {artist_data.imageUrl ? (
           <Image
             src={artist_data.imageUrl}
             alt={artist_data.name}
             fill
             sizes="(min-width: 900px) 680px, 100vw"
+            priority={priority}
             style={{
               objectFit: "cover",
               filter: "saturate(0.85) contrast(1.05)",
@@ -259,16 +315,10 @@ function ArtistCardImpl({
         )}
 
         {/* Dark gradient scrim */}
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            background: "linear-gradient(to top, #000 0%, transparent 65%)",
-          }}
-        />
+        <div style={heroScrimStyle} />
 
         {/* Name + genre */}
-        <div style={{ position: "absolute", left: 24, right: 24, bottom: 20 }}>
+        <div style={heroNameWrapStyle}>
           <div
             className="display"
             style={{
@@ -299,7 +349,7 @@ function ArtistCardImpl({
       </div>
 
       {/* Body */}
-      <div style={{ padding: "18px 20px 20px" }}>
+      <div style={cardBodyStyle}>
         {/* Track strip */}
         {localTracks.length > 0 ? (
           <div onClick={(e) => e.stopPropagation()}>
@@ -312,17 +362,7 @@ function ArtistCardImpl({
             />
           </div>
         ) : (
-          <div
-            style={{
-              height: 64,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              borderRadius: 12,
-              background: "rgba(255,255,255,0.025)",
-              border: "1px solid var(--border)",
-            }}
-          >
+          <div style={noTracksPlaceholderStyle}>
             <span className="mono" style={{ fontSize: 11, color: "var(--text-muted)" }}>
               {isFetchingTracks ? "Loading tracks…" : "No tracks available"}
             </span>
@@ -330,18 +370,7 @@ function ArtistCardImpl({
         )}
 
         {reasonText && (
-          <div
-            style={{
-              marginTop: 18,
-              padding: "14px 16px",
-              background: "rgba(255,255,255,0.025)",
-              borderRadius: 12,
-              fontSize: 14,
-              textAlign: "center",
-              color: "var(--text-secondary)",
-              lineHeight: 1.4,
-            }}
-          >
+          <div style={reasonPillStyle}>
             {reasonText}
           </div>
         )}
