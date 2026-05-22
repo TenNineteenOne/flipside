@@ -1,11 +1,12 @@
 "use client"
 
-import { useEffect, useState, type CSSProperties } from "react"
+import { type CSSProperties } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Music2, Bookmark, Settings, Clock, BarChart3, Compass } from "lucide-react"
 import { IdenticonAvatar } from "@/components/ui/identicon-avatar"
 import { NavLinkStatus } from "@/components/nav/navigation-progress"
+import { useAdventurousMode } from "@/lib/hooks/use-adventurous-mode"
 
 const navLinks = [
   { href: "/feed",     label: "Feed",     icon: Music2,    color: "var(--accent)" },
@@ -23,24 +24,7 @@ interface AppNavProps {
 
 export function AppNav({ userSeed = "user", initialAdventurous = false }: AppNavProps) {
   const pathname = usePathname()
-  const [adventurous, setAdventurous] = useState(initialAdventurous)
-
-  useEffect(() => {
-    const read = () => {
-      try {
-        setAdventurous(localStorage.getItem("flipside.adventurous") === "1")
-      } catch {
-        // noop — private mode or blocked storage
-      }
-    }
-    read()
-    window.addEventListener("flipside:adventurous-change", read)
-    window.addEventListener("storage", read)
-    return () => {
-      window.removeEventListener("flipside:adventurous-change", read)
-      window.removeEventListener("storage", read)
-    }
-  }, [])
+  const { adventurous } = useAdventurousMode(initialAdventurous)
 
   const isActive = (href: string) =>
     pathname === href || pathname.startsWith(href + "/")

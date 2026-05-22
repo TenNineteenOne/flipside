@@ -1,32 +1,21 @@
-import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
-import { apiError, apiUnauthorized, dbError } from "@/lib/errors"
-import { enforceSameOrigin } from "@/lib/csrf"
+import { apiError, dbError } from "@/lib/errors"
 import { isValidSpotifyId } from "@/lib/spotify-ids"
 import { invalidateExploreCache } from "@/lib/recommendation/explore-engine"
 import type { RailKey } from "@/lib/recommendation/explore-engine"
+import { withAuthedJsonRoute } from "@/lib/api/with-authed-route"
 
 const RAIL_KEYS = ["adjacent", "outside", "wildcards", "leftfield"] as const
 function isRailKey(v: unknown): v is RailKey {
   return typeof v === "string" && (RAIL_KEYS as readonly string[]).includes(v)
 }
 
-export async function POST(request: Request): Promise<Response> {
-  const blocked = enforceSameOrigin(request)
-  if (blocked) return blocked
-  const session = await auth()
-  if (!session?.user?.id) return apiUnauthorized()
-
-  const userId = session.user.id
-
-  let body: { spotifyArtistId?: string; signal?: string; railKey?: string }
-  try {
-    body = await request.json()
-  } catch {
-    return apiError("Invalid JSON", 400)
+export const POST = withAuthedJsonRoute(async ({ userId, body }) => {
+  const { spotifyArtistId, signal, railKey } = body as {
+    spotifyArtistId?: string
+    signal?: string
+    railKey?: string
   }
-
-  const { spotifyArtistId, signal, railKey } = body
   if (!spotifyArtistId || !isValidSpotifyId(spotifyArtistId))
     return apiError("Valid spotifyArtistId is required", 400)
   if (signal !== "thumbs_up" && signal !== "thumbs_down" && signal !== "skip")
@@ -57,4 +46,4 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   return Response.json({ success: true })
-}
+})

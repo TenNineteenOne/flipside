@@ -1,31 +1,23 @@
-import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
-import { apiError, apiUnauthorized, dbError } from "@/lib/errors"
-import { enforceSameOrigin } from "@/lib/csrf"
+import { apiError, dbError } from "@/lib/errors"
 import { isValidSpotifyId } from "@/lib/spotify-ids"
+import { withAuthedCsrfRoute } from "@/lib/api/with-authed-route"
 
-export async function DELETE(
-  request: Request,
-  { params }: { params: Promise<{ artistId: string }> }
-): Promise<Response> {
-  const blocked = enforceSameOrigin(request)
-  if (blocked) return blocked
-  const session = await auth()
-  if (!session?.user?.id) return apiUnauthorized()
+export const DELETE = withAuthedCsrfRoute(
+  async ({ userId }, { params }: { params: Promise<{ artistId: string }> }) => {
+    const { artistId } = await params
 
-  const userId = session.user.id
-  const { artistId } = await params
+    if (!isValidSpotifyId(artistId)) return apiError("Invalid artist ID", 400)
 
-  if (!isValidSpotifyId(artistId)) return apiError("Invalid artist ID", 400)
+    const supabase = createServiceClient()
 
-  const supabase = createServiceClient()
+    const { error: rpcError } = await supabase.rpc("rpc_delete_feedback", {
+      p_user_id: userId,
+      p_artist_id: artistId,
+    })
 
-  const { error: rpcError } = await supabase.rpc("rpc_delete_feedback", {
-    p_user_id: userId,
-    p_artist_id: artistId,
-  })
+    if (rpcError) return dbError(rpcError, "feedback/delete-rpc")
 
-  if (rpcError) return dbError(rpcError, "feedback/delete-rpc")
-
-  return new Response(null, { status: 204 })
-}
+    return new Response(null, { status: 204 })
+  }
+)

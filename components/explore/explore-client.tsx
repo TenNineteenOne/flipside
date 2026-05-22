@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, use, useCallback, useMemo, useRef, useState, useTransition } from "react"
+import { Suspense, use, useCallback, useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { RefreshCw, Sparkles, Moon, Mountain, Flame, Dices, type LucideIcon } from "lucide-react"
@@ -10,7 +10,9 @@ import { ExploreArtistRow } from "@/components/explore/explore-artist-row"
 import type { RailArtist } from "@/components/explore/rail"
 import type { MusicPlatform } from "@/lib/music-links"
 import { Ambient } from "@/components/visual/ambient"
-import { createKeyedSerializer } from "@/lib/keyed-serializer"
+import { useAdventurousMode } from "@/lib/hooks/use-adventurous-mode"
+import { useArtistFeedback } from "@/lib/hooks/use-artist-feedback"
+import { useArtistSaves } from "@/lib/hooks/use-artist-saves"
 
 export interface ChallengePayload {
   title: string
@@ -79,56 +81,22 @@ export function ExploreClient({
 }: ExploreClientProps) {
   const router = useRouter()
   const [, startTransition] = useTransition()
-  const [dismissedSignals, setDismissedSignals] = useState<Map<string, string>>(new Map())
-  const [savedIds, setSavedIds] = useState<Set<string>>(new Set(initialSavedIds))
-  const saveQueueRef = useRef(createKeyedSerializer())
-  // Serialize feedback per artist so rapid like/unlike taps don't race
-  // POST and DELETE against each other on the server.
-  const feedbackQueueRef = useRef(createKeyedSerializer())
   const [isRegenerating, setIsRegenerating] = useState(false)
-  const [adventurous, setAdventurous] = useState(initialAdventurous)
+  const { adventurous, setAdventurous } = useAdventurousMode(initialAdventurous)
   const [isTogglingAdv, setIsTogglingAdv] = useState(false)
   const [isAdvDirty, setIsAdvDirty] = useState(false)
   const [isApplyingAdv, setIsApplyingAdv] = useState(false)
 
   async function handleAdventurousToggle() {
     if (isTogglingAdv) return
-    const next = !adventurous
-    setAdventurous(next)
     setIsTogglingAdv(true)
     try {
-      const res = await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ adventurous: next }),
-      })
-      if (!res.ok) throw new Error("server")
-      try {
-        localStorage.setItem("flipside.adventurous", next ? "1" : "0")
-        window.dispatchEvent(new Event("flipside:adventurous-change"))
-      } catch { /* noop */ }
+      await setAdventurous(!adventurous)
       setIsAdvDirty(true)
     } catch {
-      setAdventurous(!next)
       toast.error("Couldn't toggle — try again")
     } finally {
       setIsTogglingAdv(false)
-    }
-  }
-
-  async function handleApplyAdventurous() {
-    if (!isAdvDirty || isApplyingAdv) return
-    setIsApplyingAdv(true)
-    try {
-      const res = await fetch("/api/explore/generate?force=true", { method: "POST" })
-      if (!res.ok) throw new Error("generate failed")
-      setDismissedSignals(new Map())
-      setIsAdvDirty(false)
-      startTransition(() => router.refresh())
-    } catch {
-      toast.error("Couldn't rebuild — try again")
-    } finally {
-      setIsApplyingAdv(false)
     }
   }
 
@@ -153,90 +121,59 @@ export function ExploreClient({
     [orderedRails, activeKey],
   )
 
-  const dismissedSignalsRef = useRef(dismissedSignals)
-  dismissedSignalsRef.current = dismissedSignals
+  // Feedback signals (thumbs_up / thumbs_down / skip) per artist.
+  // railKey lets the server narrow-invalidate only the owning rail; other
+  // rails pick up the signal on their own TTL via the persisted feedback row.
+  // "skip" is local-only — no server call, no recommendation_cache write.
+  // setSignals exposes bulk replacement so handleShuffle / handleApplyAdventurous
+  // can drop stale thumbs_up entries without triggering individual setSignal calls.
+  const { signals: dismissedSignals, setSignal, setSignals } = useArtistFeedback({
+    railKey: activeKey,
+    // Explore treats "skip" as a session-local dismiss — no /api/feedback
+    // POST, no recommendation_cache write. Feed does NOT pass this option, so
+    // feed continues to POST "skip" (which writes a feedback row via
+    // rpc_record_feedback, matching the surface's original behavior).
+    localOnlySignals: ["skip"],
+    errorMessages: {
+      undoFailed: "Couldn't undo — try again",
+      saveFailed: "Couldn't save feedback — try again",
+    },
+  })
 
-  const handleFeedback = useCallback((artistId: string, signal: string) => {
-    return feedbackQueueRef.current(artistId, async () => {
-      const currentSignal = dismissedSignalsRef.current.get(artistId)
+  // Saved-artist IDs. Serialization and rollback are handled inside the hook.
+  const { savedIds, toggleSave } = useArtistSaves({
+    initialSavedIds,
+    errorMessages: {
+      saveFailed: "Couldn't save — try again",
+      unsaveFailed: "Couldn't unsave — try again",
+    },
+  })
 
-      // Thumbs-up toggle: tapping 'Liked' again un-likes via DELETE. Migration
-      // 0033 leaves seen_at set, so the card still won't return on next
-      // refresh — undo is session-only.
-      if (signal === "thumbs_up" && currentSignal === "thumbs_up") {
-        setDismissedSignals((prev) => {
-          const n = new Map(prev)
-          n.delete(artistId)
-          return n
-        })
-        try {
-          const res = await fetch(`/api/feedback/${encodeURIComponent(artistId)}`, { method: "DELETE" })
-          if (!res.ok && res.status !== 204) throw new Error("server")
-        } catch {
-          setDismissedSignals((prev) => new Map(prev).set(artistId, "thumbs_up"))
-          toast.error("Couldn't undo — try again")
-        }
-        return
-      }
+  const handleFeedback = useCallback(
+    (artistId: string, signal: string) => setSignal(artistId, signal),
+    [setSignal],
+  )
 
-      setDismissedSignals((prev) => new Map(prev).set(artistId, signal))
-      // "skip" is local-only in Explore — no server call, no recommendation_cache write.
-      if (signal !== "thumbs_up" && signal !== "thumbs_down") return
-      try {
-        const res = await fetch("/api/feedback", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          // railKey lets the server narrow-invalidate only the owning rail; other
-          // rails pick up the signal on their own TTL via the persisted feedback row.
-          body: JSON.stringify({ spotifyArtistId: artistId, signal, railKey: activeKey }),
-        })
-        if (!res.ok) throw new Error("server")
-      } catch {
-        setDismissedSignals((prev) => {
-          const n = new Map(prev)
-          if (currentSignal === undefined) n.delete(artistId)
-          else n.set(artistId, currentSignal)
-          return n
-        })
-        toast.error("Couldn't save feedback — try again")
-      }
-    })
-  }, [activeKey])
+  const handleSave = useCallback(
+    (artistId: string) => toggleSave(artistId),
+    [toggleSave],
+  )
 
-  // Ref lets handleSave stay identity-stable across saves — otherwise every
-  // setSavedIds would re-create the callback and bust React.memo on every row.
-  const savedIdsRef = useRef(savedIds)
-  savedIdsRef.current = savedIds
-
-  const handleSave = useCallback(async (artistId: string) => {
-    const isCurrentlySaved = savedIdsRef.current.has(artistId)
-    setSavedIds((prev) => {
-      const n = new Set(prev)
-      if (isCurrentlySaved) n.delete(artistId)
-      else n.add(artistId)
-      return n
-    })
-    // Serialize per-artist so rapid save/unsave clicks hit the server in
-    // click order and don't leave the saves row out of sync with intent.
-    return saveQueueRef.current(artistId, async () => {
-      try {
-        const res = await fetch("/api/saves", {
-          method: isCurrentlySaved ? "DELETE" : "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ spotifyArtistId: artistId }),
-        })
-        if (!res.ok) throw new Error("server")
-      } catch {
-        setSavedIds((prev) => {
-          const n = new Set(prev)
-          if (isCurrentlySaved) n.add(artistId)
-          else n.delete(artistId)
-          return n
-        })
-        toast.error(isCurrentlySaved ? "Couldn't unsave — try again" : "Couldn't save — try again")
-      }
-    })
-  }, [])
+  async function handleApplyAdventurous() {
+    if (!isAdvDirty || isApplyingAdv) return
+    setIsApplyingAdv(true)
+    try {
+      const res = await fetch("/api/explore/generate?force=true", { method: "POST" })
+      if (!res.ok) throw new Error("generate failed")
+      setSignals(new Map())
+      setIsAdvDirty(false)
+      startTransition(() => router.refresh())
+    } catch {
+      toast.error("Couldn't rebuild — try again")
+    } finally {
+      setIsApplyingAdv(false)
+    }
+  }
 
   async function handleShuffle() {
     if (isRegenerating) return
@@ -248,7 +185,7 @@ export function ExploreClient({
       // green outline from the previous deck. thumbs_down and skip (Dismiss)
       // stay put — the server filter now permanently excludes them anyway, and
       // retaining the local entries is defensive for any in-flight writes.
-      setDismissedSignals((prev) => {
+      setSignals((prev) => {
         if (!activeRail) return prev
         let changed = false
         const n = new Map(prev)

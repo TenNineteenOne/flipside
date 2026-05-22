@@ -5,7 +5,8 @@ import Image from "next/image"
 import { useRouter } from "next/navigation"
 import { X, Bookmark, Share2 } from "lucide-react"
 import { toast } from "sonner"
-import { stringToVibrantHex, sanitizeHex, hexToRgba } from "@/lib/color-utils"
+import { hexToRgba } from "@/lib/color-utils"
+import { resolveArtistColor } from "@/lib/hooks/use-artist-color"
 import {
   PLATFORM_META,
   getArtistLink,
@@ -29,15 +30,6 @@ interface SavedClientProps {
   musicPlatform: MusicPlatform
 }
 
-// DB stores #8b5cf6 as the default artist_color when album art hasn't been
-// processed yet. Treat that sentinel as "no real color" and fall back to the
-// deterministic name-hash so every artist gets a distinctive tint.
-const DEFAULT_SENTINEL = "#8b5cf6"
-function resolveColor(artist: SavedArtistRow): string {
-  const sanitized = sanitizeHex(artist.artistColor)
-  if (sanitized && sanitized.toLowerCase() !== DEFAULT_SENTINEL) return sanitized
-  return stringToVibrantHex(artist.name)
-}
 
 export function SavedClient({ artists, hasLastfm, musicPlatform }: SavedClientProps) {
   const router = useRouter()
@@ -46,8 +38,8 @@ export function SavedClient({ artists, hasLastfm, musicPlatform }: SavedClientPr
   const visible = artists.filter((a) => !removedIds.has(a.artistId))
 
   const accent = "#8b5cf6"
-  const c1 = visible[0] ? resolveColor(visible[0]) : accent
-  const c2 = visible[1] ? resolveColor(visible[1]) : "#ec6fb5"
+  const c1 = visible[0] ? resolveArtistColor(visible[0].artistColor, visible[0].name) : accent
+  const c2 = visible[1] ? resolveArtistColor(visible[1].artistColor, visible[1].name) : "#ec6fb5"
   const palette = `
     radial-gradient(50% 40% at 18% 20%, ${hexToRgba(c1, 0.22)} 0%, transparent 70%),
     radial-gradient(55% 45% at 82% 30%, ${hexToRgba(c2, 0.18)} 0%, transparent 70%),
@@ -129,7 +121,7 @@ export function SavedClient({ artists, hasLastfm, musicPlatform }: SavedClientPr
           }}
         >
           {visible.map((artist) => {
-            const color = resolveColor(artist)
+            const color = resolveArtistColor(artist.artistColor, artist.name)
             return (
               <div
                 key={artist.artistId}

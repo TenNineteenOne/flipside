@@ -1,6 +1,6 @@
 "use client"
 
-import { memo, useCallback, useState, useEffect, useMemo } from "react"
+import { memo, useCallback } from "react"
 import Image from "next/image"
 import { motion } from "framer-motion"
 import { SkipForward, Bookmark, Check, Share2 } from "lucide-react"
@@ -8,7 +8,9 @@ import { toast } from "sonner"
 import { TrackStrip } from "@/components/feed/track-strip"
 import { PlatformIcon } from "@/components/platform-icon"
 import { useAudio } from "@/lib/audio-context"
-import { stringToVibrantHex, hexToRgba, sanitizeHex } from "@/lib/color-utils"
+import { hexToRgba } from "@/lib/color-utils"
+import { useArtistTracks } from "@/lib/hooks/use-artist-tracks"
+import { useArtistColor } from "@/lib/hooks/use-artist-color"
 import type { Track } from "@/lib/music-provider/types"
 import {
   PLATFORM_META,
@@ -133,44 +135,15 @@ function ArtistCardImpl({
   const isLiked = dismissSignal === "thumbs_up"
   const isCollapsed = signalCollapses(dismissSignal)
   const { artist_data, why, artist_color } = recommendation
-  const artistColor = useMemo(() => {
-    const c = sanitizeHex(artist_color)
-    if (c === "#8b5cf6") return stringToVibrantHex(artist_data.name)
-    return c
-  }, [artist_color, artist_data.name])
+  const artistColor = useArtistColor(artist_color, artist_data.name)
 
   const { play } = useAudio()
 
-  const [localTracks, setLocalTracks] = useState<Track[]>(artist_data.topTracks)
-  const [isFetchingTracks, setIsFetchingTracks] = useState(false)
-
-  useEffect(() => {
-    if (artist_data.topTracks.length === 0 && localTracks.length === 0 && !isFetchingTracks) {
-      const ctrl = new AbortController()
-      setIsFetchingTracks(true)
-      fetch(
-        `/api/artists/${recommendation.spotify_artist_id}/tracks?name=${encodeURIComponent(artist_data.name)}`,
-        { signal: ctrl.signal },
-      )
-        .then((r) => {
-          if (!r.ok) throw new Error("fetch failed")
-          return r.json()
-        })
-        .then((data) => {
-          if (ctrl.signal.aborted) return
-          if (data.tracks?.length > 0) setLocalTracks(data.tracks)
-        })
-        .catch((err: unknown) => {
-          if (err instanceof DOMException && err.name === "AbortError") return
-          // Silent — user still sees "No tracks available" fallback.
-        })
-        .finally(() => {
-          if (!ctrl.signal.aborted) setIsFetchingTracks(false)
-        })
-      return () => ctrl.abort()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only fetch once when tracks are empty
-  }, [artist_data.topTracks.length, artist_data.name, recommendation.spotify_artist_id])
+  const { tracks: localTracks, isFetching: isFetchingTracks } = useArtistTracks({
+    artistId: recommendation.spotify_artist_id,
+    artistName: artist_data.name,
+    initialTracks: artist_data.topTracks,
+  })
 
   function handleSave(e: React.MouseEvent) {
     e.stopPropagation()
