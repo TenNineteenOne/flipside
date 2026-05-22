@@ -7,7 +7,8 @@ import { ArtistCard } from "@/components/feed/artist-card"
 import { ColdStartBanner } from "@/components/feed/cold-start-banner"
 import { Ambient } from "@/components/visual/ambient"
 import type { MusicPlatform } from "@/lib/music-links"
-import { createKeyedSerializer } from "@/lib/keyed-serializer"
+import { useArtistFeedback } from "@/lib/hooks/use-artist-feedback"
+import { useArtistSaves } from "@/lib/hooks/use-artist-saves"
 
 interface Track {
   id: string
@@ -69,73 +70,36 @@ const FEED_PALETTE = `
 // ---------------------------------------------------------------------------
 
 export function FeedClient({ recommendations, musicPlatform, signalCount }: FeedClientProps) {
-  const [dismissedSignals, setDismissedSignals] = useState<Map<string, string>>(new Map())
-  const [savedIds, setSavedIds] = useState<Set<string>>(new Set())
   const [isGenerating, setIsGenerating] = useState(false)
   // Synchronous guard: React state updates are batched, so a hair-trigger
   // double-click can slip past `disabled={isGenerating}` and fire two requests
   // before the first render commits. The ref blocks the second call instantly.
   const isGeneratingRef = useRef(false)
-  const saveQueueRef = useRef(createKeyedSerializer())
-  // Mirror queue for feedback so rapid taps on the same artist (like → unlike
-  // → like) serialize on the server. Without this, DELETE and POST can race
-  // and the final server state can disagree with the user's last intent.
-  const feedbackQueueRef = useRef(createKeyedSerializer())
   const router = useRouter()
 
   const sequence = useMemo(() => buildSequence(recommendations), [recommendations])
 
-  // Ref mirrors dismissedSignals so handleFeedback can read the current state
-  // without re-creating its identity on every dismiss (preserves FeedCardRow
-  // memoization).
-  const dismissedSignalsRef = useRef(dismissedSignals)
-  dismissedSignalsRef.current = dismissedSignals
+  // Feedback signals (thumbs_up / thumbs_down / skip) per artist.
+  // Serialization and rollback are handled inside the hook.
+  const { signals: dismissedSignals, setSignal } = useArtistFeedback({
+    errorMessages: {
+      undoFailed: "Couldn't undo — try again",
+      saveFailed: "Couldn't save feedback — try again",
+    },
+  })
 
-  const handleFeedback = useCallback((artistId: string, signal: string) => {
-    // Serialize per-artist so rapid like/unlike taps hit the server in order;
-    // otherwise POST and DELETE can interleave and the final server state
-    // won't match the user's last intent. Same pattern as handleSave above.
-    return feedbackQueueRef.current(artistId, async () => {
-      // Thumbs-up toggle: if already liked, tapping again un-likes
-      // (soft-deletes the feedback row via rpc_delete_feedback). Migration
-      // 0033 leaves seen_at set, so the card still won't return on next
-      // refresh — undo is session-only.
-      const currentSignal = dismissedSignalsRef.current.get(artistId)
-      if (signal === "thumbs_up" && currentSignal === "thumbs_up") {
-        setDismissedSignals((prev) => {
-          const next = new Map(prev)
-          next.delete(artistId)
-          return next
-        })
-        try {
-          const res = await fetch(`/api/feedback/${encodeURIComponent(artistId)}`, { method: "DELETE" })
-          if (!res.ok && res.status !== 204) throw new Error("Server error")
-        } catch {
-          setDismissedSignals((prev) => new Map(prev).set(artistId, "thumbs_up"))
-          toast.error("Couldn't undo — try again")
-        }
-        return
-      }
+  // Saved-artist IDs. Serialization and rollback are handled inside the hook.
+  const { savedIds, toggleSave } = useArtistSaves()
 
-      setDismissedSignals((prev) => new Map(prev).set(artistId, signal))
-      try {
-        const res = await fetch("/api/feedback", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ spotifyArtistId: artistId, signal }),
-        })
-        if (!res.ok) throw new Error("Server error")
-      } catch {
-        setDismissedSignals((prev) => {
-          const next = new Map(prev)
-          if (currentSignal === undefined) next.delete(artistId)
-          else next.set(artistId, currentSignal)
-          return next
-        })
-        toast.error("Couldn't save feedback — try again")
-      }
-    })
-  }, [])
+  const handleFeedback = useCallback(
+    (artistId: string, signal: string) => setSignal(artistId, signal),
+    [setSignal],
+  )
+
+  const handleSave = useCallback(
+    (artistId: string) => toggleSave(artistId),
+    [toggleSave],
+  )
 
   async function handleGenerateMore() {
     if (isGeneratingRef.current) return
@@ -171,42 +135,6 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
       setIsGenerating(false)
     }
   }
-
-  // Ref mirrors savedIds so handleSave stays identity-stable across renders —
-  // otherwise every setSavedIds would bust memoization on every card.
-  const savedIdsRef = useRef(savedIds)
-  savedIdsRef.current = savedIds
-
-  const handleSave = useCallback(async (artistId: string) => {
-    const willUnsave = savedIdsRef.current.has(artistId)
-    setSavedIds((prev) => {
-      const n = new Set(prev)
-      if (willUnsave) n.delete(artistId)
-      else n.add(artistId)
-      return n
-    })
-    // Serialize per-artist so rapid save/unsave clicks hit the server in
-    // click order. Without this, POST/DELETE can interleave and the final
-    // server state can disagree with the user's last intent.
-    return saveQueueRef.current(artistId, async () => {
-      try {
-        const res = await fetch("/api/saves", {
-          method: willUnsave ? "DELETE" : "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ spotifyArtistId: artistId }),
-        })
-        if (!res.ok) throw new Error("Server error")
-      } catch {
-        setSavedIds((prev) => {
-          const n = new Set(prev)
-          if (willUnsave) n.add(artistId)
-          else n.delete(artistId)
-          return n
-        })
-        toast.error(willUnsave ? "Couldn't unsave — try again" : "Couldn't save — try again")
-      }
-    })
-  }, [])
 
   return (
     <div style={{ position: "relative" }}>

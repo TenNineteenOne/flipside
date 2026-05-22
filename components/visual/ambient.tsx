@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useAdventurousMode } from "@/lib/hooks/use-adventurous-mode"
 
 interface AmbientProps {
   palette: string
@@ -16,21 +16,9 @@ const DEFAULT_WARM = `
 `
 
 export function Ambient({ palette, adventurousPalette, adventurous: adventurousProp }: AmbientProps) {
-  const [adventurousLS, setAdventurousLS] = useState(false)
-
-  useEffect(() => {
-    if (adventurousProp !== undefined) return
-    const read = () => {
-      try { setAdventurousLS(localStorage.getItem("flipside.adventurous") === "1") } catch { /* noop */ }
-    }
-    read()
-    window.addEventListener("flipside:adventurous-change", read)
-    window.addEventListener("storage", read)
-    return () => {
-      window.removeEventListener("flipside:adventurous-change", read)
-      window.removeEventListener("storage", read)
-    }
-  }, [adventurousProp])
+  // When no prop is passed, read from localStorage + listen for sync events via
+  // the hook.  The prop still wins when provided (caller-controlled mode).
+  const { adventurous: adventurousLS } = useAdventurousMode(false)
 
   const adventurous = adventurousProp ?? adventurousLS
 
