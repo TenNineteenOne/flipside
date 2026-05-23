@@ -13,8 +13,23 @@ export const ADVENTUROUS_EVENT_NAME = "flipside:adventurous-change"
 
 /**
  * Read the adventurous flag from localStorage.
- * Returns `fallback` if localStorage is unavailable (private mode) or the key
- * is absent.
+ *
+ * Returns `fallback` when localStorage is unavailable (private mode) OR when
+ * the key is absent. The `fallback` is **intentionally** the caller's `initial`
+ * value (typically the server-rendered `users.adventurous`), NOT a hardcoded
+ * `false`.
+ *
+ * Why this matters: the original AppNav clobbered the server's value with
+ * `false` on every mount when the key was missing (`getItem(...) === "1"`
+ * evaluates to false on null). A returning adventurous user opening the site
+ * in incognito or on a fresh device would see the nav flip from adventurous
+ * to non-adventurous post-mount — their saved preference silently dropped on
+ * the floor until they re-toggled in Settings.
+ *
+ * Settings + Explore both treat the server as authoritative on first render;
+ * this fallback makes AppNav consistent with them. localStorage acts as a
+ * write-through cache for in-tab and cross-tab sync, not as the source of
+ * truth.
  */
 export function readAdventurousFromStorage(fallback: boolean): boolean {
   try {
