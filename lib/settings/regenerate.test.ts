@@ -9,23 +9,48 @@ afterEach(() => {
 })
 
 function makeOpts() {
-  let generating = false
   return {
-    get isGenerating() { return generating },
-    setGenerating: vi.fn((b: boolean) => { generating = b }),
+    isGeneratingRef: { current: false },
+    setGenerating: vi.fn(),
   }
 }
 
 describe("regenerateFeedAndExplore", () => {
-  it("no-ops when isGenerating is true", async () => {
+  it("no-ops when isGeneratingRef.current is true", async () => {
     const mockFetch = vi.fn()
     vi.stubGlobal("fetch", mockFetch)
 
-    const opts = { isGenerating: true, setGenerating: vi.fn() }
+    const opts = { isGeneratingRef: { current: true }, setGenerating: vi.fn() }
     await regenerateFeedAndExplore(opts)
 
     expect(mockFetch).not.toHaveBeenCalled()
     expect(opts.setGenerating).not.toHaveBeenCalled()
+  })
+
+  // Regression test for code-review finding #2: the synchronous ref guard
+  // must block a second call that fires before React has committed
+  // setGenerating(true) from the first call.
+  it("synchronous ref guard blocks rapid double-invocation", async () => {
+    // Fetch never resolves so we can interleave calls cleanly.
+    let resolveFetch: () => void = () => {}
+    const fetchPromise = new Promise<Response>((resolve) => {
+      resolveFetch = () => resolve({ ok: true, json: () => Promise.resolve({}) } as Response)
+    })
+    const mockFetch = vi.fn(() => fetchPromise)
+    vi.stubGlobal("fetch", mockFetch)
+
+    const opts = makeOpts()
+    // Fire two calls without awaiting the first — simulates two toggle handlers
+    // landing in the same tick before React's first re-render commits.
+    const first = regenerateFeedAndExplore(opts)
+    const second = regenerateFeedAndExplore(opts)
+
+    // First call kicks off 2 fetches (feed + explore); second call sees the
+    // ref already set and bails before reaching fetch.
+    expect(mockFetch).toHaveBeenCalledTimes(2)
+
+    resolveFetch()
+    await Promise.all([first, second])
   })
 
   it("calls both endpoints in parallel when not generating", async () => {
@@ -101,6 +126,8 @@ describe("regenerateFeedAndExplore", () => {
     // Last setGenerating call must set it to false
     const calls = opts.setGenerating.mock.calls as Array<[boolean]>
     expect(calls[calls.length - 1][0]).toBe(false)
+    // Ref must also be cleared so a subsequent invocation can proceed
+    expect(opts.isGeneratingRef.current).toBe(false)
   })
 
   it("includes 429 cooldown message in feed failure toast", async () => {

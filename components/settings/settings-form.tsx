@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { Ambient } from "@/components/visual/ambient"
 import { hexToRgba } from "@/lib/color-utils"
 import { regenerateFeedAndExplore } from "@/lib/settings/regenerate"
@@ -46,9 +46,12 @@ export function SettingsForm({
   exampleArtists,
 }: SettingsFormProps) {
   // Shared regeneration gate — multiple panels can trigger a rebuild, but only
-  // one may be in-flight at a time. isGenerating is lifted here so the button
-  // in ObscurityPanel and the callbacks fired by toggle changes all share state.
+  // one may be in-flight at a time. isGenerating drives the UI (disabled button
+  // in ObscurityPanel); isGeneratingRef is the synchronous guard inside
+  // regenerateFeedAndExplore so two rapid toggle-handlers can't both pass the
+  // re-entry check before React commits the first setIsGenerating(true).
   const [isGenerating, setIsGenerating] = useState(false)
+  const isGeneratingRef = useRef(false)
 
   const palette = `
     radial-gradient(50% 40% at 18% 20%, ${hexToRgba(ACCENT, 0.20)} 0%, transparent 70%),
@@ -57,7 +60,7 @@ export function SettingsForm({
   `
 
   async function handleRegenerateBoth() {
-    await regenerateFeedAndExplore({ isGenerating, setGenerating: setIsGenerating })
+    await regenerateFeedAndExplore({ isGeneratingRef, setGenerating: setIsGenerating })
   }
 
   return (
