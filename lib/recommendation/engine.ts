@@ -518,11 +518,13 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
         enrichArtist: buildEnrichArtist(),
       })
 
+  const primaryStart = Date.now()
   const resolved = await resolveArtistsByName(uniqueNames, {
     cache: nameCache,
     searchArtists: (name) => musicProvider.searchArtists(accessToken, name),
     enrichArtist: buildEnrichArtist(),
   })
+  const primaryMs = Date.now() - primaryStart
 
   console.log(`[cache-search] hit=${resolved.cacheHits} miss=${resolved.cacheMisses} total=${uniqueNames.length}`)
 
@@ -832,7 +834,16 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
         return secondaryRows.length
       }
 
-  return { count: rows.length, runSecondary }
+  return {
+    count: rows.length,
+    runSecondary,
+    metrics: {
+      primaryMs,
+      misses: resolved.cacheMisses,
+      retries: resolved.searchRetries,
+      rateLimited: resolved.rateLimited,
+    },
+  }
 }
 
 // ── Main entry point ────────────────────────────────────────────────────────

@@ -5,6 +5,7 @@ import { enforceSameOrigin } from "@/lib/csrf"
 import { getAccessToken } from "@/lib/get-access-token"
 import { getSpotifyClientToken } from "@/lib/spotify-client-token"
 import { buildRecommendations } from "@/lib/recommendation/engine"
+import { formatGenTiming } from "@/lib/recommendation/gen-timing"
 import { extractArtistColor } from "@/lib/colour-extraction"
 import { searchTracksByArtist } from "@/lib/music-provider/itunes"
 import { musicProvider } from "@/lib/music-provider/provider"
@@ -246,7 +247,8 @@ export async function POST(req: NextRequest): Promise<Response> {
     const rawGenre = req.nextUrl.searchParams.get("genre")
     const genre = rawGenre && rawGenre.length <= 80 ? rawGenre : undefined
 
-    const { count: recCount, runSecondary, softenedFilters } = await buildRecommendations({
+    const genStart = Date.now()
+    const { count: recCount, runSecondary, softenedFilters, metrics } = await buildRecommendations({
       userId: user.id,
       accessToken,
       playThreshold,
@@ -256,6 +258,14 @@ export async function POST(req: NextRequest): Promise<Response> {
       deepDiscovery: user.deep_discovery ?? false,
       adventurous: user.adventurous ?? false,
     })
+    console.log(formatGenTiming({
+      userId: user.id,
+      phases: metrics ? { primary: metrics.primaryMs } : {},
+      totalMs: Date.now() - genStart,
+      misses: metrics?.misses,
+      retries: metrics?.retries,
+      rateLimited: metrics?.rateLimited,
+    }))
 
     // Decorations (colour extraction + track pre-warming) and secondary
     // candidate resolution run AFTER the response returns so the feed
