@@ -82,19 +82,27 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
   const isGeneratingRef = useRef(false)
   const router = useRouter()
 
-  // Background top-up: fire once on mount if the queue is running low. Non-
-  // awaited and cooldown-safe (a 429 just means a generation is already in
-  // flight). We intentionally do NOT router.refresh() — this is for the *next*
-  // visit's warm path, not to mutate the current view out from under the user.
+  // Background top-up: when the unseen queue is low, generate more on mount and
+  // surface the results via router.refresh() once done. We reflect the in-flight
+  // run on the button (shared isGeneratingRef + isGenerating state) so a user's
+  // own "Load more" can't silently collide with it or trip the 30s-cooldown
+  // error path — and the refresh means their implicit "I want more" intent is
+  // fulfilled. Cooldown-safe: a 429 just no-ops, then refresh shows whatever's
+  // available. router.refresh() is a soft refresh (preserves scroll/state), and
+  // it doesn't remount this client component, so the mount-only effect won't loop.
   useEffect(() => {
     if (recommendations.length >= TOPUP_THRESHOLD) return
     if (isGeneratingRef.current) return
     isGeneratingRef.current = true
+    setIsGenerating(true)
     let cancelled = false
     fetch("/api/recommendations/generate", { method: "POST" })
       .catch(() => {})
       .finally(() => {
-        if (!cancelled) isGeneratingRef.current = false
+        if (cancelled) return
+        isGeneratingRef.current = false
+        setIsGenerating(false)
+        router.refresh()
       })
     return () => {
       cancelled = true

@@ -112,8 +112,9 @@ export default function OnboardingPage() {
       // Kick off recommendation generation now (non-awaited) so it overlaps with
       // navigation and is underway/done by the time the feed mounts. Cooldown-
       // safe: if the feed's loader also fires, it gets a 429 and polls (see
-      // classifyGenerateResponse / RecommendationsLoader). Seeds are saved above,
-      // so the engine sees them on this run.
+      // classifyGenerateResponse / RecommendationsLoader). If seeds were saved
+      // above (non-skip path) the engine sees them on this run; on skip it
+      // cold-starts, which is the intended "show something" behavior.
       void fetch("/api/recommendations/generate", { method: "POST" }).catch(() => {})
 
       router.push("/feed")
