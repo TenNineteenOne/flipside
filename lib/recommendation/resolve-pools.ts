@@ -1,13 +1,17 @@
 /**
+ * Total candidate window. Must match the legacy PRIMARY(60)+SECONDARY(30)
+ * behavior so no recommendations are dropped — only the blocking/background
+ * boundary moves. Tuning changes `BLOCKING_RESOLVE_CAP`, never this.
+ */
+export const RESOLVE_WINDOW = 90
+
+/**
  * Blocking resolve cap (Approach A). Set by measurement in a later task: the
  * largest value that still lands the cold generation inside 3–5s. Default 36.
- *
- * NOTE: BLOCKING_RESOLVE_CAP + SECONDARY_RESOLVE_CAP must stay == 90 so the
- * total candidate window matches the legacy PRIMARY(60)+SECONDARY(30) behavior.
- * No recommendations are dropped; only the blocking/background boundary moves.
+ * Secondary is whatever remains of RESOLVE_WINDOW after the blocking slice.
  */
 export const BLOCKING_RESOLVE_CAP = 36
-export const SECONDARY_RESOLVE_CAP = 90 - BLOCKING_RESOLVE_CAP
+export const SECONDARY_RESOLVE_CAP = RESOLVE_WINDOW - BLOCKING_RESOLVE_CAP
 
 export interface ResolvePools {
   /** Resolved synchronously before the feed is written (paints visible cards). */
