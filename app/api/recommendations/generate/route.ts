@@ -172,6 +172,12 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const supabase = createServiceClient()
 
+  // Warm the Spotify client token concurrently with the user-row read. On
+  // serverless cold starts the module-cached token is empty; overlapping it
+  // with the DB round-trip removes a 200–400ms serial blip. The .catch settles
+  // the promise so it never becomes an unhandled rejection if unused.
+  const clientTokenPromise = getSpotifyClientToken().catch(() => null)
+
   // Read user row including play_threshold
   const { data: user, error: userError } = await supabase
     .from("users")
@@ -237,7 +243,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     // credentials. Fail loudly if neither is available — silently passing an
     // empty bearer to Spotify would return 401 on every downstream call and
     // produce a batch of empty recommendations the client can't diagnose.
-    const accessToken = userAccessToken ?? (await getSpotifyClientToken())
+    const accessToken = userAccessToken ?? (await clientTokenPromise)
     if (!accessToken) {
       console.error("[generate] no Spotify token available (user + client credentials both failed)")
       return apiError("Music service temporarily unavailable", 503)

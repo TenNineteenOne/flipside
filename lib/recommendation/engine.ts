@@ -31,6 +31,15 @@ const ADJACENT_BLEED_BONUS = 0.08
 const ADAPTIVE_BROADEN_THRESHOLD = 10
 
 /**
+ * Resolver tuning (safe-C). Conservative bump over the resolver defaults
+ * (concurrency 4 / delay 200ms). The resolver has 429 backoff with a budget,
+ * so over-tuning degrades to slower, never empty. Validate the measured 429
+ * rate via the [gen-timing] rl/retries fields before going higher.
+ */
+const RESOLVE_CONCURRENCY = 6
+const RESOLVE_DELAY_MS = 125
+
+/**
  * Return the popularity-tier multiplier for a Spotify popularity value (0–100).
  * `curveK` is the base of the exponential (users.popularity_curve). Smaller =
  * steeper = stronger obscurity preference. Defaults to 0.95 for callers that
@@ -120,24 +129,31 @@ async function gatherSeedContext(
   const names: string[] = [...dbSeeds]
 
   const sampledThumbsUp = sampleLikes(thumbsUpRows, userId)
-  if (sampledThumbsUp.length > 0) {
-    const { data: cached } = await supabase
-      .from('recommendation_cache')
-      .select('artist_data')
-      .eq('user_id', userId)
-      .in('spotify_artist_id', sampledThumbsUp)
-    for (const row of cached ?? []) {
-      const name = (row.artist_data as { name?: string })?.name
-      if (name) names.push(name)
-    }
-  }
-
   const userGenres = ((userRow?.selected_genres as string[] | null) ?? [])
   const topGenres = userGenres.slice(0, 5)
-  if (topGenres.length > 0) {
-    const genreResults = await Promise.all(topGenres.map(getTagArtistNames))
-    for (const batch of genreResults) names.push(...batch)
-  }
+
+  const [thumbsUpNames, genreBatches] = await Promise.all([
+    // Resolve sampled thumbs-up IDs → names via the rec cache.
+    sampledThumbsUp.length === 0
+      ? Promise.resolve([] as string[])
+      : supabase
+          .from('recommendation_cache')
+          .select('artist_data')
+          .eq('user_id', userId)
+          .in('spotify_artist_id', sampledThumbsUp)
+          .then(({ data }) =>
+            (data ?? [])
+              .map((row) => (row.artist_data as { name?: string })?.name)
+              .filter((n): n is string => !!n)
+          ),
+    // Genre seed names from Last.fm tags (each cached).
+    topGenres.length === 0
+      ? Promise.resolve([] as string[])
+      : Promise.all(topGenres.map(getTagArtistNames)).then((batches) => batches.flat()),
+  ])
+
+  names.push(...thumbsUpNames)
+  names.push(...genreBatches)
 
   console.log(
     `[engine] gather userId=${userId} selected_genres=${JSON.stringify(topGenres)} ` +
@@ -520,6 +536,8 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     cache: nameCache,
     searchArtists: (name) => musicProvider.searchArtists(accessToken, name),
     enrichArtist: buildEnrichArtist(),
+    concurrency: RESOLVE_CONCURRENCY,
+    delayMs: RESOLVE_DELAY_MS,
   })
   const primaryMs = Date.now() - primaryStart
 
