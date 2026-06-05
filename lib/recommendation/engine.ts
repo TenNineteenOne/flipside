@@ -19,6 +19,7 @@ import { cachedTagArtistNames } from '@/lib/lastfm-cache'
 import coldStartData from '@/data/cold-start-seeds.json'
 import { sampleLikes, LIKE_SAMPLE_SIZE } from './window'
 import { applyClusterCap } from './cluster-cap'
+import { splitResolvePools } from './resolve-pools'
 
 const LASTFM_BASE = "https://ws.audioscrobbler.com/2.0"
 
@@ -155,14 +156,11 @@ async function gatherSeedContext(
 
 // ── Core pipeline ───────────────────────────────────────────────────────────
 
-const PRIMARY_RESOLVE_CAP = 60
-const SECONDARY_RESOLVE_CAP = 30
-
 /**
  * Round-robin interleave across seed similar-lists so each seed contributes
  * equally to the primary candidate pool. Without this, map insertion order
  * equals seed order and a single mainstream-biased seed can flood the first
- * PRIMARY_RESOLVE_CAP slots with its whole similars list.
+ * BLOCKING_RESOLVE_CAP slots with its whole similars list.
  *
  * With `tailFirst`, each seed's list is consumed from the END (lowest-match
  * items first). Last.fm orders similars by similarity, which correlates with
@@ -491,8 +489,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
   }
 
   const allNames = buildRoundRobinNames(lfmResults, knownNames, { tailFirst: true })
-  const uniqueNames = allNames.slice(0, PRIMARY_RESOLVE_CAP)
-  const secondaryNames = allNames.slice(PRIMARY_RESOLVE_CAP, PRIMARY_RESOLVE_CAP + SECONDARY_RESOLVE_CAP)
+  const { blocking: uniqueNames, secondary: secondaryNames } = splitResolvePools(allNames)
   const lfmTotal = lfmResults.reduce((sum, r) => sum + r.names.length, 0)
 
   if (uniqueNames.length === 0) {
