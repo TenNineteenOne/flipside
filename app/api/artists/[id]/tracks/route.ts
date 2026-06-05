@@ -20,6 +20,11 @@ export async function GET(
   if (!isValidSpotifyId(artistId)) return apiError("Invalid artist ID", 400)
 
   const artistName = req.nextUrl.searchParams.get("name")
+  // Length cap matches /api/onboarding/search and /api/open — bounds the
+  // string forwarded to the iTunes search URL.
+  if (artistName && artistName.length > 200) {
+    return apiError("Artist name too long", 400)
+  }
 
   const supabase = createServiceClient()
 
@@ -44,15 +49,38 @@ export async function GET(
       try {
         const liveTracks = await searchTracksByArtist(artistName, "US", 5)
         if (liveTracks && liveTracks.length > 0) {
-          await supabase.from("artist_tracks_cache").upsert(
-            {
-              spotify_artist_id: artistId,
-              tracks: liveTracks,
-              source: "itunes",
-              fetched_at: new Date().toISOString(),
-            },
-            { onConflict: "spotify_artist_id" }
-          )
+          // Shared-cache poisoning guard: artist_tracks_cache is keyed only by
+          // spotify_artist_id, so a request supplying a ?name= that doesn't
+          // belong to this artistId could store the wrong artist's tracks for
+          // everyone. Cross-check the supplied name against the canonical name
+          // for this id in artist_search_cache. If a canonical name exists and
+          // disagrees, serve the live tracks to this caller but skip the
+          // shared write so other users aren't contaminated.
+          const { data: canonical } = await supabase
+            .from("artist_search_cache")
+            .select("artist_name")
+            .eq("spotify_artist_id", artistId)
+            .maybeSingle()
+
+          const namesMatch =
+            !canonical?.artist_name ||
+            canonical.artist_name.toLowerCase().trim() === artistName.toLowerCase().trim()
+
+          if (namesMatch) {
+            await supabase.from("artist_tracks_cache").upsert(
+              {
+                spotify_artist_id: artistId,
+                tracks: liveTracks,
+                source: "itunes",
+                fetched_at: new Date().toISOString(),
+              },
+              { onConflict: "spotify_artist_id" }
+            )
+          } else {
+            console.warn(
+              `[tracks] name/id mismatch — skipping shared cache write artistId=${artistId} suppliedName="${artistName}" canonical="${canonical?.artist_name}"`
+            )
+          }
           return Response.json({ tracks: liveTracks })
         }
       } catch (err) {
