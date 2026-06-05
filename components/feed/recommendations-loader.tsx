@@ -3,6 +3,11 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Loader2, RefreshCw } from "lucide-react"
+import { classifyGenerateResponse } from "@/lib/recommendation/generate-response"
+
+/** Poll cadence + ceiling while a generation is in flight. */
+const POLL_INTERVAL_MS = 2500
+const POLL_MAX_MS = 30_000
 
 export function RecommendationsLoader() {
   const router = useRouter()
@@ -12,19 +17,42 @@ export function RecommendationsLoader() {
   useEffect(() => {
     let cancelled = false
 
+    /** Poll GET /api/recommendations until recs appear or the ceiling is hit. */
+    async function pollUntilReady(deadline: number): Promise<void> {
+      while (!cancelled && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
+        if (cancelled) return
+        const res = await fetch("/api/recommendations")
+        if (!res.ok) continue
+        const data = (await res.json().catch(() => ({}))) as { recommendations?: unknown[] }
+        if ((data.recommendations?.length ?? 0) > 0) {
+          if (!cancelled) router.refresh()
+          return
+        }
+      }
+      if (!cancelled) setError("Still working on your feed — refresh in a moment.")
+    }
+
     async function generate() {
       try {
         const res = await fetch("/api/recommendations/generate", { method: "POST" })
         if (cancelled) return
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}))
-          throw new Error((data as { error?: string }).error ?? "Generation failed")
+        const data = (await res.json().catch(() => ({}))) as { count?: number; error?: string }
+        const outcome = classifyGenerateResponse(res.status, data)
+
+        if (outcome === "ready") {
+          router.refresh()
+          return
         }
-        const data = await res.json().catch(() => ({ count: -1 }))
-        if (data.count === 0) {
+        if (outcome === "in-flight") {
+          await pollUntilReady(Date.now() + POLL_MAX_MS)
+          return
+        }
+        // outcome === "error"
+        if (res.ok && data.count === 0) {
           throw new Error("No new artists found. Your listening history may be filtering everything out — try raising your play threshold in Settings.")
         }
-        router.refresh()
+        throw new Error(data.error ?? "Generation failed")
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Failed to load recommendations")
