@@ -19,6 +19,7 @@ import { cachedTagArtistNames } from '@/lib/lastfm-cache'
 import coldStartData from '@/data/cold-start-seeds.json'
 import { sampleLikes, LIKE_SAMPLE_SIZE } from './window'
 import { applyClusterCap } from './cluster-cap'
+import { splitResolvePools } from './resolve-pools'
 
 const LASTFM_BASE = "https://ws.audioscrobbler.com/2.0"
 
@@ -28,6 +29,15 @@ const ADVENTUROUS_MAINSTREAM_PENALTY = 0.08
 const ADJACENT_BLEED_BONUS = 0.08
 /** User needs this many selected_genres before seed cap widens 10 → 15 and medium adjacency opens up. */
 const ADAPTIVE_BROADEN_THRESHOLD = 10
+
+/**
+ * Resolver tuning (safe-C). Conservative bump over the resolver defaults
+ * (concurrency 4 / delay 200ms). The resolver has 429 backoff with a budget,
+ * so over-tuning degrades to slower, never empty. Validate the measured 429
+ * rate via the [gen-timing] rl/retries fields before going higher.
+ */
+const RESOLVE_CONCURRENCY = 6
+const RESOLVE_DELAY_MS = 125
 
 /**
  * Return the popularity-tier multiplier for a Spotify popularity value (0–100).
@@ -119,24 +129,31 @@ async function gatherSeedContext(
   const names: string[] = [...dbSeeds]
 
   const sampledThumbsUp = sampleLikes(thumbsUpRows, userId)
-  if (sampledThumbsUp.length > 0) {
-    const { data: cached } = await supabase
-      .from('recommendation_cache')
-      .select('artist_data')
-      .eq('user_id', userId)
-      .in('spotify_artist_id', sampledThumbsUp)
-    for (const row of cached ?? []) {
-      const name = (row.artist_data as { name?: string })?.name
-      if (name) names.push(name)
-    }
-  }
-
   const userGenres = ((userRow?.selected_genres as string[] | null) ?? [])
   const topGenres = userGenres.slice(0, 5)
-  if (topGenres.length > 0) {
-    const genreResults = await Promise.all(topGenres.map(getTagArtistNames))
-    for (const batch of genreResults) names.push(...batch)
-  }
+
+  const [thumbsUpNames, genreBatches] = await Promise.all([
+    // Resolve sampled thumbs-up IDs → names via the rec cache.
+    sampledThumbsUp.length === 0
+      ? Promise.resolve([] as string[])
+      : supabase
+          .from('recommendation_cache')
+          .select('artist_data')
+          .eq('user_id', userId)
+          .in('spotify_artist_id', sampledThumbsUp)
+          .then(({ data }) =>
+            (data ?? [])
+              .map((row) => (row.artist_data as { name?: string })?.name)
+              .filter((n): n is string => !!n)
+          ),
+    // Genre seed names from Last.fm tags (each cached).
+    topGenres.length === 0
+      ? Promise.resolve([] as string[])
+      : Promise.all(topGenres.map(getTagArtistNames)).then((batches) => batches.flat()),
+  ])
+
+  names.push(...thumbsUpNames)
+  names.push(...genreBatches)
 
   console.log(
     `[engine] gather userId=${userId} selected_genres=${JSON.stringify(topGenres)} ` +
@@ -155,14 +172,11 @@ async function gatherSeedContext(
 
 // ── Core pipeline ───────────────────────────────────────────────────────────
 
-const PRIMARY_RESOLVE_CAP = 60
-const SECONDARY_RESOLVE_CAP = 30
-
 /**
  * Round-robin interleave across seed similar-lists so each seed contributes
  * equally to the primary candidate pool. Without this, map insertion order
  * equals seed order and a single mainstream-biased seed can flood the first
- * PRIMARY_RESOLVE_CAP slots with its whole similars list.
+ * BLOCKING_RESOLVE_CAP slots with its whole similars list.
  *
  * With `tailFirst`, each seed's list is consumed from the END (lowest-match
  * items first). Last.fm orders similars by similarity, which correlates with
@@ -491,8 +505,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
   }
 
   const allNames = buildRoundRobinNames(lfmResults, knownNames, { tailFirst: true })
-  const uniqueNames = allNames.slice(0, PRIMARY_RESOLVE_CAP)
-  const secondaryNames = allNames.slice(PRIMARY_RESOLVE_CAP, PRIMARY_RESOLVE_CAP + SECONDARY_RESOLVE_CAP)
+  const { blocking: uniqueNames, secondary: secondaryNames } = splitResolvePools(allNames)
   const lfmTotal = lfmResults.reduce((sum, r) => sum + r.names.length, 0)
 
   if (uniqueNames.length === 0) {
@@ -518,11 +531,15 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
         enrichArtist: buildEnrichArtist(),
       })
 
+  const primaryStart = Date.now()
   const resolved = await resolveArtistsByName(uniqueNames, {
     cache: nameCache,
     searchArtists: (name) => musicProvider.searchArtists(accessToken, name),
     enrichArtist: buildEnrichArtist(),
+    concurrency: RESOLVE_CONCURRENCY,
+    delayMs: RESOLVE_DELAY_MS,
   })
+  const primaryMs = Date.now() - primaryStart
 
   console.log(`[cache-search] hit=${resolved.cacheHits} miss=${resolved.cacheMisses} total=${uniqueNames.length}`)
 
@@ -832,7 +849,16 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
         return secondaryRows.length
       }
 
-  return { count: rows.length, runSecondary }
+  return {
+    count: rows.length,
+    runSecondary,
+    metrics: {
+      primaryMs,
+      misses: resolved.cacheMisses,
+      retries: resolved.searchRetries,
+      rateLimited: resolved.rateLimited,
+    },
+  }
 }
 
 // ── Main entry point ────────────────────────────────────────────────────────

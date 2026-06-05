@@ -48,4 +48,10 @@ export interface BuildResult {
    * `undefined` on normal (non-softened) runs.
    */
   softenedFilters?: SoftenedFilters
+  metrics?: {
+    primaryMs: number
+    misses: number
+    retries: number
+    rateLimited: boolean
+  }
 }

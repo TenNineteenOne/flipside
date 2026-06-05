@@ -5,6 +5,7 @@ import { enforceSameOrigin } from "@/lib/csrf"
 import { getAccessToken } from "@/lib/get-access-token"
 import { getSpotifyClientToken } from "@/lib/spotify-client-token"
 import { buildRecommendations } from "@/lib/recommendation/engine"
+import { formatGenTiming } from "@/lib/recommendation/gen-timing"
 import { extractArtistColor } from "@/lib/colour-extraction"
 import { searchTracksByArtist } from "@/lib/music-provider/itunes"
 import { musicProvider } from "@/lib/music-provider/provider"
@@ -171,6 +172,12 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const supabase = createServiceClient()
 
+  // Warm the Spotify client token concurrently with the user-row read. On
+  // serverless cold starts the module-cached token is empty; overlapping it
+  // with the DB round-trip removes a 200–400ms serial blip. The .catch settles
+  // the promise so it never becomes an unhandled rejection if unused.
+  const clientTokenPromise = getSpotifyClientToken().catch(() => null)
+
   // Read user row including play_threshold
   const { data: user, error: userError } = await supabase
     .from("users")
@@ -236,7 +243,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     // credentials. Fail loudly if neither is available — silently passing an
     // empty bearer to Spotify would return 401 on every downstream call and
     // produce a batch of empty recommendations the client can't diagnose.
-    const accessToken = userAccessToken ?? (await getSpotifyClientToken())
+    const accessToken = userAccessToken ?? (await clientTokenPromise)
     if (!accessToken) {
       console.error("[generate] no Spotify token available (user + client credentials both failed)")
       return apiError("Music service temporarily unavailable", 503)
@@ -246,7 +253,8 @@ export async function POST(req: NextRequest): Promise<Response> {
     const rawGenre = req.nextUrl.searchParams.get("genre")
     const genre = rawGenre && rawGenre.length <= 80 ? rawGenre : undefined
 
-    const { count: recCount, runSecondary, softenedFilters } = await buildRecommendations({
+    const genStart = Date.now()
+    const { count: recCount, runSecondary, softenedFilters, metrics } = await buildRecommendations({
       userId: user.id,
       accessToken,
       playThreshold,
@@ -256,6 +264,14 @@ export async function POST(req: NextRequest): Promise<Response> {
       deepDiscovery: user.deep_discovery ?? false,
       adventurous: user.adventurous ?? false,
     })
+    console.log(formatGenTiming({
+      userId: user.id,
+      phases: metrics ? { primary: metrics.primaryMs } : {},
+      totalMs: Date.now() - genStart,
+      misses: metrics?.misses,
+      retries: metrics?.retries,
+      rateLimited: metrics?.rateLimited,
+    }))
 
     // Decorations (colour extraction + track pre-warming) and secondary
     // candidate resolution run AFTER the response returns so the feed

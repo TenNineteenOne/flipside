@@ -29,8 +29,13 @@ export function SplashClient() {
     setStatus("generating")
     try {
       const res = await fetch("/api/recommendations/generate", { method: "POST" })
-      if (!res.ok) throw new Error(`http_${res.status}`)
-      router.push("/feed")
+      // 429 = a generation is already in flight (e.g. proactive pre-gen). Hand
+      // off to /feed, whose loader polls for the result.
+      if (res.ok || res.status === 429) {
+        router.push("/feed")
+        return
+      }
+      throw new Error(`http_${res.status}`)
     } catch (err) {
       console.error("[splash] generate failed", err)
       setStatus("error")
