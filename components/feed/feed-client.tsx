@@ -1,6 +1,6 @@
 "use client"
 
-import { memo, useCallback, useMemo, useRef, useState } from "react"
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { ArtistCard } from "@/components/feed/artist-card"
@@ -65,6 +65,11 @@ const FEED_PALETTE = `
     radial-gradient(70% 55% at 50% 90%, rgba(125, 217, 198, 0.14) 0%, transparent 70%)
   `
 
+// Below this many unseen recs on load, quietly top up in the background so the
+// next visit hits the warm redirect path (hasFreshRecs stays true). The visible
+// feed is unchanged this load; new recs land server-side for next time.
+const TOPUP_THRESHOLD = 8
+
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
@@ -76,6 +81,28 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
   // before the first render commits. The ref blocks the second call instantly.
   const isGeneratingRef = useRef(false)
   const router = useRouter()
+
+  // Background top-up: fire once on mount if the queue is running low. Non-
+  // awaited and cooldown-safe (a 429 just means a generation is already in
+  // flight). We intentionally do NOT router.refresh() — this is for the *next*
+  // visit's warm path, not to mutate the current view out from under the user.
+  useEffect(() => {
+    if (recommendations.length >= TOPUP_THRESHOLD) return
+    if (isGeneratingRef.current) return
+    isGeneratingRef.current = true
+    let cancelled = false
+    fetch("/api/recommendations/generate", { method: "POST" })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) isGeneratingRef.current = false
+      })
+    return () => {
+      cancelled = true
+      isGeneratingRef.current = false
+    }
+    // Mount-only: deliberately not re-firing on recommendations identity change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const sequence = useMemo(() => buildSequence(recommendations), [recommendations])
 
