@@ -595,7 +595,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
 
   if (uniqueNames.length === 0) {
     console.error(`[engine] FAIL no_unique seeds=${capSeedNames.length} lfm=${lfmTotal} source=${source}`)
-    return { count: 0, runSecondary: null, metrics: { primaryMs: 0, previewMs: 0, misses: 0, retries: 0, rateLimited: false } }
+    return { count: 0, runSecondary: null, metrics: { primaryMs: 0, previewMs: 0, firstBatchMs: 0, misses: 0, retries: 0, rateLimited: false } }
   }
 
   const candidateMap = new Map<string, { artist: Artist; seedArtists: string[] }>()
@@ -745,7 +745,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
       `uniq=${uniqueNames.length} ok=${resolved.searchOk} fail=${resolved.searchFail} ` +
       `filtListened=${filtListened} cands=${candidateMap.size} source=${source}`
     )
-    return { count: 0, runSecondary: null, metrics: { primaryMs: Date.now() - primaryStart, previewMs, misses: resolved.cacheMisses, retries: resolved.searchRetries, rateLimited: resolved.rateLimited } }
+    return { count: 0, runSecondary: null, metrics: { primaryMs: Date.now() - primaryStart, previewMs, firstBatchMs: 0, misses: resolved.cacheMisses, retries: resolved.searchRetries, rateLimited: resolved.rateLimited } }
   }
 
   // Post-pipeline adjacent-genre bleed. Skipped when the user has filtered
@@ -779,6 +779,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
   // short, await it and top up from its best filter-passing candidates. Only
   // pays latency in the (rare) short case; full feeds skip the await entirely.
   const TARGET = 20
+  const FIRST_BATCH_TARGET = 8
   if (top.length < TARGET && secondaryResolvePromise) {
     const sec = await secondaryResolvePromise
     const pickedIds = new Set(top.map((t) => t.artist.id))
@@ -799,204 +800,210 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     }
   }
 
-  // Confirm-only-shown (#143): previews are confirmed ONLY for the artists we are
-  // about to show, score-ordered, stopping at TARGET playable. Anything still
-  // unconfirmed below TARGET is backfilled from the scored pool tail. Guarantees
-  // every written row has a playable preview without confirming the whole pool.
-  {
-    const previewStart = Date.now()
-    const confirmFn = buildConfirmPreview(accessToken)
-    const inTop = new Set(top.map((t) => t.artist.id))
-    const tail = pool.filter((s) => !inTop.has(s.artist.id)) // already score-sorted
-    const ordered = [...top, ...tail]
-    const { kept } = await confirmToTarget(ordered, TARGET, confirmFn)
-    top = kept
-    previewMs = Date.now() - previewStart
-  }
+  // Two-phase confirm+write (#144):
+  //   Tier 1 (blocking): confirm FIRST_BATCH_TARGET, write, return fast.
+  //   Tier 2 (deferred): finish primary to TARGET, then secondary pool — all in after().
+  // Every artist written in ANY phase is confirmed-playable (comes through confirmToTarget).
 
-  const topIds = top.map((item) => item.artist.id)
-  const { data: existingCache } = await supabase
-    .from('recommendation_cache')
-    .select('spotify_artist_id, seen_at, skip_at')
-    .eq('user_id', userId)
-    .in('spotify_artist_id', topIds)
-
-  const existingSeenAt = new Map<string, string | null>()
-  const existingSkipAt = new Map<string, string | null>()
-  for (const row of existingCache ?? []) {
-    existingSeenAt.set(row.spotify_artist_id, row.seen_at)
-    existingSkipAt.set(row.spotify_artist_id, row.skip_at)
-  }
+  const confirmFn = buildConfirmPreview(accessToken)
+  const inTop = new Set(top.map((t) => t.artist.id))
+  const tail = pool.filter((s) => !inTop.has(s.artist.id)) // already score-sorted
+  const ordered = [...top, ...tail]
 
   const now = new Date()
   const expiresAt = new Date(now)
   expiresAt.setDate(expiresAt.getDate() + 30)
 
-  const rows = top
-    .filter((item) => {
-      const seenAt = existingSeenAt.get(item.artist.id)
-      const skipAt = existingSkipAt.get(item.artist.id)
-      // Not in cache → eligible. In cache → check both cooldowns.
-      if (seenAt === undefined && skipAt === undefined) return true
-      return isEligibleForCooldown(seenAt, skipAt, now)
-    })
-    .map((item) => {
-      const previousSeenAt = existingSeenAt.get(item.artist.id)
-      const previousSkipAt = existingSkipAt.get(item.artist.id)
-      return {
-        user_id: userId,
-        spotify_artist_id: item.artist.id,
-        artist_data: item.artist,
-        score: item.score,
-        why: item.why,
-        source: item.source,
-        expires_at: expiresAt.toISOString(),
-        // Preserve existing cooldown state on re-surface so the window doesn't reset.
-        ...(previousSeenAt !== undefined ? { seen_at: previousSeenAt } : { seen_at: null }),
-        ...(previousSkipAt !== undefined ? { skip_at: previousSkipAt } : { skip_at: null }),
-      }
-    })
+  // writtenIds tracks all ids written across tier-1, tier-2, and secondary to
+  // avoid duplicate confirms or upserts.
+  const writtenIds = new Set<string>()
 
-  const { error } = rows.length === 0
-    ? { error: null }
-    : await supabase
-        .from('recommendation_cache')
-        .upsert(rows, { onConflict: 'user_id,spotify_artist_id' })
+  /**
+   * Write a set of confirmed ScoredArtists to recommendation_cache, skipping
+   * cooldown-ineligible rows and ids already written this run. Returns the
+   * number of rows successfully upserted.
+   *
+   * Preserves ALL existing behaviour: cooldown filtering, row shape, expires_at,
+   * upsert onConflict. Fetches cooldown state fresh from DB for the given items
+   * so concurrent phases never clobber a live seen_at/skip_at.
+   */
+  async function writeScored(items: ScoredArtist[]): Promise<number> {
+    // Exclude ids already written in a previous phase
+    const fresh = items.filter((item) => !writtenIds.has(item.artist.id))
+    if (fresh.length === 0) return 0
 
-  if (error) {
-    console.error(`[engine] upsert_error source=${source} err=${error.message}`)
-    return { count: 0, runSecondary: null, metrics: { primaryMs: Date.now() - primaryStart, previewMs, misses: resolved.cacheMisses, retries: resolved.searchRetries, rateLimited: resolved.rateLimited } }
+    const ids = fresh.map((item) => item.artist.id)
+    const { data: existingCache } = await supabase
+      .from('recommendation_cache')
+      .select('spotify_artist_id, seen_at, skip_at')
+      .eq('user_id', userId)
+      .in('spotify_artist_id', ids)
+
+    const existingSeenAt = new Map<string, string | null>()
+    const existingSkipAt = new Map<string, string | null>()
+    for (const row of existingCache ?? []) {
+      existingSeenAt.set(row.spotify_artist_id, row.seen_at)
+      existingSkipAt.set(row.spotify_artist_id, row.skip_at)
+    }
+
+    const rows = fresh
+      .filter((item) => {
+        const seenAt = existingSeenAt.get(item.artist.id)
+        const skipAt = existingSkipAt.get(item.artist.id)
+        // Not in cache → eligible. In cache → check both cooldowns.
+        if (seenAt === undefined && skipAt === undefined) return true
+        return isEligibleForCooldown(seenAt, skipAt, now)
+      })
+      .map((item) => {
+        const previousSeenAt = existingSeenAt.get(item.artist.id)
+        const previousSkipAt = existingSkipAt.get(item.artist.id)
+        return {
+          user_id: userId,
+          spotify_artist_id: item.artist.id,
+          artist_data: item.artist,
+          score: item.score,
+          why: item.why,
+          source: item.source,
+          expires_at: expiresAt.toISOString(),
+          // Preserve existing cooldown state on re-surface so the window doesn't reset.
+          ...(previousSeenAt !== undefined ? { seen_at: previousSeenAt } : { seen_at: null }),
+          ...(previousSkipAt !== undefined ? { skip_at: previousSkipAt } : { skip_at: null }),
+        }
+      })
+
+    if (rows.length === 0) return 0
+
+    const { error } = await supabase
+      .from('recommendation_cache')
+      .upsert(rows, { onConflict: 'user_id,spotify_artist_id' })
+
+    if (error) {
+      console.error(`[engine] upsert_error source=${source} err=${error.message}`)
+      return 0
+    }
+
+    for (const row of rows) writtenIds.add(row.spotify_artist_id)
+    return rows.length
   }
 
+  // ── Tier 1 (blocking): confirm FIRST_BATCH_TARGET artists, write, return fast ──
+  const firstBatchStart = Date.now()
+  const { kept: firstBatch, confirmedCount: c1 } = await confirmToTarget(
+    ordered,
+    FIRST_BATCH_TARGET,
+    confirmFn,
+  )
+  const firstBatchMs = Date.now() - firstBatchStart
+  previewMs = firstBatchMs // time the user waited for first paint
+
+  const tier1Written = await writeScored(firstBatch)
+
   console.log(
-    `[engine] OK seeds=${capSeedNames.length} lfm=${lfmTotal} uniq=${uniqueNames.length} ` +
+    `[engine] tier1 seeds=${capSeedNames.length} lfm=${lfmTotal} uniq=${uniqueNames.length} ` +
     `ok=${resolved.searchOk} fail=${resolved.searchFail} filtListened=${filtListened} ` +
-    `cands=${candidateMap.size} top=${top.length} written=${rows.length} source=${source}`
+    `cands=${candidateMap.size} firstBatch=${firstBatch.length} written=${tier1Written} source=${source}`
   )
 
-  const writtenIds = new Set(rows.map((r) => r.spotify_artist_id))
+  // ── Background continuation: tier-2 (finish primary to TARGET) + secondary pool ──
+  // runSecondary is the single function called by after() in the route. It:
+  //   1. Confirms ordered.slice(c1) up to (TARGET - firstBatch.length) more artists.
+  //   2. Writes those via writeScored (deduped against writtenIds).
+  //   3. Resolves + confirms + writes the secondary pool (unchanged from before).
+  const runSecondary = async (): Promise<number> => {
+    let backgroundWritten = 0
 
-  const runSecondary = secondaryResolvePromise === null
-    ? null
-    : async (): Promise<number> => {
-        // Already fetched in parallel with primary — just await the result.
-        const secondaryResolved = await secondaryResolvePromise
-
-        const secondaryCandidates: Array<{ artist: Artist; seedArtists: string[] }> = []
-        for (const [name, artist] of secondaryResolved.resolved) {
-          if (writtenIds.has(artist.id)) continue
-          if (thumbsDownIds.has(artist.id)) continue
-          if (overThresholdIds.has(artist.id)) continue
-          if (overThresholdNames.has(normalizeArtistName(artist.name))) continue
-          if (undergroundMode && (artist.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) continue
-          if (genre && !artist.genres.some((g) => normalizedIncludes(g, genre))) continue
-          const seedArtists = nameToSeeds.get(name) ?? []
-          secondaryCandidates.push({ artist, seedArtists })
-        }
-
-        if (secondaryCandidates.length === 0) {
-          console.log(`[engine] secondary_empty source=${source}`)
-          return 0
-        }
-
-        const secondaryScored: ScoredArtist[] = secondaryCandidates.map(({ artist, seedArtists }) => {
-          const seedRelevance = Math.min(Math.sqrt(seedArtists.length) / Math.sqrt(6), 1)
-          const tier = tierMultiplier(artist.popularity, popularityCurve)
-          const discoveryPenalty = undergroundMode
-            ? Math.pow((100 - artist.popularity) / 100, 2)
-            : 1
-          const baseScore = tier * 0.80 + seedRelevance * 0.20
-          const mainstreamPenalty =
-            adventurous && artist.popularity > 50 ? ADVENTUROUS_MAINSTREAM_PENALTY : 0
-          const score = baseScore * discoveryPenalty - mainstreamPenalty
-          return {
-            artist: { ...artist, topTracks: artist.topTracks ?? [] },
-            score,
-            why: {
-              sourceArtists: seedArtists.slice(0, 2),
-              genres: artist.genres.slice(0, 2),
-              friendBoost: [],
-            },
-            source: `${source}_secondary`,
-          }
-        })
-
-        secondaryScored.sort((a, b) => b.score - a.score)
-
-        // Confirm-only-shown (#143): confirm only up to TARGET secondary candidates
-        // before writing, so secondary doesn't blow the preview-API budget either.
-        const { kept: secConfirmed } = await confirmToTarget(
-          secondaryScored,
-          TARGET,
-          buildConfirmPreview(accessToken),
-        )
-        const secScored = secConfirmed
-
-        // Fetch existing cooldown state for secondary too — otherwise re-running
-        // in the background can clobber a fresh seen_at/skip_at on an existing row.
-        const secondaryIds = secScored.map((s) => s.artist.id)
-        const { data: existingSec } = await supabase
-          .from('recommendation_cache')
-          .select('spotify_artist_id, seen_at, skip_at')
-          .eq('user_id', userId)
-          .in('spotify_artist_id', secondaryIds)
-        const secSeenAt = new Map<string, string | null>()
-        const secSkipAt = new Map<string, string | null>()
-        for (const row of existingSec ?? []) {
-          secSeenAt.set(row.spotify_artist_id, row.seen_at)
-          secSkipAt.set(row.spotify_artist_id, row.skip_at)
-        }
-
-        const secondaryRows = secScored
-          .filter((item) => {
-            const seenAt = secSeenAt.get(item.artist.id)
-            const skipAt = secSkipAt.get(item.artist.id)
-            if (seenAt === undefined && skipAt === undefined) return true
-            return isEligibleForCooldown(seenAt, skipAt, now)
-          })
-          .map((item) => {
-            const previousSeenAt = secSeenAt.get(item.artist.id)
-            const previousSkipAt = secSkipAt.get(item.artist.id)
-            return {
-              user_id: userId,
-              spotify_artist_id: item.artist.id,
-              artist_data: item.artist,
-              score: item.score,
-              why: item.why,
-              source: item.source,
-              expires_at: expiresAt.toISOString(),
-              ...(previousSeenAt !== undefined ? { seen_at: previousSeenAt } : { seen_at: null }),
-              ...(previousSkipAt !== undefined ? { skip_at: previousSkipAt } : { skip_at: null }),
-            }
-          })
-
-        if (secondaryRows.length === 0) {
-          console.log(`[engine] secondary_all_in_cooldown source=${source}`)
-          return 0
-        }
-
-        const { error: secErr } = await supabase
-          .from('recommendation_cache')
-          .upsert(secondaryRows, { onConflict: 'user_id,spotify_artist_id' })
-
-        if (secErr) {
-          console.error(`[engine] secondary_upsert_error source=${source} err=${secErr.message}`)
-          return 0
-        }
-
+    // ── Tier 2: finish primary to TARGET ──
+    const tier2Need = TARGET - firstBatch.length
+    if (tier2Need > 0 && c1 < ordered.length) {
+      const { kept: tier2Batch } = await confirmToTarget(
+        ordered.slice(c1),
+        tier2Need,
+        confirmFn,
+      )
+      if (tier2Batch.length > 0) {
+        const written = await writeScored(tier2Batch)
+        backgroundWritten += written
         console.log(
-          `[engine] secondary-OK source=${source} names=${secondaryNames.length} ` +
-          `resolved=${secondaryResolved.resolved.size} written=${secondaryRows.length}`
+          `[engine] tier2 source=${source} confirmed=${tier2Batch.length} written=${written}`
         )
-        return secondaryRows.length
       }
+    }
+
+    // ── Secondary pool ──
+    if (secondaryResolvePromise === null) return backgroundWritten
+
+    // Already fetched in parallel with primary — just await the result.
+    const secondaryResolved = await secondaryResolvePromise
+
+    const secondaryCandidates: Array<{ artist: Artist; seedArtists: string[] }> = []
+    for (const [name, artist] of secondaryResolved.resolved) {
+      if (writtenIds.has(artist.id)) continue
+      if (thumbsDownIds.has(artist.id)) continue
+      if (overThresholdIds.has(artist.id)) continue
+      if (overThresholdNames.has(normalizeArtistName(artist.name))) continue
+      if (undergroundMode && (artist.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) continue
+      if (genre && !artist.genres.some((g) => normalizedIncludes(g, genre))) continue
+      const seedArtists = nameToSeeds.get(name) ?? []
+      secondaryCandidates.push({ artist, seedArtists })
+    }
+
+    if (secondaryCandidates.length === 0) {
+      console.log(`[engine] secondary_empty source=${source}`)
+      return backgroundWritten
+    }
+
+    const secondaryScored: ScoredArtist[] = secondaryCandidates.map(({ artist, seedArtists }) => {
+      const seedRelevance = Math.min(Math.sqrt(seedArtists.length) / Math.sqrt(6), 1)
+      const tier = tierMultiplier(artist.popularity, popularityCurve)
+      const discoveryPenalty = undergroundMode
+        ? Math.pow((100 - artist.popularity) / 100, 2)
+        : 1
+      const baseScore = tier * 0.80 + seedRelevance * 0.20
+      const mainstreamPenalty =
+        adventurous && artist.popularity > 50 ? ADVENTUROUS_MAINSTREAM_PENALTY : 0
+      const score = baseScore * discoveryPenalty - mainstreamPenalty
+      return {
+        artist: { ...artist, topTracks: artist.topTracks ?? [] },
+        score,
+        why: {
+          sourceArtists: seedArtists.slice(0, 2),
+          genres: artist.genres.slice(0, 2),
+          friendBoost: [],
+        },
+        source: `${source}_secondary`,
+      }
+    })
+
+    secondaryScored.sort((a, b) => b.score - a.score)
+
+    // Confirm only up to TARGET secondary candidates before writing.
+    const { kept: secConfirmed } = await confirmToTarget(
+      secondaryScored,
+      TARGET,
+      buildConfirmPreview(accessToken),
+    )
+
+    if (secConfirmed.length > 0) {
+      const secWritten = await writeScored(secConfirmed)
+      backgroundWritten += secWritten
+      console.log(
+        `[engine] secondary-OK source=${source} names=${secondaryNames.length} ` +
+        `resolved=${secondaryResolved.resolved.size} written=${secWritten}`
+      )
+    } else {
+      console.log(`[engine] secondary_all_in_cooldown source=${source}`)
+    }
+
+    return backgroundWritten
+  }
 
   return {
-    count: rows.length,
+    count: tier1Written,
     runSecondary,
     metrics: {
       primaryMs,
       previewMs,
+      firstBatchMs,
       misses: resolved.cacheMisses,
       retries: resolved.searchRetries,
       rateLimited: resolved.rateLimited,

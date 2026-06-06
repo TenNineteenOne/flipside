@@ -205,7 +205,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     const apiCalls = snapshotCalls()
     console.log(formatGenTiming({
       userId: user.id,
-      phases: { primary: metrics.primaryMs, preview: metrics.previewMs },
+      phases: { firstBatch: metrics.firstBatchMs, primary: metrics.primaryMs, preview: metrics.previewMs },
       totalMs: Date.now() - genStart,
       misses: metrics.misses,
       retries: metrics.retries,
@@ -221,13 +221,14 @@ export async function POST(req: NextRequest): Promise<Response> {
     // raced the user and is gone). Missing colours fall back to a
     // deterministic name-hash hue.
     after(async () => {
-      // Run secondary resolution first so freshly-added rows get decorated
-      // in the same background pass.
+      // Finish primary-to-20 (tier-2) then secondary pool in the background.
+      // runSecondary handles both phases; it is null only when the pipeline
+      // failed early (empty pool / no candidates).
       if (runSecondary) {
         try {
           await runSecondary()
         } catch (err) {
-          console.error(`[generate] secondary-fail err=${err instanceof Error ? err.message : err}`)
+          console.error(`[generate] background-fail err=${err instanceof Error ? err.message : err}`)
         }
       }
 

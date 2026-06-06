@@ -50,8 +50,10 @@ export interface BuildResult {
   softenedFilters?: SoftenedFilters
   metrics: {
     primaryMs: number
-    /** Wall-clock of the primary resolve's preview-confirmation pass (ms). */
+    /** Wall-clock of the tier-1 (first-batch) confirm pass (ms). Equals time user waited for first paint. */
     previewMs: number
+    /** Wall-clock of the tier-1 confirm pass — same value as previewMs, surfaced separately for gen-timing. */
+    firstBatchMs: number
     misses: number
     retries: number
     rateLimited: boolean
