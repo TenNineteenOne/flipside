@@ -595,7 +595,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
 
   if (uniqueNames.length === 0) {
     console.error(`[engine] FAIL no_unique seeds=${capSeedNames.length} lfm=${lfmTotal} source=${source}`)
-    return { count: 0, runSecondary: null }
+    return { count: 0, runSecondary: null, metrics: { primaryMs: 0, previewMs: 0, misses: 0, retries: 0, rateLimited: false } }
   }
 
   const candidateMap = new Map<string, { artist: Artist; seedArtists: string[] }>()
@@ -746,7 +746,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
       `uniq=${uniqueNames.length} ok=${resolved.searchOk} fail=${resolved.searchFail} ` +
       `filtListened=${filtListened} cands=${candidateMap.size} source=${source}`
     )
-    return { count: 0, runSecondary: null }
+    return { count: 0, runSecondary: null, metrics: { primaryMs: Date.now() - primaryStart, previewMs: resolved.previewMs, misses: resolved.cacheMisses, retries: resolved.searchRetries, rateLimited: resolved.rateLimited } }
   }
 
   // Post-pipeline adjacent-genre bleed. Skipped when the user has filtered
@@ -852,7 +852,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
 
   if (error) {
     console.error(`[engine] upsert_error source=${source} err=${error.message}`)
-    return { count: 0, runSecondary: null }
+    return { count: 0, runSecondary: null, metrics: { primaryMs: Date.now() - primaryStart, previewMs: resolved.previewMs, misses: resolved.cacheMisses, retries: resolved.searchRetries, rateLimited: resolved.rateLimited } }
   }
 
   console.log(

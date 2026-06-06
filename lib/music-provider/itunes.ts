@@ -1,5 +1,6 @@
 import type { Track } from "./types"
 import { runItunes } from "@/lib/itunes-limit"
+import { incItunes } from "@/lib/recommendation/api-call-counter"
 
 const ITUNES_BASE = "https://itunes.apple.com/search"
 
@@ -36,6 +37,7 @@ export async function searchTracksByArtist(
       `${ITUNES_BASE}?term=${encodeURIComponent(artistName)}` +
       `&entity=song&limit=25&country=${encodeURIComponent(market)}`
     items = await runItunes(async () => {
+      incItunes()
       const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
       if (!res.ok) {
         console.log(`[itunes] ${res.status} artist="${artistName}"`)

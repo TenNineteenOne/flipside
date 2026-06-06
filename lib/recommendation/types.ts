@@ -48,7 +48,7 @@ export interface BuildResult {
    * `undefined` on normal (non-softened) runs.
    */
   softenedFilters?: SoftenedFilters
-  metrics?: {
+  metrics: {
     primaryMs: number
     /** Wall-clock of the primary resolve's preview-confirmation pass (ms). */
     previewMs: number

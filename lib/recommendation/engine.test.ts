@@ -622,7 +622,7 @@ describe("runWithSoftening cascade order", () => {
         seedNames: opts.seedNames,
       })
       const count = results[idx++] ?? 0
-      return { count, runSecondary: null }
+      return { count, runSecondary: null, metrics: { primaryMs: 0, previewMs: 0, misses: 0, retries: 0, rateLimited: false } }
     }
     return { run, calls }
   }

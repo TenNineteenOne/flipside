@@ -2,6 +2,7 @@ import type { MusicProvider, RateLimited, SimilarArtistRef } from "./index"
 import type { Artist, PlayHistory, Track } from "./types"
 import { cachedSimilarArtistNames } from "@/lib/lastfm-cache"
 import { runLastfm } from "@/lib/lastfm-limit"
+import { incSpotify } from "@/lib/recommendation/api-call-counter"
 
 const SPOTIFY_BASE = "https://api.spotify.com/v1"
 const LASTFM_BASE = "https://ws.audioscrobbler.com/2.0"
@@ -257,6 +258,7 @@ export class SpotifyProvider implements MusicProvider {
   // searchArtists
   // -------------------------------------------------------------------------
   async searchArtists(accessToken: string, query: string): Promise<Artist[] | RateLimited> {
+    incSpotify()
     const res = await spotifyFetch(
       `${SPOTIFY_BASE}/search?q=${encodeURIComponent(query)}&type=artist&limit=10`,
       accessToken
@@ -290,6 +292,7 @@ export class SpotifyProvider implements MusicProvider {
     limit: number,
     market = "from_token"
   ): Promise<Track[]> {
+    incSpotify()
     const res = await spotifyFetch(
       `${SPOTIFY_BASE}/artists/${artistId}/top-tracks?market=${market}`,
       accessToken

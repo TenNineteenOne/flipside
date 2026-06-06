@@ -6,6 +6,7 @@ import { getAccessToken } from "@/lib/get-access-token"
 import { getSpotifyClientToken } from "@/lib/spotify-client-token"
 import { buildRecommendations } from "@/lib/recommendation/engine"
 import { formatGenTiming } from "@/lib/recommendation/gen-timing"
+import { resetCalls, snapshotCalls } from "@/lib/recommendation/api-call-counter"
 import { extractArtistColor } from "@/lib/colour-extraction"
 import { after, type NextRequest } from "next/server"
 import type { Artist } from "@/lib/music-provider/types"
@@ -185,6 +186,10 @@ export async function POST(req: NextRequest): Promise<Response> {
     const rawGenre = req.nextUrl.searchParams.get("genre")
     const genre = rawGenre && rawGenre.length <= 80 ? rawGenre : undefined
 
+    // Reset per-request API call counters before the blocking generate. The
+    // snapshot below captures only the critical-path calls; background after()
+    // work runs after logging and is intentionally excluded.
+    resetCalls()
     const genStart = Date.now()
     const { count: recCount, runSecondary, softenedFilters, metrics } = await buildRecommendations({
       userId: user.id,
@@ -196,13 +201,17 @@ export async function POST(req: NextRequest): Promise<Response> {
       deepDiscovery: user.deep_discovery ?? false,
       adventurous: user.adventurous ?? false,
     })
+    // Snapshot before logging — after() work runs after this point and is excluded.
+    const apiCalls = snapshotCalls()
     console.log(formatGenTiming({
       userId: user.id,
-      phases: metrics ? { primary: metrics.primaryMs, preview: metrics.previewMs } : {},
+      phases: { primary: metrics.primaryMs, preview: metrics.previewMs },
       totalMs: Date.now() - genStart,
-      misses: metrics?.misses,
-      retries: metrics?.retries,
-      rateLimited: metrics?.rateLimited,
+      misses: metrics.misses,
+      retries: metrics.retries,
+      rateLimited: metrics.rateLimited,
+      itunesCalls: apiCalls.itunes,
+      spotifyCalls: apiCalls.spotify,
     }))
 
     // Colour extraction and secondary candidate resolution run AFTER the
