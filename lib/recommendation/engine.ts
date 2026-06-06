@@ -629,6 +629,11 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
 
   console.log(`[cache-search] hit=${resolved.cacheHits} miss=${resolved.cacheMisses} total=${uniqueNames.length}`)
 
+  // Build id→resolver-name map so confirmed artists can be written back into
+  // artist_search_cache with topTracks baked in (warm-reuse write-back, #145).
+  const idToName = new Map<string, string>()
+  for (const [name, a] of resolved.resolved) idToName.set(a.id, name)
+
   for (const [name, artist] of resolved.resolved) {
     const seedArtists = nameToSeeds.get(name) ?? []
     if (candidateMap.has(artist.id)) {
@@ -898,6 +903,17 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
 
   const tier1Written = await writeScored(firstBatch)
 
+  // Write-back: bake confirmed topTracks into artist_search_cache so the next
+  // generation's resolver finds warm artists with topTracks → no re-confirm.
+  // idToName covers only the primary resolved pool; artists with no known name
+  // (adjacent-bleed, not in resolved.resolved) are simply skipped. (#145)
+  await Promise.all(
+    firstBatch.map((k) => {
+      const nm = idToName.get(k.artist.id)
+      return nm ? nameCache.write(nm, k.artist).catch(() => {}) : Promise.resolve()
+    })
+  )
+
   console.log(
     `[engine] tier1 seeds=${capSeedNames.length} lfm=${lfmTotal} uniq=${uniqueNames.length} ` +
     `ok=${resolved.searchOk} fail=${resolved.searchFail} filtListened=${filtListened} ` +
@@ -926,6 +942,13 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
         console.log(
           `[engine] tier2 source=${source} confirmed=${tier2Batch.length} written=${written}`
         )
+        // Write-back tier-2 confirmed topTracks (idToName in closure scope). (#145)
+        await Promise.all(
+          tier2Batch.map((k) => {
+            const nm = idToName.get(k.artist.id)
+            return nm ? nameCache.write(nm, k.artist).catch(() => {}) : Promise.resolve()
+          })
+        )
       }
     }
 
@@ -934,6 +957,10 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
 
     // Already fetched in parallel with primary — just await the result.
     const secondaryResolved = await secondaryResolvePromise
+
+    // Build id→name map for secondary pool write-back. (#145)
+    const secondaryIdToName = new Map<string, string>()
+    for (const [name, a] of secondaryResolved.resolved) secondaryIdToName.set(a.id, name)
 
     const secondaryCandidates: Array<{ artist: Artist; seedArtists: string[] }> = []
     for (const [name, artist] of secondaryResolved.resolved) {
@@ -989,6 +1016,13 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
       console.log(
         `[engine] secondary-OK source=${source} names=${secondaryNames.length} ` +
         `resolved=${secondaryResolved.resolved.size} written=${secWritten}`
+      )
+      // Write-back secondary confirmed topTracks into artist_search_cache. (#145)
+      await Promise.all(
+        secConfirmed.map((k) => {
+          const nm = secondaryIdToName.get(k.artist.id)
+          return nm ? nameCache.write(nm, k.artist).catch(() => {}) : Promise.resolve()
+        })
       )
     } else {
       console.log(`[engine] secondary_all_in_cooldown source=${source}`)

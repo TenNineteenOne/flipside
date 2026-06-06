@@ -249,7 +249,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       }
     })
 
-    return Response.json({ success: true, count: recCount, softenedFilters })
+    return Response.json({ success: true, count: recCount, softenedFilters, pending: runSecondary != null })
   } catch (err) {
     console.error(`[generate] fail err=${err instanceof Error ? err.message : err}`)
     return apiError("Recommendation generation failed", 500)
