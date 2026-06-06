@@ -266,7 +266,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     })
     console.log(formatGenTiming({
       userId: user.id,
-      phases: metrics ? { primary: metrics.primaryMs } : {},
+      phases: metrics ? { primary: metrics.primaryMs, preview: metrics.previewMs } : {},
       totalMs: Date.now() - genStart,
       misses: metrics?.misses,
       retries: metrics?.retries,

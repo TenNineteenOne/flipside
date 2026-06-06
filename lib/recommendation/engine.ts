@@ -11,6 +11,8 @@ import {
 } from './types'
 import { ArtistNameCache } from './artist-name-cache'
 import { resolveArtistsByName } from './resolve-candidates'
+import { confirmPlayableTracks } from './confirm-previews'
+import { searchTracksByArtist } from '@/lib/music-provider/itunes'
 import { fetchArtistEnrichment } from './enrich-artist'
 import { normalizeArtistName } from '@/lib/listened-artists'
 import { normalizedIncludes, normalizeGenre } from '@/lib/genre/normalize'
@@ -124,6 +126,27 @@ function buildEnrichArtist() {
   const apiKey = process.env.LASTFM_API_KEY
   if (!apiKey) return undefined
   return (name: string) => fetchArtistEnrichment(name, apiKey)
+}
+
+/**
+ * Build a live confirmPreview dep for resolve-candidates. iTunes-first (free,
+ * no auth, near-universal 30s previews), Spotify top-tracks as fallback. Reuses
+ * any `topTracks` already on the artist (warm name-cache hit) with zero network.
+ * Shared by the primary, secondary, and adjacent-bleed resolves so the
+ * playability guarantee holds across the whole For You pipeline.
+ */
+function buildConfirmPreview(accessToken: string) {
+  return (artist: Artist) =>
+    confirmPlayableTracks(
+      { id: artist.id, name: artist.name, topTracks: artist.topTracks },
+      {
+        searchItunes: (name) => searchTracksByArtist(name, 'US', 5),
+        getSpotifyTopTracks: (id) =>
+          accessToken
+            ? musicProvider.getArtistTopTracks(accessToken, id, 5, 'US').catch(() => [])
+            : Promise.resolve([]),
+      },
+    )
 }
 
 // ── Seed gathering ──────────────────────────────────────────────────────────
@@ -448,7 +471,7 @@ export async function augmentWithAdjacent(
     const score = baseScore * discoveryPenalty + ADJACENT_BLEED_BONUS - mainstreamPenalty
 
     scored.push({
-      artist: { ...artist, topTracks: [] },
+      artist: { ...artist, topTracks: artist.topTracks ?? [] },
       score,
       why: {
         sourceArtists: tag ? [tag] : [],
@@ -563,6 +586,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
         cache: nameCache,
         searchArtists: (name) => musicProvider.searchArtists(accessToken, name),
         enrichArtist: buildEnrichArtist(),
+        confirmPreview: buildConfirmPreview(accessToken),
       })
 
   const primaryStart = Date.now()
@@ -570,6 +594,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     cache: nameCache,
     searchArtists: (name) => musicProvider.searchArtists(accessToken, name),
     enrichArtist: buildEnrichArtist(),
+    confirmPreview: buildConfirmPreview(accessToken),
     concurrency: RESOLVE_CONCURRENCY,
     delayMs: RESOLVE_DELAY_MS,
   })
@@ -639,7 +664,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     const score = baseScore * discoveryPenalty - mainstreamPenalty
 
     return {
-      artist: { ...artist, topTracks: [] },
+      artist: { ...artist, topTracks: artist.topTracks ?? [] },
       score,
       why: {
         sourceArtists: seedArtists.slice(0, 2),
@@ -709,6 +734,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
           cache: nameCache,
           searchArtists: (name) => musicProvider.searchArtists(accessToken, name),
           enrichArtist: buildEnrichArtist(),
+          confirmPreview: buildConfirmPreview(accessToken),
         })
         return r.resolved
       },
@@ -811,7 +837,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
             adventurous && artist.popularity > 50 ? ADVENTUROUS_MAINSTREAM_PENALTY : 0
           const score = baseScore * discoveryPenalty - mainstreamPenalty
           return {
-            artist: { ...artist, topTracks: [] },
+            artist: { ...artist, topTracks: artist.topTracks ?? [] },
             score,
             why: {
               sourceArtists: seedArtists.slice(0, 2),
@@ -888,6 +914,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     runSecondary,
     metrics: {
       primaryMs,
+      previewMs: resolved.previewMs,
       misses: resolved.cacheMisses,
       retries: resolved.searchRetries,
       rateLimited: resolved.rateLimited,

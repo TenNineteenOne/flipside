@@ -50,6 +50,8 @@ export interface BuildResult {
   softenedFilters?: SoftenedFilters
   metrics?: {
     primaryMs: number
+    /** Wall-clock of the primary resolve's preview-confirmation pass (ms). */
+    previewMs: number
     misses: number
     retries: number
     rateLimited: boolean
