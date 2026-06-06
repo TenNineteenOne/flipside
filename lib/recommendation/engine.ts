@@ -16,6 +16,7 @@ import { normalizeArtistName } from '@/lib/listened-artists'
 import { normalizedIncludes, normalizeGenre } from '@/lib/genre/normalize'
 import { adjacentGenres } from '@/lib/genre/adjacency'
 import { cachedTagArtistNames } from '@/lib/lastfm-cache'
+import { runLastfm } from '@/lib/lastfm-limit'
 import coldStartData from '@/data/cold-start-seeds.json'
 import { sampleLikes, LIKE_SAMPLE_SIZE } from './window'
 import { applyClusterCap } from './cluster-cap'
@@ -49,21 +50,54 @@ export function tierMultiplier(popularity: number, curveK = 0.95): number {
   return Math.pow(curveK, popularity)
 }
 
-async function fetchTagArtistNames(tag: string, limit: number): Promise<string[]> {
-  const apiKey = process.env.LASTFM_API_KEY
-  if (!apiKey) return []
-  try {
+// Lower than the 8s used elsewhere: fetchTagArtistNames may fire TWO sequential
+// calls (as-is, then a spaced retry on empty), so a high per-call ceiling stacks
+// into a ~16s worst case. Valid tag.gettopartists responses return in <1s; 5s is
+// ample headroom while bounding the retry path's cold-start cost.
+const LASTFM_TIMEOUT_MS = 5000
+
+/**
+ * Single live `tag.gettopartists` call. Returns the names ([] when the tag
+ * genuinely has no top artists), and THROWS on a transient failure (non-2xx,
+ * timeout, network error) so the cache layer can tell "genuinely empty"
+ * (negative-cacheable) from "fetch failed" (must not be cached). Gated by the
+ * shared Last.fm concurrency cap.
+ */
+async function fetchTagArtistNamesRaw(tag: string, limit: number, apiKey: string): Promise<string[]> {
+  return runLastfm(async () => {
     const url =
       `${LASTFM_BASE}/?method=tag.gettopartists` +
       `&tag=${encodeURIComponent(tag)}&api_key=${apiKey}&format=json&limit=${limit}`
-    const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
-    if (!res.ok) return []
+    const res = await fetch(url, { signal: AbortSignal.timeout(LASTFM_TIMEOUT_MS) })
+    if (!res.ok) throw new Error(`lastfm tag.gettopartists ${res.status}`)
     const data = await res.json()
     const artists = data?.topartists?.artist
     if (!Array.isArray(artists)) return []
     return (artists as Array<{ name: string }>).map((a) => a.name).filter(Boolean)
+  })
+}
+
+/**
+ * Fetch top-artist names for a Last.fm tag, tolerating the two tag spellings
+ * we deal in. Genre-tree leaf tags are hyphenated slugs (e.g.
+ * "dutch-black-metal") but Last.fm indexes most multi-word tags space-
+ * separated ("dutch black metal" → 267 artists vs 0 for the hyphenated form).
+ * We try the tag as-is FIRST so canonical hyphenated tags (trip-hop, post-punk)
+ * keep their better-curated results, and only retry empties with spaces.
+ *
+ * Throws on transient failure of the primary spelling (so it isn't cached); a
+ * genuinely-empty primary result is returned as [] when the spaced retry also
+ * comes back empty or fails.
+ */
+export async function fetchTagArtistNames(tag: string, limit: number): Promise<string[]> {
+  const apiKey = process.env.LASTFM_API_KEY
+  if (!apiKey) return []
+  const names = await fetchTagArtistNamesRaw(tag, limit, apiKey)
+  if (names.length > 0 || !tag.includes('-')) return names
+  try {
+    return await fetchTagArtistNamesRaw(tag.replace(/-/g, ' '), limit, apiKey)
   } catch {
-    return []
+    return names // primary spelling was genuinely empty; don't let a retry blip mask that
   }
 }
 

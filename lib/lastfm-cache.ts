@@ -2,6 +2,12 @@ import { createServiceClient } from '@/lib/supabase/server'
 import type { SimilarArtistRef } from '@/lib/music-provider'
 
 const TTL_MS = 7 * 24 * 60 * 60 * 1000
+// Negative-cache TTL for genuinely-empty tag results. Short, so a tag that gains
+// artists (or a one-off Last.fm hiccup that still returned a valid empty body)
+// is rechecked within the day — but long enough that obscure leaf tags don't
+// re-hit Last.fm on every Explore generation, which was the dominant cold-load
+// cost. Transient *failures* (timeout / non-2xx) are never cached at all.
+const NEG_TTL_MS = 12 * 60 * 60 * 1000
 
 // Within-request memoization. Clears on every server cold start; the Supabase
 // table is the durable layer. Guards against duplicate Last.fm fetches inside
@@ -46,9 +52,9 @@ async function writeCache(kind: Kind, key: string, payload: unknown): Promise<vo
   }
 }
 
-function isFresh(row: CacheRow): boolean {
+function freshWithin(row: CacheRow, ttlMs: number): boolean {
   const age = Date.now() - new Date(row.fetched_at).getTime()
-  return age < TTL_MS
+  return age < ttlMs
 }
 
 /**
@@ -67,11 +73,23 @@ export async function cachedTagArtistNames(
 
   const promise = (async () => {
     const row = await readCache('tag_top', cacheKey)
-    if (row && isFresh(row) && Array.isArray(row.payload)) {
-      return row.payload as string[]
+    if (row && Array.isArray(row.payload)) {
+      // Empty (negative) entries expire on the short TTL; populated ones on the
+      // full 7-day TTL.
+      const ttl = row.payload.length === 0 ? NEG_TTL_MS : TTL_MS
+      if (freshWithin(row, ttl)) return row.payload as string[]
     }
-    const fresh = await fetchFn(tag, limit)
-    if (fresh.length > 0) await writeCache('tag_top', cacheKey, fresh)
+    let fresh: string[]
+    try {
+      fresh = await fetchFn(tag, limit)
+    } catch {
+      // Transient failure (timeout / non-2xx / network). Do NOT cache — caching
+      // an empty here would suppress a live tag for the negative TTL.
+      return []
+    }
+    // Cache both hits and genuine empties (negative caching). Empties carry the
+    // shorter TTL via the read path above.
+    await writeCache('tag_top', cacheKey, fresh)
     return fresh
   })()
 
@@ -97,7 +115,7 @@ export async function cachedSimilarArtistNames(
 
   const promise = (async () => {
     const row = await readCache('similar', cacheKey)
-    if (row && isFresh(row) && Array.isArray(row.payload)) {
+    if (row && freshWithin(row, TTL_MS) && Array.isArray(row.payload)) {
       return row.payload as SimilarArtistRef[]
     }
     const fresh = await fetchFn(artistName)
