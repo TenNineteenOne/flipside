@@ -15,13 +15,33 @@ const DEFAULT_WARM = `
   radial-gradient(55% 45% at 10% 88%, rgba(212,88,176,0.28) 0%, transparent 72%)
 `
 
-export function Ambient({ palette, adventurousPalette, adventurous: adventurousProp }: AmbientProps) {
-  // When no prop is passed, read from localStorage + listen for sync events via
-  // the hook.  The prop still wins when provided (caller-controlled mode).
-  const { adventurous: adventurousLS } = useAdventurousMode(false)
+// Split into two branches so the localStorage + window-event subscription only
+// runs when the caller hasn't provided an `adventurous` prop. When the prop is
+// provided (e.g. ExploreClient owns its own useAdventurousMode), the storage
+// listener here would fire a redundant setState on every toggle that gets
+// shadowed by `??` anyway. Keeping the hook out of that branch avoids the
+// wasted reconciliation entirely.
+export function Ambient({ palette, adventurousPalette, adventurous }: AmbientProps) {
+  if (adventurous !== undefined) {
+    return <AmbientImpl palette={palette} adventurousPalette={adventurousPalette} adventurous={adventurous} />
+  }
+  return <AmbientFromStorage palette={palette} adventurousPalette={adventurousPalette} />
+}
 
-  const adventurous = adventurousProp ?? adventurousLS
+function AmbientFromStorage({ palette, adventurousPalette }: Omit<AmbientProps, "adventurous">) {
+  const { adventurous } = useAdventurousMode(false)
+  return <AmbientImpl palette={palette} adventurousPalette={adventurousPalette} adventurous={adventurous} />
+}
 
+function AmbientImpl({
+  palette,
+  adventurousPalette,
+  adventurous,
+}: {
+  palette: string
+  adventurousPalette?: string
+  adventurous: boolean
+}) {
   return (
     <div
       aria-hidden

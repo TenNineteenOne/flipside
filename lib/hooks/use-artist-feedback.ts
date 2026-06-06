@@ -125,6 +125,14 @@ export function useArtistFeedback(opts?: UseArtistFeedbackOptions): UseArtistFee
   const localOnlySignalsRef = useRef(localOnlySignals)
   localOnlySignalsRef.current = localOnlySignals
 
+  // Stable ref for railKey so the queued POST thunk reads the CURRENT rail
+  // when it eventually dispatches, not the rail that was active when the tap
+  // landed. Without this, a user who taps thumbs_up on rail A then switches
+  // to rail B before the network call leaves would send railKey=A in the
+  // body — telling the server to narrow-invalidate the wrong rail's cache.
+  const railKeyRef = useRef(railKey)
+  railKeyRef.current = railKey
+
   const setSignal = useCallback(
     (artistId: string, signal: string): Promise<void> => {
       return queueRef.current(artistId, async () => {
@@ -161,7 +169,9 @@ export function useArtistFeedback(opts?: UseArtistFeedbackOptions): UseArtistFee
           const res = await fetch("/api/feedback", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(buildFeedbackPostBody(artistId, signal, railKey)),
+            // Read railKey from the ref at dispatch time so a rail switch
+            // between tap and network send doesn't send a stale rail.
+            body: JSON.stringify(buildFeedbackPostBody(artistId, signal, railKeyRef.current)),
           })
           if (!res.ok) throw new Error("Server error")
         } catch {
@@ -176,10 +186,10 @@ export function useArtistFeedback(opts?: UseArtistFeedbackOptions): UseArtistFee
         }
       })
     },
-    // railKey is stable per render of the parent (it's the activeKey value at
-    // the time the hook was last called). The callback identity re-stabilizes
-    // when railKey changes — intentional, since a new rail is active.
-    [railKey, undoFailed, saveFailed],
+    // railKey intentionally NOT in deps — the thunk reads railKeyRef.current
+    // at dispatch time, so setSignal identity stays stable across rail
+    // switches (preserves memo on consumer rows).
+    [undoFailed, saveFailed],
   )
 
   const setSignals = useCallback(

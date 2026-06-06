@@ -16,9 +16,11 @@ import { normalizeArtistName } from '@/lib/listened-artists'
 import { normalizedIncludes, normalizeGenre } from '@/lib/genre/normalize'
 import { adjacentGenres } from '@/lib/genre/adjacency'
 import { cachedTagArtistNames } from '@/lib/lastfm-cache'
+import { runLastfm } from '@/lib/lastfm-limit'
 import coldStartData from '@/data/cold-start-seeds.json'
 import { sampleLikes, LIKE_SAMPLE_SIZE } from './window'
 import { applyClusterCap } from './cluster-cap'
+import { splitResolvePools } from './resolve-pools'
 
 const LASTFM_BASE = "https://ws.audioscrobbler.com/2.0"
 
@@ -30,6 +32,15 @@ const ADJACENT_BLEED_BONUS = 0.08
 const ADAPTIVE_BROADEN_THRESHOLD = 10
 
 /**
+ * Resolver tuning (safe-C). Conservative bump over the resolver defaults
+ * (concurrency 4 / delay 200ms). The resolver has 429 backoff with a budget,
+ * so over-tuning degrades to slower, never empty. Validate the measured 429
+ * rate via the [gen-timing] rl/retries fields before going higher.
+ */
+const RESOLVE_CONCURRENCY = 6
+const RESOLVE_DELAY_MS = 125
+
+/**
  * Return the popularity-tier multiplier for a Spotify popularity value (0–100).
  * `curveK` is the base of the exponential (users.popularity_curve). Smaller =
  * steeper = stronger obscurity preference. Defaults to 0.95 for callers that
@@ -39,21 +50,54 @@ export function tierMultiplier(popularity: number, curveK = 0.95): number {
   return Math.pow(curveK, popularity)
 }
 
-async function fetchTagArtistNames(tag: string, limit: number): Promise<string[]> {
-  const apiKey = process.env.LASTFM_API_KEY
-  if (!apiKey) return []
-  try {
+// Lower than the 8s used elsewhere: fetchTagArtistNames may fire TWO sequential
+// calls (as-is, then a spaced retry on empty), so a high per-call ceiling stacks
+// into a ~16s worst case. Valid tag.gettopartists responses return in <1s; 5s is
+// ample headroom while bounding the retry path's cold-start cost.
+const LASTFM_TIMEOUT_MS = 5000
+
+/**
+ * Single live `tag.gettopartists` call. Returns the names ([] when the tag
+ * genuinely has no top artists), and THROWS on a transient failure (non-2xx,
+ * timeout, network error) so the cache layer can tell "genuinely empty"
+ * (negative-cacheable) from "fetch failed" (must not be cached). Gated by the
+ * shared Last.fm concurrency cap.
+ */
+async function fetchTagArtistNamesRaw(tag: string, limit: number, apiKey: string): Promise<string[]> {
+  return runLastfm(async () => {
     const url =
       `${LASTFM_BASE}/?method=tag.gettopartists` +
       `&tag=${encodeURIComponent(tag)}&api_key=${apiKey}&format=json&limit=${limit}`
-    const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
-    if (!res.ok) return []
+    const res = await fetch(url, { signal: AbortSignal.timeout(LASTFM_TIMEOUT_MS) })
+    if (!res.ok) throw new Error(`lastfm tag.gettopartists ${res.status}`)
     const data = await res.json()
     const artists = data?.topartists?.artist
     if (!Array.isArray(artists)) return []
     return (artists as Array<{ name: string }>).map((a) => a.name).filter(Boolean)
+  })
+}
+
+/**
+ * Fetch top-artist names for a Last.fm tag, tolerating the two tag spellings
+ * we deal in. Genre-tree leaf tags are hyphenated slugs (e.g.
+ * "dutch-black-metal") but Last.fm indexes most multi-word tags space-
+ * separated ("dutch black metal" → 267 artists vs 0 for the hyphenated form).
+ * We try the tag as-is FIRST so canonical hyphenated tags (trip-hop, post-punk)
+ * keep their better-curated results, and only retry empties with spaces.
+ *
+ * Throws on transient failure of the primary spelling (so it isn't cached); a
+ * genuinely-empty primary result is returned as [] when the spaced retry also
+ * comes back empty or fails.
+ */
+export async function fetchTagArtistNames(tag: string, limit: number): Promise<string[]> {
+  const apiKey = process.env.LASTFM_API_KEY
+  if (!apiKey) return []
+  const names = await fetchTagArtistNamesRaw(tag, limit, apiKey)
+  if (names.length > 0 || !tag.includes('-')) return names
+  try {
+    return await fetchTagArtistNamesRaw(tag.replace(/-/g, ' '), limit, apiKey)
   } catch {
-    return []
+    return names // primary spelling was genuinely empty; don't let a retry blip mask that
   }
 }
 
@@ -119,24 +163,31 @@ async function gatherSeedContext(
   const names: string[] = [...dbSeeds]
 
   const sampledThumbsUp = sampleLikes(thumbsUpRows, userId)
-  if (sampledThumbsUp.length > 0) {
-    const { data: cached } = await supabase
-      .from('recommendation_cache')
-      .select('artist_data')
-      .eq('user_id', userId)
-      .in('spotify_artist_id', sampledThumbsUp)
-    for (const row of cached ?? []) {
-      const name = (row.artist_data as { name?: string })?.name
-      if (name) names.push(name)
-    }
-  }
-
   const userGenres = ((userRow?.selected_genres as string[] | null) ?? [])
   const topGenres = userGenres.slice(0, 5)
-  if (topGenres.length > 0) {
-    const genreResults = await Promise.all(topGenres.map(getTagArtistNames))
-    for (const batch of genreResults) names.push(...batch)
-  }
+
+  const [thumbsUpNames, genreBatches] = await Promise.all([
+    // Resolve sampled thumbs-up IDs → names via the rec cache.
+    sampledThumbsUp.length === 0
+      ? Promise.resolve([] as string[])
+      : supabase
+          .from('recommendation_cache')
+          .select('artist_data')
+          .eq('user_id', userId)
+          .in('spotify_artist_id', sampledThumbsUp)
+          .then(({ data }) =>
+            (data ?? [])
+              .map((row) => (row.artist_data as { name?: string })?.name)
+              .filter((n): n is string => !!n)
+          ),
+    // Genre seed names from Last.fm tags (each cached).
+    topGenres.length === 0
+      ? Promise.resolve([] as string[])
+      : Promise.all(topGenres.map(getTagArtistNames)).then((batches) => batches.flat()),
+  ])
+
+  names.push(...thumbsUpNames)
+  names.push(...genreBatches)
 
   console.log(
     `[engine] gather userId=${userId} selected_genres=${JSON.stringify(topGenres)} ` +
@@ -155,14 +206,11 @@ async function gatherSeedContext(
 
 // ── Core pipeline ───────────────────────────────────────────────────────────
 
-const PRIMARY_RESOLVE_CAP = 60
-const SECONDARY_RESOLVE_CAP = 30
-
 /**
  * Round-robin interleave across seed similar-lists so each seed contributes
  * equally to the primary candidate pool. Without this, map insertion order
  * equals seed order and a single mainstream-biased seed can flood the first
- * PRIMARY_RESOLVE_CAP slots with its whole similars list.
+ * BLOCKING_RESOLVE_CAP slots with its whole similars list.
  *
  * With `tailFirst`, each seed's list is consumed from the END (lowest-match
  * items first). Last.fm orders similars by similarity, which correlates with
@@ -491,8 +539,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
   }
 
   const allNames = buildRoundRobinNames(lfmResults, knownNames, { tailFirst: true })
-  const uniqueNames = allNames.slice(0, PRIMARY_RESOLVE_CAP)
-  const secondaryNames = allNames.slice(PRIMARY_RESOLVE_CAP, PRIMARY_RESOLVE_CAP + SECONDARY_RESOLVE_CAP)
+  const { blocking: uniqueNames, secondary: secondaryNames } = splitResolvePools(allNames)
   const lfmTotal = lfmResults.reduce((sum, r) => sum + r.names.length, 0)
 
   if (uniqueNames.length === 0) {
@@ -518,11 +565,15 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
         enrichArtist: buildEnrichArtist(),
       })
 
+  const primaryStart = Date.now()
   const resolved = await resolveArtistsByName(uniqueNames, {
     cache: nameCache,
     searchArtists: (name) => musicProvider.searchArtists(accessToken, name),
     enrichArtist: buildEnrichArtist(),
+    concurrency: RESOLVE_CONCURRENCY,
+    delayMs: RESOLVE_DELAY_MS,
   })
+  const primaryMs = Date.now() - primaryStart
 
   console.log(`[cache-search] hit=${resolved.cacheHits} miss=${resolved.cacheMisses} total=${uniqueNames.length}`)
 
@@ -832,7 +883,16 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
         return secondaryRows.length
       }
 
-  return { count: rows.length, runSecondary }
+  return {
+    count: rows.length,
+    runSecondary,
+    metrics: {
+      primaryMs,
+      misses: resolved.cacheMisses,
+      retries: resolved.searchRetries,
+      rateLimited: resolved.rateLimited,
+    },
+  }
 }
 
 // ── Main entry point ────────────────────────────────────────────────────────

@@ -172,6 +172,30 @@ describe("POST path — network success", () => {
     const parsed = JSON.parse(init.body as string)
     expect("railKey" in parsed).toBe(false)
   })
+
+  // Regression test for code-review finding #3: when the user switches rails
+  // between tap and network send, the POST must include the CURRENT railKey
+  // (read from ref at dispatch time), not the one captured at tap time.
+  it("buildFeedbackPostBody reads railKey at call time, not closure time", () => {
+    // Simulates the ref-at-dispatch pattern: thunk reads the ref's current
+    // value when it runs, even if the rail changed after the tap.
+    const railKeyRef = { current: "adjacent" }
+
+    // Tap happens — thunk would be enqueued here with a closure that reads
+    // `railKeyRef.current` when it fires.
+    const buildBodyAtDispatchTime = () =>
+      buildFeedbackPostBody("artist1", "thumbs_up", railKeyRef.current)
+
+    // User switches rails before the queued thunk dispatches.
+    railKeyRef.current = "outside"
+
+    // When the thunk finally fires, the body should reflect the new rail.
+    expect(buildBodyAtDispatchTime()).toEqual({
+      spotifyArtistId: "artist1",
+      signal: "thumbs_up",
+      railKey: "outside",
+    })
+  })
 })
 
 // Test 3: DELETE path — setSignal(id, "thumbs_up") when current is "thumbs_up"

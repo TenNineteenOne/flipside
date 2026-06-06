@@ -102,6 +102,20 @@ describe("readAdventurousFromStorage", () => {
     expect(readAdventurousFromStorage(true)).toBe(true)
   })
 
+  // Contract lock: a returning adventurous user opening the site in incognito
+  // or on a fresh device has server-side adventurous=true but an empty
+  // localStorage. The hook must NOT clobber the server value with `false` on
+  // mount — that would silently drop the user's saved preference. The original
+  // pre-refactor AppNav did exactly that (it called
+  // `setAdventurous(getItem(...) === "1")` which evaluates to false on null);
+  // this test exists to prevent a future refactor from re-introducing that bug.
+  it("preserves the server-passed value when localStorage is empty (server-authoritative contract)", () => {
+    // localStorage stub returns null by default → key absent → fallback wins
+    expect(readAdventurousFromStorage(true)).toBe(true)
+    // Sanity: false stays false too
+    expect(readAdventurousFromStorage(false)).toBe(false)
+  })
+
   it("returns true when key is '1'", () => {
     lsStub.getItem.mockReturnValue("1")
     expect(readAdventurousFromStorage(false)).toBe(true)

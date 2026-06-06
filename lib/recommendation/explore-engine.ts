@@ -684,6 +684,19 @@ const LEFTFIELD_MID_END = 30
 // meaningfully more candidates per tag so we don't fall short after attrition.
 const LEFTFIELD_PICKS_PER_TAG = 10
 const LEFTFIELD_PICKS_PER_TAG_ADVENTUROUS = 14
+// Cap how many candidate names we resolve *on the critical path*. The round-
+// robin can produce ~90+ unique names, but we only display TARGET (16/40), so
+// resolving all of them blocks the page on Spotify look-ups we don't need yet.
+// 3× TARGET headroom: left-field is excluded from the MIN_PICKS floor-topup, so
+// it must self-supply enough to clear TARGET after attrition (listened/seen/
+// dedup, and undergroundMode dropping pop>50) — there's no rescue if it falls
+// short, so we err generous. The deferred tail still warms in the background.
+const LEFTFIELD_RESOLVE_CAP = LEFTFIELD_TARGET * 3 // 48
+const LEFTFIELD_RESOLVE_CAP_ADVENTUROUS = LEFTFIELD_TARGET_ADVENTUROUS * 2 // 80
+// Upper bound on how many *deferred* names the background warm resolves, so it
+// can't balloon into a Spotify request storm (esp. for adventurous, where the
+// round-robin produces hundreds of names).
+const LEFTFIELD_BG_WARM_CAP = 40
 
 /**
  * Left-field wildcards — uniform long-tail sampling of the leaf-tag universe
@@ -758,12 +771,35 @@ export async function leftfieldRail(
       }
     }
 
-    const resolved = await resolveAndFilter(namesRoundRobin, input.accessToken, supabase, {
+    // Resolve only the first N names on the critical path (round-robin order is
+    // already tag-interleaved, so the head is variety-preserving).
+    const resolveCap = input.adventurous ? LEFTFIELD_RESOLVE_CAP_ADVENTUROUS : LEFTFIELD_RESOLVE_CAP
+    const namesToResolve = namesRoundRobin.slice(0, resolveCap)
+
+    const resolved = await resolveAndFilter(namesToResolve, input.accessToken, supabase, {
       listenedIds: ctx.listenedIds,
       thumbsDownIds: ctx.thumbsDownIds,
       excludedIds,
       undergroundMode: input.undergroundMode,
     })
+
+    // Best-effort background warm of a bounded slice of the deferred tail: it
+    // writes through to artist_search_cache so a later shuffle / next-window
+    // generation finds those artists already resolved. Not awaited — failures
+    // and rate limits never touch this render (guarded against unhandled
+    // rejection). Only on the PRIMARY pass: the wildcards-fallback and the
+    // up-to-3 floor-topup re-invocations of leftfieldRail would otherwise
+    // multiply this into a Spotify request storm for thin-signal users.
+    const namesDeferred = namesRoundRobin.slice(resolveCap, resolveCap + LEFTFIELD_BG_WARM_CAP)
+    if (seedKey === 'leftfield' && namesDeferred.length > 0) {
+      void resolveAndFilter(namesDeferred, input.accessToken, supabase, {
+        listenedIds: ctx.listenedIds,
+        thumbsDownIds: ctx.thumbsDownIds,
+        excludedIds,
+        undergroundMode: input.undergroundMode,
+      }).catch(() => {})
+    }
+
     const artistByName = new Map<string, Artist>()
     for (const a of resolved) artistByName.set(a.name, a)
 

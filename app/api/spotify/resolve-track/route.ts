@@ -4,6 +4,7 @@ import { getAccessToken } from "@/lib/get-access-token"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, apiUnauthorized } from "@/lib/errors"
 import { enforceSameOrigin } from "@/lib/csrf"
+import { isValidSpotifyId } from "@/lib/spotify-ids"
 import type { Track } from "@/lib/music-provider/types"
 
 const SPOTIFY_BASE = "https://api.spotify.com/v1"
@@ -50,6 +51,13 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   let { artistName, trackName } = body
   const { spotifyArtistId, localTrackId } = body
+
+  // Defense-in-depth: spotifyArtistId is interpolated into a Spotify API path
+  // below. The DB-row guard already makes traversal unreachable, but validate
+  // the format explicitly so the safety never depends on cache contents.
+  if (spotifyArtistId !== undefined && !isValidSpotifyId(spotifyArtistId)) {
+    return apiError("Invalid artist ID", 400)
+  }
 
   const supabase = createServiceClient()
 
