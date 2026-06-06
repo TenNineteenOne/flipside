@@ -44,26 +44,47 @@ export interface ConfirmInput {
  * the tail is never confirmed. Errors from `confirm` are treated as "no
  * tracks" (skip, not throw). Returns `kept` (order-preserving) and the
  * total number of `confirm` calls made (`confirmedCount`).
+ *
+ * Confirms in bounded concurrent waves (each wave sized to the remaining
+ * need, capped at `batchSize`) rather than one-at-a-time: this preserves
+ * the stop-at-target / order-preserving contract while letting per-wave
+ * calls run in parallel. Real concurrency is further bounded downstream by
+ * the iTunes limiter — the wave just keeps its slots full instead of idling
+ * between sequential awaits, which is what makes the confirm stage fast
+ * enough for the first-paint budget.
  */
 export async function confirmToTarget<T extends { artist: Artist }>(
   items: T[],
   target: number,
   confirm: (artist: Artist) => Promise<Track[]>,
+  batchSize = 8,
 ): Promise<{ kept: T[]; confirmedCount: number }> {
   const kept: T[] = []
   let confirmedCount = 0
+  let i = 0
 
-  for (const item of items) {
-    if (kept.length >= target) break
-    let tracks: Track[]
-    try {
-      tracks = await confirm(item.artist)
-    } catch {
-      tracks = []
-    }
-    confirmedCount++
-    if (tracks.length > 0) {
-      kept.push({ ...item, artist: { ...item.artist, topTracks: tracks } })
+  while (i < items.length && kept.length < target) {
+    const need = target - kept.length
+    const wave = items.slice(i, i + Math.min(batchSize, need))
+    i += wave.length
+    confirmedCount += wave.length
+
+    const results = await Promise.all(
+      wave.map(async (item) => {
+        try {
+          return await confirm(item.artist)
+        } catch {
+          return [] as Track[]
+        }
+      }),
+    )
+
+    for (let w = 0; w < wave.length; w++) {
+      if (kept.length >= target) break
+      const tracks = results[w]
+      if (tracks.length > 0) {
+        kept.push({ ...wave[w], artist: { ...wave[w].artist, topTracks: tracks } })
+      }
     }
   }
 
