@@ -72,7 +72,12 @@ export async function regenerateFeedAndExplore(opts: RegenerateOpts): Promise<vo
     } else if (!exploreRes.ok) {
       toast.error("Feed rebuilt, but Explore failed")
     } else {
-      toast.success("Feed & Explore rebuilt")
+      // Both regen requests now return as soon as the work is *scheduled*: the
+      // feed responds after its first batch is written and keeps filling in the
+      // background (#144), and Explore regenerates in an after() task (#145a).
+      // So this fires in a few seconds, not after the full 54-74s rebuild —
+      // word it as in-progress rather than done.
+      toast.success("Rebuilding feed & Explore — new picks are loading")
     }
   } catch {
     toast.error("Couldn't rebuild — try again")
