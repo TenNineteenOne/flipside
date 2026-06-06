@@ -6,6 +6,7 @@ import { FeedClient } from "@/components/feed/feed-client"
 import { ExplorePrewarm } from "@/components/feed/explore-prewarm"
 import { RecommendationsLoader } from "@/components/feed/recommendations-loader"
 import { DEFAULT_MUSIC_PLATFORM, isMusicPlatform, type MusicPlatform } from "@/lib/music-links"
+import { hasPlayablePreview } from "@/lib/recommendation/confirm-previews"
 
 interface Rec {
   spotify_artist_id: string
@@ -134,11 +135,16 @@ export default async function FeedPage() {
     return { ...rec, artist_color }
   })
 
+  // Defensive: never render a dead card. New rows are dropped at write time if
+  // they have no preview, but a legacy row (written before previews were baked)
+  // with no playable track in artist_data or the tracks cache is filtered here.
+  const playableRecs = recsWithColor.filter((rec) => hasPlayablePreview(rec.artist_data.topTracks))
+
   const signalCount = (artistCount ?? 0) + (feedbackCount ?? 0) + (saveCount ?? 0)
 
   return (
     <>
-      <FeedClient recommendations={interleave(recsWithColor)} musicPlatform={musicPlatform} signalCount={signalCount} />
+      <FeedClient recommendations={interleave(playableRecs)} musicPlatform={musicPlatform} signalCount={signalCount} />
       <ExplorePrewarm />
     </>
   )

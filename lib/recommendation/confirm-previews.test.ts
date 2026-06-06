@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import {
   playableTracks,
+  hasPlayablePreview,
   confirmPlayableTracks,
   type ConfirmPreviewDeps,
   type ConfirmInput,
@@ -23,6 +24,27 @@ function track(id: string, previewUrl: string | null): Track {
     source: "itunes",
   }
 }
+
+describe("hasPlayablePreview", () => {
+  it("is false for undefined, null, or empty", () => {
+    expect(hasPlayablePreview(undefined)).toBe(false)
+    expect(hasPlayablePreview(null)).toBe(false)
+    expect(hasPlayablePreview([])).toBe(false)
+  })
+
+  it("is false when every track lacks a preview URL", () => {
+    expect(hasPlayablePreview([track("a", null), track("b", "")])).toBe(false)
+  })
+
+  it("is true when at least one track has a preview URL", () => {
+    expect(hasPlayablePreview([track("a", null), track("b", "https://p/2")])).toBe(true)
+  })
+
+  it("works on the minimal { previewUrl } shape", () => {
+    expect(hasPlayablePreview([{ previewUrl: "https://p/1" }])).toBe(true)
+    expect(hasPlayablePreview([{ previewUrl: null }])).toBe(false)
+  })
+})
 
 const withPreview = track("p1", "https://audio.example.com/p1.m4a")
 const withPreview2 = track("p2", "https://audio.example.com/p2.m4a")

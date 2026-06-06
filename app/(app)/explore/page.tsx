@@ -17,6 +17,7 @@ import {
   type ChallengePayload,
 } from "@/components/explore/explore-client"
 import type { RailArtist } from "@/components/explore/rail"
+import { hasPlayablePreview } from "@/lib/recommendation/confirm-previews"
 import {
   DEFAULT_MUSIC_PLATFORM,
   isMusicPlatform,
@@ -139,6 +140,9 @@ async function ExploreRailsSection({
     for (const id of ids) {
       const a = artistById.get(id)
       if (!a) continue
+      // Defensive: never render a dead rail card. Rail picks are dropped at
+      // resolve time if they have no preview; this catches legacy cached rows.
+      if (!hasPlayablePreview(a.topTracks)) continue
       out.push({
         id: a.id,
         name: a.name,

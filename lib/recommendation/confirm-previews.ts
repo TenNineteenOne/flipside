@@ -5,6 +5,19 @@ export function playableTracks(tracks: Track[]): Track[] {
   return tracks.filter((t) => t.previewUrl != null && t.previewUrl !== "")
 }
 
+/**
+ * Read-path guard: true when an artist has at least one playable preview. Used
+ * by the feed and explore read paths to never render a dead card — a last line
+ * of defense over the drop-at-write guarantee (catches legacy rows written
+ * before previews were baked). Accepts the minimal `{ previewUrl }` shape so it
+ * works on both `Track[]` and the leaner cached card shapes.
+ */
+export function hasPlayablePreview(
+  tracks: ReadonlyArray<{ previewUrl: string | null }> | null | undefined
+): boolean {
+  return !!tracks && tracks.some((t) => t.previewUrl != null && t.previewUrl !== "")
+}
+
 export interface ConfirmPreviewDeps {
   /** iTunes search by artist name. Returns tracks, [] for no match, or null on failure. */
   searchItunes: (name: string) => Promise<Track[] | null>
