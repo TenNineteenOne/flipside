@@ -125,7 +125,11 @@ export default async function FeedPage() {
   }
 
   const recsWithColor = validRecs.map((rec) => {
-    rec.artist_data.topTracks = tracksMap.get(rec.spotify_artist_id) ?? []
+    // Prefer the previews baked into artist_data during resolution (#134); fall
+    // back to artist_tracks_cache for legacy rows written before the bake.
+    const baked = rec.artist_data.topTracks
+    rec.artist_data.topTracks =
+      baked && baked.length > 0 ? baked : tracksMap.get(rec.spotify_artist_id) ?? []
     const artist_color = (rec.artist_data as Record<string, unknown>).artist_color as string | null ?? null
     return { ...rec, artist_color }
   })
