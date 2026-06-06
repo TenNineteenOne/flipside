@@ -1,4 +1,4 @@
-import type { Artist, Track } from "@/lib/music-provider/types"
+import type { Artist } from "@/lib/music-provider/types"
 import type { RateLimited } from "@/lib/music-provider"
 import { isRateLimited } from "@/lib/music-provider"
 import type { ArtistNameCache } from "./artist-name-cache"
@@ -19,16 +19,6 @@ export interface ResolveDeps {
    * with whatever Spotify returned.
    */
   enrichArtist?: (name: string) => Promise<ArtistEnrichment | null>
-  /**
-   * Optional preview confirmation. When provided, every resolved artist (cache
-   * hit AND live miss) is run through this to attach its playable `topTracks`;
-   * artists that confirm empty are DROPPED from `resolved` (the playability
-   * guarantee). The fn reuses `artist.topTracks` when already present (warm
-   * cache → no network). Freshly-confirmed artists are written back to the
-   * name cache WITH their `topTracks` so the name cache doubles as the preview
-   * cache. Never throws — a failure degrades to "drop".
-   */
-  confirmPreview?: (artist: Artist) => Promise<Track[]>
   /** Delay between successful searches (ms). Default 200. Pass 0 in tests. */
   delayMs?: number
   /** Max single-retry backoff (ms). Default 20_000. */
@@ -54,10 +44,6 @@ export interface ResolveResult {
   rateLimited: boolean
   /** True if we stopped backing off because the total budget was exhausted. */
   backoffBudgetExhausted: boolean
-  /** Artists dropped because no playable preview was found (confirmPreview only). */
-  droppedNoPreview: number
-  /** Wall-clock of the preview-confirmation pass in ms (0 when confirmPreview absent). */
-  previewMs: number
 }
 
 const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
@@ -96,8 +82,6 @@ export async function resolveArtistsByName(
     searchRetries: 0,
     rateLimited: false,
     backoffBudgetExhausted: false,
-    droppedNoPreview: 0,
-    previewMs: 0,
   }
 
   if (names.length === 0) return result
@@ -183,10 +167,7 @@ export async function resolveArtistsByName(
         resolvedArtist = mergeEnrichment(resolvedArtist, enrichment)
         result.searchOk++
         result.resolved.set(name, resolvedArtist)
-        // When confirmPreview is active the confirmation pass writes back the
-        // artist WITH its topTracks (so the name cache carries the preview);
-        // skip the bare write here to avoid a redundant double-upsert.
-        if (!deps.confirmPreview) await deps.cache.write(name, resolvedArtist)
+        await deps.cache.write(name, resolvedArtist)
         firstSuccessfulSearch = false
       } else {
         // Avoid unhandled-rejection warnings on the enrichment promise.
@@ -197,41 +178,6 @@ export async function resolveArtistsByName(
   }
 
   await Promise.all(Array.from({ length: concurrency }, runWorker))
-
-  // Preview-confirmation pass (opt-in). Runs over EVERY resolved artist — cache
-  // hits and live misses alike — because the playability guarantee must hold for
-  // both, and the hit path never reaches the miss worker. Each artist's
-  // playable tracks are attached; artists with none are dropped. Concurrency is
-  // bounded downstream by the shared iTunes limiter, so a flat Promise.all here
-  // can't out-burst the API; warm artists (topTracks already cached) resolve
-  // with no network and make this pass effectively free.
-  if (deps.confirmPreview) {
-    const confirm = deps.confirmPreview
-    const previewStart = Date.now()
-    const entries = [...result.resolved.entries()]
-    await Promise.all(
-      entries.map(async ([name, art]) => {
-        const fresh = art.topTracks === undefined
-        let tracks: Track[]
-        try {
-          tracks = await confirm(art)
-        } catch {
-          tracks = []
-        }
-        const withTracks: Artist = { ...art, topTracks: tracks }
-        // Persist freshly-confirmed artists (positive OR negative/empty) into the
-        // name cache so the next encounter is a warm, network-free hit.
-        if (fresh) await deps.cache.write(name, withTracks)
-        if (tracks.length === 0) {
-          result.resolved.delete(name)
-          result.droppedNoPreview++
-        } else {
-          result.resolved.set(name, withTracks)
-        }
-      })
-    )
-    result.previewMs = Date.now() - previewStart
-  }
 
   return result
 }

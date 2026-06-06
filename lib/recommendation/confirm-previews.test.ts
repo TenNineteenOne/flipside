@@ -3,10 +3,11 @@ import {
   playableTracks,
   hasPlayablePreview,
   confirmPlayableTracks,
+  confirmToTarget,
   type ConfirmPreviewDeps,
   type ConfirmInput,
 } from "./confirm-previews"
-import type { Track } from "@/lib/music-provider/types"
+import type { Artist, Track } from "@/lib/music-provider/types"
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -243,5 +244,103 @@ describe("confirmPlayableTracks — error resilience", () => {
   it("both deps reject → returns [], no throw", async () => {
     const deps = makeDeps({ itunesRejects: true, spotifyRejects: true })
     await expect(confirmPlayableTracks(baseArtist, deps)).resolves.toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// confirmToTarget
+// ---------------------------------------------------------------------------
+
+function makeArtist(id: string): Artist {
+  return { id, name: `Artist ${id}`, genres: [], imageUrl: null, popularity: 50 }
+}
+
+type Item = { artist: Artist; score: number }
+function item(id: string, score = 0): Item {
+  return { artist: makeArtist(id), score }
+}
+
+describe("confirmToTarget", () => {
+  it("keeps only playable artists up to target", async () => {
+    const items: Item[] = [item("a"), item("b"), item("c")]
+    let confirmCount = 0
+    const confirm = async (artist: Artist) => {
+      confirmCount++
+      // only "a" and "c" are playable
+      if (artist.id === "b") return []
+      return [track("t1", "https://audio.example.com/t1.m4a")]
+    }
+    const { kept } = await confirmToTarget(items, 2, confirm)
+    expect(kept.map((k) => k.artist.id)).toEqual(["a", "c"])
+    expect(confirmCount).toBe(3) // had to check all three to get 2 playable
+  })
+
+  it("stops confirming once target is reached (does not confirm tail)", async () => {
+    const items: Item[] = [item("a"), item("b"), item("c"), item("d"), item("e")]
+    const confirmed: string[] = []
+    const confirm = async (artist: Artist) => {
+      confirmed.push(artist.id)
+      return [track("t1", "https://audio.example.com/t1.m4a")]
+    }
+    const { kept, confirmedCount } = await confirmToTarget(items, 2, confirm)
+    expect(kept).toHaveLength(2)
+    expect(confirmedCount).toBe(2) // stopped after 2 playable
+    expect(confirmed).toEqual(["a", "b"]) // tail c/d/e never touched
+  })
+
+  it("preserves original order of kept items", async () => {
+    // playable: a, c, e — all in score order
+    const items: Item[] = [item("a", 5), item("b", 4), item("c", 3), item("d", 2), item("e", 1)]
+    const confirm = async (artist: Artist) => {
+      if (artist.id === "b" || artist.id === "d") return []
+      return [track("t1", "https://audio.example.com/t1.m4a")]
+    }
+    const { kept } = await confirmToTarget(items, 3, confirm)
+    expect(kept.map((k) => k.artist.id)).toEqual(["a", "c", "e"])
+  })
+
+  it("bakes topTracks onto the kept item (does not mutate original)", async () => {
+    const a = item("a")
+    expect(a.artist.topTracks).toBeUndefined()
+    const playable = [track("t1", "https://audio.example.com/t1.m4a")]
+    const confirm = async () => playable
+    const { kept } = await confirmToTarget([a], 1, confirm)
+    // The kept item's artist has topTracks set
+    expect(kept[0].artist.topTracks).toEqual(playable)
+    // The original item is not mutated
+    expect(a.artist.topTracks).toBeUndefined()
+  })
+
+  it("empty input → empty kept, confirmedCount=0", async () => {
+    let called = false
+    const confirm = async () => { called = true; return [] }
+    const { kept, confirmedCount } = await confirmToTarget([], 5, confirm)
+    expect(kept).toHaveLength(0)
+    expect(confirmedCount).toBe(0)
+    expect(called).toBe(false)
+  })
+
+  it("confirm throws → artist is skipped, no throw bubbles", async () => {
+    const items: Item[] = [item("a"), item("b")]
+    const confirm = async (artist: Artist) => {
+      if (artist.id === "a") throw new Error("boom")
+      return [track("t1", "https://audio.example.com/t1.m4a")]
+    }
+    const { kept, confirmedCount } = await confirmToTarget(items, 2, confirm)
+    // "a" was skipped (threw), "b" was kept
+    expect(kept.map((k) => k.artist.id)).toEqual(["b"])
+    expect(confirmedCount).toBe(2)
+  })
+
+  it("returns all playable when fewer than target are playable", async () => {
+    const items: Item[] = [item("a"), item("b")]
+    // only "a" is playable
+    const confirm = async (artist: Artist) => {
+      if (artist.id === "b") return []
+      return [track("t1", "https://audio.example.com/t1.m4a")]
+    }
+    const { kept, confirmedCount } = await confirmToTarget(items, 5, confirm)
+    expect(kept.map((k) => k.artist.id)).toEqual(["a"])
+    expect(confirmedCount).toBe(2) // both checked, neither skipped early
   })
 })

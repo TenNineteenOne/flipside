@@ -18,6 +18,7 @@ import { ArtistNameCache } from './artist-name-cache'
 import { resolveArtistsByName } from './resolve-candidates'
 import { fetchArtistEnrichment } from './enrich-artist'
 import { getTagArtistNames, buildConfirmPreview } from './engine'
+import { confirmToTarget } from './confirm-previews'
 import {
   allLeavesWithAnchor,
   genreToAnchor,
@@ -220,20 +221,26 @@ async function resolveAndFilter(
     cache: nameCache,
     searchArtists: (name) => musicProvider.searchArtists(accessToken, name),
     enrichArtist: buildEnrichArtist(),
-    // Playability guarantee: confirm previews and drop no-preview artists so
-    // every rail card can play. The resolver bakes topTracks into the artist
-    // and persists them to artist_search_cache, which hydration reads back.
-    confirmPreview: buildConfirmPreview(accessToken),
   })
 
-  const out: Artist[] = []
+  // Playability guarantee (#143): confirm previews for only the artists that
+  // pass all filters (listen/thumbs-down/seen) and are about to be shown.
+  // This avoids confirming artists that will be filtered out anyway.
+  const candidates: Artist[] = []
   for (const artist of resolved.resolved.values()) {
     if (filters.listenedIds.has(artist.id)) continue
     if (filters.thumbsDownIds.has(artist.id)) continue
     if (filters.excludedIds.has(artist.id)) continue
     if (filters.undergroundMode && (artist.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) continue
-    out.push(artist)
+    candidates.push(artist)
   }
+
+  // Confirm only up to rail capacity (30 = largest rail limit used). Artists
+  // whose confirm returns no playable tracks are dropped.
+  const RAIL_TARGET = 30
+  const asItems = candidates.map((artist) => ({ artist }))
+  const { kept } = await confirmToTarget(asItems, RAIL_TARGET, buildConfirmPreview(accessToken))
+  const out: Artist[] = kept.map((k) => k.artist)
   return out
 }
 

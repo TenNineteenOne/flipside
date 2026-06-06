@@ -1,18 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { resolveArtistsByName, type ResolveDeps } from "./resolve-candidates"
-import type { Artist, Track } from "@/lib/music-provider/types"
+import type { Artist } from "@/lib/music-provider/types"
 import type { RateLimited } from "@/lib/music-provider"
 import type { ArtistEnrichment } from "./enrich-artist"
 
 function artist(id: string, name: string, popularity = 50): Artist {
   return { id, name, genres: [], imageUrl: null, popularity }
-}
-
-function track(previewUrl: string | null = "https://p/1"): Track {
-  return {
-    id: "t1", spotifyTrackId: null, name: "Track", previewUrl,
-    durationMs: 0, albumName: "", albumImageUrl: null, source: "itunes",
-  }
 }
 
 const rl = (sec = 1): RateLimited => ({ rateLimited: true, retryAfterSec: sec })
@@ -25,7 +18,6 @@ function makeDeps(opts: {
   totalBackoffBudgetMs?: number
   maxRetryBackoffMs?: number
   enrichArtist?: (name: string) => Promise<ArtistEnrichment | null>
-  confirmPreview?: (artist: Artist) => Promise<Track[]>
 } = {}): ResolveDeps {
   const cacheMap = opts.cache ?? new Map<string, Artist>()
   const writes = opts.cacheWrites ?? new Map<string, Artist>()
@@ -45,7 +37,6 @@ function makeDeps(opts: {
     },
     searchArtists: opts.search ?? (async () => []),
     enrichArtist: opts.enrichArtist,
-    confirmPreview: opts.confirmPreview,
     delayMs: 0,
     maxRetryBackoffMs: opts.maxRetryBackoffMs,
     totalBackoffBudgetMs: opts.totalBackoffBudgetMs,
@@ -295,66 +286,17 @@ describe("resolveArtistsByName", () => {
     // thing is that no resolved artist got written and no errors leaked.
   })
 
-  describe("confirmPreview (playability guarantee)", () => {
-    it("is off by default: resolved artists keep undefined topTracks, nothing dropped", async () => {
-      const search = async (name: string): Promise<Artist[] | RateLimited> => [artist(`id-${name}`, name)]
-      const r = await resolveArtistsByName(["A"], makeDeps({ search }))
-      expect(r.resolved.get("A")?.topTracks).toBeUndefined()
-      expect(r.droppedNoPreview).toBe(0)
-      expect(r.previewMs).toBe(0)
-    })
+  it("resolved artists keep undefined topTracks (confirmation happens downstream)", async () => {
+    const search = async (name: string): Promise<Artist[] | RateLimited> => [artist(`id-${name}`, name)]
+    const r = await resolveArtistsByName(["A"], makeDeps({ search }))
+    expect(r.resolved.get("A")?.topTracks).toBeUndefined()
+  })
 
-    it("attaches confirmed topTracks to a resolved miss and writes them back to cache", async () => {
-      const writes = new Map<string, Artist>()
-      const search = async (name: string): Promise<Artist[] | RateLimited> => [artist(`id-${name}`, name)]
-      const confirmPreview = async (): Promise<Track[]> => [track()]
-      const r = await resolveArtistsByName(["A"], makeDeps({ search, cacheWrites: writes, confirmPreview }))
-      expect(r.resolved.get("A")?.topTracks).toEqual([track()])
-      expect(r.droppedNoPreview).toBe(0)
-      // Single write-back carries the topTracks (the bare miss write is skipped).
-      expect(writes.get("a")?.id).toBe("id-A")
-      expect(writes.get("a")?.topTracks).toEqual([track()])
-    })
-
-    it("drops a resolved artist with no playable preview and negative-caches it", async () => {
-      const writes = new Map<string, Artist>()
-      const search = async (name: string): Promise<Artist[] | RateLimited> => [artist(`id-${name}`, name)]
-      const confirmPreview = async (): Promise<Track[]> => []
-      const r = await resolveArtistsByName(["A"], makeDeps({ search, cacheWrites: writes, confirmPreview }))
-      expect(r.resolved.has("A")).toBe(false)
-      expect(r.droppedNoPreview).toBe(1)
-      // Negative cache persisted as confirmed-empty topTracks for a warm next time.
-      expect(writes.get("a")?.topTracks).toEqual([])
-    })
-
-    it("confirms cache hits too — drops a hit that has no preview", async () => {
-      const cache = new Map([["hit", artist("h1", "Hit")]])
-      const confirmPreview = async (): Promise<Track[]> => []
-      const r = await resolveArtistsByName(["Hit"], makeDeps({ cache, confirmPreview }))
-      expect(r.cacheHits).toBe(1)
-      expect(r.resolved.has("Hit")).toBe(false)
-      expect(r.droppedNoPreview).toBe(1)
-    })
-
-    it("reuses already-confirmed topTracks on a hit without rewriting cache", async () => {
-      const cachedArtist: Artist = { ...artist("h1", "Hit"), topTracks: [track()] }
-      const cache = new Map([["hit", cachedArtist]])
-      const writes = new Map<string, Artist>()
-      // Mirror the real confirmPreview: reuse the artist's existing topTracks.
-      const confirmPreview = async (a: Artist): Promise<Track[]> => a.topTracks ?? []
-      const r = await resolveArtistsByName(["Hit"], makeDeps({ cache, cacheWrites: writes, confirmPreview }))
-      expect(r.resolved.get("Hit")?.topTracks).toEqual([track()])
-      expect(r.droppedNoPreview).toBe(0)
-      // Not fresh (topTracks already present) → no redundant write-back.
-      expect(writes.size).toBe(0)
-    })
-
-    it("degrades to a drop when confirmPreview throws (never leaks)", async () => {
-      const search = async (name: string): Promise<Artist[] | RateLimited> => [artist(`id-${name}`, name)]
-      const confirmPreview = async (): Promise<Track[]> => { throw new Error("boom") }
-      const r = await resolveArtistsByName(["A"], makeDeps({ search, confirmPreview }))
-      expect(r.resolved.has("A")).toBe(false)
-      expect(r.droppedNoPreview).toBe(1)
-    })
+  it("always writes resolved miss to name cache (no conditional skip)", async () => {
+    const writes = new Map<string, Artist>()
+    const search = async (name: string): Promise<Artist[] | RateLimited> => [artist(`id-${name}`, name)]
+    const r = await resolveArtistsByName(["A"], makeDeps({ search, cacheWrites: writes }))
+    expect(r.searchOk).toBe(1)
+    expect(writes.get("a")?.id).toBe("id-A")
   })
 })

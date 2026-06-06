@@ -1,4 +1,4 @@
-import type { Track } from "@/lib/music-provider/types"
+import type { Artist, Track } from "@/lib/music-provider/types"
 
 /** Tracks with a real preview URL — the only ones that can actually play. */
 export function playableTracks(tracks: Track[]): Track[] {
@@ -35,6 +35,39 @@ export interface ConfirmInput {
    *  - [..]       → confirmed: reuse (filtered to playable)
    */
   topTracks?: Track[]
+}
+
+/**
+ * Walk a score-ordered list of items, calling `confirm` for each artist.
+ * Keeps items whose confirm returns ≥1 playable track, baking `topTracks`
+ * onto a copy of the item. Stops as soon as `kept.length === target` —
+ * the tail is never confirmed. Errors from `confirm` are treated as "no
+ * tracks" (skip, not throw). Returns `kept` (order-preserving) and the
+ * total number of `confirm` calls made (`confirmedCount`).
+ */
+export async function confirmToTarget<T extends { artist: Artist }>(
+  items: T[],
+  target: number,
+  confirm: (artist: Artist) => Promise<Track[]>,
+): Promise<{ kept: T[]; confirmedCount: number }> {
+  const kept: T[] = []
+  let confirmedCount = 0
+
+  for (const item of items) {
+    if (kept.length >= target) break
+    let tracks: Track[]
+    try {
+      tracks = await confirm(item.artist)
+    } catch {
+      tracks = []
+    }
+    confirmedCount++
+    if (tracks.length > 0) {
+      kept.push({ ...item, artist: { ...item.artist, topTracks: tracks } })
+    }
+  }
+
+  return { kept, confirmedCount }
 }
 
 /**

@@ -11,7 +11,7 @@ import {
 } from './types'
 import { ArtistNameCache } from './artist-name-cache'
 import { resolveArtistsByName } from './resolve-candidates'
-import { confirmPlayableTracks } from './confirm-previews'
+import { confirmPlayableTracks, confirmToTarget } from './confirm-previews'
 import { searchTracksByArtist } from '@/lib/music-provider/itunes'
 import { fetchArtistEnrichment } from './enrich-artist'
 import { normalizeArtistName } from '@/lib/listened-artists'
@@ -614,15 +614,14 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
         cache: nameCache,
         searchArtists: (name) => musicProvider.searchArtists(accessToken, name),
         enrichArtist: buildEnrichArtist(),
-        confirmPreview: buildConfirmPreview(accessToken),
       })
 
+  let previewMs = 0
   const primaryStart = Date.now()
   const resolved = await resolveArtistsByName(uniqueNames, {
     cache: nameCache,
     searchArtists: (name) => musicProvider.searchArtists(accessToken, name),
     enrichArtist: buildEnrichArtist(),
-    confirmPreview: buildConfirmPreview(accessToken),
     concurrency: RESOLVE_CONCURRENCY,
     delayMs: RESOLVE_DELAY_MS,
   })
@@ -746,7 +745,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
       `uniq=${uniqueNames.length} ok=${resolved.searchOk} fail=${resolved.searchFail} ` +
       `filtListened=${filtListened} cands=${candidateMap.size} source=${source}`
     )
-    return { count: 0, runSecondary: null, metrics: { primaryMs: Date.now() - primaryStart, previewMs: resolved.previewMs, misses: resolved.cacheMisses, retries: resolved.searchRetries, rateLimited: resolved.rateLimited } }
+    return { count: 0, runSecondary: null, metrics: { primaryMs: Date.now() - primaryStart, previewMs, misses: resolved.cacheMisses, retries: resolved.searchRetries, rateLimited: resolved.rateLimited } }
   }
 
   // Post-pipeline adjacent-genre bleed. Skipped when the user has filtered
@@ -768,7 +767,6 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
           cache: nameCache,
           searchArtists: (name) => musicProvider.searchArtists(accessToken, name),
           enrichArtist: buildEnrichArtist(),
-          confirmPreview: buildConfirmPreview(accessToken),
         })
         return r.resolved
       },
@@ -799,6 +797,21 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     if (top.length > before) {
       console.log(`[engine] backfill source=${source} from=${before} to=${top.length} reserve=${reserve.length}`)
     }
+  }
+
+  // Confirm-only-shown (#143): previews are confirmed ONLY for the artists we are
+  // about to show, score-ordered, stopping at TARGET playable. Anything still
+  // unconfirmed below TARGET is backfilled from the scored pool tail. Guarantees
+  // every written row has a playable preview without confirming the whole pool.
+  {
+    const previewStart = Date.now()
+    const confirmFn = buildConfirmPreview(accessToken)
+    const inTop = new Set(top.map((t) => t.artist.id))
+    const tail = pool.filter((s) => !inTop.has(s.artist.id)) // already score-sorted
+    const ordered = [...top, ...tail]
+    const { kept } = await confirmToTarget(ordered, TARGET, confirmFn)
+    top = kept
+    previewMs = Date.now() - previewStart
   }
 
   const topIds = top.map((item) => item.artist.id)
@@ -852,7 +865,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
 
   if (error) {
     console.error(`[engine] upsert_error source=${source} err=${error.message}`)
-    return { count: 0, runSecondary: null, metrics: { primaryMs: Date.now() - primaryStart, previewMs: resolved.previewMs, misses: resolved.cacheMisses, retries: resolved.searchRetries, rateLimited: resolved.rateLimited } }
+    return { count: 0, runSecondary: null, metrics: { primaryMs: Date.now() - primaryStart, previewMs, misses: resolved.cacheMisses, retries: resolved.searchRetries, rateLimited: resolved.rateLimited } }
   }
 
   console.log(
@@ -910,9 +923,18 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
 
         secondaryScored.sort((a, b) => b.score - a.score)
 
+        // Confirm-only-shown (#143): confirm only up to TARGET secondary candidates
+        // before writing, so secondary doesn't blow the preview-API budget either.
+        const { kept: secConfirmed } = await confirmToTarget(
+          secondaryScored,
+          TARGET,
+          buildConfirmPreview(accessToken),
+        )
+        const secScored = secConfirmed
+
         // Fetch existing cooldown state for secondary too — otherwise re-running
         // in the background can clobber a fresh seen_at/skip_at on an existing row.
-        const secondaryIds = secondaryScored.map((s) => s.artist.id)
+        const secondaryIds = secScored.map((s) => s.artist.id)
         const { data: existingSec } = await supabase
           .from('recommendation_cache')
           .select('spotify_artist_id, seen_at, skip_at')
@@ -925,7 +947,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
           secSkipAt.set(row.spotify_artist_id, row.skip_at)
         }
 
-        const secondaryRows = secondaryScored
+        const secondaryRows = secScored
           .filter((item) => {
             const seenAt = secSeenAt.get(item.artist.id)
             const skipAt = secSkipAt.get(item.artist.id)
@@ -974,7 +996,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     runSecondary,
     metrics: {
       primaryMs,
-      previewMs: resolved.previewMs,
+      previewMs,
       misses: resolved.cacheMisses,
       retries: resolved.searchRetries,
       rateLimited: resolved.rateLimited,
