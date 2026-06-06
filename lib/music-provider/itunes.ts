@@ -1,4 +1,5 @@
 import type { Track } from "./types"
+import { runItunes } from "@/lib/itunes-limit"
 
 const ITUNES_BASE = "https://itunes.apple.com/search"
 
@@ -29,44 +30,47 @@ export async function searchTracksByArtist(
   market = "US",
   limit = 5
 ): Promise<Track[] | null> {
+  let items: ITunesResult[]
   try {
     const url =
       `${ITUNES_BASE}?term=${encodeURIComponent(artistName)}` +
       `&entity=song&limit=25&country=${encodeURIComponent(market)}`
-    const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
-    if (!res.ok) {
-      console.log(`[itunes] ${res.status} artist="${artistName}"`)
-      return null
-    }
-    const data = (await res.json()) as ITunesResponse
-    const items = data.results ?? []
-    const target = artistName.toLowerCase().trim()
-
-    const seen = new Set<string>()
-    const out: Track[] = []
-    for (const it of items) {
-      if (!it?.trackName || !it?.artistName) continue
-      if (it.artistName.toLowerCase().trim() !== target) continue
-      const key = it.trackName.toLowerCase().trim()
-      if (seen.has(key)) continue
-      seen.add(key)
-      out.push({
-        id: String(it.trackId),
-        spotifyTrackId: null,
-        name: it.trackName,
-        previewUrl: it.previewUrl ?? null,
-        durationMs: it.trackTimeMillis ?? 0,
-        albumName: it.collectionName ?? "",
-        albumImageUrl: upscaleArtwork(it.artworkUrl100),
-        source: "itunes",
-      })
-      if (out.length >= limit) break
-    }
-    return out
+    items = await runItunes(async () => {
+      const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
+      if (!res.ok) {
+        console.log(`[itunes] ${res.status} artist="${artistName}"`)
+        throw new Error(`itunes ${res.status}`)
+      }
+      const data = (await res.json()) as ITunesResponse
+      return data.results ?? []
+    })
   } catch (err) {
     console.log(`[itunes] fail artist="${artistName}" err=${err instanceof Error ? err.message : String(err)}`)
     return null
   }
+
+  const target = artistName.toLowerCase().trim()
+  const seen = new Set<string>()
+  const out: Track[] = []
+  for (const it of items) {
+    if (!it?.trackName || !it?.artistName) continue
+    if (it.artistName.toLowerCase().trim() !== target) continue
+    const key = it.trackName.toLowerCase().trim()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({
+      id: String(it.trackId),
+      spotifyTrackId: null,
+      name: it.trackName,
+      previewUrl: it.previewUrl ?? null,
+      durationMs: it.trackTimeMillis ?? 0,
+      albumName: it.collectionName ?? "",
+      albumImageUrl: upscaleArtwork(it.artworkUrl100),
+      source: "itunes",
+    })
+    if (out.length >= limit) break
+  }
+  return out
 }
 
 /** iTunes artwork URLs are fixed-size; swap 100x100 → 600x600 for HiDPI. */

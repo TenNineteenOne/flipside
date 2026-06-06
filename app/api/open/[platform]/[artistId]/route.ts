@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, apiUnauthorized } from "@/lib/errors"
 import { isValidSpotifyId } from "@/lib/spotify-ids"
+import { runItunes } from "@/lib/itunes-limit"
 
 interface ITunesArtistResult {
   artistId: number
@@ -48,22 +49,28 @@ async function resolveAppleMusicUrl(name: string): Promise<string | null> {
   const url =
     `https://itunes.apple.com/search?term=${encodeURIComponent(name)}` +
     `&entity=musicArtist&limit=1`
-  let res: Response
-  try {
-    res = await fetch(url, { signal: AbortSignal.timeout(5000) })
-  } catch (err) {
-    console.error(`[open/apple_music] itunes fetch failed name="${name}" err=${String(err)}`)
-    return null
-  }
-  if (!res.ok) {
-    console.error(`[open/apple_music] itunes status=${res.status} name="${name}"`)
-    return null
-  }
   let data: ITunesResponse
   try {
-    data = (await res.json()) as ITunesResponse
-  } catch (err) {
-    console.error(`[open/apple_music] itunes json parse failed name="${name}" err=${String(err)}`)
+    data = await runItunes(async () => {
+      let res: Response
+      try {
+        res = await fetch(url, { signal: AbortSignal.timeout(5000) })
+      } catch (err) {
+        console.error(`[open/apple_music] itunes fetch failed name="${name}" err=${String(err)}`)
+        throw err
+      }
+      if (!res.ok) {
+        console.error(`[open/apple_music] itunes status=${res.status} name="${name}"`)
+        throw new Error(`itunes ${res.status}`)
+      }
+      try {
+        return (await res.json()) as ITunesResponse
+      } catch (err) {
+        console.error(`[open/apple_music] itunes json parse failed name="${name}" err=${String(err)}`)
+        throw err
+      }
+    })
+  } catch {
     return null
   }
   const hit = data.results?.[0]
