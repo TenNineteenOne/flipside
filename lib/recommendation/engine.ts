@@ -350,6 +350,34 @@ export function greedyPickTop(
 }
 
 /**
+ * Top up a short picked list to `target` from a reserve pool, best-score first,
+ * skipping artists already picked. Pure: the engine builds `reserve` from the
+ * (already preview-confirmed) secondary pool and calls this only when preview
+ * drops thinned the primary pick below target. Returns `picked` unchanged when
+ * already at/over target or when the reserve can't fill the gap (short feed
+ * degrades gracefully rather than erroring).
+ */
+export function backfillToTarget(
+  picked: ScoredArtist[],
+  reserve: ScoredArtist[],
+  target: number
+): ScoredArtist[] {
+  if (picked.length >= target) return picked
+  const have = new Set(picked.map((p) => p.artist.id))
+  const candidates = reserve
+    .filter((r) => !have.has(r.artist.id))
+    .sort((a, b) => b.score - a.score)
+  const out = [...picked]
+  for (const r of candidates) {
+    if (out.length >= target) break
+    if (have.has(r.artist.id)) continue
+    have.add(r.artist.id)
+    out.push(r)
+  }
+  return out
+}
+
+/**
  * Cooldown gate: a `skip_at` timestamp is a permanent hide ("Dismiss" button).
  * Undo is available from the History page, which clears skip_at via the
  * dismiss RPC. A passive `seen_at` is a 7-day soft cooldown.
@@ -652,7 +680,10 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     })
     .map(([, val]) => val)
 
-  const scored: ScoredArtist[] = filteredCandidates.map(({ artist, seedArtists }) => {
+  // Local scorer — shared by the primary pool and the backfill reserve so the
+  // two are ranked on the same scale. (The secondary `runSecondary` closure
+  // keeps its own copy; it runs in a separate background pass.)
+  const scoreCandidate = (artist: Artist, seedArtists: string[], src: string): ScoredArtist => {
     const seedRelevance = Math.min(Math.sqrt(seedArtists.length) / Math.sqrt(6), 1)
     const tier = tierMultiplier(artist.popularity, popularityCurve)
     const discoveryPenalty = undergroundMode
@@ -662,7 +693,6 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     const mainstreamPenalty =
       adventurous && artist.popularity > 50 ? ADVENTUROUS_MAINSTREAM_PENALTY : 0
     const score = baseScore * discoveryPenalty - mainstreamPenalty
-
     return {
       artist: { ...artist, topTracks: artist.topTracks ?? [] },
       score,
@@ -671,9 +701,13 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
         genres: artist.genres.slice(0, 2),
         friendBoost: [],
       },
-      source,
+      source: src,
     }
-  })
+  }
+
+  const scored: ScoredArtist[] = filteredCandidates.map(({ artist, seedArtists }) =>
+    scoreCandidate(artist, seedArtists, source)
+  )
 
   scored.sort((a, b) => b.score - a.score)
 
@@ -739,6 +773,32 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
         return r.resolved
       },
     })
+  }
+
+  // Backfill (#135). Preview-confirmation drops no-preview artists before the
+  // pick, so a thin-signal user can land below TARGET. The secondary pool is
+  // already resolving in parallel (and is itself preview-confirmed); when we're
+  // short, await it and top up from its best filter-passing candidates. Only
+  // pays latency in the (rare) short case; full feeds skip the await entirely.
+  const TARGET = 20
+  if (top.length < TARGET && secondaryResolvePromise) {
+    const sec = await secondaryResolvePromise
+    const pickedIds = new Set(top.map((t) => t.artist.id))
+    const reserve: ScoredArtist[] = []
+    for (const [name, art] of sec.resolved) {
+      if (pickedIds.has(art.id)) continue
+      if (thumbsDownIds.has(art.id)) continue
+      if (overThresholdIds.has(art.id)) continue
+      if (overThresholdNames.has(normalizeArtistName(art.name))) continue
+      if (undergroundMode && (art.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) continue
+      if (genre && !art.genres.some((g) => normalizedIncludes(g, genre))) continue
+      reserve.push(scoreCandidate(art, nameToSeeds.get(name) ?? [], `${source}_backfill`))
+    }
+    const before = top.length
+    top = backfillToTarget(top, reserve, TARGET)
+    if (top.length > before) {
+      console.log(`[engine] backfill source=${source} from=${before} to=${top.length} reserve=${reserve.length}`)
+    }
   }
 
   const topIds = top.map((item) => item.artist.id)
