@@ -6,9 +6,11 @@ import { runItunes } from "./itunes-limit"
  * across the blocking set + 4 Explore rails + per-artist tracks must share one
  * budget). These lock down the hand-written slot-transfer semaphore: it must cap
  * concurrency and never lose/leak a slot.
+ *
+ * MAX_CONCURRENCY was lowered from 12 → 5 in issue #142.
  */
 describe("runItunes concurrency gate", () => {
-  it("never runs more than the cap concurrently and completes every task", async () => {
+  it("never runs more than the cap (5) concurrently and completes every task", async () => {
     let active = 0
     let peak = 0
     const deferredResolve = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -27,7 +29,7 @@ describe("runItunes concurrency gate", () => {
 
     expect(results).toHaveLength(40)
     expect(results.sort((a, b) => a - b)).toEqual(Array.from({ length: 40 }, (_, i) => i))
-    expect(peak).toBeLessThanOrEqual(12) // MAX_CONCURRENCY
+    expect(peak).toBeLessThanOrEqual(5) // MAX_CONCURRENCY (lowered from 12 → 5 in #142)
     expect(peak).toBeGreaterThan(1) // actually ran in parallel, not serialized
     expect(active).toBe(0) // every slot released
   })

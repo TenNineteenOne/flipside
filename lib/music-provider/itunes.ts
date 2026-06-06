@@ -1,6 +1,7 @@
 import type { Track } from "./types"
 import { runItunes } from "@/lib/itunes-limit"
 import { incItunes } from "@/lib/recommendation/api-call-counter"
+import { PreviewSourceBreaker } from "@/lib/preview-source-breaker"
 
 const ITUNES_BASE = "https://itunes.apple.com/search"
 
@@ -20,17 +21,35 @@ interface ITunesResponse {
 }
 
 /**
+ * Process-global iTunes circuit breaker (issue #142).
+ * Trips open after 5 consecutive HTTP errors or network failures and stays
+ * open for 60 seconds before allowing a half-open probe.
+ * Short-circuited calls are NOT counted against the #141 API-call counters.
+ */
+const itunesBreaker = new PreviewSourceBreaker({
+  failureThreshold: 5,
+  cooldownMs: 60_000,
+})
+
+/**
  * Search iTunes for top tracks by an artist name. Free, no auth, no key.
  * Filters results to tracks whose artistName matches case-insensitively and
  * de-dupes by track name (iTunes often returns album + single versions).
  *
- * Returns `null` on network / parse failure so the caller can fall back.
+ * Returns `null` on network / parse failure or when the circuit breaker is
+ * open so the caller can fall back.
  */
 export async function searchTracksByArtist(
   artistName: string,
   market = "US",
   limit = 5
 ): Promise<Track[] | null> {
+  // Short-circuit while the breaker is open — no fetch, no counter increment.
+  if (!itunesBreaker.canRequest()) {
+    console.log(`[itunes] breaker open, skip artist="${artistName}"`)
+    return null
+  }
+
   let items: ITunesResult[]
   try {
     const url =
@@ -41,13 +60,23 @@ export async function searchTracksByArtist(
       const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
       if (!res.ok) {
         console.log(`[itunes] ${res.status} artist="${artistName}"`)
+        if (res.status === 403 || res.status === 429) {
+          itunesBreaker.recordFailure()
+        }
         throw new Error(`itunes ${res.status}`)
       }
+      itunesBreaker.recordSuccess()
       const data = (await res.json()) as ITunesResponse
       return data.results ?? []
     })
   } catch (err) {
-    console.log(`[itunes] fail artist="${artistName}" err=${err instanceof Error ? err.message : String(err)}`)
+    // Network timeout or other throw (not an HTTP error we already handled above)
+    const msg = err instanceof Error ? err.message : String(err)
+    if (!msg.startsWith("itunes ")) {
+      // Non-HTTP throw (e.g. AbortError timeout) — record as unhealthy signal
+      itunesBreaker.recordFailure()
+    }
+    console.log(`[itunes] fail artist="${artistName}" err=${msg}`)
     return null
   }
 
