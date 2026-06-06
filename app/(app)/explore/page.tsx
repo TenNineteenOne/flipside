@@ -140,9 +140,11 @@ async function ExploreRailsSection({
     for (const id of ids) {
       const a = artistById.get(id)
       if (!a) continue
-      // Defensive: never render a dead rail card. Rail picks are dropped at
-      // resolve time if they have no preview; this catches legacy cached rows.
-      if (!hasPlayablePreview(a.topTracks)) continue
+      // Defensive: drop a rail card only when its previews are CONFIRMED empty
+      // (topTracks present but unplayable). Legacy cached rows have no topTracks
+      // field (undefined) — keep those and let the card lazy-fetch as before,
+      // so existing cached rails don't blank out during the migration window.
+      if (a.topTracks !== undefined && !hasPlayablePreview(a.topTracks)) continue
       out.push({
         id: a.id,
         name: a.name,
