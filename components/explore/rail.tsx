@@ -15,6 +15,8 @@ export interface RailArtist {
   imageUrl: string | null
   popularity: number
   artistColor?: string | null
+  /** Baked playable previews so the rail card plays immediately (no lazy fetch). */
+  topTracks?: import("@/lib/music-provider/types").Track[]
   /** Optional rail-specific provenance (e.g. wildcards sourceArtist, six-degrees chain). */
   why?: {
     sourceArtist?: string

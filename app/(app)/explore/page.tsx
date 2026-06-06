@@ -146,6 +146,7 @@ async function ExploreRailsSection({
         imageUrl: a.imageUrl ?? null,
         popularity: a.popularity ?? 0,
         artistColor: a.artist_color ?? null,
+        topTracks: a.topTracks ?? [],
         why: why[id] ? { sourceArtist: why[id].sourceArtist, chain: why[id].chain, tag: why[id].tag, anchor: why[id].anchor } : undefined,
       })
     }

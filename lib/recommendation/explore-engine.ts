@@ -12,12 +12,12 @@
  */
 
 import { musicProvider } from '@/lib/music-provider/provider'
-import type { Artist } from '@/lib/music-provider/types'
+import type { Artist, Track } from '@/lib/music-provider/types'
 import { createServiceClient } from '@/lib/supabase/server'
 import { ArtistNameCache } from './artist-name-cache'
 import { resolveArtistsByName } from './resolve-candidates'
 import { fetchArtistEnrichment } from './enrich-artist'
-import { getTagArtistNames } from './engine'
+import { getTagArtistNames, buildConfirmPreview } from './engine'
 import {
   allLeavesWithAnchor,
   genreToAnchor,
@@ -220,6 +220,10 @@ async function resolveAndFilter(
     cache: nameCache,
     searchArtists: (name) => musicProvider.searchArtists(accessToken, name),
     enrichArtist: buildEnrichArtist(),
+    // Playability guarantee: confirm previews and drop no-preview artists so
+    // every rail card can play. The resolver bakes topTracks into the artist
+    // and persists them to artist_search_cache, which hydration reads back.
+    confirmPreview: buildConfirmPreview(accessToken),
   })
 
   const out: Artist[] = []
@@ -850,6 +854,8 @@ export interface HydratedRailArtist {
   imageUrl?: string | null
   popularity?: number
   artist_color?: string | null
+  /** Baked playable previews from artist_data; carried through to the card. */
+  topTracks?: Track[]
 }
 
 export interface BuildRailsResult {

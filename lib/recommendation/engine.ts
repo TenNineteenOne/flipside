@@ -135,7 +135,7 @@ function buildEnrichArtist() {
  * Shared by the primary, secondary, and adjacent-bleed resolves so the
  * playability guarantee holds across the whole For You pipeline.
  */
-function buildConfirmPreview(accessToken: string) {
+export function buildConfirmPreview(accessToken: string) {
   return (artist: Artist) =>
     confirmPlayableTracks(
       { id: artist.id, name: artist.name, topTracks: artist.topTracks },
