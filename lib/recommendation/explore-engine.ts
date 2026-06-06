@@ -201,6 +201,10 @@ export function computeTopAnchors(
  * Resolve a flat list of Last.fm artist names to Spotify Artists + cache them.
  * Honors the same listened/thumbs-down/seen filters the main engine uses so
  * rails stay consistent with For You.
+ *
+ * `confirmTarget` is how many confirmed-playable artists to stop at. Pass
+ * `Math.min(railDisplayTarget + HEADROOM, 30)` from each rail so smaller rails
+ * confirm fewer candidates while never exceeding the old 30-cap.
  */
 async function resolveAndFilter(
   names: string[],
@@ -212,6 +216,7 @@ async function resolveAndFilter(
     excludedIds: Set<string>
     undergroundMode?: boolean
   },
+  confirmTarget: number,
 ): Promise<Artist[]> {
   const unique = [...new Set(names.filter(Boolean))]
   if (unique.length === 0) return []
@@ -235,14 +240,17 @@ async function resolveAndFilter(
     candidates.push(artist)
   }
 
-  // Confirm only up to rail capacity (30 = largest rail limit used). Artists
-  // whose confirm returns no playable tracks are dropped.
-  const RAIL_TARGET = 30
+  // Confirm up to `confirmTarget` artists. Per-rail callers set this to
+  // Math.min(displayTarget + HEADROOM, 30) so smaller rails confirm fewer
+  // candidates while never exceeding the previous hard cap of 30.
   const asItems = candidates.map((artist) => ({ artist }))
-  const { kept } = await confirmToTarget(asItems, RAIL_TARGET, buildConfirmPreview(accessToken))
+  const { kept } = await confirmToTarget(asItems, confirmTarget, buildConfirmPreview(accessToken))
   const out: Artist[] = kept.map((k) => k.artist)
   return out
 }
+
+/** Headroom added to each rail's display target when computing confirmTarget. */
+const CONFIRM_HEADROOM = 10
 
 /**
  * IDs the explore engine should never resurface this generation:
@@ -360,7 +368,7 @@ export async function adjacentRail(
     thumbsDownIds: ctx.thumbsDownIds,
     excludedIds,
     undergroundMode: input.undergroundMode,
-  })
+  }, Math.min(target + CONFIRM_HEADROOM, 30))
 
   const artistByName = new Map<string, Artist>()
   for (const a of resolved) artistByName.set(a.name, a)
@@ -494,7 +502,7 @@ export async function outsideRail(
     thumbsDownIds: ctx.thumbsDownIds,
     excludedIds,
     undergroundMode: input.undergroundMode,
-  })
+  }, Math.min(target + CONFIRM_HEADROOM, 30))
 
   const artistByName = new Map<string, Artist>()
   for (const a of resolved) artistByName.set(a.name, a)
@@ -632,7 +640,7 @@ export async function wildcardsRail(
     thumbsDownIds: ctx.thumbsDownIds,
     excludedIds,
     undergroundMode: input.undergroundMode,
-  })
+  }, Math.min(target + CONFIRM_HEADROOM, 30))
   const artistByName = new Map<string, Artist>()
   for (const a of resolved) artistByName.set(a.name, a)
 
@@ -792,7 +800,7 @@ export async function leftfieldRail(
       thumbsDownIds: ctx.thumbsDownIds,
       excludedIds,
       undergroundMode: input.undergroundMode,
-    })
+    }, Math.min(target + CONFIRM_HEADROOM, 30))
 
     // Best-effort background warm of a bounded slice of the deferred tail: it
     // writes through to artist_search_cache so a later shuffle / next-window
@@ -808,7 +816,7 @@ export async function leftfieldRail(
         thumbsDownIds: ctx.thumbsDownIds,
         excludedIds,
         undergroundMode: input.undergroundMode,
-      }).catch(() => {})
+      }, Math.min(target + CONFIRM_HEADROOM, 30)).catch(() => {})
     }
 
     const artistByName = new Map<string, Artist>()
