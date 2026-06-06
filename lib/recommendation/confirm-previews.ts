@@ -1,0 +1,54 @@
+import type { Track } from "@/lib/music-provider/types"
+
+/** Tracks with a real preview URL — the only ones that can actually play. */
+export function playableTracks(tracks: Track[]): Track[] {
+  return tracks.filter((t) => t.previewUrl != null && t.previewUrl !== "")
+}
+
+export interface ConfirmPreviewDeps {
+  /** iTunes search by artist name. Returns tracks, [] for no match, or null on failure. */
+  searchItunes: (name: string) => Promise<Track[] | null>
+  /** Spotify top-tracks by artist id. Returns tracks ([] on none/failure). Fallback source. */
+  getSpotifyTopTracks: (artistId: string) => Promise<Track[]>
+}
+
+export interface ConfirmInput {
+  id: string
+  name: string
+  /**
+   * Previously-confirmed tracks from the name cache (artist_data.topTracks).
+   *  - undefined  → never confirmed: resolve via iTunes/Spotify
+   *  - []         → confirmed-no-preview (negative cache): reuse, returns []
+   *  - [..]       → confirmed: reuse (filtered to playable)
+   */
+  topTracks?: Track[]
+}
+
+/**
+ * Confirm an artist's playable tracks. Reuses cached topTracks when present
+ * (no network); otherwise iTunes-first, Spotify fallback. Returns ONLY playable
+ * tracks (non-null previewUrl); an empty result means "drop this artist".
+ * NEVER throws — any source failure degrades to the next source / empty.
+ */
+export async function confirmPlayableTracks(
+  artist: ConfirmInput,
+  deps: ConfirmPreviewDeps,
+): Promise<Track[]> {
+  // 1. Cache reuse — covers positive AND negative cache (empty array included)
+  if (artist.topTracks !== undefined) {
+    return playableTracks(artist.topTracks)
+  }
+
+  // 2. iTunes-first
+  const it = await deps.searchItunes(artist.name).catch(() => null)
+  const p = playableTracks(it ?? [])
+  if (p.length > 0) return p
+
+  // 3. Spotify fallback
+  const sp = await deps.getSpotifyTopTracks(artist.id).catch(() => [])
+  const p2 = playableTracks(sp)
+  if (p2.length > 0) return p2
+
+  // 4. Nothing found
+  return []
+}
