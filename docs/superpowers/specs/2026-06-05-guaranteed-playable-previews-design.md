@@ -4,6 +4,29 @@
 **Status:** Approved (design); pending implementation plan
 **Author:** flux + Claude
 
+## As-built note (2026-06-06)
+
+Two deliberate deviations from this design were made during planning/implementation
+(see PRD issue #131, slices #132–#138):
+
+1. **Preview cache lives in `artist_search_cache.artist_data.topTracks`** (the name
+   cache doubles as the preview cache), NOT in `artist_tracks_cache` with a
+   `source:'none'` 7-day negative row. Rails hydrate from `artist_search_cache`, so
+   baking `topTracks` there makes previews travel to every surface with no extra
+   join. Negative caching is a confirmed-empty `topTracks: []` on the cached artist
+   (shares the row lifetime; no separate TTL). `artist_tracks_cache` remains only as
+   the feed's legacy fallback and the lazy per-id endpoint.
+2. **Confirmation is a post-resolution pass, not concurrent-with-Spotify overlap.**
+   The "max(spotify, itunes)" overlap was explicitly dropped (user decision: accept
+   ~0.5–1s cold-load cost, which two independent sweeps confirmed stays within the
+   3–5s budget). Warm loads pay ~zero (cached `topTracks` reused without network).
+   The `preview=` gen-timing phase measures the primary pass's cost.
+
+Known migration behavior: legacy rows written before previews were baked have no
+`topTracks`. The Explore read-path keeps such rows (lazy-fetch as before); the feed
+read-path drops a card only if neither the baked previews nor `artist_tracks_cache`
+yield a playable track — self-healing on the next generation.
+
 ## Goal
 
 Every artist card that populates must have a playable music preview, with **no
