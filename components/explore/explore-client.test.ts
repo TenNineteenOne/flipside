@@ -3,7 +3,13 @@
  * No DOM / React rendering — these functions are fully synchronous / testable.
  */
 import { describe, it, expect } from "vitest"
-import { hasRegenCompleted, POLL_CEILING_MS, POLL_INTERVAL_MS } from "./explore-client"
+import {
+  hasRegenCompleted,
+  shouldPollOnArrival,
+  POLL_CEILING_MS,
+  POLL_INTERVAL_MS,
+  SETTINGS_REGEN_WINDOW_MS,
+} from "./explore-client"
 
 describe("hasRegenCompleted", () => {
   it("returns false when latest is null (nothing in cache yet)", () => {
@@ -51,5 +57,46 @@ describe("polling constants", () => {
   it("POLL_INTERVAL_MS is a positive number and less than POLL_CEILING_MS", () => {
     expect(POLL_INTERVAL_MS).toBeGreaterThan(0)
     expect(POLL_INTERVAL_MS).toBeLessThan(POLL_CEILING_MS)
+  })
+})
+
+describe("shouldPollOnArrival", () => {
+  const now = 1_000_000
+
+  it("returns false when flagValue is null (no Settings regen fired)", () => {
+    expect(shouldPollOnArrival(null, now)).toBe(false)
+  })
+
+  it("returns false when flagValue is an empty string", () => {
+    expect(shouldPollOnArrival("", now)).toBe(false)
+  })
+
+  it("returns false when flagValue is a non-numeric string", () => {
+    expect(shouldPollOnArrival("not-a-number", now)).toBe(false)
+  })
+
+  it("returns true when the flag was set very recently (within window)", () => {
+    const recentTs = String(now - 1_000) // 1 second ago
+    expect(shouldPollOnArrival(recentTs, now)).toBe(true)
+  })
+
+  it("returns true when the flag was set exactly at the window boundary", () => {
+    const atBoundary = String(now - SETTINGS_REGEN_WINDOW_MS)
+    expect(shouldPollOnArrival(atBoundary, now)).toBe(true)
+  })
+
+  it("returns false when the flag is older than the window", () => {
+    const tooOld = String(now - SETTINGS_REGEN_WINDOW_MS - 1)
+    expect(shouldPollOnArrival(tooOld, now)).toBe(false)
+  })
+
+  it("respects a custom maxAgeMs override", () => {
+    const ts = String(now - 5_000) // 5 seconds ago
+    expect(shouldPollOnArrival(ts, now, 4_000)).toBe(false)  // too old for 4s window
+    expect(shouldPollOnArrival(ts, now, 6_000)).toBe(true)   // within 6s window
+  })
+
+  it("returns true when the flag was set 0ms ago (same tick)", () => {
+    expect(shouldPollOnArrival(String(now), now)).toBe(true)
   })
 })

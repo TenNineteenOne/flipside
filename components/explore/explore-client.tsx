@@ -36,6 +36,35 @@ export const POLL_CEILING_MS = 90_000
 /** Polling cadence (ms). */
 export const POLL_INTERVAL_MS = 2_500
 
+/**
+ * How long (ms) after Settings fires explore-regen-at we treat a background
+ * regen as potentially still in flight. 120s gives generous headroom over the
+ * 54-74s regen window.
+ */
+export const SETTINGS_REGEN_WINDOW_MS = 120_000
+
+/** localStorage key written by Settings when a background explore regen fires. */
+export const EXPLORE_REGEN_AT_KEY = "explore-regen-at"
+
+/**
+ * Pure helper — true when the stored flag value indicates a background explore
+ * regen is likely still in flight relative to `now`.
+ *
+ * @param flagValue - raw string value from localStorage (or null if absent)
+ * @param now       - current epoch ms (Date.now())
+ * @param maxAgeMs  - maximum age to treat as in-flight (default SETTINGS_REGEN_WINDOW_MS)
+ */
+export function shouldPollOnArrival(
+  flagValue: string | null,
+  now: number,
+  maxAgeMs: number = SETTINGS_REGEN_WINDOW_MS,
+): boolean {
+  if (flagValue === null) return false
+  const ts = Number(flagValue)
+  if (!Number.isFinite(ts)) return false
+  return now - ts <= maxAgeMs
+}
+
 export interface ChallengePayload {
   title: string
   description: string
@@ -239,6 +268,47 @@ export function ExploreClient({
   }
 
   /**
+   * Poll GET /api/explore/rails every POLL_INTERVAL_MS until generatedAt
+   * advances past `capturedGeneratedAt` (or the ceiling is hit). Calls
+   * `onSettle()` when done — either after a successful swap or on ceiling.
+   * Reuses the shared stopPolling / pollTimerRef / pollDeadlineRef machinery.
+   *
+   * This is intentionally a poll-only path: it does NOT POST force=true.
+   * Call regenAndPoll (which wraps this) when you also need to kick off the
+   * regen; call this directly when the regen was already requested externally
+   * (e.g., by Settings).
+   */
+  function pollUntilFresh(opts: {
+    capturedGeneratedAt: string | null
+    onSettle: () => void
+    clearRegenFlag?: boolean
+  }) {
+    stopPolling()
+    pollDeadlineRef.current = Date.now() + POLL_CEILING_MS
+
+    pollTimerRef.current = setInterval(async () => {
+      const expired = Date.now() >= pollDeadlineRef.current
+      if (expired) {
+        stopPolling()
+        if (opts.clearRegenFlag) {
+          try { localStorage.removeItem(EXPLORE_REGEN_AT_KEY) } catch { /* private mode */ }
+        }
+        opts.onSettle()
+        toast("Still building — refresh in a moment", { duration: 4000 })
+        return
+      }
+      const swapped = await pollOnce(opts.capturedGeneratedAt)
+      if (swapped) {
+        stopPolling()
+        if (opts.clearRegenFlag) {
+          try { localStorage.removeItem(EXPLORE_REGEN_AT_KEY) } catch { /* private mode */ }
+        }
+        opts.onSettle()
+      }
+    }, POLL_INTERVAL_MS)
+  }
+
+  /**
    * Kick off a background regen then poll until rails swap in (or ceiling).
    * `onSettle` is called (no-arg) when the poller stops, regardless of reason.
    * `dropThumbsUp` — when true, clears thumbs_up entries from the current
@@ -283,23 +353,7 @@ export function ExploreClient({
       setIsAdvDirty(false)
     }
 
-    stopPolling()
-    pollDeadlineRef.current = Date.now() + POLL_CEILING_MS
-
-    pollTimerRef.current = setInterval(async () => {
-      const expired = Date.now() >= pollDeadlineRef.current
-      if (expired) {
-        stopPolling()
-        opts.onSettle()
-        toast("Still building — refresh in a moment", { duration: 4000 })
-        return
-      }
-      const swapped = await pollOnce(captured)
-      if (swapped) {
-        stopPolling()
-        opts.onSettle()
-      }
-    }, POLL_INTERVAL_MS)
+    pollUntilFresh({ capturedGeneratedAt: captured, onSettle: opts.onSettle })
   }
 
   // Cleanup on unmount
@@ -318,6 +372,27 @@ export function ExploreClient({
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [coldStart])
+
+  // Settings-arrival: if Settings fired a background explore regen and the user
+  // navigated here before it finished, start a poll-only (no re-POST) so rails
+  // refresh automatically. The localStorage flag is the cross-navigation signal.
+  // Fires at most once (ref guard); only runs when NOT coldStart (the cold-start
+  // path already triggers a regenAndPoll above which subsumes polling).
+  const settingsArrivalFiredRef = useRef(false)
+  useEffect(() => {
+    if (coldStart || settingsArrivalFiredRef.current) return
+    let flagValue: string | null = null
+    try { flagValue = localStorage.getItem(EXPLORE_REGEN_AT_KEY) } catch { /* private mode */ }
+    if (!shouldPollOnArrival(flagValue, Date.now())) return
+    settingsArrivalFiredRef.current = true
+    setIsRegenerating(true)
+    pollUntilFresh({
+      capturedGeneratedAt: generatedAtRef.current,
+      clearRegenFlag: true,
+      onSettle: () => setIsRegenerating(false),
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Keep orderedRailsRef current on every render.
   useEffect(() => { orderedRailsRef.current = orderedRails }, [orderedRails])
@@ -627,10 +702,21 @@ export function ExploreClient({
             background: "rgba(15,15,15,0.45)",
           }}
         >
-          <div style={{ fontWeight: 600, color: "var(--text-primary)", marginBottom: 6 }}>
-            Not enough signal yet
-          </div>
-          Save a few artists or mark some thumbs-up in your feed, then shuffle to generate richer rails here.
+          {isRegenerating ? (
+            <>
+              <div style={{ fontWeight: 600, color: "var(--text-primary)", marginBottom: 6 }}>
+                Building your exploration rails…
+              </div>
+              This takes about a minute. Rails will appear automatically when ready.
+            </>
+          ) : (
+            <>
+              <div style={{ fontWeight: 600, color: "var(--text-primary)", marginBottom: 6 }}>
+                Not enough signal yet
+              </div>
+              Save a few artists or mark some thumbs-up in your feed, then shuffle to generate richer rails here.
+            </>
+          )}
         </div>
       )}
 

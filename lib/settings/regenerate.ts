@@ -50,6 +50,11 @@ export async function regenerateFeedAndExplore(opts: RegenerateOpts): Promise<vo
       fetch("/api/explore/generate?force=true", { method: "POST" }),
     ])
 
+    // Signal to ExploreClient that a background regen is in flight so it can
+    // start a poll-only when the user navigates to /explore before it finishes.
+    // Wrap in try/catch — localStorage throws in private/incognito mode.
+    try { localStorage.setItem("explore-regen-at", String(Date.now())) } catch { /* private mode */ }
+
     if (feedRes.ok) {
       const data = (await feedRes.json().catch(() => ({}))) as {
         softenedFilters?: { playThreshold?: boolean; coldStart?: boolean }
