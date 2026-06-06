@@ -230,23 +230,33 @@ async function resolveAndFilter(
 
   // Playability guarantee (#143): confirm previews for only the artists that
   // pass all filters (listen/thumbs-down/seen) and are about to be shown.
-  // This avoids confirming artists that will be filtered out anyway.
-  const candidates: Artist[] = []
-  for (const artist of resolved.resolved.values()) {
+  // This avoids confirming artists that will be filtered out anyway. Carry the
+  // resolver's original name alongside each artist so the confirmed tracks can
+  // be written back under the SAME name-cache key (see write-back below).
+  const candidates: Array<{ artist: Artist; name: string }> = []
+  for (const [name, artist] of resolved.resolved) {
     if (filters.listenedIds.has(artist.id)) continue
     if (filters.thumbsDownIds.has(artist.id)) continue
     if (filters.excludedIds.has(artist.id)) continue
     if (filters.undergroundMode && (artist.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) continue
-    candidates.push(artist)
+    candidates.push({ artist, name })
   }
 
   // Confirm up to `confirmTarget` artists. Per-rail callers set this to
-  // Math.min(displayTarget + HEADROOM, 30) so smaller rails confirm fewer
-  // candidates while never exceeding the previous hard cap of 30.
-  const asItems = candidates.map((artist) => ({ artist }))
-  const { kept } = await confirmToTarget(asItems, confirmTarget, buildConfirmPreview(accessToken))
-  const out: Artist[] = kept.map((k) => k.artist)
-  return out
+  // displayTarget + HEADROOM so smaller rails confirm fewer candidates.
+  const { kept } = await confirmToTarget(candidates, confirmTarget, buildConfirmPreview(accessToken))
+
+  // Write the confirmed topTracks back into artist_search_cache under the
+  // resolver's name key (#145/#143 fix). Explore persists only artist IDs in
+  // explore_cache and re-hydrates artist_data from artist_search_cache by id —
+  // so without this write-back the baked topTracks are discarded and every
+  // freshly-resolved rail card hydrates with topTracks:[] → a dead card. This
+  // also makes the next generation's resolver a warm, network-free preview hit.
+  await Promise.all(
+    kept.map((k) => nameCache.write(k.name, k.artist).catch(() => {})),
+  )
+
+  return kept.map((k) => k.artist)
 }
 
 /** Headroom added to each rail's display target when computing confirmTarget. */
@@ -368,7 +378,7 @@ export async function adjacentRail(
     thumbsDownIds: ctx.thumbsDownIds,
     excludedIds,
     undergroundMode: input.undergroundMode,
-  }, Math.min(target + CONFIRM_HEADROOM, 30))
+  }, Math.max(target, Math.min(target + CONFIRM_HEADROOM, 30)))
 
   const artistByName = new Map<string, Artist>()
   for (const a of resolved) artistByName.set(a.name, a)
@@ -502,7 +512,7 @@ export async function outsideRail(
     thumbsDownIds: ctx.thumbsDownIds,
     excludedIds,
     undergroundMode: input.undergroundMode,
-  }, Math.min(target + CONFIRM_HEADROOM, 30))
+  }, Math.max(target, Math.min(target + CONFIRM_HEADROOM, 30)))
 
   const artistByName = new Map<string, Artist>()
   for (const a of resolved) artistByName.set(a.name, a)
@@ -640,7 +650,7 @@ export async function wildcardsRail(
     thumbsDownIds: ctx.thumbsDownIds,
     excludedIds,
     undergroundMode: input.undergroundMode,
-  }, Math.min(target + CONFIRM_HEADROOM, 30))
+  }, Math.max(target, Math.min(target + CONFIRM_HEADROOM, 30)))
   const artistByName = new Map<string, Artist>()
   for (const a of resolved) artistByName.set(a.name, a)
 
@@ -800,7 +810,7 @@ export async function leftfieldRail(
       thumbsDownIds: ctx.thumbsDownIds,
       excludedIds,
       undergroundMode: input.undergroundMode,
-    }, Math.min(target + CONFIRM_HEADROOM, 30))
+    }, Math.max(target, Math.min(target + CONFIRM_HEADROOM, 30)))
 
     // Best-effort background warm of a bounded slice of the deferred tail: it
     // writes through to artist_search_cache so a later shuffle / next-window
@@ -816,7 +826,7 @@ export async function leftfieldRail(
         thumbsDownIds: ctx.thumbsDownIds,
         excludedIds,
         undergroundMode: input.undergroundMode,
-      }, Math.min(target + CONFIRM_HEADROOM, 30)).catch(() => {})
+      }, Math.max(target, Math.min(target + CONFIRM_HEADROOM, 30))).catch(() => {})
     }
 
     const artistByName = new Map<string, Artist>()

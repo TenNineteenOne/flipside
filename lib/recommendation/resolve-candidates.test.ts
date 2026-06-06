@@ -150,6 +150,26 @@ describe("resolveArtistsByName", () => {
     expect(search).toHaveBeenCalledTimes(4)
   })
 
+  it("skipRetry rate-limit (open breaker) breaks immediately — no retries, no backoff sleep", async () => {
+    const waits: number[] = []
+    // Breaker-open sentinel: rateLimited with skipRetry. The resolver must NOT
+    // retry or sleep — retrying just drains the shared backoff budget against an
+    // open circuit (the throttled shared-key scenario).
+    const search = vi.fn(
+      async (): Promise<Artist[] | RateLimited> => ({ rateLimited: true, retryAfterSec: 80_000, skipRetry: true }),
+    )
+    const deps: ResolveDeps = {
+      ...makeDeps({ search }),
+      sleep: async (ms) => { waits.push(ms) },
+    }
+    const r = await resolveArtistsByName(["A", "B"], deps)
+    expect(r.rateLimited).toBe(true)
+    expect(r.searchRetries).toBe(0)        // never retried
+    expect(waits).toEqual([])               // never slept
+    expect(search).toHaveBeenCalledTimes(2) // exactly one call per name
+    expect(r.resolved.size).toBe(0)
+  })
+
   it("honors capped retry-after and respects total backoff budget", async () => {
     const waits: number[] = []
     const search = vi.fn(async (): Promise<Artist[] | RateLimited> => rl(120))

@@ -278,7 +278,7 @@ export class SpotifyProvider implements MusicProvider {
     if (!spotifyBreaker.canRequest()) {
       const remainingSec = Math.ceil(spotifyBreaker.remainingMs() / 1000)
       console.log(`[s429] "${query}" breaker open, skipping (${remainingSec}s remaining)`)
-      return { rateLimited: true, retryAfterSec: remainingSec }
+      return { rateLimited: true, retryAfterSec: remainingSec, skipRetry: true }
     }
 
     incSpotify()
