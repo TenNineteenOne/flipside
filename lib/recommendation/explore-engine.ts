@@ -937,10 +937,16 @@ function enforceUndergroundCap(
  */
 export async function buildExploreRails(
   input: BuildRailsInput,
-  opts: { force?: boolean; hydrate?: boolean } = {},
+  opts: { force?: boolean; hydrate?: boolean; regenerate?: boolean } = {},
 ): Promise<BuildRailsResult> {
   const supabase = createServiceClient()
   const now = new Date()
+  // `regenerate` defaults to true to preserve existing behaviour. When false,
+  // the function never triggers a 54-74s build — it returns whatever is
+  // cached (possibly empty/partial rails) instead. Used by the read-only
+  // GET /api/explore/rails endpoint and the cold-load fast-paint path so the
+  // page never blocks on a synchronous regen.
+  const shouldRegenerate = opts.regenerate !== false
 
   if (!opts.force) {
     const { data: cached } = await supabase
@@ -958,6 +964,23 @@ export async function buildExploreRails(
       const hydrated = opts.hydrate ? await hydrateRailArtists(supabase, rails) : undefined
       enforceUndergroundCap(rails, hydrated, input.undergroundMode)
       return { cacheHit: true, rails, hydrated }
+    }
+
+    // Cache is cold/incomplete. When regenerate=false, return whatever partial
+    // cache rows exist (possibly none) without triggering a synchronous build.
+    if (!shouldRegenerate) {
+      const { data: partial } = await supabase
+        .from('explore_cache')
+        .select('rail_key, artist_ids, why, expires_at')
+        .eq('user_id', input.userId)
+      const rails: RailResult[] = (partial ?? []).map((row) => ({
+        railKey: row.rail_key as RailKey,
+        artistIds: (row.artist_ids ?? []) as string[],
+        why: (row.why ?? {}) as Record<string, RailWhy>,
+      }))
+      const hydrated = opts.hydrate ? await hydrateRailArtists(supabase, rails) : undefined
+      enforceUndergroundCap(rails, hydrated, input.undergroundMode)
+      return { cacheHit: false, rails, hydrated }
     }
   }
 
