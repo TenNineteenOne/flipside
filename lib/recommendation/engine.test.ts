@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest"
 import {
   buildRoundRobinNames,
   greedyPickTop,
+  backfillToTarget,
   runDeepHop,
   isEligibleForCooldown,
   augmentWithAdjacent,
@@ -30,6 +31,46 @@ function scored(
     source: "test",
   }
 }
+
+describe("backfillToTarget", () => {
+  it("returns picked unchanged when already at target", () => {
+    const picked = [scored("a", 5), scored("b", 4)]
+    const reserve = [scored("c", 9)]
+    expect(backfillToTarget(picked, reserve, 2)).toBe(picked)
+  })
+
+  it("returns picked unchanged when already over target", () => {
+    const picked = [scored("a", 5), scored("b", 4), scored("c", 3)]
+    expect(backfillToTarget(picked, [scored("d", 9)], 2)).toBe(picked)
+  })
+
+  it("fills the gap from the reserve, best score first", () => {
+    const picked = [scored("a", 5)]
+    const reserve = [scored("c", 2), scored("b", 8), scored("d", 6)]
+    const out = backfillToTarget(picked, reserve, 3)
+    expect(out.map((s) => s.artist.id)).toEqual(["a", "b", "d"])
+  })
+
+  it("never duplicates an already-picked artist", () => {
+    const picked = [scored("a", 5), scored("b", 4)]
+    const reserve = [scored("b", 9), scored("c", 7)]
+    const out = backfillToTarget(picked, reserve, 3)
+    expect(out.map((s) => s.artist.id)).toEqual(["a", "b", "c"])
+  })
+
+  it("degrades gracefully (short result) when the reserve can't fill the gap", () => {
+    const picked = [scored("a", 5)]
+    const reserve = [scored("b", 8)]
+    const out = backfillToTarget(picked, reserve, 5)
+    expect(out.map((s) => s.artist.id)).toEqual(["a", "b"])
+    expect(out.length).toBe(2)
+  })
+
+  it("returns picked unchanged when the reserve is empty", () => {
+    const picked = [scored("a", 5)]
+    expect(backfillToTarget(picked, [], 5)).toEqual(picked)
+  })
+})
 
 describe("buildRoundRobinNames", () => {
   it("returns empty when all seeds have empty similar lists", () => {
@@ -581,7 +622,7 @@ describe("runWithSoftening cascade order", () => {
         seedNames: opts.seedNames,
       })
       const count = results[idx++] ?? 0
-      return { count, runSecondary: null }
+      return { count, runSecondary: null, metrics: { primaryMs: 0, previewMs: 0, firstBatchMs: 0, misses: 0, retries: 0, rateLimited: false } }
     }
     return { run, calls }
   }

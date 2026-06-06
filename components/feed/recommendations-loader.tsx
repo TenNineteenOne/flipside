@@ -37,7 +37,7 @@ export function RecommendationsLoader() {
       try {
         const res = await fetch("/api/recommendations/generate", { method: "POST" })
         if (cancelled) return
-        const data = (await res.json().catch(() => ({}))) as { count?: number; error?: string }
+        const data = (await res.json().catch(() => ({}))) as { count?: number; error?: string; pending?: boolean }
         const outcome = classifyGenerateResponse(res.status, data)
 
         if (outcome === "ready") {

@@ -23,4 +23,21 @@ describe("classifyGenerateResponse", () => {
   it("treats 5xx as error", () => {
     expect(classifyGenerateResponse(503, { error: "Music service temporarily unavailable" })).toBe("error")
   })
+
+  // pending flag: tier-1 wrote 0 but background fill is still running
+  it("treats count:0 + pending:true as in-flight (background fill running, not a real error)", () => {
+    expect(classifyGenerateResponse(200, { count: 0, pending: true })).toBe("in-flight")
+  })
+
+  it("treats count:0 + pending:false as error (nothing at all is pending)", () => {
+    expect(classifyGenerateResponse(200, { count: 0, pending: false })).toBe("error")
+  })
+
+  it("treats count:0 + pending:undefined as error (legacy response with no pending field)", () => {
+    expect(classifyGenerateResponse(200, { count: 0, pending: undefined })).toBe("error")
+  })
+
+  it("treats count > 0 + pending:true as ready (first batch written, more coming in background)", () => {
+    expect(classifyGenerateResponse(200, { count: 5, pending: true })).toBe("ready")
+  })
 })

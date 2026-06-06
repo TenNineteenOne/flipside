@@ -12,12 +12,13 @@
  */
 
 import { musicProvider } from '@/lib/music-provider/provider'
-import type { Artist } from '@/lib/music-provider/types'
+import type { Artist, Track } from '@/lib/music-provider/types'
 import { createServiceClient } from '@/lib/supabase/server'
 import { ArtistNameCache } from './artist-name-cache'
 import { resolveArtistsByName } from './resolve-candidates'
 import { fetchArtistEnrichment } from './enrich-artist'
-import { getTagArtistNames } from './engine'
+import { getTagArtistNames, buildConfirmPreview } from './engine'
+import { confirmToTarget } from './confirm-previews'
 import {
   allLeavesWithAnchor,
   genreToAnchor,
@@ -200,6 +201,10 @@ export function computeTopAnchors(
  * Resolve a flat list of Last.fm artist names to Spotify Artists + cache them.
  * Honors the same listened/thumbs-down/seen filters the main engine uses so
  * rails stay consistent with For You.
+ *
+ * `confirmTarget` is how many confirmed-playable artists to stop at. Pass
+ * `Math.min(railDisplayTarget + HEADROOM, 30)` from each rail so smaller rails
+ * confirm fewer candidates while never exceeding the old 30-cap.
  */
 async function resolveAndFilter(
   names: string[],
@@ -211,6 +216,7 @@ async function resolveAndFilter(
     excludedIds: Set<string>
     undergroundMode?: boolean
   },
+  confirmTarget: number,
 ): Promise<Artist[]> {
   const unique = [...new Set(names.filter(Boolean))]
   if (unique.length === 0) return []
@@ -222,16 +228,39 @@ async function resolveAndFilter(
     enrichArtist: buildEnrichArtist(),
   })
 
-  const out: Artist[] = []
-  for (const artist of resolved.resolved.values()) {
+  // Playability guarantee (#143): confirm previews for only the artists that
+  // pass all filters (listen/thumbs-down/seen) and are about to be shown.
+  // This avoids confirming artists that will be filtered out anyway. Carry the
+  // resolver's original name alongside each artist so the confirmed tracks can
+  // be written back under the SAME name-cache key (see write-back below).
+  const candidates: Array<{ artist: Artist; name: string }> = []
+  for (const [name, artist] of resolved.resolved) {
     if (filters.listenedIds.has(artist.id)) continue
     if (filters.thumbsDownIds.has(artist.id)) continue
     if (filters.excludedIds.has(artist.id)) continue
     if (filters.undergroundMode && (artist.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) continue
-    out.push(artist)
+    candidates.push({ artist, name })
   }
-  return out
+
+  // Confirm up to `confirmTarget` artists. Per-rail callers set this to
+  // displayTarget + HEADROOM so smaller rails confirm fewer candidates.
+  const { kept } = await confirmToTarget(candidates, confirmTarget, buildConfirmPreview(accessToken))
+
+  // Write the confirmed topTracks back into artist_search_cache under the
+  // resolver's name key (#145/#143 fix). Explore persists only artist IDs in
+  // explore_cache and re-hydrates artist_data from artist_search_cache by id —
+  // so without this write-back the baked topTracks are discarded and every
+  // freshly-resolved rail card hydrates with topTracks:[] → a dead card. This
+  // also makes the next generation's resolver a warm, network-free preview hit.
+  await Promise.all(
+    kept.map((k) => nameCache.write(k.name, k.artist).catch(() => {})),
+  )
+
+  return kept.map((k) => k.artist)
 }
+
+/** Headroom added to each rail's display target when computing confirmTarget. */
+const CONFIRM_HEADROOM = 10
 
 /**
  * IDs the explore engine should never resurface this generation:
@@ -349,7 +378,7 @@ export async function adjacentRail(
     thumbsDownIds: ctx.thumbsDownIds,
     excludedIds,
     undergroundMode: input.undergroundMode,
-  })
+  }, Math.max(target, Math.min(target + CONFIRM_HEADROOM, 30)))
 
   const artistByName = new Map<string, Artist>()
   for (const a of resolved) artistByName.set(a.name, a)
@@ -483,7 +512,7 @@ export async function outsideRail(
     thumbsDownIds: ctx.thumbsDownIds,
     excludedIds,
     undergroundMode: input.undergroundMode,
-  })
+  }, Math.max(target, Math.min(target + CONFIRM_HEADROOM, 30)))
 
   const artistByName = new Map<string, Artist>()
   for (const a of resolved) artistByName.set(a.name, a)
@@ -621,7 +650,7 @@ export async function wildcardsRail(
     thumbsDownIds: ctx.thumbsDownIds,
     excludedIds,
     undergroundMode: input.undergroundMode,
-  })
+  }, Math.max(target, Math.min(target + CONFIRM_HEADROOM, 30)))
   const artistByName = new Map<string, Artist>()
   for (const a of resolved) artistByName.set(a.name, a)
 
@@ -781,7 +810,7 @@ export async function leftfieldRail(
       thumbsDownIds: ctx.thumbsDownIds,
       excludedIds,
       undergroundMode: input.undergroundMode,
-    })
+    }, Math.max(target, Math.min(target + CONFIRM_HEADROOM, 30)))
 
     // Best-effort background warm of a bounded slice of the deferred tail: it
     // writes through to artist_search_cache so a later shuffle / next-window
@@ -797,7 +826,7 @@ export async function leftfieldRail(
         thumbsDownIds: ctx.thumbsDownIds,
         excludedIds,
         undergroundMode: input.undergroundMode,
-      }).catch(() => {})
+      }, Math.max(target, Math.min(target + CONFIRM_HEADROOM, 30))).catch(() => {})
     }
 
     const artistByName = new Map<string, Artist>()
@@ -850,6 +879,8 @@ export interface HydratedRailArtist {
   imageUrl?: string | null
   popularity?: number
   artist_color?: string | null
+  /** Baked playable previews from artist_data; carried through to the card. */
+  topTracks?: Track[]
 }
 
 export interface BuildRailsResult {
@@ -916,10 +947,16 @@ function enforceUndergroundCap(
  */
 export async function buildExploreRails(
   input: BuildRailsInput,
-  opts: { force?: boolean; hydrate?: boolean } = {},
+  opts: { force?: boolean; hydrate?: boolean; regenerate?: boolean } = {},
 ): Promise<BuildRailsResult> {
   const supabase = createServiceClient()
   const now = new Date()
+  // `regenerate` defaults to true to preserve existing behaviour. When false,
+  // the function never triggers a 54-74s build — it returns whatever is
+  // cached (possibly empty/partial rails) instead. Used by the read-only
+  // GET /api/explore/rails endpoint and the cold-load fast-paint path so the
+  // page never blocks on a synchronous regen.
+  const shouldRegenerate = opts.regenerate !== false
 
   if (!opts.force) {
     const { data: cached } = await supabase
@@ -937,6 +974,23 @@ export async function buildExploreRails(
       const hydrated = opts.hydrate ? await hydrateRailArtists(supabase, rails) : undefined
       enforceUndergroundCap(rails, hydrated, input.undergroundMode)
       return { cacheHit: true, rails, hydrated }
+    }
+
+    // Cache is cold/incomplete. When regenerate=false, return whatever partial
+    // cache rows exist (possibly none) without triggering a synchronous build.
+    if (!shouldRegenerate) {
+      const { data: partial } = await supabase
+        .from('explore_cache')
+        .select('rail_key, artist_ids, why, expires_at')
+        .eq('user_id', input.userId)
+      const rails: RailResult[] = (partial ?? []).map((row) => ({
+        railKey: row.rail_key as RailKey,
+        artistIds: (row.artist_ids ?? []) as string[],
+        why: (row.why ?? {}) as Record<string, RailWhy>,
+      }))
+      const hydrated = opts.hydrate ? await hydrateRailArtists(supabase, rails) : undefined
+      enforceUndergroundCap(rails, hydrated, input.undergroundMode)
+      return { cacheHit: false, rails, hydrated }
     }
   }
 

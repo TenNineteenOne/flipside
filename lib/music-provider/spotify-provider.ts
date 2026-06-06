@@ -2,6 +2,23 @@ import type { MusicProvider, RateLimited, SimilarArtistRef } from "./index"
 import type { Artist, PlayHistory, Track } from "./types"
 import { cachedSimilarArtistNames } from "@/lib/lastfm-cache"
 import { runLastfm } from "@/lib/lastfm-limit"
+import { incSpotify } from "@/lib/recommendation/api-call-counter"
+import { PreviewSourceBreaker } from "@/lib/preview-source-breaker"
+
+/**
+ * Process-global Spotify circuit breaker (issue #142).
+ *
+ * Primary purpose: when Spotify returns a 429 with an explicit Retry-After
+ * header (sometimes 24 h for credential-level bans), we call openUntil() so
+ * subsequent calls short-circuit without re-hammering the API.
+ *
+ * Also trips on consecutive non-429 failures (5xx etc.) for 60 s.
+ * Short-circuited calls are NOT counted against the #141 API-call counters.
+ */
+const spotifyBreaker = new PreviewSourceBreaker({
+  failureThreshold: 5,
+  cooldownMs: 60_000,
+})
 
 const SPOTIFY_BASE = "https://api.spotify.com/v1"
 const LASTFM_BASE = "https://ws.audioscrobbler.com/2.0"
@@ -257,6 +274,14 @@ export class SpotifyProvider implements MusicProvider {
   // searchArtists
   // -------------------------------------------------------------------------
   async searchArtists(accessToken: string, query: string): Promise<Artist[] | RateLimited> {
+    // Short-circuit while the breaker is open — no fetch, no counter increment.
+    if (!spotifyBreaker.canRequest()) {
+      const remainingSec = Math.ceil(spotifyBreaker.remainingMs() / 1000)
+      console.log(`[s429] "${query}" breaker open, skipping (${remainingSec}s remaining)`)
+      return { rateLimited: true, retryAfterSec: remainingSec, skipRetry: true }
+    }
+
+    incSpotify()
     const res = await spotifyFetch(
       `${SPOTIFY_BASE}/search?q=${encodeURIComponent(query)}&type=artist&limit=10`,
       accessToken
@@ -270,13 +295,18 @@ export class SpotifyProvider implements MusicProvider {
       const parsed = raw ? parseInt(raw, 10) : NaN
       const retryAfterSec = Number.isFinite(parsed) && parsed > 0 ? parsed : 10
       console.log(`[s429] "${query}" retry-after=${retryAfterSec}s`)
+      // Honor the provider's retry-after: block all subsequent calls until it expires.
+      spotifyBreaker.openUntil(Date.now() + retryAfterSec * 1000)
+      spotifyBreaker.recordFailure()
       return { rateLimited: true, retryAfterSec }
     }
     if (!res.ok) {
+      spotifyBreaker.recordFailure()
       console.log(`[s${res.status}] "${query}"`)
       return []
     }
 
+    spotifyBreaker.recordSuccess()
     const data = (await res.json()) as SpotifySearchResponse
     return (data.artists?.items ?? []).map(mapArtist)
   }
@@ -290,13 +320,30 @@ export class SpotifyProvider implements MusicProvider {
     limit: number,
     market = "from_token"
   ): Promise<Track[]> {
+    // Short-circuit while the breaker is open — return empty, no counter increment.
+    if (!spotifyBreaker.canRequest()) {
+      console.log(`[spotify] breaker open, skip getArtistTopTracks artistId="${artistId}"`)
+      return []
+    }
+
+    incSpotify()
     const res = await spotifyFetch(
       `${SPOTIFY_BASE}/artists/${artistId}/top-tracks?market=${market}`,
       accessToken
     )
     if (!res) throw new Error('auth_expired')
-    if (!res.ok) throw new Error(`http_${res.status}`)
+    if (!res.ok) {
+      if (res.status === 429) {
+        const raw = res.headers.get('retry-after')
+        const parsed = raw ? parseInt(raw, 10) : NaN
+        const retryAfterSec = Number.isFinite(parsed) && parsed > 0 ? parsed : 10
+        spotifyBreaker.openUntil(Date.now() + retryAfterSec * 1000)
+      }
+      spotifyBreaker.recordFailure()
+      throw new Error(`http_${res.status}`)
+    }
 
+    spotifyBreaker.recordSuccess()
     const data = (await res.json()) as { tracks: SpotifyTrackObject[] }
     return (data.tracks ?? []).slice(0, limit).map(mapTrack)
   }

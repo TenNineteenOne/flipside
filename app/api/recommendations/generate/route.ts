@@ -6,9 +6,8 @@ import { getAccessToken } from "@/lib/get-access-token"
 import { getSpotifyClientToken } from "@/lib/spotify-client-token"
 import { buildRecommendations } from "@/lib/recommendation/engine"
 import { formatGenTiming } from "@/lib/recommendation/gen-timing"
+import { resetCalls, snapshotCalls } from "@/lib/recommendation/api-call-counter"
 import { extractArtistColor } from "@/lib/colour-extraction"
-import { searchTracksByArtist } from "@/lib/music-provider/itunes"
-import { musicProvider } from "@/lib/music-provider/provider"
 import { after, type NextRequest } from "next/server"
 import type { Artist } from "@/lib/music-provider/types"
 
@@ -91,72 +90,6 @@ async function runColorExtraction(
         .eq("spotify_artist_id", r.spotify_artist_id)
     })
   )
-}
-
-async function runTrackPrewarm(
-  supabase: SupabaseServiceClient,
-  accessToken: string,
-  cachedRecs: CachedRec[],
-  artistIds: string[]
-): Promise<void> {
-  const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-
-  const { data: freshTracks } = await supabase
-    .from("artist_tracks_cache")
-    .select("spotify_artist_id, fetched_at")
-    .in("spotify_artist_id", artistIds)
-    .gt("fetched_at", twentyFourHoursAgo)
-
-  const freshTrackIds = new Set((freshTracks ?? []).map((r) => r.spotify_artist_id))
-
-  // Pre-warm all 20 artists now that we're in after() and off the critical path.
-  const staleArtists = cachedRecs.filter((r) => !freshTrackIds.has(r.spotify_artist_id))
-  if (staleArtists.length === 0) return
-
-  const tasks = staleArtists.map((r) => async () => {
-    const artistData = r.artist_data as Artist | null
-    const artistName = artistData?.name
-    if (!artistName) return
-
-    const itunesTracks = await searchTracksByArtist(artistName, "US", 5)
-    if (itunesTracks && itunesTracks.length > 0) {
-      await supabase.from("artist_tracks_cache").upsert(
-        {
-          spotify_artist_id: r.spotify_artist_id,
-          tracks: itunesTracks,
-          source: "itunes",
-          fetched_at: new Date().toISOString(),
-        },
-        { onConflict: "spotify_artist_id" }
-      )
-      return
-    }
-
-    try {
-      const spotifyTracks = await musicProvider.getArtistTopTracks(
-        accessToken,
-        r.spotify_artist_id,
-        5,
-        "US"
-      )
-      if (spotifyTracks.length > 0) {
-        await supabase.from("artist_tracks_cache").upsert(
-          {
-            spotify_artist_id: r.spotify_artist_id,
-            tracks: spotifyTracks,
-            source: "spotify",
-            fetched_at: new Date().toISOString(),
-          },
-          { onConflict: "spotify_artist_id" }
-        )
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      console.error(`[generate] prewarm-fail artistId=${r.spotify_artist_id} err="${msg}"`)
-    }
-  })
-
-  await pLimit(tasks, 5)
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
@@ -253,6 +186,10 @@ export async function POST(req: NextRequest): Promise<Response> {
     const rawGenre = req.nextUrl.searchParams.get("genre")
     const genre = rawGenre && rawGenre.length <= 80 ? rawGenre : undefined
 
+    // Reset per-request API call counters before the blocking generate. The
+    // snapshot below captures only the critical-path calls; background after()
+    // work runs after logging and is intentionally excluded.
+    resetCalls()
     const genStart = Date.now()
     const { count: recCount, runSecondary, softenedFilters, metrics } = await buildRecommendations({
       userId: user.id,
@@ -264,28 +201,34 @@ export async function POST(req: NextRequest): Promise<Response> {
       deepDiscovery: user.deep_discovery ?? false,
       adventurous: user.adventurous ?? false,
     })
+    // Snapshot before logging — after() work runs after this point and is excluded.
+    const apiCalls = snapshotCalls()
     console.log(formatGenTiming({
       userId: user.id,
-      phases: metrics ? { primary: metrics.primaryMs } : {},
+      phases: { firstBatch: metrics.firstBatchMs, primary: metrics.primaryMs, preview: metrics.previewMs },
       totalMs: Date.now() - genStart,
-      misses: metrics?.misses,
-      retries: metrics?.retries,
-      rateLimited: metrics?.rateLimited,
+      misses: metrics.misses,
+      retries: metrics.retries,
+      rateLimited: metrics.rateLimited,
+      itunesCalls: apiCalls.itunes,
+      spotifyCalls: apiCalls.spotify,
     }))
 
-    // Decorations (colour extraction + track pre-warming) and secondary
-    // candidate resolution run AFTER the response returns so the feed
-    // renders as soon as the initial cache is written. Cards degrade
-    // gracefully: missing colours fall back to a deterministic name-hash
-    // hue, missing tracks are fetched per-card on mount.
+    // Colour extraction and secondary candidate resolution run AFTER the
+    // response returns so the feed renders as soon as the initial cache is
+    // written. Previews are now confirmed and baked into artist_data during
+    // resolution (so there's no background track pre-warm — the old prewarm
+    // raced the user and is gone). Missing colours fall back to a
+    // deterministic name-hash hue.
     after(async () => {
-      // Run secondary resolution first so freshly-added rows get decorated
-      // in the same background pass.
+      // Finish primary-to-20 (tier-2) then secondary pool in the background.
+      // runSecondary handles both phases; it is null only when the pipeline
+      // failed early (empty pool / no candidates).
       if (runSecondary) {
         try {
           await runSecondary()
         } catch (err) {
-          console.error(`[generate] secondary-fail err=${err instanceof Error ? err.message : err}`)
+          console.error(`[generate] background-fail err=${err instanceof Error ? err.message : err}`)
         }
       }
 
@@ -299,20 +242,14 @@ export async function POST(req: NextRequest): Promise<Response> {
 
       const artistIds = cachedRecs.map((r) => r.spotify_artist_id)
 
-      // allSettled so a color-extraction failure doesn't prevent track prewarm
-      // (and vice versa). Both are best-effort decoration jobs.
-      const decoResults = await Promise.allSettled([
-        runColorExtraction(supabase, user.id, cachedRecs, artistIds),
-        runTrackPrewarm(supabase, accessToken, cachedRecs, artistIds),
-      ])
-      for (const r of decoResults) {
-        if (r.status === "rejected") {
-          console.error("[generate] decoration-task failed", r.reason)
-        }
+      try {
+        await runColorExtraction(supabase, user.id, cachedRecs, artistIds)
+      } catch (err) {
+        console.error("[generate] decoration-task failed", err)
       }
     })
 
-    return Response.json({ success: true, count: recCount, softenedFilters })
+    return Response.json({ success: true, count: recCount, softenedFilters, pending: runSecondary != null })
   } catch (err) {
     console.error(`[generate] fail err=${err instanceof Error ? err.message : err}`)
     return apiError("Recommendation generation failed", 500)

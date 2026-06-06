@@ -6,6 +6,10 @@ export interface GenTiming {
   misses?: number
   retries?: number
   rateLimited?: boolean
+  /** iTunes outbound API calls made during the blocking generate (before after()). */
+  itunesCalls?: number
+  /** Spotify outbound API calls made during the blocking generate (before after()). */
+  spotifyCalls?: number
 }
 
 /**
@@ -15,7 +19,7 @@ export interface GenTiming {
  */
 export function formatGenTiming(t: GenTiming): string {
   const phaseBits = Object.entries(t.phases).map(([k, v]) => `${k}=${Math.round(v)}`)
-  return [
+  const parts = [
     "[gen-timing]",
     `user=${t.userId}`,
     ...phaseBits,
@@ -23,5 +27,8 @@ export function formatGenTiming(t: GenTiming): string {
     `misses=${t.misses ?? 0}`,
     `retries=${t.retries ?? 0}`,
     `rl=${t.rateLimited ?? false}`,
-  ].join(" ")
+  ]
+  if (t.itunesCalls !== undefined) parts.push(`itunesCalls=${t.itunesCalls}`)
+  if (t.spotifyCalls !== undefined) parts.push(`spotifyCalls=${t.spotifyCalls}`)
+  return parts.join(" ")
 }
