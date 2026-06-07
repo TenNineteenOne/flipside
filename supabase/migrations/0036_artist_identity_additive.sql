@@ -201,13 +201,24 @@ create index listened_artists_user_name_unresolved_artistid_idx on listened_arti
 delete from explore_cache;
 
 -- ============================================================================
--- 9. NEW UUID RPC overloads (p_artist_id UUID). The old (…,TEXT,…) overloads are
---    KEPT ALIVE for the deploy gap; 0037 drops them. Bodies mirror 0033/0034
---    exactly, with spotify_artist_id → artist_id and the conflict target swapped.
---    🔴 A changed-param-type CREATE makes a NEW overload that is PUBLIC-EXECUTE-
---    able by default → REVOKE on the new signature is load-bearing security.
+-- 9. NEW uuid RPCs — DISTINCTLY NAMED (…_v2), NOT overloads.
+--    ⚠️ PostgREST cannot disambiguate an overload that differs only uuid-vs-text
+--    in a parameter: a JSON string value matches BOTH candidates → PGRST203
+--    "could not choose the best candidate function", breaking every call while
+--    both exist (caught by the localhost smoke; unit tests mock the client and
+--    miss it). So we version the NAME, not the signature: old code keeps calling
+--    rpc_record_feedback (the TEXT version, left untouched + alive for the deploy
+--    gap); new code calls rpc_record_feedback_v2 (uuid). The drop-old migration
+--    later drops the old TEXT versions (and may re-create the base name as uuid).
+--    Defensive drops clean up any stray uuid OVERLOAD from an earlier draft.
+--    🔴 New functions are PUBLIC-EXECUTE-able by default → the REVOKEs below are
+--    load-bearing security (the RPCs trust p_user_id).
 -- ============================================================================
-create or replace function rpc_record_feedback(
+drop function if exists rpc_record_feedback(uuid, uuid, text);
+drop function if exists rpc_delete_feedback(uuid, uuid);
+drop function if exists rpc_clear_dismiss(uuid, uuid);
+
+create or replace function rpc_record_feedback_v2(
   p_user_id   uuid,
   p_artist_id uuid,
   p_signal    text
@@ -250,7 +261,7 @@ begin
 end;
 $$;
 
-create or replace function rpc_delete_feedback(
+create or replace function rpc_delete_feedback_v2(
   p_user_id   uuid,
   p_artist_id uuid
 ) returns void
@@ -264,7 +275,7 @@ begin
 end;
 $$;
 
-create or replace function rpc_clear_dismiss(
+create or replace function rpc_clear_dismiss_v2(
   p_user_id   uuid,
   p_artist_id uuid
 ) returns void
@@ -277,15 +288,15 @@ begin
 end;
 $$;
 
--- 🔴 REVOKE the new UUID overloads from PUBLIC/anon/authenticated (server-only;
---    app calls through the service client). The RPCs trust p_user_id, so safety
---    rests entirely on these revokes.
-revoke execute on function rpc_record_feedback(uuid, uuid, text) from public;
-revoke execute on function rpc_record_feedback(uuid, uuid, text) from anon;
-revoke execute on function rpc_record_feedback(uuid, uuid, text) from authenticated;
-revoke execute on function rpc_delete_feedback(uuid, uuid) from public;
-revoke execute on function rpc_delete_feedback(uuid, uuid) from anon;
-revoke execute on function rpc_delete_feedback(uuid, uuid) from authenticated;
-revoke execute on function rpc_clear_dismiss(uuid, uuid) from public;
-revoke execute on function rpc_clear_dismiss(uuid, uuid) from anon;
-revoke execute on function rpc_clear_dismiss(uuid, uuid) from authenticated;
+-- 🔴 REVOKE the _v2 functions from PUBLIC/anon/authenticated (server-only; app
+--    calls through the service client). The RPCs trust p_user_id, so safety rests
+--    entirely on these revokes.
+revoke execute on function rpc_record_feedback_v2(uuid, uuid, text) from public;
+revoke execute on function rpc_record_feedback_v2(uuid, uuid, text) from anon;
+revoke execute on function rpc_record_feedback_v2(uuid, uuid, text) from authenticated;
+revoke execute on function rpc_delete_feedback_v2(uuid, uuid) from public;
+revoke execute on function rpc_delete_feedback_v2(uuid, uuid) from anon;
+revoke execute on function rpc_delete_feedback_v2(uuid, uuid) from authenticated;
+revoke execute on function rpc_clear_dismiss_v2(uuid, uuid) from public;
+revoke execute on function rpc_clear_dismiss_v2(uuid, uuid) from anon;
+revoke execute on function rpc_clear_dismiss_v2(uuid, uuid) from authenticated;

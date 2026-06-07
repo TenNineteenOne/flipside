@@ -56,3 +56,4 @@ data/*.backup*
 *.tsbuildinfo
 next-env.d.ts
 .claude/worktrees/
+.env.smoke

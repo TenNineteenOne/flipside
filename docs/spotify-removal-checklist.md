@@ -101,6 +101,21 @@ previews from `artist_tracks_cache` (A1, + one-time backfill of baked topTracks)
 hydration re-pointed to `artists`; feed KEEPS baking topTracks into `rec_cache.artist_data`
 (per-user materialization, not drift); 3-row merge = keep + log-and-skip safeguard.
 
+**🔴 Localhost smoke finding (2026-06-07) — PGRST203, fixed:** the RPC re-key as same-name
+OVERLOADS (`rpc_record_feedback(uuid,uuid,text)` alongside the old `(uuid,text,text)`) is BROKEN:
+PostgREST cannot disambiguate uuid-vs-text for a JSON string value → `PGRST203 could not choose
+the best candidate function` on EVERY feedback/dismiss/clear call while both exist (i.e. the whole
+deploy gap). Unit tests (mocked client) + the rehearsal "function exists + revoked" checks both
+MISSED it; only the live service-client smoke caught it. **Fix:** version the NAME not the
+signature — new uuid RPCs are `rpc_record_feedback_v2` / `rpc_delete_feedback_v2` /
+`rpc_clear_dismiss_v2` (REVOKEd from public/anon/authenticated); the old base-name TEXT versions
+are left untouched + alive for the gap. New app code calls the `_v2` names. Verified live: both the
+`_v2` (uuid) and base-name (text/spotify-id) paths work side-by-side, no ambiguity. **This
+supersedes §B/§H4's overload+DROP plan** — drop-old migration now drops the base-name TEXT
+functions (and MAY re-`create` the base names as uuid + drop `_v2` to restore clean names).
+General rule for this codebase (PostgREST/Supabase): evolve RPCs by versioned NAME, never by an
+overload that differs only uuid-vs-text.
+
 ---
 
 ## A. Database migration (single transaction; ~4.3k rows → sub-second)

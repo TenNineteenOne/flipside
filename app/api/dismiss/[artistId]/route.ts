@@ -12,7 +12,7 @@ export const DELETE = withAuthedCsrfRoute(
 
     const supabase = createServiceClient()
 
-    const { error: rpcError } = await supabase.rpc("rpc_clear_dismiss", {
+    const { error: rpcError } = await supabase.rpc("rpc_clear_dismiss_v2", {
       p_user_id: userId,
       p_artist_id: artistId,
     })

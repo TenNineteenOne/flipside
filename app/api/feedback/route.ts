@@ -25,7 +25,7 @@ export const POST = withAuthedJsonRoute(async ({ userId, body }) => {
 
   const supabase = createServiceClient()
 
-  const { error: rpcError } = await supabase.rpc("rpc_record_feedback", {
+  const { error: rpcError } = await supabase.rpc("rpc_record_feedback_v2", {
     p_user_id: userId,
     p_artist_id: artistId,
     p_signal: signal,
