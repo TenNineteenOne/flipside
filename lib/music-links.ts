@@ -43,14 +43,23 @@ export const PLATFORM_META: Record<MusicPlatform, PlatformMeta> = {
  */
 export function getArtistLink(
   platform: MusicPlatform,
-  params: { spotifyArtistId: string; artistName: string }
+  params: { artistId: string; spotifyId?: string | null; artistName: string }
 ): string {
-  const { spotifyArtistId, artistName } = params
+  // `artistId` is the internal identity (Stage 2: the surrogate UUID); links are
+  // built from the optional `spotifyId` attribute, which may be absent once an
+  // artist has no Spotify mapping — then we fall back to a zero-API search URL.
+  const { spotifyId, artistName } = params
   switch (platform) {
     case "spotify":
-      return `https://open.spotify.com/artist/${spotifyArtistId}`
+      return spotifyId
+        ? `https://open.spotify.com/artist/${spotifyId}`
+        : `https://open.spotify.com/search/${encodeURIComponent(artistName)}`
     case "apple_music":
-      return `/api/open/apple_music/${spotifyArtistId}?name=${encodeURIComponent(artistName)}`
+      // The Apple resolver still keys on the Spotify id (deferred re-key); when
+      // there's no Spotify id to resolve through, fall back to Apple's search.
+      return spotifyId
+        ? `/api/open/apple_music/${spotifyId}?name=${encodeURIComponent(artistName)}`
+        : `https://music.apple.com/search?term=${encodeURIComponent(artistName)}`
     case "youtube_music":
       return `https://music.youtube.com/search?q=${encodeURIComponent(artistName)}`
   }
@@ -64,12 +73,14 @@ export function getArtistLink(
  */
 export function getShareableArtistLink(
   platform: MusicPlatform,
-  params: { spotifyArtistId: string; artistName: string }
+  params: { artistId: string; spotifyId?: string | null; artistName: string }
 ): string {
-  const { spotifyArtistId, artistName } = params
+  const { spotifyId, artistName } = params
   switch (platform) {
     case "spotify":
-      return `https://open.spotify.com/artist/${spotifyArtistId}`
+      return spotifyId
+        ? `https://open.spotify.com/artist/${spotifyId}`
+        : `https://open.spotify.com/search/${encodeURIComponent(artistName)}`
     case "apple_music":
       return `https://music.apple.com/search?term=${encodeURIComponent(artistName)}`
     case "youtube_music":

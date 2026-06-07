@@ -213,7 +213,8 @@ export function SavedClient({ artists, hasLastfm, musicPlatform }: SavedClientPr
                   <div style={{ display: "flex", gap: 6, marginTop: "auto" }}>
                     <a
                       href={getArtistLink(musicPlatform, {
-                        spotifyArtistId: artist.artistId,
+                        artistId: artist.artistId,
+                        spotifyId: artist.artistId,
                         artistName: artist.name,
                       })}
                       target="_blank"
@@ -235,7 +236,8 @@ export function SavedClient({ artists, hasLastfm, musicPlatform }: SavedClientPr
                     <button
                       onClick={() => {
                         const url = getShareableArtistLink(musicPlatform, {
-                          spotifyArtistId: artist.artistId,
+                          artistId: artist.artistId,
+                          spotifyId: artist.artistId,
                           artistName: artist.name,
                         })
                         navigator.clipboard.writeText(url)

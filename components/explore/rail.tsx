@@ -205,7 +205,7 @@ const ExploreCard = memo(function ExploreCard({ artist, musicPlatform, isSaved, 
     return c
   })()
 
-  const link = getArtistLink(musicPlatform, { spotifyArtistId: artist.id, artistName: artist.name })
+  const link = getArtistLink(musicPlatform, { artistId: artist.id, spotifyId: artist.id, artistName: artist.name })
 
   return (
     <article

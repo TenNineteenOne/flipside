@@ -160,7 +160,8 @@ function ArtistCardImpl({
   function handleShare(e: React.MouseEvent) {
     e.stopPropagation()
     const url = getShareableArtistLink(musicPlatform, {
-      spotifyArtistId: recommendation.spotify_artist_id,
+      artistId: recommendation.spotify_artist_id,
+      spotifyId: recommendation.spotify_artist_id,
       artistName: artist_data.name,
     })
     navigator.clipboard.writeText(url).then(() => toast.success("Link copied!")).catch(() => toast.error("Couldn't copy link"))
@@ -354,7 +355,8 @@ function ArtistCardImpl({
           <div style={{ display: "flex", gap: 8 }}>
             <a
               href={getArtistLink(musicPlatform, {
-                spotifyArtistId: recommendation.spotify_artist_id,
+                artistId: recommendation.spotify_artist_id,
+                spotifyId: recommendation.spotify_artist_id,
                 artistName: artist_data.name,
               })}
               target="_blank"
