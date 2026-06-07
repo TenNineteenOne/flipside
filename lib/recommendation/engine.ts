@@ -19,6 +19,7 @@ import { normalizedIncludes, normalizeGenre } from '@/lib/genre/normalize'
 import { adjacentGenres } from '@/lib/genre/adjacency'
 import { cachedTagArtistNames } from '@/lib/lastfm-cache'
 import { runLastfm } from '@/lib/lastfm-limit'
+import { incLastfmTag } from '@/lib/recommendation/api-call-counter'
 import coldStartData from '@/data/cold-start-seeds.json'
 import { sampleLikes, LIKE_SAMPLE_SIZE } from './window'
 import { applyClusterCap } from './cluster-cap'
@@ -70,6 +71,7 @@ async function fetchTagArtistNamesRaw(tag: string, limit: number, apiKey: string
     const url =
       `${LASTFM_BASE}/?method=tag.gettopartists` +
       `&tag=${encodeURIComponent(tag)}&api_key=${apiKey}&format=json&limit=${limit}`
+    incLastfmTag()
     const res = await fetch(url, { signal: AbortSignal.timeout(LASTFM_TIMEOUT_MS) })
     if (!res.ok) throw new Error(`lastfm tag.gettopartists ${res.status}`)
     const data = await res.json()

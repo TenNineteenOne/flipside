@@ -1,4 +1,5 @@
 import type { Artist } from "@/lib/music-provider/types"
+import { incLastfmGetInfo } from "@/lib/recommendation/api-call-counter"
 
 export interface ArtistEnrichment {
   genres: string[]
@@ -60,6 +61,7 @@ export async function fetchArtistEnrichment(
     url.searchParams.set("api_key", apiKey)
     url.searchParams.set("format", "json")
 
+    incLastfmGetInfo()
     const res = await fetchImpl(url.toString(), {
       signal: AbortSignal.timeout(TIMEOUT_MS),
     })
