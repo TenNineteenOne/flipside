@@ -16,7 +16,7 @@ const NEG_TTL_MS = 12 * 60 * 60 * 1000
 const tagInflight = new Map<string, Promise<string[]>>()
 const similarInflight = new Map<string, Promise<SimilarArtistRef[]>>()
 const enrichInflight = new Map<string, Promise<ArtistEnrichment | null>>()
-const searchInflight = new Map<string, Promise<string[]>>()
+const searchInflight = new Map<string, Promise<unknown[]>>()
 
 type Kind = 'tag_top' | 'similar' | 'getInfo' | 'search'
 
@@ -194,28 +194,29 @@ export async function cachedArtistEnrichment(
 }
 
 /**
- * Read-through cache for Last.fm artist.search results (canonical artist names,
- * ranked). 7-day TTL; empty result negative-cached on the short TTL. fetchFn
- * MUST throw on transient failure (so it isn't cached). NOTE: no live caller
- * yet — issue #154 wires the artist.search call site to this wrapper.
+ * Read-through cache for Last.fm artist.search results, ranked. 7-day TTL; empty
+ * result negative-cached on the short TTL. fetchFn MUST throw on transient
+ * failure (so it isn't cached). Generic over the element type: #154 caches full
+ * artist candidates (name + mbid + image), while a names-only caller would
+ * instantiate it with `string`. The negative-cache marker is an empty array.
  */
-export async function cachedArtistSearch(
+export async function cachedArtistSearch<T>(
   query: string,
   limit: number,
-  fetchFn: (query: string, limit: number) => Promise<string[]>,
+  fetchFn: (query: string, limit: number) => Promise<T[]>,
   store: CacheStore = supabaseStore,
-): Promise<string[]> {
+): Promise<T[]> {
   const cacheKey = `${query.toLowerCase()}:${limit}`
-  const inflight = searchInflight.get(cacheKey)
+  const inflight = searchInflight.get(cacheKey) as Promise<T[]> | undefined
   if (inflight) return inflight
 
   const promise = (async () => {
     const row = await store.read('search', cacheKey)
     if (row && Array.isArray(row.payload)) {
       const ttl = row.payload.length === 0 ? NEG_TTL_MS : TTL_MS
-      if (freshWithin(row, ttl)) return row.payload as string[]
+      if (freshWithin(row, ttl)) return row.payload as T[]
     }
-    let fresh: string[]
+    let fresh: T[]
     try {
       fresh = await fetchFn(query, limit)
     } catch {
