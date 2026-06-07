@@ -1,6 +1,7 @@
 import type { Artist } from "@/lib/music-provider/types"
 import { incLastfmGetInfo } from "@/lib/recommendation/api-call-counter"
 import { cachedArtistEnrichment } from "@/lib/lastfm-cache"
+import { runLastfm } from "@/lib/lastfm-limit"
 
 export interface ArtistEnrichment {
   genres: string[]
@@ -66,9 +67,13 @@ export async function fetchEnrichmentRaw(
   url.searchParams.set("format", "json")
 
   incLastfmGetInfo()
-  const res = await fetchImpl(url.toString(), {
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-  })
+  // Route through the shared Last.fm limiter so getInfo — the dominant live
+  // endpoint — shares the same rate + concurrency ceiling as tag/similar
+  // (#150). Counted above: a live call is being made regardless of when the
+  // limiter admits it.
+  const res = await runLastfm(() =>
+    fetchImpl(url.toString(), { signal: AbortSignal.timeout(TIMEOUT_MS) }),
+  )
   if (!res.ok) throw new Error(`lastfm getInfo ${res.status}`)
 
   const data = (await res.json()) as {
