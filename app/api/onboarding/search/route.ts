@@ -1,20 +1,23 @@
 import { type NextRequest } from "next/server"
 import { auth } from "@/lib/auth"
 import { apiError, apiUnauthorized } from "@/lib/errors"
-import { getSpotifyClientToken } from "@/lib/spotify-client-token"
-import { musicProvider } from "@/lib/music-provider/provider"
 import { createServiceClient } from "@/lib/supabase/server"
+import { searchArtistCandidates } from "@/lib/music-provider/lastfm-search"
+import { normalizeArtistName } from "@/lib/history/name-utils"
 import type { Artist } from "@/lib/music-provider/types"
 
-// Per-user in-memory rate limit. Protects the shared Spotify client-credentials
-// quota from a single authenticated user who could otherwise burn through it
-// (debounced UI already throttles ~3 rps, cap is 120/min to stay well above
-// legitimate typing). In-memory is fine for a hobby-scale deploy — it's
-// per-instance, which is a good-enough speed bump against abuse and doesn't
-// need any infrastructure to maintain.
+// Per-user in-memory rate limit. A debounced UI already throttles typing; this
+// is a per-instance speed bump against abuse. Last.fm calls additionally route
+// through the shared limiter (#150), so this protects that budget too.
 const SEARCH_MAX_PER_MIN = 120
 const SEARCH_WINDOW_MS = 60_000
 const searchBuckets = new Map<string, { count: number; windowStart: number }>()
+
+// Minimum query length enforced server-side (the client also gates this).
+const MIN_QUERY_LEN = 2
+// If the cache already returns at least this many hits, skip Last.fm entirely.
+const CACHE_SUFFICIENT = 5
+const RESULT_CAP = 10
 
 function isSearchRateLimited(userId: string): boolean {
   const now = Date.now()
@@ -33,7 +36,23 @@ function escapeIlike(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_")
 }
 
-async function searchCachedArtists(query: string, limit = 10): Promise<Artist[]> {
+/**
+ * Suggestion returned to the onboarding typeahead. Cache hits carry a real
+ * Spotify id (resolve-free). Last.fm-only suggestions carry a synthetic `lf:`
+ * id + mbid and `needsResolve: true` — the client resolves a real Spotify id on
+ * selection (cache/MusicBrainz) before persisting a seed.
+ */
+interface OnboardingSuggestion {
+  id: string
+  name: string
+  genres: string[]
+  imageUrl: string | null
+  popularity: number
+  needsResolve?: boolean
+  mbid?: string | null
+}
+
+async function searchCachedArtists(query: string, limit = RESULT_CAP): Promise<Artist[]> {
   try {
     const supabase = createServiceClient()
     const pattern = `${escapeIlike(query.toLowerCase())}%`
@@ -43,18 +62,34 @@ async function searchCachedArtists(query: string, limit = 10): Promise<Artist[]>
       .ilike("name_lower", pattern)
       .limit(limit)
     if (error) {
-      console.log(`[onboard-search] cache-fallback read-fail err="${error.message}"`)
+      console.log(`[onboard-search] cache read-fail err="${error.message}"`)
       return []
     }
     return (data ?? []).map((r) => r.artist_data as Artist)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    console.log(`[onboard-search] cache-fallback throw err="${msg}"`)
+    console.log(`[onboard-search] cache throw err="${msg}"`)
     return []
   }
 }
 
-// Artist search during onboarding uses server-side client credentials (no user OAuth needed).
+function cacheToSuggestion(a: Artist): OnboardingSuggestion {
+  return {
+    id: a.id,
+    name: a.name,
+    genres: a.genres ?? [],
+    imageUrl: a.imageUrl ?? null,
+    popularity: a.popularity ?? 0,
+    needsResolve: false,
+  }
+}
+
+/**
+ * Onboarding artist search — cache-first, Last.fm on miss, ZERO Spotify
+ * client-credential calls (the #1 shared-key burner, removed in #156). The
+ * cache covers popular artists with real Spotify ids; Last.fm fills the tail
+ * (resolved to a real id on selection).
+ */
 export async function GET(req: NextRequest) {
   const session = await auth()
   if (!session?.user?.id) {
@@ -68,34 +103,49 @@ export async function GET(req: NextRequest) {
   }
 
   const query = req.nextUrl.searchParams.get("q")
-  if (!query || query.trim().length === 0) {
+  if (query === null) {
     return apiError("Query parameter 'q' is required", 400)
   }
-  if (query.trim().length > 200) {
+  if (query.length > 200) {
     return apiError("Query too long", 400)
   }
 
   const trimmed = query.trim()
-  const accessToken = await getSpotifyClientToken()
-  if (!accessToken) {
-    console.error("[onboard-search] no client token — check SPOTIFY_CLIENT_ID/SECRET")
-    return apiError("Spotify unavailable", 503)
+  // Server-side minimum length: too-short queries return no suggestions (not an
+  // error) so the typeahead simply waits for more input.
+  if (trimmed.length < MIN_QUERY_LEN) {
+    return Response.json({ artists: [] })
   }
 
-  const result = await musicProvider.searchArtists(accessToken, trimmed)
+  // 1. Cache-first (real Spotify ids, genres, images).
+  const cached = await searchCachedArtists(trimmed)
+  const suggestions: OnboardingSuggestion[] = cached.map(cacheToSuggestion)
 
-  if (!Array.isArray(result)) {
-    const cached = await searchCachedArtists(trimmed)
-    console.log(
-      `[onboard-search] 429 query="${trimmed}" retry-after=${result.retryAfterSec}s ` +
-      `fallback-cache-n=${cached.length}`
-    )
-    if (cached.length > 0) {
-      return Response.json({ artists: cached, degraded: true })
+  // 2. Supplement with Last.fm only when the cache is thin — keeps live Last.fm
+  //    volume low and prefers our enriched cache rows.
+  if (suggestions.length < CACHE_SUFFICIENT) {
+    const seen = new Set(suggestions.map((s) => normalizeArtistName(s.name)))
+    const candidates = await searchArtistCandidates(trimmed)
+    for (const c of candidates) {
+      if (suggestions.length >= RESULT_CAP) break
+      const norm = normalizeArtistName(c.name)
+      if (seen.has(norm)) continue
+      seen.add(norm)
+      suggestions.push({
+        id: `lf:${c.mbid ?? norm}`,
+        name: c.name,
+        genres: [],
+        imageUrl: c.imageUrl,
+        popularity: 0,
+        needsResolve: true,
+        mbid: c.mbid,
+      })
     }
-    return apiError("Rate limited, try again in a moment", 429)
   }
 
-  console.log(`[onboard-search] q="${trimmed}" n=${result.length}`)
-  return Response.json({ artists: result })
+  console.log(
+    `[onboard-search] q="${trimmed}" n=${suggestions.length} ` +
+      `(cache=${cached.length} lastfm=${suggestions.length - cached.length})`,
+  )
+  return Response.json({ artists: suggestions })
 }

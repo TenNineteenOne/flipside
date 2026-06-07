@@ -59,4 +59,24 @@ describe("formatGenTiming", () => {
     })
     expect(line).toBe("[gen-timing] user=u5 total=100 misses=0 retries=0 rl=false itunesCalls=0 spotifyCalls=0")
   })
+
+  it("appends per-endpoint Last.fm counts when provided", () => {
+    const line = formatGenTiming({
+      userId: "u6",
+      phases: { primary: 1000 },
+      totalMs: 1500,
+      itunesCalls: 10,
+      spotifyCalls: 0,
+      lastfmCalls: { similar: 8, getInfo: 12, tag: 3, search: 0, total: 23 },
+    })
+    expect(line).toBe(
+      "[gen-timing] user=u6 primary=1000 total=1500 misses=0 retries=0 rl=false itunesCalls=10 spotifyCalls=0 lastfmCalls=23 lastfm(similar=8,getInfo=12,tag=3,search=0)"
+    )
+  })
+
+  it("omits the lastfm tokens cleanly when lastfmCalls is not provided", () => {
+    const line = formatGenTiming({ userId: "u7", phases: { primary: 500 }, totalMs: 800 })
+    expect(line).not.toContain("lastfmCalls")
+    expect(line).not.toContain("lastfm(")
+  })
 })

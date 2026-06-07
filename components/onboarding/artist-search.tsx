@@ -29,6 +29,13 @@ export interface SpotifyArtist {
   popularity: number
 }
 
+/**
+ * A typeahead row. Cache hits are resolve-free (real Spotify id). Last.fm-only
+ * suggestions carry `needsResolve` + `mbid` and a synthetic `lf:` id; selecting
+ * one resolves a real Spotify id (cache/MusicBrainz) before it becomes a seed.
+ */
+type SearchSuggestion = SpotifyArtist & { needsResolve?: boolean; mbid?: string | null }
+
 export interface ArtistSearchProps {
   selected: SpotifyArtist[]
   onAdd: (artist: SpotifyArtist) => void
@@ -39,16 +46,61 @@ export interface ArtistSearchProps {
 
 export function ArtistSearch({ selected, onAdd, onRemove, cap, minForHint = 3 }: ArtistSearchProps) {
   const [query, setQuery] = useState("")
-  const [results, setResults] = useState<SpotifyArtist[]>([])
+  const [results, setResults] = useState<SearchSuggestion[]>([])
   const [searching, setSearching] = useState(false)
   const [error, setError] = useState<SearchError | null>(null)
   const [degraded, setDegraded] = useState(false)
+  // Per-row resolution state for Last.fm-only suggestions (one click at a time).
+  const [resolvingId, setResolvingId] = useState<string | null>(null)
+  const [resolveFailedId, setResolveFailedId] = useState<string | null>(null)
   const debounceRef = useRef<NodeJS.Timeout | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+
+  // Select a suggestion. Cache hits add immediately; Last.fm-only suggestions
+  // resolve a real Spotify id first (cache/MusicBrainz), and block + warn if
+  // that fails — a seed can't persist without a valid id until the Stage-2 cut.
+  async function handleSelect(suggestion: SearchSuggestion) {
+    setResolveFailedId(null)
+    if (!suggestion.needsResolve) {
+      onAdd({
+        id: suggestion.id,
+        name: suggestion.name,
+        genres: suggestion.genres,
+        imageUrl: suggestion.imageUrl,
+        popularity: suggestion.popularity,
+      })
+      return
+    }
+    setResolvingId(suggestion.id)
+    try {
+      const res = await fetch("/api/onboarding/resolve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: suggestion.name, mbid: suggestion.mbid ?? null }),
+      })
+      if (res.ok) {
+        const data = (await res.json()) as { id: string; name: string; imageUrl: string | null }
+        onAdd({
+          id: data.id,
+          name: suggestion.name,
+          genres: [],
+          imageUrl: data.imageUrl ?? suggestion.imageUrl,
+          popularity: 0,
+        })
+      } else {
+        setResolveFailedId(suggestion.id)
+      }
+    } catch {
+      setResolveFailedId(suggestion.id)
+    } finally {
+      setResolvingId(null)
+    }
+  }
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     abortRef.current?.abort()
+    setResolveFailedId(null)
     if (!query.trim()) { setResults([]); setError(null); setDegraded(false); return }
 
     debounceRef.current = setTimeout(async () => {
@@ -166,12 +218,14 @@ export function ArtistSearch({ selected, onAdd, onRemove, cap, minForHint = 3 }:
         >
           {results.map((artist) => {
             const already = selectedIds.has(artist.id)
+            const resolving = resolvingId === artist.id
+            const failed = resolveFailedId === artist.id
             return (
               <button
                 key={artist.id}
                 type="button"
-                disabled={already || atCap}
-                onClick={() => onAdd(artist)}
+                disabled={already || atCap || resolvingId !== null}
+                onClick={() => handleSelect(artist)}
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -201,6 +255,16 @@ export function ArtistSearch({ selected, onAdd, onRemove, cap, minForHint = 3 }:
                 </div>
                 {already && (
                   <span style={{ fontSize: 11, color: "var(--accent)", flexShrink: 0 }}>added</span>
+                )}
+                {!already && resolving && (
+                  <span className="mono" style={{ fontSize: 11, color: "var(--text-muted)", flexShrink: 0 }}>
+                    resolving…
+                  </span>
+                )}
+                {!already && !resolving && failed && (
+                  <span className="mono" style={{ fontSize: 11, color: "var(--danger, #f87171)", flexShrink: 0 }}>
+                    couldn&rsquo;t add
+                  </span>
                 )}
               </button>
             )

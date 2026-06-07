@@ -212,6 +212,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       rateLimited: metrics.rateLimited,
       itunesCalls: apiCalls.itunes,
       spotifyCalls: apiCalls.spotify,
+      lastfmCalls: apiCalls.lastfm,
     }))
 
     // Colour extraction and secondary candidate resolution run AFTER the

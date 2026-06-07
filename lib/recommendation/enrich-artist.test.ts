@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import {
   fetchArtistEnrichment,
+  fetchEnrichmentRaw,
   mergeEnrichment,
   scaleListeners,
   filterGenreTags,
@@ -101,26 +102,34 @@ describe("mergeEnrichment", () => {
 
 describe("fetchArtistEnrichment", () => {
   it("returns null when API key is missing", async () => {
+    // Tests the public contract (returns null before touching the cache).
     const result = await fetchArtistEnrichment("Khruangbin", "", makeFetch({}))
     expect(result).toBeNull()
   })
+})
 
-  it("returns null when HTTP response is non-OK", async () => {
-    const result = await fetchArtistEnrichment("X", "key", makeFetch({}, false))
-    expect(result).toBeNull()
+describe("fetchEnrichmentRaw", () => {
+  it("throws when HTTP response is non-OK", async () => {
+    await expect(fetchEnrichmentRaw("X", "key", makeFetch({}, false))).rejects.toThrow()
   })
 
-  it("returns null on Last.fm error payload", async () => {
-    const result = await fetchArtistEnrichment(
+  it("returns null on Last.fm error 6 (artist not found)", async () => {
+    const result = await fetchEnrichmentRaw(
       "X",
       "key",
-      makeFetch({ error: 6, message: "not found" })
+      makeFetch({ error: 6, message: "Artist not found" })
     )
     expect(result).toBeNull()
   })
 
+  it("throws on non-6 Last.fm error codes (transient/service errors)", async () => {
+    await expect(
+      fetchEnrichmentRaw("X", "key", makeFetch({ error: 29 }))
+    ).rejects.toThrow()
+  })
+
   it("parses listeners and tags into enrichment", async () => {
-    const result = await fetchArtistEnrichment(
+    const result = await fetchEnrichmentRaw(
       "Khruangbin",
       "key",
       makeFetch({
@@ -142,16 +151,15 @@ describe("fetchArtistEnrichment", () => {
     expect(result!.popularity).toBeLessThan(70)
   })
 
-  it("returns null on fetch throw (timeout, network)", async () => {
+  it("throws on fetch throw (timeout, network — transient)", async () => {
     const brokenFetch = (async () => {
       throw new Error("timeout")
     }) as unknown as typeof fetch
-    const result = await fetchArtistEnrichment("X", "key", brokenFetch)
-    expect(result).toBeNull()
+    await expect(fetchEnrichmentRaw("X", "key", brokenFetch)).rejects.toThrow()
   })
 
   it("handles missing stats/tags gracefully", async () => {
-    const result = await fetchArtistEnrichment(
+    const result = await fetchEnrichmentRaw(
       "X",
       "key",
       makeFetch({ artist: {} })
@@ -159,5 +167,10 @@ describe("fetchArtistEnrichment", () => {
     expect(result).not.toBeNull()
     expect(result!.genres).toEqual([])
     expect(result!.popularity).toBe(0)
+  })
+
+  it("returns null when API key is missing", async () => {
+    const result = await fetchEnrichmentRaw("X", "", makeFetch({}))
+    expect(result).toBeNull()
   })
 })

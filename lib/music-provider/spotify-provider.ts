@@ -2,7 +2,7 @@ import type { MusicProvider, RateLimited, SimilarArtistRef } from "./index"
 import type { Artist, PlayHistory, Track } from "./types"
 import { cachedSimilarArtistNames } from "@/lib/lastfm-cache"
 import { runLastfm } from "@/lib/lastfm-limit"
-import { incSpotify } from "@/lib/recommendation/api-call-counter"
+import { incSpotify, incLastfmSimilar } from "@/lib/recommendation/api-call-counter"
 import { PreviewSourceBreaker } from "@/lib/preview-source-breaker"
 
 /**
@@ -194,6 +194,7 @@ export class SpotifyProvider implements MusicProvider {
         `&format=json` +
         `&limit=50`
 
+      incLastfmSimilar()
       const res = await runLastfm(() => fetch(url, { signal: AbortSignal.timeout(8000) }))
       if (!res.ok) { console.log(`[lfm] ${res.status} artist="${artistName}"`); return [] }
 
