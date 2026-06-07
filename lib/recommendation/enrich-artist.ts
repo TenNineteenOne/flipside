@@ -1,5 +1,6 @@
 import type { Artist } from "@/lib/music-provider/types"
 import { incLastfmGetInfo } from "@/lib/recommendation/api-call-counter"
+import { cachedArtistEnrichment } from "@/lib/lastfm-cache"
 
 export interface ArtistEnrichment {
   genres: string[]
@@ -41,49 +42,70 @@ export function filterGenreTags(raw: string[]): string[] {
 }
 
 /**
- * Fetch genre + popularity for an artist via Last.fm artist.getInfo.
- * Pure: the fetch impl is injected so tests can stub it.
+ * Raw Last.fm artist.getInfo fetch+parse. THROWS on transient failures
+ * (non-2xx HTTP, network error, non-6 Last.fm error codes) so the caller
+ * (cachedArtistEnrichment) can distinguish transient-not-cacheable from
+ * genuine-not-found-cacheable. Returns null ONLY for a genuine "artist not
+ * found" (Last.fm error 6 or missing artist field) — that null IS safe to
+ * negative-cache.
  *
- * Returns null on any failure — the resolve pipeline treats this as
- * "unenriched" and continues with whatever Spotify provided.
+ * incLastfmGetInfo() fires here (live-call only) — cache hits never reach
+ * this function.
+ */
+export async function fetchEnrichmentRaw(
+  name: string,
+  apiKey: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<ArtistEnrichment | null> {
+  if (!apiKey) return null
+  const url = new URL(LASTFM_BASE)
+  url.searchParams.set("method", "artist.getInfo")
+  url.searchParams.set("artist", name)
+  url.searchParams.set("autocorrect", "1")
+  url.searchParams.set("api_key", apiKey)
+  url.searchParams.set("format", "json")
+
+  incLastfmGetInfo()
+  const res = await fetchImpl(url.toString(), {
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  })
+  if (!res.ok) throw new Error(`lastfm getInfo ${res.status}`)
+
+  const data = (await res.json()) as {
+    artist?: {
+      stats?: { listeners?: string }
+      tags?: { tag?: Array<{ name?: string }> }
+    }
+    error?: number
+  }
+
+  if (data.error) {
+    if (data.error === 6) return null  // Genuine "artist not found" — negative-cacheable.
+    throw new Error(`lastfm getInfo error ${data.error}`)  // Transient/service error — do not cache.
+  }
+  if (!data.artist) return null  // Treat as not-found (negative-cacheable).
+
+  const listeners = parseInt(data.artist.stats?.listeners ?? "0", 10) || 0
+  const rawTags = (data.artist.tags?.tag ?? []).map((t) => t.name ?? "")
+  return {
+    genres: filterGenreTags(rawTags),
+    popularity: scaleListeners(listeners),
+  }
+}
+
+/**
+ * Fetch genre + popularity for an artist via Last.fm artist.getInfo.
+ * Cache-backed (read-through via cachedArtistEnrichment). The raw fetch
+ * is injected so tests can stub it. Returns null on any failure — the
+ * resolve pipeline treats this as "unenriched" and continues.
  */
 export async function fetchArtistEnrichment(
   name: string,
   apiKey: string,
-  fetchImpl: typeof fetch = fetch
+  fetchImpl: typeof fetch = fetch,
 ): Promise<ArtistEnrichment | null> {
   if (!apiKey) return null
-  try {
-    const url = new URL(LASTFM_BASE)
-    url.searchParams.set("method", "artist.getInfo")
-    url.searchParams.set("artist", name)
-    url.searchParams.set("autocorrect", "1")
-    url.searchParams.set("api_key", apiKey)
-    url.searchParams.set("format", "json")
-
-    incLastfmGetInfo()
-    const res = await fetchImpl(url.toString(), {
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    })
-    if (!res.ok) return null
-    const data = (await res.json()) as {
-      artist?: {
-        stats?: { listeners?: string }
-        tags?: { tag?: Array<{ name?: string }> }
-      }
-      error?: number
-    }
-    if (data.error || !data.artist) return null
-
-    const listeners = parseInt(data.artist.stats?.listeners ?? "0", 10) || 0
-    const rawTags = (data.artist.tags?.tag ?? []).map((t) => t.name ?? "")
-    return {
-      genres: filterGenreTags(rawTags),
-      popularity: scaleListeners(listeners),
-    }
-  } catch {
-    return null
-  }
+  return cachedArtistEnrichment(name, () => fetchEnrichmentRaw(name, apiKey, fetchImpl))
 }
 
 /**
