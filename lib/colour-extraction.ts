@@ -131,13 +131,38 @@ export async function extractArtistColor(imageUrl: string): Promise<string> {
       signal: AbortSignal.timeout(8000),
     })
     if (!res.ok) throw new Error(`Fetch failed with status ${res.status}`)
+
+    // Byte cap: bound memory before buffering + parsing. Legitimate artist art
+    // is well under 1 MB; reject anything implausibly large rather than risk an
+    // OOM / expensive parse on a malformed or oversized payload.
+    const MAX_IMAGE_BYTES = 5 * 1024 * 1024
+    const declaredLen = Number(res.headers.get("content-length") ?? 0)
+    if (declaredLen > MAX_IMAGE_BYTES) {
+      console.warn(`[colour] image too large (content-length=${declaredLen}) — skipping`)
+      return FALLBACK
+    }
     const arrayBuffer = await res.arrayBuffer()
+    if (arrayBuffer.byteLength > MAX_IMAGE_BYTES) {
+      console.warn(`[colour] image too large (bytes=${arrayBuffer.byteLength}) — skipping`)
+      return FALLBACK
+    }
     const buffer = Buffer.from(arrayBuffer)
 
     // Dynamic import keeps node-vibrant out of the client bundle.
     // Must use the /node subpath — the default export throws on import.
     const { Vibrant } = await import('node-vibrant/node')
-    const palette = await Vibrant.from(buffer).getPalette()
+    // Timeout the parse itself: a malformed image can drive node-vibrant's
+    // file-type dependency into a pathological loop. The fetch AbortSignal only
+    // covers the download, not the synchronous-ish decode, so guard it here.
+    let parseTimer: ReturnType<typeof setTimeout> | undefined
+    const palette = await Promise.race([
+      Vibrant.from(buffer).getPalette(),
+      new Promise<never>((_, reject) => {
+        parseTimer = setTimeout(() => reject(new Error("vibrant-parse-timeout")), 5000)
+      }),
+    ]).finally(() => {
+      if (parseTimer) clearTimeout(parseTimer)
+    })
 
     const swatch =
       palette.Vibrant ??

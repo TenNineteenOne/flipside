@@ -9,6 +9,7 @@ import { Ambient } from "@/components/visual/ambient"
 import type { MusicPlatform } from "@/lib/music-links"
 import { useArtistFeedback } from "@/lib/hooks/use-artist-feedback"
 import { useArtistSaves } from "@/lib/hooks/use-artist-saves"
+import { useFeedFill } from "@/lib/hooks/use-feed-fill"
 
 interface Track {
   id: string
@@ -82,6 +83,28 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
   const isGeneratingRef = useRef(false)
   const router = useRouter()
 
+  // Stateful rec list: seeded from the prop on mount. The append-poller below
+  // grows this list in the background. Existing cards (earlier indices) are never
+  // reordered or removed — appended recs land at the end. Keyed by
+  // spotify_artist_id so React never remounts an existing card on append.
+  const [recs, setRecs] = useState<Recommendation[]>(recommendations)
+
+  // Append-poller: after first paint, poll for newly-confirmed cards that the
+  // background after() block has written. Appends deduped, playable-only recs to
+  // the end of the list without disturbing the current/earlier cards.
+  useFeedFill<Recommendation>({
+    initialIds: recommendations.map((r) => r.spotify_artist_id),
+    targetCount: 20,
+    onAppend: (newRecs) => {
+      setRecs((prev) => {
+        const seenIds = new Set(prev.map((r) => r.spotify_artist_id))
+        const deduped = newRecs.filter((r) => !seenIds.has(r.spotify_artist_id))
+        if (deduped.length === 0) return prev
+        return [...prev, ...deduped]
+      })
+    },
+  })
+
   // Background top-up: when the unseen queue is low, generate more on mount and
   // surface the results via router.refresh() once done. We reflect the in-flight
   // run on the button (shared isGeneratingRef + isGenerating state) so a user's
@@ -112,7 +135,7 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const sequence = useMemo(() => buildSequence(recommendations), [recommendations])
+  const sequence = useMemo(() => buildSequence(recs), [recs])
 
   // Feedback signals (thumbs_up / thumbs_down / skip) per artist.
   // Serialization and rollback are handled inside the hook.
@@ -178,7 +201,7 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
       {/* Page header */}
       <div className="page-head">
         <h1>Today&apos;s feed</h1>
-        <span className="sub">{recommendations.length} artists</span>
+        <span className="sub">{recs.length} artists</span>
       </div>
 
       {/* Feed sequence */}

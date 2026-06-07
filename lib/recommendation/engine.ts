@@ -11,11 +11,14 @@ import {
 } from './types'
 import { ArtistNameCache } from './artist-name-cache'
 import { resolveArtistsByName } from './resolve-candidates'
+import { confirmPlayableTracks, confirmToTarget } from './confirm-previews'
+import { searchTracksByArtist } from '@/lib/music-provider/itunes'
 import { fetchArtistEnrichment } from './enrich-artist'
 import { normalizeArtistName } from '@/lib/listened-artists'
 import { normalizedIncludes, normalizeGenre } from '@/lib/genre/normalize'
 import { adjacentGenres } from '@/lib/genre/adjacency'
 import { cachedTagArtistNames } from '@/lib/lastfm-cache'
+import { runLastfm } from '@/lib/lastfm-limit'
 import coldStartData from '@/data/cold-start-seeds.json'
 import { sampleLikes, LIKE_SAMPLE_SIZE } from './window'
 import { applyClusterCap } from './cluster-cap'
@@ -49,21 +52,54 @@ export function tierMultiplier(popularity: number, curveK = 0.95): number {
   return Math.pow(curveK, popularity)
 }
 
-async function fetchTagArtistNames(tag: string, limit: number): Promise<string[]> {
-  const apiKey = process.env.LASTFM_API_KEY
-  if (!apiKey) return []
-  try {
+// Lower than the 8s used elsewhere: fetchTagArtistNames may fire TWO sequential
+// calls (as-is, then a spaced retry on empty), so a high per-call ceiling stacks
+// into a ~16s worst case. Valid tag.gettopartists responses return in <1s; 5s is
+// ample headroom while bounding the retry path's cold-start cost.
+const LASTFM_TIMEOUT_MS = 5000
+
+/**
+ * Single live `tag.gettopartists` call. Returns the names ([] when the tag
+ * genuinely has no top artists), and THROWS on a transient failure (non-2xx,
+ * timeout, network error) so the cache layer can tell "genuinely empty"
+ * (negative-cacheable) from "fetch failed" (must not be cached). Gated by the
+ * shared Last.fm concurrency cap.
+ */
+async function fetchTagArtistNamesRaw(tag: string, limit: number, apiKey: string): Promise<string[]> {
+  return runLastfm(async () => {
     const url =
       `${LASTFM_BASE}/?method=tag.gettopartists` +
       `&tag=${encodeURIComponent(tag)}&api_key=${apiKey}&format=json&limit=${limit}`
-    const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
-    if (!res.ok) return []
+    const res = await fetch(url, { signal: AbortSignal.timeout(LASTFM_TIMEOUT_MS) })
+    if (!res.ok) throw new Error(`lastfm tag.gettopartists ${res.status}`)
     const data = await res.json()
     const artists = data?.topartists?.artist
     if (!Array.isArray(artists)) return []
     return (artists as Array<{ name: string }>).map((a) => a.name).filter(Boolean)
+  })
+}
+
+/**
+ * Fetch top-artist names for a Last.fm tag, tolerating the two tag spellings
+ * we deal in. Genre-tree leaf tags are hyphenated slugs (e.g.
+ * "dutch-black-metal") but Last.fm indexes most multi-word tags space-
+ * separated ("dutch black metal" → 267 artists vs 0 for the hyphenated form).
+ * We try the tag as-is FIRST so canonical hyphenated tags (trip-hop, post-punk)
+ * keep their better-curated results, and only retry empties with spaces.
+ *
+ * Throws on transient failure of the primary spelling (so it isn't cached); a
+ * genuinely-empty primary result is returned as [] when the spaced retry also
+ * comes back empty or fails.
+ */
+export async function fetchTagArtistNames(tag: string, limit: number): Promise<string[]> {
+  const apiKey = process.env.LASTFM_API_KEY
+  if (!apiKey) return []
+  const names = await fetchTagArtistNamesRaw(tag, limit, apiKey)
+  if (names.length > 0 || !tag.includes('-')) return names
+  try {
+    return await fetchTagArtistNamesRaw(tag.replace(/-/g, ' '), limit, apiKey)
   } catch {
-    return []
+    return names // primary spelling was genuinely empty; don't let a retry blip mask that
   }
 }
 
@@ -90,6 +126,27 @@ function buildEnrichArtist() {
   const apiKey = process.env.LASTFM_API_KEY
   if (!apiKey) return undefined
   return (name: string) => fetchArtistEnrichment(name, apiKey)
+}
+
+/**
+ * Build a live confirmPreview dep for resolve-candidates. iTunes-first (free,
+ * no auth, near-universal 30s previews), Spotify top-tracks as fallback. Reuses
+ * any `topTracks` already on the artist (warm name-cache hit) with zero network.
+ * Shared by the primary, secondary, and adjacent-bleed resolves so the
+ * playability guarantee holds across the whole For You pipeline.
+ */
+export function buildConfirmPreview(accessToken: string) {
+  return (artist: Artist) =>
+    confirmPlayableTracks(
+      { id: artist.id, name: artist.name, topTracks: artist.topTracks },
+      {
+        searchItunes: (name) => searchTracksByArtist(name, 'US', 5),
+        getSpotifyTopTracks: (id) =>
+          accessToken
+            ? musicProvider.getArtistTopTracks(accessToken, id, 5, 'US').catch(() => [])
+            : Promise.resolve([]),
+      },
+    )
 }
 
 // ── Seed gathering ──────────────────────────────────────────────────────────
@@ -293,6 +350,34 @@ export function greedyPickTop(
 }
 
 /**
+ * Top up a short picked list to `target` from a reserve pool, best-score first,
+ * skipping artists already picked. Pure: the engine builds `reserve` from the
+ * (already preview-confirmed) secondary pool and calls this only when preview
+ * drops thinned the primary pick below target. Returns `picked` unchanged when
+ * already at/over target or when the reserve can't fill the gap (short feed
+ * degrades gracefully rather than erroring).
+ */
+export function backfillToTarget(
+  picked: ScoredArtist[],
+  reserve: ScoredArtist[],
+  target: number
+): ScoredArtist[] {
+  if (picked.length >= target) return picked
+  const have = new Set(picked.map((p) => p.artist.id))
+  const candidates = reserve
+    .filter((r) => !have.has(r.artist.id))
+    .sort((a, b) => b.score - a.score)
+  const out = [...picked]
+  for (const r of candidates) {
+    if (out.length >= target) break
+    if (have.has(r.artist.id)) continue
+    have.add(r.artist.id)
+    out.push(r)
+  }
+  return out
+}
+
+/**
  * Cooldown gate: a `skip_at` timestamp is a permanent hide ("Dismiss" button).
  * Undo is available from the History page, which clears skip_at via the
  * dismiss RPC. A passive `seen_at` is a 7-day soft cooldown.
@@ -414,7 +499,7 @@ export async function augmentWithAdjacent(
     const score = baseScore * discoveryPenalty + ADJACENT_BLEED_BONUS - mainstreamPenalty
 
     scored.push({
-      artist: { ...artist, topTracks: [] },
+      artist: { ...artist, topTracks: artist.topTracks ?? [] },
       score,
       why: {
         sourceArtists: tag ? [tag] : [],
@@ -510,7 +595,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
 
   if (uniqueNames.length === 0) {
     console.error(`[engine] FAIL no_unique seeds=${capSeedNames.length} lfm=${lfmTotal} source=${source}`)
-    return { count: 0, runSecondary: null }
+    return { count: 0, runSecondary: null, metrics: { primaryMs: 0, previewMs: 0, firstBatchMs: 0, misses: 0, retries: 0, rateLimited: false } }
   }
 
   const candidateMap = new Map<string, { artist: Artist; seedArtists: string[] }>()
@@ -531,6 +616,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
         enrichArtist: buildEnrichArtist(),
       })
 
+  let previewMs = 0
   const primaryStart = Date.now()
   const resolved = await resolveArtistsByName(uniqueNames, {
     cache: nameCache,
@@ -542,6 +628,11 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
   const primaryMs = Date.now() - primaryStart
 
   console.log(`[cache-search] hit=${resolved.cacheHits} miss=${resolved.cacheMisses} total=${uniqueNames.length}`)
+
+  // Build id→resolver-name map so confirmed artists can be written back into
+  // artist_search_cache with topTracks baked in (warm-reuse write-back, #145).
+  const idToName = new Map<string, string>()
+  for (const [name, a] of resolved.resolved) idToName.set(a.id, name)
 
   for (const [name, artist] of resolved.resolved) {
     const seedArtists = nameToSeeds.get(name) ?? []
@@ -593,7 +684,10 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     })
     .map(([, val]) => val)
 
-  const scored: ScoredArtist[] = filteredCandidates.map(({ artist, seedArtists }) => {
+  // Local scorer — shared by the primary pool and the backfill reserve so the
+  // two are ranked on the same scale. (The secondary `runSecondary` closure
+  // keeps its own copy; it runs in a separate background pass.)
+  const scoreCandidate = (artist: Artist, seedArtists: string[], src: string): ScoredArtist => {
     const seedRelevance = Math.min(Math.sqrt(seedArtists.length) / Math.sqrt(6), 1)
     const tier = tierMultiplier(artist.popularity, popularityCurve)
     const discoveryPenalty = undergroundMode
@@ -603,18 +697,21 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     const mainstreamPenalty =
       adventurous && artist.popularity > 50 ? ADVENTUROUS_MAINSTREAM_PENALTY : 0
     const score = baseScore * discoveryPenalty - mainstreamPenalty
-
     return {
-      artist: { ...artist, topTracks: [] },
+      artist: { ...artist, topTracks: artist.topTracks ?? [] },
       score,
       why: {
         sourceArtists: seedArtists.slice(0, 2),
         genres: artist.genres.slice(0, 2),
         friendBoost: [],
       },
-      source,
+      source: src,
     }
-  })
+  }
+
+  const scored: ScoredArtist[] = filteredCandidates.map(({ artist, seedArtists }) =>
+    scoreCandidate(artist, seedArtists, source)
+  )
 
   scored.sort((a, b) => b.score - a.score)
 
@@ -653,7 +750,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
       `uniq=${uniqueNames.length} ok=${resolved.searchOk} fail=${resolved.searchFail} ` +
       `filtListened=${filtListened} cands=${candidateMap.size} source=${source}`
     )
-    return { count: 0, runSecondary: null }
+    return { count: 0, runSecondary: null, metrics: { primaryMs: Date.now() - primaryStart, previewMs, firstBatchMs: 0, misses: resolved.cacheMisses, retries: resolved.searchRetries, rateLimited: resolved.rateLimited } }
   }
 
   // Post-pipeline adjacent-genre bleed. Skipped when the user has filtered
@@ -681,179 +778,266 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     })
   }
 
-  const topIds = top.map((item) => item.artist.id)
-  const { data: existingCache } = await supabase
-    .from('recommendation_cache')
-    .select('spotify_artist_id, seen_at, skip_at')
-    .eq('user_id', userId)
-    .in('spotify_artist_id', topIds)
-
-  const existingSeenAt = new Map<string, string | null>()
-  const existingSkipAt = new Map<string, string | null>()
-  for (const row of existingCache ?? []) {
-    existingSeenAt.set(row.spotify_artist_id, row.seen_at)
-    existingSkipAt.set(row.spotify_artist_id, row.skip_at)
+  // Backfill (#135). Preview-confirmation drops no-preview artists before the
+  // pick, so a thin-signal user can land below TARGET. The secondary pool is
+  // already resolving in parallel (and is itself preview-confirmed); when we're
+  // short, await it and top up from its best filter-passing candidates. Only
+  // pays latency in the (rare) short case; full feeds skip the await entirely.
+  const TARGET = 20
+  const FIRST_BATCH_TARGET = 8
+  if (top.length < TARGET && secondaryResolvePromise) {
+    const sec = await secondaryResolvePromise
+    const pickedIds = new Set(top.map((t) => t.artist.id))
+    const reserve: ScoredArtist[] = []
+    for (const [name, art] of sec.resolved) {
+      if (pickedIds.has(art.id)) continue
+      if (thumbsDownIds.has(art.id)) continue
+      if (overThresholdIds.has(art.id)) continue
+      if (overThresholdNames.has(normalizeArtistName(art.name))) continue
+      if (undergroundMode && (art.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) continue
+      if (genre && !art.genres.some((g) => normalizedIncludes(g, genre))) continue
+      reserve.push(scoreCandidate(art, nameToSeeds.get(name) ?? [], `${source}_backfill`))
+    }
+    const before = top.length
+    top = backfillToTarget(top, reserve, TARGET)
+    if (top.length > before) {
+      console.log(`[engine] backfill source=${source} from=${before} to=${top.length} reserve=${reserve.length}`)
+    }
   }
+
+  // Two-phase confirm+write (#144):
+  //   Tier 1 (blocking): confirm FIRST_BATCH_TARGET, write, return fast.
+  //   Tier 2 (deferred): finish primary to TARGET, then secondary pool — all in after().
+  // Every artist written in ANY phase is confirmed-playable (comes through confirmToTarget).
+
+  const confirmFn = buildConfirmPreview(accessToken)
+  const inTop = new Set(top.map((t) => t.artist.id))
+  const tail = pool.filter((s) => !inTop.has(s.artist.id)) // already score-sorted
+  const ordered = [...top, ...tail]
 
   const now = new Date()
   const expiresAt = new Date(now)
   expiresAt.setDate(expiresAt.getDate() + 30)
 
-  const rows = top
-    .filter((item) => {
-      const seenAt = existingSeenAt.get(item.artist.id)
-      const skipAt = existingSkipAt.get(item.artist.id)
-      // Not in cache → eligible. In cache → check both cooldowns.
-      if (seenAt === undefined && skipAt === undefined) return true
-      return isEligibleForCooldown(seenAt, skipAt, now)
-    })
-    .map((item) => {
-      const previousSeenAt = existingSeenAt.get(item.artist.id)
-      const previousSkipAt = existingSkipAt.get(item.artist.id)
-      return {
-        user_id: userId,
-        spotify_artist_id: item.artist.id,
-        artist_data: item.artist,
-        score: item.score,
-        why: item.why,
-        source: item.source,
-        expires_at: expiresAt.toISOString(),
-        // Preserve existing cooldown state on re-surface so the window doesn't reset.
-        ...(previousSeenAt !== undefined ? { seen_at: previousSeenAt } : { seen_at: null }),
-        ...(previousSkipAt !== undefined ? { skip_at: previousSkipAt } : { skip_at: null }),
-      }
-    })
+  // writtenIds tracks all ids written across tier-1, tier-2, and secondary to
+  // avoid duplicate confirms or upserts.
+  const writtenIds = new Set<string>()
 
-  const { error } = rows.length === 0
-    ? { error: null }
-    : await supabase
-        .from('recommendation_cache')
-        .upsert(rows, { onConflict: 'user_id,spotify_artist_id' })
+  /**
+   * Write a set of confirmed ScoredArtists to recommendation_cache, skipping
+   * cooldown-ineligible rows and ids already written this run. Returns the
+   * number of rows successfully upserted.
+   *
+   * Preserves ALL existing behaviour: cooldown filtering, row shape, expires_at,
+   * upsert onConflict. Fetches cooldown state fresh from DB for the given items
+   * so concurrent phases never clobber a live seen_at/skip_at.
+   */
+  async function writeScored(items: ScoredArtist[]): Promise<number> {
+    // Exclude ids already written in a previous phase
+    const fresh = items.filter((item) => !writtenIds.has(item.artist.id))
+    if (fresh.length === 0) return 0
 
-  if (error) {
-    console.error(`[engine] upsert_error source=${source} err=${error.message}`)
-    return { count: 0, runSecondary: null }
+    const ids = fresh.map((item) => item.artist.id)
+    const { data: existingCache } = await supabase
+      .from('recommendation_cache')
+      .select('spotify_artist_id, seen_at, skip_at')
+      .eq('user_id', userId)
+      .in('spotify_artist_id', ids)
+
+    const existingSeenAt = new Map<string, string | null>()
+    const existingSkipAt = new Map<string, string | null>()
+    for (const row of existingCache ?? []) {
+      existingSeenAt.set(row.spotify_artist_id, row.seen_at)
+      existingSkipAt.set(row.spotify_artist_id, row.skip_at)
+    }
+
+    const rows = fresh
+      .filter((item) => {
+        const seenAt = existingSeenAt.get(item.artist.id)
+        const skipAt = existingSkipAt.get(item.artist.id)
+        // Not in cache → eligible. In cache → check both cooldowns.
+        if (seenAt === undefined && skipAt === undefined) return true
+        return isEligibleForCooldown(seenAt, skipAt, now)
+      })
+      .map((item) => {
+        const previousSeenAt = existingSeenAt.get(item.artist.id)
+        const previousSkipAt = existingSkipAt.get(item.artist.id)
+        return {
+          user_id: userId,
+          spotify_artist_id: item.artist.id,
+          artist_data: item.artist,
+          score: item.score,
+          why: item.why,
+          source: item.source,
+          expires_at: expiresAt.toISOString(),
+          // Preserve existing cooldown state on re-surface so the window doesn't reset.
+          ...(previousSeenAt !== undefined ? { seen_at: previousSeenAt } : { seen_at: null }),
+          ...(previousSkipAt !== undefined ? { skip_at: previousSkipAt } : { skip_at: null }),
+        }
+      })
+
+    if (rows.length === 0) return 0
+
+    const { error } = await supabase
+      .from('recommendation_cache')
+      .upsert(rows, { onConflict: 'user_id,spotify_artist_id' })
+
+    if (error) {
+      console.error(`[engine] upsert_error source=${source} err=${error.message}`)
+      return 0
+    }
+
+    for (const row of rows) writtenIds.add(row.spotify_artist_id)
+    return rows.length
   }
 
-  console.log(
-    `[engine] OK seeds=${capSeedNames.length} lfm=${lfmTotal} uniq=${uniqueNames.length} ` +
-    `ok=${resolved.searchOk} fail=${resolved.searchFail} filtListened=${filtListened} ` +
-    `cands=${candidateMap.size} top=${top.length} written=${rows.length} source=${source}`
+  // ── Tier 1 (blocking): confirm FIRST_BATCH_TARGET artists, write, return fast ──
+  const firstBatchStart = Date.now()
+  const { kept: firstBatch, confirmedCount: c1 } = await confirmToTarget(
+    ordered,
+    FIRST_BATCH_TARGET,
+    confirmFn,
+  )
+  const firstBatchMs = Date.now() - firstBatchStart
+  previewMs = firstBatchMs // time the user waited for first paint
+
+  const tier1Written = await writeScored(firstBatch)
+
+  // Write-back: bake confirmed topTracks into artist_search_cache so the next
+  // generation's resolver finds warm artists with topTracks → no re-confirm.
+  // idToName covers only the primary resolved pool; artists with no known name
+  // (adjacent-bleed, not in resolved.resolved) are simply skipped. (#145)
+  await Promise.all(
+    firstBatch.map((k) => {
+      const nm = idToName.get(k.artist.id)
+      return nm ? nameCache.write(nm, k.artist).catch(() => {}) : Promise.resolve()
+    })
   )
 
-  const writtenIds = new Set(rows.map((r) => r.spotify_artist_id))
+  console.log(
+    `[engine] tier1 seeds=${capSeedNames.length} lfm=${lfmTotal} uniq=${uniqueNames.length} ` +
+    `ok=${resolved.searchOk} fail=${resolved.searchFail} filtListened=${filtListened} ` +
+    `cands=${candidateMap.size} firstBatch=${firstBatch.length} written=${tier1Written} source=${source}`
+  )
 
-  const runSecondary = secondaryResolvePromise === null
-    ? null
-    : async (): Promise<number> => {
-        // Already fetched in parallel with primary — just await the result.
-        const secondaryResolved = await secondaryResolvePromise
+  // ── Background continuation: tier-2 (finish primary to TARGET) + secondary pool ──
+  // runSecondary is the single function called by after() in the route. It:
+  //   1. Confirms ordered.slice(c1) up to (TARGET - firstBatch.length) more artists.
+  //   2. Writes those via writeScored (deduped against writtenIds).
+  //   3. Resolves + confirms + writes the secondary pool (unchanged from before).
+  const runSecondary = async (): Promise<number> => {
+    let backgroundWritten = 0
 
-        const secondaryCandidates: Array<{ artist: Artist; seedArtists: string[] }> = []
-        for (const [name, artist] of secondaryResolved.resolved) {
-          if (writtenIds.has(artist.id)) continue
-          if (thumbsDownIds.has(artist.id)) continue
-          if (overThresholdIds.has(artist.id)) continue
-          if (overThresholdNames.has(normalizeArtistName(artist.name))) continue
-          if (undergroundMode && (artist.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) continue
-          if (genre && !artist.genres.some((g) => normalizedIncludes(g, genre))) continue
-          const seedArtists = nameToSeeds.get(name) ?? []
-          secondaryCandidates.push({ artist, seedArtists })
-        }
-
-        if (secondaryCandidates.length === 0) {
-          console.log(`[engine] secondary_empty source=${source}`)
-          return 0
-        }
-
-        const secondaryScored: ScoredArtist[] = secondaryCandidates.map(({ artist, seedArtists }) => {
-          const seedRelevance = Math.min(Math.sqrt(seedArtists.length) / Math.sqrt(6), 1)
-          const tier = tierMultiplier(artist.popularity, popularityCurve)
-          const discoveryPenalty = undergroundMode
-            ? Math.pow((100 - artist.popularity) / 100, 2)
-            : 1
-          const baseScore = tier * 0.80 + seedRelevance * 0.20
-          const mainstreamPenalty =
-            adventurous && artist.popularity > 50 ? ADVENTUROUS_MAINSTREAM_PENALTY : 0
-          const score = baseScore * discoveryPenalty - mainstreamPenalty
-          return {
-            artist: { ...artist, topTracks: [] },
-            score,
-            why: {
-              sourceArtists: seedArtists.slice(0, 2),
-              genres: artist.genres.slice(0, 2),
-              friendBoost: [],
-            },
-            source: `${source}_secondary`,
-          }
-        })
-
-        secondaryScored.sort((a, b) => b.score - a.score)
-
-        // Fetch existing cooldown state for secondary too — otherwise re-running
-        // in the background can clobber a fresh seen_at/skip_at on an existing row.
-        const secondaryIds = secondaryScored.map((s) => s.artist.id)
-        const { data: existingSec } = await supabase
-          .from('recommendation_cache')
-          .select('spotify_artist_id, seen_at, skip_at')
-          .eq('user_id', userId)
-          .in('spotify_artist_id', secondaryIds)
-        const secSeenAt = new Map<string, string | null>()
-        const secSkipAt = new Map<string, string | null>()
-        for (const row of existingSec ?? []) {
-          secSeenAt.set(row.spotify_artist_id, row.seen_at)
-          secSkipAt.set(row.spotify_artist_id, row.skip_at)
-        }
-
-        const secondaryRows = secondaryScored
-          .filter((item) => {
-            const seenAt = secSeenAt.get(item.artist.id)
-            const skipAt = secSkipAt.get(item.artist.id)
-            if (seenAt === undefined && skipAt === undefined) return true
-            return isEligibleForCooldown(seenAt, skipAt, now)
-          })
-          .map((item) => {
-            const previousSeenAt = secSeenAt.get(item.artist.id)
-            const previousSkipAt = secSkipAt.get(item.artist.id)
-            return {
-              user_id: userId,
-              spotify_artist_id: item.artist.id,
-              artist_data: item.artist,
-              score: item.score,
-              why: item.why,
-              source: item.source,
-              expires_at: expiresAt.toISOString(),
-              ...(previousSeenAt !== undefined ? { seen_at: previousSeenAt } : { seen_at: null }),
-              ...(previousSkipAt !== undefined ? { skip_at: previousSkipAt } : { skip_at: null }),
-            }
-          })
-
-        if (secondaryRows.length === 0) {
-          console.log(`[engine] secondary_all_in_cooldown source=${source}`)
-          return 0
-        }
-
-        const { error: secErr } = await supabase
-          .from('recommendation_cache')
-          .upsert(secondaryRows, { onConflict: 'user_id,spotify_artist_id' })
-
-        if (secErr) {
-          console.error(`[engine] secondary_upsert_error source=${source} err=${secErr.message}`)
-          return 0
-        }
-
+    // ── Tier 2: finish primary to TARGET ──
+    const tier2Need = TARGET - firstBatch.length
+    if (tier2Need > 0 && c1 < ordered.length) {
+      const { kept: tier2Batch } = await confirmToTarget(
+        ordered.slice(c1),
+        tier2Need,
+        confirmFn,
+      )
+      if (tier2Batch.length > 0) {
+        const written = await writeScored(tier2Batch)
+        backgroundWritten += written
         console.log(
-          `[engine] secondary-OK source=${source} names=${secondaryNames.length} ` +
-          `resolved=${secondaryResolved.resolved.size} written=${secondaryRows.length}`
+          `[engine] tier2 source=${source} confirmed=${tier2Batch.length} written=${written}`
         )
-        return secondaryRows.length
+        // Write-back tier-2 confirmed topTracks (idToName in closure scope). (#145)
+        await Promise.all(
+          tier2Batch.map((k) => {
+            const nm = idToName.get(k.artist.id)
+            return nm ? nameCache.write(nm, k.artist).catch(() => {}) : Promise.resolve()
+          })
+        )
       }
+    }
+
+    // ── Secondary pool ──
+    if (secondaryResolvePromise === null) return backgroundWritten
+
+    // Already fetched in parallel with primary — just await the result.
+    const secondaryResolved = await secondaryResolvePromise
+
+    // Build id→name map for secondary pool write-back. (#145)
+    const secondaryIdToName = new Map<string, string>()
+    for (const [name, a] of secondaryResolved.resolved) secondaryIdToName.set(a.id, name)
+
+    const secondaryCandidates: Array<{ artist: Artist; seedArtists: string[] }> = []
+    for (const [name, artist] of secondaryResolved.resolved) {
+      if (writtenIds.has(artist.id)) continue
+      if (thumbsDownIds.has(artist.id)) continue
+      if (overThresholdIds.has(artist.id)) continue
+      if (overThresholdNames.has(normalizeArtistName(artist.name))) continue
+      if (undergroundMode && (artist.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) continue
+      if (genre && !artist.genres.some((g) => normalizedIncludes(g, genre))) continue
+      const seedArtists = nameToSeeds.get(name) ?? []
+      secondaryCandidates.push({ artist, seedArtists })
+    }
+
+    if (secondaryCandidates.length === 0) {
+      console.log(`[engine] secondary_empty source=${source}`)
+      return backgroundWritten
+    }
+
+    const secondaryScored: ScoredArtist[] = secondaryCandidates.map(({ artist, seedArtists }) => {
+      const seedRelevance = Math.min(Math.sqrt(seedArtists.length) / Math.sqrt(6), 1)
+      const tier = tierMultiplier(artist.popularity, popularityCurve)
+      const discoveryPenalty = undergroundMode
+        ? Math.pow((100 - artist.popularity) / 100, 2)
+        : 1
+      const baseScore = tier * 0.80 + seedRelevance * 0.20
+      const mainstreamPenalty =
+        adventurous && artist.popularity > 50 ? ADVENTUROUS_MAINSTREAM_PENALTY : 0
+      const score = baseScore * discoveryPenalty - mainstreamPenalty
+      return {
+        artist: { ...artist, topTracks: artist.topTracks ?? [] },
+        score,
+        why: {
+          sourceArtists: seedArtists.slice(0, 2),
+          genres: artist.genres.slice(0, 2),
+          friendBoost: [],
+        },
+        source: `${source}_secondary`,
+      }
+    })
+
+    secondaryScored.sort((a, b) => b.score - a.score)
+
+    // Confirm only up to TARGET secondary candidates before writing.
+    const { kept: secConfirmed } = await confirmToTarget(
+      secondaryScored,
+      TARGET,
+      buildConfirmPreview(accessToken),
+    )
+
+    if (secConfirmed.length > 0) {
+      const secWritten = await writeScored(secConfirmed)
+      backgroundWritten += secWritten
+      console.log(
+        `[engine] secondary-OK source=${source} names=${secondaryNames.length} ` +
+        `resolved=${secondaryResolved.resolved.size} written=${secWritten}`
+      )
+      // Write-back secondary confirmed topTracks into artist_search_cache. (#145)
+      await Promise.all(
+        secConfirmed.map((k) => {
+          const nm = secondaryIdToName.get(k.artist.id)
+          return nm ? nameCache.write(nm, k.artist).catch(() => {}) : Promise.resolve()
+        })
+      )
+    } else {
+      console.log(`[engine] secondary_all_in_cooldown source=${source}`)
+    }
+
+    return backgroundWritten
+  }
 
   return {
-    count: rows.length,
+    count: tier1Written,
     runSecondary,
     metrics: {
       primaryMs,
+      previewMs,
+      firstBatchMs,
       misses: resolved.cacheMisses,
       retries: resolved.searchRetries,
       rateLimited: resolved.rateLimited,

@@ -1,7 +1,6 @@
 "use client"
 
-import { Suspense, use, useCallback, useMemo, useState, useTransition } from "react"
-import { useRouter } from "next/navigation"
+import { Suspense, use, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { RefreshCw, Sparkles, Moon, Mountain, Flame, Dices, type LucideIcon } from "lucide-react"
 import { AnimatePresence } from "framer-motion"
@@ -13,6 +12,58 @@ import { Ambient } from "@/components/visual/ambient"
 import { useAdventurousMode } from "@/lib/hooks/use-adventurous-mode"
 import { useArtistFeedback } from "@/lib/hooks/use-artist-feedback"
 import { useArtistSaves } from "@/lib/hooks/use-artist-saves"
+
+// ---------------------------------------------------------------------------
+// Poll-swap helpers — pure functions, exported for unit tests
+// ---------------------------------------------------------------------------
+
+/** True when `latest` is strictly after `captured`, meaning the regen landed. */
+export function hasRegenCompleted(
+  captured: string | null,
+  latest: string | null,
+): boolean {
+  if (latest === null) return false
+  if (captured === null) return true // first paint was cold; any value is new
+  return new Date(latest) > new Date(captured)
+}
+
+/**
+ * The ceiling (ms) after which the poller gives up and shows a soft toast.
+ * Regen takes 54-74s; 90s ceiling gives comfortable headroom.
+ */
+export const POLL_CEILING_MS = 90_000
+
+/** Polling cadence (ms). */
+export const POLL_INTERVAL_MS = 2_500
+
+/**
+ * How long (ms) after Settings fires explore-regen-at we treat a background
+ * regen as potentially still in flight. 120s gives generous headroom over the
+ * 54-74s regen window.
+ */
+export const SETTINGS_REGEN_WINDOW_MS = 120_000
+
+/** localStorage key written by Settings when a background explore regen fires. */
+export const EXPLORE_REGEN_AT_KEY = "explore-regen-at"
+
+/**
+ * Pure helper — true when the stored flag value indicates a background explore
+ * regen is likely still in flight relative to `now`.
+ *
+ * @param flagValue - raw string value from localStorage (or null if absent)
+ * @param now       - current epoch ms (Date.now())
+ * @param maxAgeMs  - maximum age to treat as in-flight (default SETTINGS_REGEN_WINDOW_MS)
+ */
+export function shouldPollOnArrival(
+  flagValue: string | null,
+  now: number,
+  maxAgeMs: number = SETTINGS_REGEN_WINDOW_MS,
+): boolean {
+  if (flagValue === null) return false
+  const ts = Number(flagValue)
+  if (!Number.isFinite(ts)) return false
+  return now - ts <= maxAgeMs
+}
 
 export interface ChallengePayload {
   title: string
@@ -70,17 +121,22 @@ export interface ExploreClientProps {
   adventurous: boolean
   initialSavedIds: string[]
   challengePromise: Promise<ChallengePayload | null>
+  /** ISO timestamp of the most-recent cache write; null when cold. */
+  generatedAt?: string | null
+  /** True when the page painted with no cached rails (cold start). */
+  coldStart?: boolean
 }
 
 export function ExploreClient({
-  rails,
+  rails: initialRails,
   musicPlatform,
   adventurous: initialAdventurous,
   initialSavedIds,
   challengePromise,
+  generatedAt: initialGeneratedAt = null,
+  coldStart = false,
 }: ExploreClientProps) {
-  const router = useRouter()
-  const [, startTransition] = useTransition()
+  const [rails, setRails] = useState<RailPayload[]>(initialRails)
   const [isRegenerating, setIsRegenerating] = useState(false)
   const { adventurous, setAdventurous } = useAdventurousMode(initialAdventurous)
   const [isTogglingAdv, setIsTogglingAdv] = useState(false)
@@ -159,37 +215,130 @@ export function ExploreClient({
     [toggleSave],
   )
 
-  async function handleApplyAdventurous() {
-    if (!isAdvDirty || isApplyingAdv) return
-    setIsApplyingAdv(true)
-    try {
-      const res = await fetch("/api/explore/generate?force=true", { method: "POST" })
-      if (!res.ok) throw new Error("generate failed")
-      setSignals(new Map())
-      setIsAdvDirty(false)
-      startTransition(() => router.refresh())
-    } catch {
-      toast.error("Couldn't rebuild — try again")
-    } finally {
-      setIsApplyingAdv(false)
+  // -------------------------------------------------------------------------
+  // Poll-swap machinery
+  // -------------------------------------------------------------------------
+
+  // Ref holding the latest generatedAt we've seen — updated whenever rails swap
+  // in. Using a ref rather than state so poll callbacks capture the latest
+  // value without needing to be recreated each render.
+  const generatedAtRef = useRef<string | null>(initialGeneratedAt)
+  // Pointer to the active interval so we can clear it from anywhere.
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  // Absolute deadline so we don't poll forever.
+  const pollDeadlineRef = useRef<number>(0)
+  // Ref to the latest orderedRails so poll callbacks can drop thumbs_up without
+  // stale closure issues. Declared here (before regenAndPoll) so the closure
+  // sees it during regen calls.
+  const orderedRailsRef = useRef(orderedRails)
+
+  function stopPolling() {
+    if (pollTimerRef.current !== null) {
+      clearInterval(pollTimerRef.current)
+      pollTimerRef.current = null
     }
   }
 
-  async function handleShuffle() {
-    if (isRegenerating) return
-    setIsRegenerating(true)
+  /**
+   * Fetch the latest rails from GET /api/explore/rails and swap them in when
+   * the generatedAt timestamp has advanced. Returns true if the swap landed.
+   * Never throws — network/parse errors are silently skipped so the poller
+   * stays alive until the ceiling.
+   */
+  async function pollOnce(captured: string | null): Promise<boolean> {
+    try {
+      const res = await fetch("/api/explore/rails")
+      if (!res.ok) return false
+      const json = await res.json() as { rails: RailPayload[]; generatedAt: string | null }
+      if (!hasRegenCompleted(captured, json.generatedAt)) return false
+      // Regen landed — swap rails in.
+      generatedAtRef.current = json.generatedAt
+      setRails(json.rails)
+      // Preserve activeKey if the refreshed rails contain it; otherwise fall
+      // back to whatever orderedRails[0] will resolve to after state update.
+      setActiveKey((prev) => {
+        const keys = new Set(json.rails.map((r: RailPayload) => r.railKey))
+        return keys.has(prev) ? prev : (json.rails[0]?.railKey ?? "adjacent")
+      })
+      return true
+    } catch {
+      // Swallow — next tick will retry
+      return false
+    }
+  }
+
+  /**
+   * Poll GET /api/explore/rails every POLL_INTERVAL_MS until generatedAt
+   * advances past `capturedGeneratedAt` (or the ceiling is hit). Calls
+   * `onSettle()` when done — either after a successful swap or on ceiling.
+   * Reuses the shared stopPolling / pollTimerRef / pollDeadlineRef machinery.
+   *
+   * This is intentionally a poll-only path: it does NOT POST force=true.
+   * Call regenAndPoll (which wraps this) when you also need to kick off the
+   * regen; call this directly when the regen was already requested externally
+   * (e.g., by Settings).
+   */
+  function pollUntilFresh(opts: {
+    capturedGeneratedAt: string | null
+    onSettle: () => void
+    clearRegenFlag?: boolean
+  }) {
+    stopPolling()
+    pollDeadlineRef.current = Date.now() + POLL_CEILING_MS
+
+    pollTimerRef.current = setInterval(async () => {
+      const expired = Date.now() >= pollDeadlineRef.current
+      if (expired) {
+        stopPolling()
+        if (opts.clearRegenFlag) {
+          try { localStorage.removeItem(EXPLORE_REGEN_AT_KEY) } catch { /* private mode */ }
+        }
+        opts.onSettle()
+        toast("Still building — refresh in a moment", { duration: 4000 })
+        return
+      }
+      const swapped = await pollOnce(opts.capturedGeneratedAt)
+      if (swapped) {
+        stopPolling()
+        if (opts.clearRegenFlag) {
+          try { localStorage.removeItem(EXPLORE_REGEN_AT_KEY) } catch { /* private mode */ }
+        }
+        opts.onSettle()
+      }
+    }, POLL_INTERVAL_MS)
+  }
+
+  /**
+   * Kick off a background regen then poll until rails swap in (or ceiling).
+   * `onSettle` is called (no-arg) when the poller stops, regardless of reason.
+   * `dropThumbsUp` — when true, clears thumbs_up entries from the current
+   * active rail's artists before the swap (used by handleShuffle).
+   */
+  async function regenAndPoll(opts: {
+    onSettle: () => void
+    dropThumbsUp?: boolean
+    clearAdvDirty?: boolean
+  }) {
     try {
       const res = await fetch("/api/explore/generate?force=true", { method: "POST" })
       if (!res.ok) throw new Error("generate failed")
-      // Drop stale thumbs_up entries so a refreshed roll doesn't carry over the
-      // green outline from the previous deck. thumbs_down and skip (Dismiss)
-      // stay put — the server filter now permanently excludes them anyway, and
-      // retaining the local entries is defensive for any in-flight writes.
+    } catch {
+      toast.error("Couldn't start rebuild — try again")
+      opts.onSettle()
+      return
+    }
+
+    // Capture the timestamp AFTER the POST so we don't prematurely accept
+    // a stale cache row that was written before the regen started.
+    const captured = generatedAtRef.current
+
+    if (opts.dropThumbsUp) {
       setSignals((prev) => {
-        if (!activeRail) return prev
+        const active = orderedRailsRef.current?.[0]
+        if (!active) return prev
         let changed = false
         const n = new Map(prev)
-        for (const a of activeRail.artists) {
+        for (const a of active.artists) {
           if (n.get(a.id) === "thumbs_up") {
             n.delete(a.id)
             changed = true
@@ -197,12 +346,73 @@ export function ExploreClient({
         }
         return changed ? n : prev
       })
-      startTransition(() => router.refresh())
-    } catch {
-      toast.error("Couldn't shuffle — try again")
-    } finally {
-      setIsRegenerating(false)
     }
+
+    if (opts.clearAdvDirty) {
+      setSignals(new Map())
+      setIsAdvDirty(false)
+    }
+
+    pollUntilFresh({ capturedGeneratedAt: captured, onSettle: opts.onSettle })
+  }
+
+  // Cleanup on unmount
+  useEffect(() => () => { stopPolling() }, [])
+
+  // Cold-start: on mount, if coldStart is true, kick off a regen+poll so the
+  // page populates without ever having blocked the server render.
+  // We use a ref to ensure this fires at most once even in StrictMode.
+  const coldStartFiredRef = useRef(false)
+  useEffect(() => {
+    if (!coldStart || coldStartFiredRef.current) return
+    coldStartFiredRef.current = true
+    setIsRegenerating(true)
+    regenAndPoll({
+      onSettle: () => setIsRegenerating(false),
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [coldStart])
+
+  // Settings-arrival: if Settings fired a background explore regen and the user
+  // navigated here before it finished, start a poll-only (no re-POST) so rails
+  // refresh automatically. The localStorage flag is the cross-navigation signal.
+  // Fires at most once (ref guard); only runs when NOT coldStart (the cold-start
+  // path already triggers a regenAndPoll above which subsumes polling).
+  const settingsArrivalFiredRef = useRef(false)
+  useEffect(() => {
+    if (coldStart || settingsArrivalFiredRef.current) return
+    let flagValue: string | null = null
+    try { flagValue = localStorage.getItem(EXPLORE_REGEN_AT_KEY) } catch { /* private mode */ }
+    if (!shouldPollOnArrival(flagValue, Date.now())) return
+    settingsArrivalFiredRef.current = true
+    setIsRegenerating(true)
+    pollUntilFresh({
+      capturedGeneratedAt: generatedAtRef.current,
+      clearRegenFlag: true,
+      onSettle: () => setIsRegenerating(false),
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Keep orderedRailsRef current on every render.
+  useEffect(() => { orderedRailsRef.current = orderedRails }, [orderedRails])
+
+  async function handleApplyAdventurous() {
+    if (!isAdvDirty || isApplyingAdv) return
+    setIsApplyingAdv(true)
+    await regenAndPoll({
+      clearAdvDirty: true,
+      onSettle: () => setIsApplyingAdv(false),
+    })
+  }
+
+  async function handleShuffle() {
+    if (isRegenerating) return
+    setIsRegenerating(true)
+    await regenAndPoll({
+      dropThumbsUp: true,
+      onSettle: () => setIsRegenerating(false),
+    })
   }
 
   const totalDiscoveries = useMemo(
@@ -492,10 +702,21 @@ export function ExploreClient({
             background: "rgba(15,15,15,0.45)",
           }}
         >
-          <div style={{ fontWeight: 600, color: "var(--text-primary)", marginBottom: 6 }}>
-            Not enough signal yet
-          </div>
-          Save a few artists or mark some thumbs-up in your feed, then shuffle to generate richer rails here.
+          {isRegenerating ? (
+            <>
+              <div style={{ fontWeight: 600, color: "var(--text-primary)", marginBottom: 6 }}>
+                Building your exploration rails…
+              </div>
+              This takes about a minute. Rails will appear automatically when ready.
+            </>
+          ) : (
+            <>
+              <div style={{ fontWeight: 600, color: "var(--text-primary)", marginBottom: 6 }}>
+                Not enough signal yet
+              </div>
+              Save a few artists or mark some thumbs-up in your feed, then shuffle to generate richer rails here.
+            </>
+          )}
         </div>
       )}
 

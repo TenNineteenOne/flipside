@@ -4,19 +4,11 @@ import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { getCachedUser } from "@/lib/user-cache"
 import { getSpotifyClientToken } from "@/lib/spotify-client-token"
-import {
-  buildExploreRails,
-  RAIL_META_KEY,
-  type HydratedRailArtist,
-  type RailKey,
-  type RailWhy,
-} from "@/lib/recommendation/explore-engine"
+import { buildExploreRails } from "@/lib/recommendation/explore-engine"
 import {
   ExploreClient,
-  type RailPayload,
   type ChallengePayload,
 } from "@/components/explore/explore-client"
-import type { RailArtist } from "@/components/explore/rail"
 import {
   DEFAULT_MUSIC_PLATFORM,
   isMusicPlatform,
@@ -26,36 +18,8 @@ import {
   buildApplicabilityCtx,
   ensureWeeklyChallenge,
 } from "@/lib/challenges/engine"
+import { assembleRailPayloads } from "@/lib/recommendation/explore-rail-payloads"
 import ExploreLoading from "./loading"
-
-const RAIL_TITLES: Record<RailKey, { title: string; subtitle: string; empty: string }> = {
-  adjacent: {
-    title: "After hours",
-    subtitle: "Ambient, hushed, and late-night — a dimmer shelf to browse",
-    empty: "Hang tight — the moodier corners are loading.",
-  },
-  outside: {
-    title: "Uncharted territory",
-    subtitle: "Corners of the sonic map you've never set foot in",
-    empty: "Listen a little first — we need to know where the edges are.",
-  },
-  wildcards: {
-    title: "Rabbit holes",
-    subtitle: "Deep cuts spun off the artists you've starred",
-    empty: "Thumbs-up an artist and the rabbit hole opens up.",
-  },
-  leftfield: {
-    title: "Curveballs",
-    subtitle: "A blind pick from the sonic map — good luck",
-    empty: "Nothing yet — regenerate for another throw.",
-  },
-}
-
-const WILDCARDS_FALLBACK_META = {
-  title: "More curveballs",
-  subtitle: "Thumbs-up a few artists to unlock your rabbit holes — until then, another blind throw",
-  empty: "Nothing yet — regenerate for another throw.",
-} as const
 
 export default async function ExplorePage() {
   const session = await auth()
@@ -127,45 +91,35 @@ async function ExploreRailsSection({
   // streams in when it finishes. Cold /explore stops waiting on the slower of
   // the two, which is usually the challenge's genre hydration.
   const challengePromise = loadChallenge(supabase, userId)
-  const buildResult = await buildExploreRails(
-    { userId, accessToken, adventurous, undergroundMode, popularityCurve, playThreshold },
-    { hydrate: true },
-  )
+
+  // Cold-load fast-paint (#145b): regenerate=false means we NEVER block on a
+  // 54-74s synchronous build. When cache is warm (the common path via
+  // ExplorePrewarm) this is just a fast cache read. When cold, we return
+  // whatever partial rows exist (often none) and pass coldStart=true so the
+  // client can POST generate+poll in the background.
+  const [buildResult, generatedAtResult] = await Promise.all([
+    buildExploreRails(
+      { userId, accessToken, adventurous, undergroundMode, popularityCurve, playThreshold },
+      { hydrate: true, regenerate: false },
+    ),
+    supabase
+      .from("explore_cache")
+      .select("generated_at")
+      .eq("user_id", userId)
+      .order("generated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ])
+
   const { rails, hydrated } = buildResult
-  const artistById: Map<string, HydratedRailArtist> = hydrated ?? new Map()
+  const artistById = hydrated ?? new Map()
 
-  function hydrate(ids: string[], why: Record<string, RailWhy>): RailArtist[] {
-    const out: RailArtist[] = []
-    for (const id of ids) {
-      const a = artistById.get(id)
-      if (!a) continue
-      out.push({
-        id: a.id,
-        name: a.name,
-        genres: a.genres ?? [],
-        imageUrl: a.imageUrl ?? null,
-        popularity: a.popularity ?? 0,
-        artistColor: a.artist_color ?? null,
-        why: why[id] ? { sourceArtist: why[id].sourceArtist, chain: why[id].chain, tag: why[id].tag, anchor: why[id].anchor } : undefined,
-      })
-    }
-    return out
-  }
+  // True cold start: no rail has any artist IDs. Client will trigger a regen
+  // and poll until rails arrive.
+  const coldStart = rails.every((r) => r.artistIds.length === 0)
 
-  const payloads: RailPayload[] = rails.map((r) => {
-    const defaultMeta = RAIL_TITLES[r.railKey]
-    const fallbackMarker = (r.why ?? {})[RAIL_META_KEY]
-    const isWildcardsFallback =
-      r.railKey === "wildcards" && fallbackMarker?.fallbackKind === "leftfield-for-wildcards"
-    const meta = isWildcardsFallback ? WILDCARDS_FALLBACK_META : defaultMeta
-    return {
-      railKey: r.railKey,
-      title: meta.title,
-      subtitle: meta.subtitle,
-      artists: hydrate(r.artistIds, r.why ?? {}),
-      emptyCaption: meta.empty,
-    }
-  })
+  const payloads = assembleRailPayloads(rails, artistById)
+  const generatedAt = (generatedAtResult.data?.generated_at as string | null) ?? null
 
   return (
     <ExploreClient
@@ -174,6 +128,8 @@ async function ExploreRailsSection({
       adventurous={adventurous}
       initialSavedIds={initialSavedIds}
       challengePromise={challengePromise}
+      generatedAt={generatedAt}
+      coldStart={coldStart}
     />
   )
 }

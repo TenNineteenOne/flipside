@@ -41,7 +41,7 @@ function railArtistToRecommendation(a: RailArtist): RecommendationShape {
       genres: a.genres,
       imageUrl: a.imageUrl,
       popularity: a.popularity,
-      topTracks: [],
+      topTracks: a.topTracks ?? [],
     },
     score: 0,
     why: { sourceArtists, genres, friendBoost: [] },

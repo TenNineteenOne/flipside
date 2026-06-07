@@ -135,6 +135,10 @@ export async function resolveArtistsByName(
 
         if (isRateLimited(res)) {
           result.rateLimited = true
+          // Open circuit breaker: every call is short-circuited, so retrying
+          // just drains the shared backoff budget against a closed door. Skip
+          // this name immediately and let the worker move on.
+          if (res.skipRetry) break
           if (attempt >= maxAttempts) break
           result.searchRetries++
           const budgetLeft = totalBackoffBudgetMs - spentBackoffMs

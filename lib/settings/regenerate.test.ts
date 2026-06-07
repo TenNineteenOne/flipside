@@ -78,7 +78,7 @@ describe("regenerateFeedAndExplore", () => {
     const opts = makeOpts()
     await regenerateFeedAndExplore(opts)
 
-    expect(toast.success).toHaveBeenCalledWith("Feed & Explore rebuilt")
+    expect(toast.success).toHaveBeenCalledWith("Rebuilding feed & Explore — new picks are loading")
   })
 
   it("toasts 'Couldn't rebuild' when both fail", async () => {

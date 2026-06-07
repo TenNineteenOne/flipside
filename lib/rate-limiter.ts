@@ -37,35 +37,30 @@ export function evaluateRateLimit(
 }
 
 /**
- * Check whether the given IP is rate-limited.
- * If not limited, increments the attempt counter in Supabase.
+ * Check whether the given IP is rate-limited, atomically recording the attempt.
+ *
+ * Delegates the read-modify-write to the `rpc_register_login_attempt` Postgres
+ * function (migration 0035) so concurrent requests from one IP can't race past
+ * the cap — the DB row lock serializes them. `evaluateRateLimit` above remains
+ * the canonical decision logic the SQL mirrors (and what the unit tests cover).
+ *
+ * Fails open on infra error: a DB hiccup must not lock everyone out of a
+ * username-only login (no password to brute-force, so the abuse value is low).
  */
 export async function isRateLimited(ip: string): Promise<boolean> {
   const ipHash = hashIp(ip)
   const supabase = createServiceClient()
-  const now = new Date()
 
-  const { data: existing } = await supabase
-    .from("login_attempts")
-    .select("attempt_count, window_start")
-    .eq("ip_hash", ipHash)
-    .maybeSingle()
+  const { data, error } = await supabase.rpc("rpc_register_login_attempt", {
+    p_ip_hash: ipHash,
+    p_window_ms: WINDOW_MS,
+    p_max_attempts: MAX_ATTEMPTS,
+  })
 
-  const result = evaluateRateLimit(existing, now)
+  if (error) {
+    console.error("[rate-limiter] rpc_register_login_attempt failed:", error.message)
+    return false
+  }
 
-  if (result.limited) return true
-
-  // Single upsert to minimize TOCTOU window
-  await supabase
-    .from("login_attempts")
-    .upsert(
-      {
-        ip_hash: ipHash,
-        attempt_count: result.newCount,
-        window_start: result.resetWindow ? now.toISOString() : existing?.window_start ?? now.toISOString(),
-      },
-      { onConflict: "ip_hash" },
-    )
-
-  return false
+  return data === true
 }

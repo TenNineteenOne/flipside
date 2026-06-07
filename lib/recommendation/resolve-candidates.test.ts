@@ -150,6 +150,26 @@ describe("resolveArtistsByName", () => {
     expect(search).toHaveBeenCalledTimes(4)
   })
 
+  it("skipRetry rate-limit (open breaker) breaks immediately — no retries, no backoff sleep", async () => {
+    const waits: number[] = []
+    // Breaker-open sentinel: rateLimited with skipRetry. The resolver must NOT
+    // retry or sleep — retrying just drains the shared backoff budget against an
+    // open circuit (the throttled shared-key scenario).
+    const search = vi.fn(
+      async (): Promise<Artist[] | RateLimited> => ({ rateLimited: true, retryAfterSec: 80_000, skipRetry: true }),
+    )
+    const deps: ResolveDeps = {
+      ...makeDeps({ search }),
+      sleep: async (ms) => { waits.push(ms) },
+    }
+    const r = await resolveArtistsByName(["A", "B"], deps)
+    expect(r.rateLimited).toBe(true)
+    expect(r.searchRetries).toBe(0)        // never retried
+    expect(waits).toEqual([])               // never slept
+    expect(search).toHaveBeenCalledTimes(2) // exactly one call per name
+    expect(r.resolved.size).toBe(0)
+  })
+
   it("honors capped retry-after and respects total backoff budget", async () => {
     const waits: number[] = []
     const search = vi.fn(async (): Promise<Artist[] | RateLimited> => rl(120))
@@ -284,5 +304,19 @@ describe("resolveArtistsByName", () => {
     expect(r.resolved.size).toBe(0)
     // enrichment fired in parallel — it may have been invoked, but the important
     // thing is that no resolved artist got written and no errors leaked.
+  })
+
+  it("resolved artists keep undefined topTracks (confirmation happens downstream)", async () => {
+    const search = async (name: string): Promise<Artist[] | RateLimited> => [artist(`id-${name}`, name)]
+    const r = await resolveArtistsByName(["A"], makeDeps({ search }))
+    expect(r.resolved.get("A")?.topTracks).toBeUndefined()
+  })
+
+  it("always writes resolved miss to name cache (no conditional skip)", async () => {
+    const writes = new Map<string, Artist>()
+    const search = async (name: string): Promise<Artist[] | RateLimited> => [artist(`id-${name}`, name)]
+    const r = await resolveArtistsByName(["A"], makeDeps({ search, cacheWrites: writes }))
+    expect(r.searchOk).toBe(1)
+    expect(writes.get("a")?.id).toBe("id-A")
   })
 })
