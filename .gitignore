@@ -36,6 +36,8 @@ scripts/*.checkpoint.json
 scripts/*.report.json
 scripts/*.old-*
 scripts/*.applied.json
+# temporary/throwaway scripts (underscore-prefixed; e.g. _migration-sizing.ts) — never commit
+scripts/_*.ts
 
 # local backups created by scripts (validator, migrations, etc.)
 data/*.backup*
