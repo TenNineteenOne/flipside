@@ -10,6 +10,7 @@ import { SixDegreesChain } from "./six-degrees-chain"
 
 export interface RailArtist {
   id: string
+  spotifyId?: string | null
   name: string
   genres: string[]
   imageUrl: string | null
@@ -205,7 +206,7 @@ const ExploreCard = memo(function ExploreCard({ artist, musicPlatform, isSaved, 
     return c
   })()
 
-  const link = getArtistLink(musicPlatform, { artistId: artist.id, spotifyId: artist.id, artistName: artist.name })
+  const link = getArtistLink(musicPlatform, { artistId: artist.id, spotifyId: artist.spotifyId ?? null, artistName: artist.name })
 
   return (
     <article

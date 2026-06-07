@@ -26,14 +26,14 @@ export async function POST(req: NextRequest) {
   const supabase = createServiceClient()
   const rows = result.artists.map((a) => ({
     user_id: userId,
-    spotify_artist_id: a.id,
+    artist_id: a.id,
     name: a.name,
     image_url: a.imageUrl,
   }))
 
   const { error } = await supabase
     .from("seed_artists")
-    .upsert(rows, { onConflict: "user_id,spotify_artist_id" })
+    .upsert(rows, { onConflict: "user_id,artist_id" })
 
   if (error) {
     console.error("[onboarding/seeds] upsert error:", error.message)

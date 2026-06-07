@@ -15,49 +15,49 @@ export default async function HistoryPage() {
   // 1. All seen recommendations
   const { data: seen } = await supabase
     .from("recommendation_cache")
-    .select("spotify_artist_id, artist_data, score, why, seen_at, skip_at")
+    .select("artist_id, artist_data, score, why, seen_at, skip_at")
     .eq("user_id", userId)
     .not("seen_at", "is", null)
     .order("seen_at", { ascending: false })
     .limit(50)
 
-  const seenArtistIds = (seen ?? []).map((r) => r.spotify_artist_id)
+  const seenArtistIds = (seen ?? []).map((r) => r.artist_id)
 
   // 2. Feedback and saves scoped to the seen artist IDs
   const [feedbackRes, savesRes] = await Promise.all([
     seenArtistIds.length > 0
       ? supabase
           .from("feedback")
-          .select("spotify_artist_id, signal")
+          .select("artist_id, signal")
           .eq("user_id", userId)
           .is("deleted_at", null)
-          .in("spotify_artist_id", seenArtistIds)
+          .in("artist_id", seenArtistIds)
       : Promise.resolve({ data: [] }),
     seenArtistIds.length > 0
       ? supabase
           .from("saves")
-          .select("spotify_artist_id")
+          .select("artist_id")
           .eq("user_id", userId)
-          .in("spotify_artist_id", seenArtistIds)
+          .in("artist_id", seenArtistIds)
       : Promise.resolve({ data: [] }),
   ])
 
   const feedbackMap = new Map<string, string>()
-  for (const f of (feedbackRes.data ?? []) as { spotify_artist_id: string; signal: string }[]) {
-    feedbackMap.set(f.spotify_artist_id, f.signal)
+  for (const f of (feedbackRes.data ?? []) as { artist_id: string; signal: string }[]) {
+    feedbackMap.set(f.artist_id, f.signal)
   }
 
-  const savedSet = new Set(((savesRes.data ?? []) as { spotify_artist_id: string }[]).map((s) => s.spotify_artist_id))
+  const savedSet = new Set(((savesRes.data ?? []) as { artist_id: string }[]).map((s) => s.artist_id))
 
   const history = (seen ?? []).map((rec) => {
-    const feedbackSignal = feedbackMap.get(rec.spotify_artist_id)
+    const feedbackSignal = feedbackMap.get(rec.artist_id)
     const signal = feedbackSignal
       ? feedbackSignal
       : rec.skip_at
         ? "dismissed"
         : "skip"
     return {
-      spotify_artist_id: rec.spotify_artist_id,
+      artist_id: rec.artist_id,
       artist_data: rec.artist_data as {
         id: string
         name: string
@@ -70,7 +70,7 @@ export default async function HistoryPage() {
       artist_color: (rec.artist_data as Record<string, unknown>).artist_color as string | null ?? null,
       seen_at: rec.seen_at as string,
       signal,
-      bookmarked: savedSet.has(rec.spotify_artist_id),
+      bookmarked: savedSet.has(rec.artist_id),
     }
   })
 

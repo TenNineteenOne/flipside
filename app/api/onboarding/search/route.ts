@@ -37,10 +37,10 @@ function escapeIlike(s: string): string {
 }
 
 /**
- * Suggestion returned to the onboarding typeahead. Cache hits carry a real
- * Spotify id (resolve-free). Last.fm-only suggestions carry a synthetic `lf:`
- * id + mbid and `needsResolve: true` — the client resolves a real Spotify id on
- * selection (cache/MusicBrainz) before persisting a seed.
+ * Suggestion returned to the onboarding typeahead. Cache hits carry our
+ * canonical artist uuid (resolve-free). Last.fm-only suggestions carry a
+ * synthetic `lf:` id + mbid and `needsResolve: true` — the client resolves a
+ * canonical uuid on selection (cache/MusicBrainz) before persisting a seed.
  */
 interface OnboardingSuggestion {
   id: string
@@ -57,15 +57,24 @@ async function searchCachedArtists(query: string, limit = RESULT_CAP): Promise<A
     const supabase = createServiceClient()
     const pattern = `${escapeIlike(query.toLowerCase())}%`
     const { data, error } = await supabase
-      .from("artist_search_cache")
-      .select("artist_data")
+      .from("artists")
+      .select("id, spotify_id, name, genres, popularity, image_url")
       .ilike("name_lower", pattern)
       .limit(limit)
     if (error) {
       console.log(`[onboard-search] cache read-fail err="${error.message}"`)
       return []
     }
-    return (data ?? []).map((r) => r.artist_data as Artist)
+    return (data ?? []).map(
+      (r): Artist => ({
+        id: r.id as string,
+        spotifyId: (r.spotify_id as string | null) ?? null,
+        name: r.name as string,
+        genres: (r.genres as string[] | null) ?? [],
+        imageUrl: (r.image_url as string | null) ?? null,
+        popularity: (r.popularity as number | null) ?? 0,
+      }),
+    )
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.log(`[onboard-search] cache throw err="${msg}"`)

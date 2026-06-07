@@ -1,6 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, dbError } from "@/lib/errors"
-import { isValidSpotifyId } from "@/lib/spotify-ids"
+import { isValidArtistId } from "@/lib/spotify-ids"
 import { invalidateExploreCache } from "@/lib/recommendation/explore-engine"
 import type { RailKey } from "@/lib/recommendation/explore-engine"
 import { withAuthedJsonRoute } from "@/lib/api/with-authed-route"
@@ -11,13 +11,13 @@ function isRailKey(v: unknown): v is RailKey {
 }
 
 export const POST = withAuthedJsonRoute(async ({ userId, body }) => {
-  const { spotifyArtistId, signal, railKey } = body as {
-    spotifyArtistId?: string
+  const { artistId, signal, railKey } = body as {
+    artistId?: string
     signal?: string
     railKey?: string
   }
-  if (!spotifyArtistId || !isValidSpotifyId(spotifyArtistId))
-    return apiError("Valid spotifyArtistId is required", 400)
+  if (!artistId || !isValidArtistId(artistId))
+    return apiError("Valid artistId (uuid) is required", 400)
   if (signal !== "thumbs_up" && signal !== "thumbs_down" && signal !== "skip")
     return apiError("signal must be thumbs_up, thumbs_down, or skip", 400)
   if (railKey !== undefined && !isRailKey(railKey))
@@ -27,7 +27,7 @@ export const POST = withAuthedJsonRoute(async ({ userId, body }) => {
 
   const { error: rpcError } = await supabase.rpc("rpc_record_feedback", {
     p_user_id: userId,
-    p_artist_id: spotifyArtistId,
+    p_artist_id: artistId,
     p_signal: signal,
   })
 

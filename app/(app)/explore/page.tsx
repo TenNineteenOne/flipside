@@ -30,7 +30,7 @@ export default async function ExplorePage() {
 
   const [user, savesResult, accessTokenRaw] = await Promise.all([
     getCachedUser(userId),
-    supabase.from("saves").select("spotify_artist_id").eq("user_id", userId),
+    supabase.from("saves").select("artist_id").eq("user_id", userId),
     getSpotifyClientToken(),
   ])
 
@@ -43,7 +43,7 @@ export default async function ExplorePage() {
   const undergroundMode = !!user.underground_mode
   const popularityCurve = typeof user.popularity_curve === "number" ? user.popularity_curve : undefined
   const playThreshold = typeof user.play_threshold === "number" ? user.play_threshold : undefined
-  const initialSavedIds = (savesResult.data ?? []).map((r) => r.spotify_artist_id as string)
+  const initialSavedIds = (savesResult.data ?? []).map((r) => r.artist_id as string)
   const accessToken = accessTokenRaw ?? ""
 
   return (
@@ -144,11 +144,13 @@ async function loadChallenge(
     // fetch rather than issuing another users-table query.
     const [userRow, { data: listenedRows }, { data: thumbsUp }] = await Promise.all([
       getCachedUser(userId),
-      supabase.from("listened_artists").select("spotify_artist_id").eq("user_id", userId).limit(500),
-      supabase.from("feedback").select("spotify_artist_id").eq("user_id", userId).eq("signal", "thumbs_up").is("deleted_at", null).limit(1),
+      supabase.from("listened_artists").select("artist_id").eq("user_id", userId).limit(500),
+      supabase.from("feedback").select("artist_id").eq("user_id", userId).eq("signal", "thumbs_up").is("deleted_at", null).limit(1),
     ])
 
-    const listenedIds = (listenedRows ?? []).map((r) => r.spotify_artist_id as string)
+    const listenedIds = (listenedRows ?? [])
+      .map((r) => r.artist_id as string | null)
+      .filter((id): id is string => id != null)
     const genresById = new Map<string, string[]>()
 
     const chunks: string[][] = []
@@ -158,15 +160,14 @@ async function loadChallenge(
     const chunkResults = await Promise.all(
       chunks.map((chunk) =>
         supabase
-          .from("artist_search_cache")
-          .select("spotify_artist_id, artist_data")
-          .in("spotify_artist_id", chunk),
+          .from("artists")
+          .select("id, genres")
+          .in("id", chunk),
       ),
     )
     for (const { data } of chunkResults) {
       for (const row of data ?? []) {
-        const a = row.artist_data as { genres?: string[] } | null
-        genresById.set(row.spotify_artist_id as string, a?.genres ?? [])
+        genresById.set(row.id as string, (row.genres as string[] | null) ?? [])
       }
     }
 

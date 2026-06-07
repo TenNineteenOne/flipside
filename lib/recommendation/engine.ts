@@ -11,6 +11,7 @@ import {
 } from './types'
 import { ArtistNameCache } from './artist-name-cache'
 import { resolveArtistsByName } from './resolve-candidates'
+import { ensureArtist, type ArtistsSupabaseClient } from '@/lib/artists'
 import { confirmPlayableTracks, confirmToTarget } from './confirm-previews'
 import { searchTracksByArtist } from '@/lib/music-provider/itunes'
 import { fetchArtistEnrichment } from './enrich-artist'
@@ -140,15 +141,34 @@ function buildEnrichArtist() {
 export function buildConfirmPreview(accessToken: string) {
   return (artist: Artist) =>
     confirmPlayableTracks(
-      { id: artist.id, name: artist.name, topTracks: artist.topTracks },
+      { id: artist.id, name: artist.name, spotifyId: artist.spotifyId, topTracks: artist.topTracks },
       {
         searchItunes: (name) => searchTracksByArtist(name, 'US', 5),
-        getSpotifyTopTracks: (id) =>
-          accessToken
-            ? musicProvider.getArtistTopTracks(accessToken, id, 5, 'US').catch(() => [])
+        // Spotify top-tracks keyed on the SPOTIFY id (not the uuid identity).
+        // No id (Last.fm-only artist) or no token → no-op to [].
+        getSpotifyTopTracks: (spotifyId) =>
+          accessToken && spotifyId
+            ? musicProvider.getArtistTopTracks(accessToken, spotifyId, 5, 'US').catch(() => [])
             : Promise.resolve([]),
       },
     )
+}
+
+/**
+ * Build the `mintArtist` dep for resolve-candidates. At mint time the resolved
+ * Artist's `.id` is still the *Spotify* id (resolve-candidates calls mint
+ * BEFORE re-keying `.id` to the uuid), so we pass it as the seed's spotifyId.
+ * `ensureArtist` mints/resolves the canonical `artists.id` (uuid) race-safely.
+ */
+export function buildMintArtist(supabase: SupabaseClient) {
+  return (artist: Artist) =>
+    ensureArtist(supabase as unknown as ArtistsSupabaseClient, {
+      spotifyId: artist.id,
+      name: artist.name,
+      genres: artist.genres,
+      popularity: artist.popularity,
+      imageUrl: artist.imageUrl,
+    })
 }
 
 // ── Seed gathering ──────────────────────────────────────────────────────────
@@ -171,11 +191,11 @@ async function gatherSeedContext(
     // within a cache window. See docs/prd-diversity-overhaul.md (M1).
     supabase
       .from('feedback')
-      .select('spotify_artist_id')
+      .select('artist_id')
       .eq('user_id', userId)
       .eq('signal', 'thumbs_up')
       .is('deleted_at', null)
-      .then(({ data }) => (data ?? []).map((r) => r.spotify_artist_id as string).filter(Boolean)),
+      .then(({ data }) => (data ?? []).map((r) => r.artist_id as string).filter(Boolean)),
 
     supabase
       .from('users')
@@ -199,7 +219,7 @@ async function gatherSeedContext(
           .from('recommendation_cache')
           .select('artist_data')
           .eq('user_id', userId)
-          .in('spotify_artist_id', sampledThumbsUp)
+          .in('artist_id', sampledThumbsUp)
           .then(({ data }) =>
             (data ?? [])
               .map((row) => (row.artist_data as { name?: string })?.name)
@@ -610,12 +630,15 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
   // an `after()` block), but the Spotify/Last.fm round-trips now overlap with
   // the primary resolve instead of waiting for it to finish first. Shared
   // `nameCache` — writes are idempotent, names don't overlap between slices.
+  const mintArtist = buildMintArtist(supabase)
+
   const secondaryResolvePromise = secondaryNames.length === 0
     ? null
     : resolveArtistsByName(secondaryNames, {
         cache: nameCache,
         searchArtists: (name) => musicProvider.searchArtists(accessToken, name),
         enrichArtist: buildEnrichArtist(),
+        mintArtist,
       })
 
   let previewMs = 0
@@ -624,6 +647,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     cache: nameCache,
     searchArtists: (name) => musicProvider.searchArtists(accessToken, name),
     enrichArtist: buildEnrichArtist(),
+    mintArtist,
     concurrency: RESOLVE_CONCURRENCY,
     delayMs: RESOLVE_DELAY_MS,
   })
@@ -651,11 +675,11 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
   const [{ data: listenedData }, { data: thumbsDownData }] = await Promise.all([
     supabase
       .from('listened_artists')
-      .select('spotify_artist_id, lastfm_artist_name, play_count')
+      .select('artist_id, lastfm_artist_name, play_count')
       .eq('user_id', userId),
     supabase
       .from('feedback')
-      .select('spotify_artist_id')
+      .select('artist_id')
       .eq('user_id', userId)
       .eq('signal', 'thumbs_down')
       .is('deleted_at', null),
@@ -665,14 +689,14 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
   const overThresholdNames = new Set<string>()
   for (const row of listenedData ?? []) {
     if (row.play_count == null || row.play_count <= playThreshold) continue
-    if (row.spotify_artist_id) {
-      overThresholdIds.add(row.spotify_artist_id)
+    if (row.artist_id) {
+      overThresholdIds.add(row.artist_id)
     } else if (row.lastfm_artist_name) {
       overThresholdNames.add(normalizeArtistName(row.lastfm_artist_name))
     }
   }
 
-  const thumbsDownIds = new Set((thumbsDownData ?? []).map((r) => r.spotify_artist_id))
+  const thumbsDownIds = new Set((thumbsDownData ?? []).map((r) => r.artist_id))
   let filtListened = 0
 
   const filteredCandidates = [...candidateMap.entries()]
@@ -774,6 +798,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
           cache: nameCache,
           searchArtists: (name) => musicProvider.searchArtists(accessToken, name),
           enrichArtist: buildEnrichArtist(),
+          mintArtist,
         })
         return r.resolved
       },
@@ -842,15 +867,15 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     const ids = fresh.map((item) => item.artist.id)
     const { data: existingCache } = await supabase
       .from('recommendation_cache')
-      .select('spotify_artist_id, seen_at, skip_at')
+      .select('artist_id, seen_at, skip_at')
       .eq('user_id', userId)
-      .in('spotify_artist_id', ids)
+      .in('artist_id', ids)
 
     const existingSeenAt = new Map<string, string | null>()
     const existingSkipAt = new Map<string, string | null>()
     for (const row of existingCache ?? []) {
-      existingSeenAt.set(row.spotify_artist_id, row.seen_at)
-      existingSkipAt.set(row.spotify_artist_id, row.skip_at)
+      existingSeenAt.set(row.artist_id, row.seen_at)
+      existingSkipAt.set(row.artist_id, row.skip_at)
     }
 
     const rows = fresh
@@ -866,7 +891,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
         const previousSkipAt = existingSkipAt.get(item.artist.id)
         return {
           user_id: userId,
-          spotify_artist_id: item.artist.id,
+          artist_id: item.artist.id,
           artist_data: item.artist,
           score: item.score,
           why: item.why,
@@ -882,14 +907,14 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
 
     const { error } = await supabase
       .from('recommendation_cache')
-      .upsert(rows, { onConflict: 'user_id,spotify_artist_id' })
+      .upsert(rows, { onConflict: 'user_id,artist_id' })
 
     if (error) {
       console.error(`[engine] upsert_error source=${source} err=${error.message}`)
       return 0
     }
 
-    for (const row of rows) writtenIds.add(row.spotify_artist_id)
+    for (const row of rows) writtenIds.add(row.artist_id)
     return rows.length
   }
 

@@ -14,7 +14,7 @@ export async function GET(): Promise<Response> {
   const [rowsResult, userResult] = await Promise.all([
     supabase
       .from("recommendation_cache")
-      .select("spotify_artist_id, artist_data, score, why, source, seen_at")
+      .select("artist_id, artist_data, score, why, source, seen_at")
       .eq("user_id", userId)
       .is("seen_at", null)
       .gt("expires_at", now)

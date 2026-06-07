@@ -1,4 +1,4 @@
-import { isValidSpotifyId } from "@/lib/spotify-ids"
+import { isValidArtistId } from "@/lib/spotify-ids"
 
 export interface SeedArtistInput {
   id: string
@@ -31,8 +31,8 @@ export function validateSeedArtists(
       return { ok: false, error: "each artist must be an object" }
     }
     const e = entry as Record<string, unknown>
-    if (typeof e.id !== "string" || !isValidSpotifyId(e.id)) {
-      return { ok: false, error: "invalid Spotify artist id" }
+    if (typeof e.id !== "string" || !isValidArtistId(e.id)) {
+      return { ok: false, error: "invalid artist id" }
     }
     if (typeof e.name !== "string") {
       return { ok: false, error: "artist name must be a string" }

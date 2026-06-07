@@ -3,6 +3,10 @@ import type { RateLimited } from "@/lib/music-provider"
 import { isRateLimited } from "@/lib/music-provider"
 import type { ArtistNameCache } from "./artist-name-cache"
 import { mergeEnrichment, type ArtistEnrichment } from "./enrich-artist"
+import { stringSimilarity } from "@/lib/history/name-utils"
+
+/** Min Dice-coefficient name similarity to accept a fuzzy (non-exact) Spotify result. */
+const FUZZY_ACCEPT_THRESHOLD = 0.8
 
 export interface ResolveDeps {
   cache: Pick<ArtistNameCache, "batchRead" | "write">
@@ -11,6 +15,15 @@ export interface ResolveDeps {
    * array on no-match, or a `RateLimited` sentinel on 429.
    */
   searchArtists: (name: string) => Promise<Artist[] | RateLimited>
+  /**
+   * Mint/resolve the canonical `artists.id` (uuid) for a resolved Spotify
+   * artist. The caller wires this to `ensureArtist(serviceClient, …)`. Returns
+   * the uuid, or null when minting failed (e.g. DB unavailable) — in which case
+   * the resolver SKIPS caching that name rather than persist a Spotify id as the
+   * identity. Optional: when omitted (legacy/tests) the Spotify result is used
+   * as-is and `.id` stays the Spotify id.
+   */
+  mintArtist?: (artist: Artist) => Promise<string | null>
   /**
    * Optional enrichment — called by name in parallel with the Spotify
    * search and merged into the resolved Artist before the cache write.
@@ -162,17 +175,52 @@ export async function resolveArtistsByName(
         if (res.length === 0) break
 
         const lower = name.toLowerCase()
-        resolvedArtist = res.find((a) => a.name.toLowerCase() === lower) ?? res[0]
+        const exact = res.find((a) => a.name.toLowerCase() === lower)
+        if (exact) {
+          // Exact lowercased-name match — accept unconditionally.
+          resolvedArtist = exact
+        } else {
+          // No exact match: only accept the top result as a fuzzy fallback when
+          // its name is similar enough. A weak fallback (Spotify returning an
+          // unrelated artist for a misspelled / non-Spotify name) would mint a
+          // wrong identity and poison the cache, so we'd rather no-resolve.
+          const candidate = res[0]
+          if (stringSimilarity(name, candidate.name) >= FUZZY_ACCEPT_THRESHOLD) {
+            resolvedArtist = candidate
+          }
+        }
         break
       }
 
       if (resolvedArtist) {
         const enrichment = await enrichmentPromise
         resolvedArtist = mergeEnrichment(resolvedArtist, enrichment)
-        result.searchOk++
-        result.resolved.set(name, resolvedArtist)
-        await deps.cache.write(name, resolvedArtist)
-        firstSuccessfulSearch = false
+
+        // Mint the canonical uuid identity. The Spotify result's `.id` is the
+        // Spotify artist id; move it to `.spotifyId` and replace `.id` with the
+        // minted uuid.
+        if (deps.mintArtist) {
+          const uuid = await deps.mintArtist(resolvedArtist)
+          if (uuid) {
+            resolvedArtist = { ...resolvedArtist, spotifyId: resolvedArtist.id, id: uuid }
+            result.searchOk++
+            result.resolved.set(name, resolvedArtist)
+            await deps.cache.write(name, resolvedArtist)
+            firstSuccessfulSearch = false
+          } else {
+            // Mint failed (e.g. DB unavailable). We must NEVER let a Spotify id
+            // leak downstream as the artist identity — recommendation_cache /
+            // explore now key on artists.id (a uuid FK), so a Spotify-id `.id`
+            // would either violate the FK or poison dedup. Drop the name: skip
+            // both the resolved map and the cache write, count as a fail.
+            result.searchFail++
+          }
+        } else {
+          result.searchOk++
+          result.resolved.set(name, resolvedArtist)
+          await deps.cache.write(name, resolvedArtist)
+          firstSuccessfulSearch = false
+        }
       } else {
         // Avoid unhandled-rejection warnings on the enrichment promise.
         void enrichmentPromise.catch(() => {})

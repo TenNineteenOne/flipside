@@ -24,6 +24,7 @@ interface Track {
 
 interface ArtistWithTracks {
   id: string
+  spotifyId?: string | null
   name: string
   genres: string[]
   imageUrl: string | null
@@ -32,7 +33,7 @@ interface ArtistWithTracks {
 }
 
 interface Recommendation {
-  spotify_artist_id: string
+  artist_id: string
   artist_data: ArtistWithTracks
   score: number
   why: {
@@ -56,7 +57,7 @@ interface FeedClientProps {
 type FeedItem = { kind: "card"; rec: Recommendation; key: string }
 
 function buildSequence(recs: Recommendation[]): FeedItem[] {
-  return recs.map((rec) => ({ kind: "card", rec, key: `c-${rec.spotify_artist_id}` }))
+  return recs.map((rec) => ({ kind: "card", rec, key: `c-${rec.artist_id}` }))
 }
 
 // Module-scope: zero prop/state deps, so identity stays stable across renders.
@@ -86,19 +87,19 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
   // Stateful rec list: seeded from the prop on mount. The append-poller below
   // grows this list in the background. Existing cards (earlier indices) are never
   // reordered or removed — appended recs land at the end. Keyed by
-  // spotify_artist_id so React never remounts an existing card on append.
+  // artist_id so React never remounts an existing card on append.
   const [recs, setRecs] = useState<Recommendation[]>(recommendations)
 
   // Append-poller: after first paint, poll for newly-confirmed cards that the
   // background after() block has written. Appends deduped, playable-only recs to
   // the end of the list without disturbing the current/earlier cards.
   useFeedFill<Recommendation>({
-    initialIds: recommendations.map((r) => r.spotify_artist_id),
+    initialIds: recommendations.map((r) => r.artist_id),
     targetCount: 20,
     onAppend: (newRecs) => {
       setRecs((prev) => {
-        const seenIds = new Set(prev.map((r) => r.spotify_artist_id))
-        const deduped = newRecs.filter((r) => !seenIds.has(r.spotify_artist_id))
+        const seenIds = new Set(prev.map((r) => r.artist_id))
+        const deduped = newRecs.filter((r) => !seenIds.has(r.artist_id))
         if (deduped.length === 0) return prev
         return [...prev, ...deduped]
       })
@@ -209,7 +210,7 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
         <ColdStartBanner signalCount={signalCount} />
         {sequence.map((item, index) => {
           const { rec } = item
-          const id = rec.spotify_artist_id
+          const id = rec.artist_id
           return (
             <FeedCardRow
               key={item.key}
@@ -261,7 +262,7 @@ const FeedCardRow = memo(function FeedCardRow({
   onFeedbackAction,
   priority = false,
 }: FeedCardRowProps) {
-  const id = rec.spotify_artist_id
+  const id = rec.artist_id
   const onSave = useCallback(() => { void onSaveAction(id) }, [id, onSaveAction])
   const onFeedback = useCallback((signal: string) => { void onFeedbackAction(id, signal) }, [id, onFeedbackAction])
   return (

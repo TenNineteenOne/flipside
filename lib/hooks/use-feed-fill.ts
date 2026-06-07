@@ -6,7 +6,7 @@ import { useEffect, useRef } from "react"
 // the Recommendation interface in feed-client.tsx without coupling to it.
 // artist_data may have additional fields — we only care about topTracks.
 export interface FeedRec {
-  spotify_artist_id: string
+  artist_id: string
   artist_data: ArtistDataWithTracks
 }
 
@@ -33,7 +33,7 @@ export function isPlayable(rec: FeedRec): boolean {
  * Returned in the same order as `fetched`.
  */
 export function selectNewPlayable(seenIds: Set<string>, fetched: FeedRec[]): FeedRec[] {
-  return fetched.filter((r) => !seenIds.has(r.spotify_artist_id) && isPlayable(r))
+  return fetched.filter((r) => !seenIds.has(r.artist_id) && isPlayable(r))
 }
 
 export interface UseFeedFillOpts<R extends FeedRec> {
@@ -129,7 +129,7 @@ export function useFeedFill<R extends FeedRec>({
 
         // Update seen set
         for (const r of newRecs) {
-          seenIdsRef.current.add(r.spotify_artist_id)
+          seenIdsRef.current.add(r.artist_id)
         }
         shownCountRef.current += newRecs.length
 

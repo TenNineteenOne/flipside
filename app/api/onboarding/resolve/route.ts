@@ -4,8 +4,8 @@ import { apiError, apiUnauthorized } from "@/lib/errors"
 import { enforceSameOrigin } from "@/lib/csrf"
 import { createServiceClient } from "@/lib/supabase/server"
 import { isValidSpotifyId } from "@/lib/spotify-ids"
+import { ensureArtist, type ArtistsSupabaseClient } from "@/lib/artists"
 import { resolveArtistExternalIds } from "@/lib/music-provider/musicbrainz"
-import type { Artist } from "@/lib/music-provider/types"
 
 // Resolution is low-volume (only when a user SELECTS a Last.fm-only suggestion,
 // not per keystroke) and each miss can trigger a MusicBrainz call, so cap it
@@ -28,33 +28,36 @@ function isRateLimited(userId: string): boolean {
   return false
 }
 
-/** Exact-name cache lookup → the cached artist's real Spotify id, or null. */
+/**
+ * Exact-name lookup against the folded `artists` table → the artist's internal
+ * uuid id and image, or null. `name_lower` is NOT unique (two distinct artists
+ * can share a name), so an ambiguous hit (>1 row) is treated as a miss — we
+ * can't safely pick one, and the MusicBrainz/mbid path disambiguates instead.
+ */
 async function resolveFromCache(name: string): Promise<{ id: string; imageUrl: string | null } | null> {
   try {
     const supabase = createServiceClient()
     const { data, error } = await supabase
-      .from("artist_search_cache")
-      .select("artist_data")
+      .from("artists")
+      .select("id, image_url")
       .eq("name_lower", name.toLowerCase())
-      .limit(1)
-      .maybeSingle()
-    if (error || !data) return null
-    const artist = data.artist_data as Artist
-    if (artist && isValidSpotifyId(artist.id)) {
-      return { id: artist.id, imageUrl: artist.imageUrl ?? null }
-    }
-    return null
+      .limit(2)
+    if (error || !data || data.length !== 1) return null
+    const row = data[0]
+    return { id: row.id, imageUrl: row.image_url ?? null }
   } catch {
     return null
   }
 }
 
 /**
- * Resolve a Last.fm-sourced onboarding suggestion to a real Spotify artist id,
- * so a seed can persist (spotify_artist_id is the load-bearing key until the
- * Stage-2 cut). Tries the shared artist cache by exact name, then MusicBrainz
- * url-rels by mbid. Returns 404 when neither yields a valid id — the client
- * blocks that selection. Makes ZERO Spotify calls.
+ * Resolve a Last.fm-sourced onboarding suggestion to our internal artist uuid,
+ * so a seed can persist (`artist_id` is the load-bearing key post Stage-2).
+ * Tries the folded `artists` table by exact name first; on a miss, falls back
+ * to MusicBrainz url-rels by mbid → a Spotify id, which we then MINT into an
+ * `artists` row to obtain its uuid. Returns 404 when neither yields an id — the
+ * client blocks that selection. The returned `id` is a uuid the client relays
+ * to the seed routes. Makes ZERO Spotify calls.
  */
 export async function POST(req: NextRequest) {
   const blocked = enforceSameOrigin(req)
@@ -82,18 +85,23 @@ export async function POST(req: NextRequest) {
   }
   const mbid = typeof body.mbid === "string" && MBID_RE.test(body.mbid) ? body.mbid : null
 
-  // 1. Cache by exact name (real Spotify id, image).
+  // 1. Folded `artists` table by exact name → our internal uuid + image.
   const cached = await resolveFromCache(name)
   if (cached) {
     return Response.json({ id: cached.id, name, imageUrl: cached.imageUrl })
   }
 
   // 2. MusicBrainz url-rels by mbid (keyless; 1-req/s limited internally).
+  //    The url-rel yields a Spotify id; mint it into `artists` to get a uuid.
   if (mbid) {
     const { spotifyId } = await resolveArtistExternalIds(mbid)
     if (spotifyId && isValidSpotifyId(spotifyId)) {
-      console.log(`[onboard-resolve] mb-resolved name="${name}" mbid=${mbid}`)
-      return Response.json({ id: spotifyId, name, imageUrl: null })
+      const supabase = createServiceClient()
+      const uuid = await ensureArtist(supabase as unknown as ArtistsSupabaseClient, { spotifyId, name })
+      if (uuid) {
+        console.log(`[onboard-resolve] mb-resolved name="${name}" mbid=${mbid} uuid=${uuid}`)
+        return Response.json({ id: uuid, name, imageUrl: null })
+      }
     }
   }
 

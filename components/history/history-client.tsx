@@ -7,7 +7,7 @@ import { ThumbsUp, ThumbsDown, SkipForward, Bookmark, Undo2 } from "lucide-react
 import { stringToVibrantHex, hexToRgba, sanitizeHex } from "@/lib/color-utils"
 
 interface HistoryEntry {
-  spotify_artist_id: string
+  artist_id: string
   artist_data: {
     id: string
     name: string
@@ -129,7 +129,7 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
     try {
       const res = await fetch(endpoint, { method: "DELETE" })
       if (!res.ok) throw new Error("Server error")
-      setHistory((prev) => prev.filter((h) => h.spotify_artist_id !== artistId))
+      setHistory((prev) => prev.filter((h) => h.artist_id !== artistId))
     } catch {
       toast.error("Couldn't undo — try again")
     } finally {
@@ -142,20 +142,20 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
   }
 
   async function handleChangeSignal(artistId: string, newSignal: string) {
-    const prevSignal = history.find((h) => h.spotify_artist_id === artistId)?.signal
+    const prevSignal = history.find((h) => h.artist_id === artistId)?.signal
     setHistory((prev) =>
-      prev.map((h) => (h.spotify_artist_id === artistId ? { ...h, signal: newSignal } : h))
+      prev.map((h) => (h.artist_id === artistId ? { ...h, signal: newSignal } : h))
     )
     try {
       const res = await fetch("/api/feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ spotifyArtistId: artistId, signal: newSignal }),
+        body: JSON.stringify({ artistId, signal: newSignal }),
       })
       if (!res.ok) throw new Error("Server error")
     } catch {
       setHistory((prev) =>
-        prev.map((h) => (h.spotify_artist_id === artistId ? { ...h, signal: prevSignal ?? "skip" } : h))
+        prev.map((h) => (h.artist_id === artistId ? { ...h, signal: prevSignal ?? "skip" } : h))
       )
       toast.error("Couldn't update signal — try again")
     }
@@ -251,11 +251,11 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
                     ? SIG_STYLES.bookmarked
                     : (SIG_STYLES[entry.signal] ?? SIG_STYLES.skip)
                   const { Icon } = sig
-                  const isUndoing = undoingIds.has(entry.spotify_artist_id)
+                  const isUndoing = undoingIds.has(entry.artist_id)
 
                   return (
                     <div
-                      key={entry.spotify_artist_id}
+                      key={entry.artist_id}
                       style={{
                         display: "flex",
                         alignItems: "center",
@@ -308,7 +308,7 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
                       <div style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0 }}>
                         {entry.signal !== "thumbs_up" && entry.signal !== "dismissed" && !entry.bookmarked && (
                           <button
-                            onClick={() => handleChangeSignal(entry.spotify_artist_id, "thumbs_up")}
+                            onClick={() => handleChangeSignal(entry.artist_id, "thumbs_up")}
                             title="Change to Liked"
                             style={{
                               width: 32, height: 32, borderRadius: 8,
@@ -321,7 +321,7 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
                         )}
                         {entry.signal !== "thumbs_down" && entry.signal !== "dismissed" && !entry.bookmarked && (
                           <button
-                            onClick={() => handleChangeSignal(entry.spotify_artist_id, "thumbs_down")}
+                            onClick={() => handleChangeSignal(entry.artist_id, "thumbs_down")}
                             title="Change to Passed"
                             style={{
                               width: 32, height: 32, borderRadius: 8,
@@ -333,7 +333,7 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
                           </button>
                         )}
                         <button
-                          onClick={() => handleUndo(entry.spotify_artist_id, entry.signal)}
+                          onClick={() => handleUndo(entry.artist_id, entry.signal)}
                           disabled={isUndoing}
                           title={entry.signal === "dismissed" ? "Unblock — allow in feed again" : "Undo — return to feed"}
                           style={{

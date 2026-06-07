@@ -25,6 +25,7 @@ import {
 
 interface ArtistWithTracks {
   id: string
+  spotifyId?: string | null
   name: string
   genres: string[]
   imageUrl: string | null
@@ -33,7 +34,7 @@ interface ArtistWithTracks {
 }
 
 interface Recommendation {
-  spotify_artist_id: string
+  artist_id: string
   artist_data: ArtistWithTracks
   score: number
   why: {
@@ -140,7 +141,11 @@ function ArtistCardImpl({
   const { play } = useAudio()
 
   const { tracks: localTracks, isFetching: isFetchingTracks } = useArtistTracks({
-    artistId: recommendation.spotify_artist_id,
+    // The Show-Tracks route (/api/artists/[id]/tracks) is deferred — still
+    // Spotify-keyed this slice — so it must receive the Spotify id, not the
+    // surrogate uuid. spotifyId is null only for rare Last.fm-only artists,
+    // which degrades to "No tracks available".
+    artistId: artist_data.spotifyId ?? "",
     artistName: artist_data.name,
     initialTracks: artist_data.topTracks,
   })
@@ -160,8 +165,8 @@ function ArtistCardImpl({
   function handleShare(e: React.MouseEvent) {
     e.stopPropagation()
     const url = getShareableArtistLink(musicPlatform, {
-      artistId: recommendation.spotify_artist_id,
-      spotifyId: recommendation.spotify_artist_id,
+      artistId: recommendation.artist_id,
+      spotifyId: artist_data.spotifyId ?? null,
       artistName: artist_data.name,
     })
     navigator.clipboard.writeText(url).then(() => toast.success("Link copied!")).catch(() => toast.error("Couldn't copy link"))
@@ -329,7 +334,7 @@ function ArtistCardImpl({
           <div onClick={(e) => e.stopPropagation()}>
             <TrackStrip
               tracks={localTracks}
-              artistId={recommendation.spotify_artist_id}
+              artistId={recommendation.artist_id}
               artistName={artist_data.name}
               artistColor={artistColor}
               onPlay={handlePlay}
@@ -355,8 +360,8 @@ function ArtistCardImpl({
           <div style={{ display: "flex", gap: 8 }}>
             <a
               href={getArtistLink(musicPlatform, {
-                artistId: recommendation.spotify_artist_id,
-                spotifyId: recommendation.spotify_artist_id,
+                artistId: recommendation.artist_id,
+                spotifyId: artist_data.spotifyId ?? null,
                 artistName: artist_data.name,
               })}
               target="_blank"

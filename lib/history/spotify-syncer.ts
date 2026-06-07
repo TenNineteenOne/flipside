@@ -1,5 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/server"
 import { musicProvider } from "@/lib/music-provider/provider"
+import { ensureArtists, type ArtistSeed, type ArtistsSupabaseClient } from "@/lib/artists"
 
 // Accumulate Spotify top artists + recently played into listened_artists
 export async function accumulateSpotifyHistory(params: {
@@ -17,41 +18,57 @@ export async function accumulateSpotifyHistory(params: {
     musicProvider.getRecentlyPlayed(accessToken),
   ])
 
-  // Deduplicate top artists by ID (first occurrence wins for name)
-  const topArtistIds = new Set<string>()
+  // Deduplicate top artists by Spotify id (first occurrence wins for name).
+  const topSeeds = new Map<string, ArtistSeed>()
   for (const artist of [...shortTerm, ...mediumTerm, ...longTerm]) {
-    topArtistIds.add(artist.id)
+    if (artist.id && !topSeeds.has(artist.id)) {
+      topSeeds.set(artist.id, { spotifyId: artist.id, name: artist.name })
+    }
   }
 
   // Upsert top artists in batch
-  await batchUpsertSpotifyArtists(supabase, userId, [...topArtistIds], "spotify_top")
+  await batchUpsertSpotifyArtists(supabase, userId, [...topSeeds.values()], "spotify_top")
 
-  // Deduplicate recently played artists by ID
-  const recentArtistIds = new Set<string>()
+  // Deduplicate recently played artists by Spotify id. Recent plays carry a
+  // name too; use it, falling back to the id as a placeholder name.
+  const recentSeeds = new Map<string, ArtistSeed>()
   for (const play of recentlyPlayed) {
-    recentArtistIds.add(play.artistId)
+    if (play.artistId && !recentSeeds.has(play.artistId)) {
+      recentSeeds.set(play.artistId, {
+        spotifyId: play.artistId,
+        name: play.artistName || play.artistId,
+      })
+    }
   }
 
   // Upsert recently played artists in batch
-  await batchUpsertSpotifyArtists(supabase, userId, [...recentArtistIds], "spotify_recent")
+  await batchUpsertSpotifyArtists(supabase, userId, [...recentSeeds.values()], "spotify_recent")
 }
 
 async function batchUpsertSpotifyArtists(
   supabase: ReturnType<typeof createServiceClient>,
   userId: string,
-  spotifyArtistIds: string[],
+  seeds: ArtistSeed[],
   source: "spotify_top" | "spotify_recent"
 ): Promise<void> {
-  if (spotifyArtistIds.length === 0) return
+  if (seeds.length === 0) return
 
   const now = new Date().toISOString()
 
-  // Batch SELECT: find all existing rows for these artist IDs
+  // Mint/resolve each incoming Spotify id → canonical artists.id (uuid).
+  const idMap = await ensureArtists(supabase as unknown as ArtistsSupabaseClient, seeds)
+  const uuids = [...new Set([...idMap.values()])]
+  if (uuids.length === 0) {
+    console.log(`[accumulateSpotifyHistory] batch source=${source} no uuids minted`)
+    return
+  }
+
+  // Batch SELECT: find all existing rows for these artist uuids
   const { data: existingRows, error: selectError } = await supabase
     .from("listened_artists")
-    .select("id, spotify_artist_id, play_count")
+    .select("id, artist_id, play_count")
     .eq("user_id", userId)
-    .in("spotify_artist_id", spotifyArtistIds)
+    .in("artist_id", uuids)
 
   if (selectError) {
     console.error("[accumulateSpotifyHistory] Batch select error:", selectError.message)
@@ -60,15 +77,15 @@ async function batchUpsertSpotifyArtists(
 
   const existingMap = new Map<string, { id: string; play_count: number }>()
   for (const row of existingRows ?? []) {
-    if (row.spotify_artist_id) {
-      existingMap.set(row.spotify_artist_id, { id: row.id, play_count: row.play_count })
+    if (row.artist_id) {
+      existingMap.set(row.artist_id, { id: row.id, play_count: row.play_count })
     }
   }
 
   // Partition into new inserts vs existing updates
   const toInsert: Array<{
     user_id: string
-    spotify_artist_id: string
+    artist_id: string
     lastfm_artist_name: null
     source: string
     play_count: number
@@ -77,14 +94,18 @@ async function batchUpsertSpotifyArtists(
 
   const toUpdate: Array<{ id: string; play_count: number; last_seen_at: string }> = []
 
-  for (const artistId of spotifyArtistIds) {
-    const existing = existingMap.get(artistId)
+  const seenUuids = new Set<string>()
+  for (const seed of seeds) {
+    const uuid = idMap.get(seed.spotifyId)
+    if (!uuid || seenUuids.has(uuid)) continue
+    seenUuids.add(uuid)
+    const existing = existingMap.get(uuid)
     if (existing) {
       toUpdate.push({ id: existing.id, play_count: existing.play_count + 1, last_seen_at: now })
     } else {
       toInsert.push({
         user_id: userId,
-        spotify_artist_id: artistId,
+        artist_id: uuid,
         lastfm_artist_name: null,
         source,
         play_count: 1,

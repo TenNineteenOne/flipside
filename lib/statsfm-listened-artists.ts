@@ -1,5 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/server"
-import { resolveUnresolvedArtistIds } from "@/lib/listened-artists"
+import { resolveUnresolvedArtistIds } from "@/lib/history/id-resolver"
+import { ensureArtists, type ArtistsSupabaseClient } from "@/lib/artists"
 
 interface StatsFmArtist {
   id: number
@@ -80,22 +81,32 @@ async function batchUpsertStatsFmResolved(
   entries: ResolvedEntry[]
 ): Promise<void> {
   const now = new Date().toISOString()
-  const ids = entries.map((e) => e.spotifyId)
+
+  // Mint/resolve each incoming Spotify id → canonical artists.id (uuid).
+  const idMap = await ensureArtists(
+    supabase as unknown as ArtistsSupabaseClient,
+    entries.map((e) => ({ spotifyId: e.spotifyId, name: e.name }))
+  )
+  const uuids = [...new Set([...idMap.values()])]
+  if (uuids.length === 0) {
+    console.log("[accumulateStatsFmHistory] resolved batch no uuids minted")
+    return
+  }
 
   // Chunk the IN-list so stats.fm lifetime imports don't produce an oversized
   // WHERE clause. Chunks run in parallel; any chunk error aborts the pass.
   const CHUNK = 500
-  const existingRows: Array<{ id: string; spotify_artist_id: string | null; play_count: number }> = []
+  const existingRows: Array<{ id: string; artist_id: string | null; play_count: number }> = []
   {
     const chunks: string[][] = []
-    for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK))
+    for (let i = 0; i < uuids.length; i += CHUNK) chunks.push(uuids.slice(i, i + CHUNK))
     const chunkResults = await Promise.all(
       chunks.map((chunk) =>
         supabase
           .from("listened_artists")
-          .select("id, spotify_artist_id, play_count")
+          .select("id, artist_id, play_count")
           .eq("user_id", userId)
-          .in("spotify_artist_id", chunk)
+          .in("artist_id", chunk)
       )
     )
     for (const { data, error } of chunkResults) {
@@ -109,14 +120,14 @@ async function batchUpsertStatsFmResolved(
 
   const existingMap = new Map<string, { id: string; play_count: number }>()
   for (const row of existingRows ?? []) {
-    if (row.spotify_artist_id) {
-      existingMap.set(row.spotify_artist_id, { id: row.id, play_count: row.play_count })
+    if (row.artist_id) {
+      existingMap.set(row.artist_id, { id: row.id, play_count: row.play_count })
     }
   }
 
   const toInsert: Array<{
     user_id: string
-    spotify_artist_id: string
+    artist_id: string
     lastfm_artist_name: null
     source: string
     play_count: number
@@ -124,14 +135,18 @@ async function batchUpsertStatsFmResolved(
   }> = []
   const toUpdate: Array<{ id: string; play_count: number; last_seen_at: string }> = []
 
+  const seenUuids = new Set<string>()
   for (const entry of entries) {
-    const existing = existingMap.get(entry.spotifyId)
+    const uuid = idMap.get(entry.spotifyId)
+    if (!uuid || seenUuids.has(uuid)) continue
+    seenUuids.add(uuid)
+    const existing = existingMap.get(uuid)
     if (existing) {
       toUpdate.push({ id: existing.id, play_count: existing.play_count + 1, last_seen_at: now })
     } else {
       toInsert.push({
         user_id: userId,
-        spotify_artist_id: entry.spotifyId,
+        artist_id: uuid,
         lastfm_artist_name: null,
         source: "statsfm",
         play_count: 1,
@@ -200,7 +215,7 @@ async function batchUpsertStatsFmNames(
 
   const toInsert: Array<{
     user_id: string
-    spotify_artist_id: null
+    artist_id: null
     lastfm_artist_name: string
     source: string
     play_count: number
@@ -215,7 +230,7 @@ async function batchUpsertStatsFmNames(
     } else {
       toInsert.push({
         user_id: userId,
-        spotify_artist_id: null,
+        artist_id: null,
         lastfm_artist_name: name,
         source: "statsfm",
         play_count: 1,

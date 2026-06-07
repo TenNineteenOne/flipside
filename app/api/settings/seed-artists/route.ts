@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth"
 import { apiError, apiUnauthorized, dbError } from "@/lib/errors"
 import { enforceSameOrigin } from "@/lib/csrf"
 import { createServiceClient } from "@/lib/supabase/server"
-import { isValidSpotifyId } from "@/lib/spotify-ids"
+import { isValidArtistId } from "@/lib/spotify-ids"
 import { validateSeedArtists } from "@/lib/seed-artist-validation"
 import { invalidateExploreCache } from "@/lib/recommendation/explore-engine"
 
@@ -16,14 +16,14 @@ export async function GET() {
   const supabase = createServiceClient()
   const { data, error } = await supabase
     .from("seed_artists")
-    .select("spotify_artist_id, name, image_url, added_at")
+    .select("artist_id, name, image_url, added_at")
     .eq("user_id", session.user.id)
     .order("added_at", { ascending: true })
 
   if (error) return dbError(error, "settings/seed-artists/list")
 
   const artists = (data ?? []).map((r) => ({
-    id: r.spotify_artist_id,
+    id: r.artist_id,
     name: r.name,
     imageUrl: r.image_url,
   }))
@@ -52,12 +52,12 @@ export async function POST(req: NextRequest) {
 
   const { data: existingRows, error: existingError } = await supabase
     .from("seed_artists")
-    .select("spotify_artist_id")
+    .select("artist_id")
     .eq("user_id", userId)
 
   if (existingError) return dbError(existingError, "settings/seed-artists/list")
 
-  const existingIds = new Set((existingRows ?? []).map((r) => r.spotify_artist_id))
+  const existingIds = new Set((existingRows ?? []).map((r) => r.artist_id))
   const newIds = result.artists.filter((a) => !existingIds.has(a.id))
   if (existingIds.size + newIds.length > MAX_SEED_ARTISTS) {
     return apiError(`Cannot exceed ${MAX_SEED_ARTISTS} seed artists`, 400)
@@ -65,14 +65,14 @@ export async function POST(req: NextRequest) {
 
   const rows = result.artists.map((a) => ({
     user_id: userId,
-    spotify_artist_id: a.id,
+    artist_id: a.id,
     name: a.name,
     image_url: a.imageUrl,
   }))
 
   const { error } = await supabase
     .from("seed_artists")
-    .upsert(rows, { onConflict: "user_id,spotify_artist_id" })
+    .upsert(rows, { onConflict: "user_id,artist_id" })
 
   if (error) return dbError(error, "settings/seed-artists/upsert")
 
@@ -90,8 +90,8 @@ export async function DELETE(req: NextRequest) {
   if (!session?.user?.id) return apiUnauthorized()
 
   const id = req.nextUrl.searchParams.get("id")
-  if (!id || !isValidSpotifyId(id)) {
-    return apiError("Valid Spotify artist id required", 400)
+  if (!id || !isValidArtistId(id)) {
+    return apiError("Valid artist id (uuid) required", 400)
   }
 
   const supabase = createServiceClient()
@@ -99,7 +99,7 @@ export async function DELETE(req: NextRequest) {
     .from("seed_artists")
     .delete()
     .eq("user_id", session.user.id)
-    .eq("spotify_artist_id", id)
+    .eq("artist_id", id)
 
   if (error) return dbError(error, "settings/seed-artists/delete")
 

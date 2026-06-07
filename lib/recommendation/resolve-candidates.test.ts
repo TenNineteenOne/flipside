@@ -319,4 +319,68 @@ describe("resolveArtistsByName", () => {
     expect(r.searchOk).toBe(1)
     expect(writes.get("a")?.id).toBe("id-A")
   })
+
+  // ── Fuzzy-fallback similarity guard ──────────────────────────────────────
+
+  it("accepts the top result as a fuzzy fallback when its name is similar enough", async () => {
+    // No exact match, but "Khruangbinn" vs "Khruangbin" is highly similar (~0.95).
+    const search = async (): Promise<Artist[] | RateLimited> => [artist("b1", "Khruangbinn")]
+    const r = await resolveArtistsByName(["Khruangbin"], makeDeps({ search }))
+    expect(r.searchOk).toBe(1)
+    expect(r.resolved.get("Khruangbin")?.id).toBe("b1")
+  })
+
+  it("REJECTS the top result when it's not similar enough (no exact match)", async () => {
+    // Spotify returned an unrelated artist for a non-Spotify / misspelled name.
+    const search = async (): Promise<Artist[] | RateLimited> => [artist("wrong", "Completely Different Band")]
+    const r = await resolveArtistsByName(["Xyzzy Qwerty"], makeDeps({ search }))
+    expect(r.searchFail).toBe(1)
+    expect(r.searchOk).toBe(0)
+    expect(r.resolved.has("Xyzzy Qwerty")).toBe(false)
+  })
+
+  it("exact (case-insensitive) match bypasses the similarity guard", async () => {
+    // First result is a poor fuzzy match, but an exact match exists later.
+    const search = async (): Promise<Artist[] | RateLimited> => [
+      artist("wrong", "Totally Unrelated"),
+      artist("right", "khruangbin"),
+    ]
+    const r = await resolveArtistsByName(["Khruangbin"], makeDeps({ search }))
+    expect(r.resolved.get("Khruangbin")?.id).toBe("right")
+  })
+
+  // ── mintArtist wiring ────────────────────────────────────────────────────
+
+  it("mints the uuid identity: moves Spotify id to spotifyId, sets id to the minted uuid", async () => {
+    const writes = new Map<string, Artist>()
+    const search = async (name: string): Promise<Artist[] | RateLimited> => [artist(`spotify-${name}`, name)]
+    const mintArtist = vi.fn(async (_a: Artist): Promise<string | null> => "uuid-123")
+    const deps: ResolveDeps = { ...makeDeps({ search, cacheWrites: writes }), mintArtist }
+    const r = await resolveArtistsByName(["A"], deps)
+
+    expect(mintArtist).toHaveBeenCalledTimes(1)
+    // The artist passed to mint still carries the Spotify id as `.id`.
+    expect(mintArtist.mock.calls[0][0].id).toBe("spotify-A")
+
+    const resolved = r.resolved.get("A")!
+    expect(resolved.id).toBe("uuid-123")        // identity = minted uuid
+    expect(resolved.spotifyId).toBe("spotify-A") // attribute = original Spotify id
+    // Cache write carries the re-keyed artist.
+    expect(writes.get("a")?.id).toBe("uuid-123")
+    expect(writes.get("a")?.spotifyId).toBe("spotify-A")
+  })
+
+  it("drops the name (no resolve, no cache write, counts fail) when mint returns null", async () => {
+    const writes = new Map<string, Artist>()
+    const search = async (name: string): Promise<Artist[] | RateLimited> => [artist(`spotify-${name}`, name)]
+    const mintArtist = vi.fn(async () => null)
+    const deps: ResolveDeps = { ...makeDeps({ search, cacheWrites: writes }), mintArtist }
+    const r = await resolveArtistsByName(["A"], deps)
+
+    expect(mintArtist).toHaveBeenCalledTimes(1)
+    expect(r.searchOk).toBe(0)
+    expect(r.searchFail).toBe(1)
+    expect(r.resolved.has("A")).toBe(false)
+    expect(writes.size).toBe(0) // never persisted a Spotify-id identity
+  })
 })

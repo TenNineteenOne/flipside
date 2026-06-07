@@ -26,7 +26,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   // request from the client.
   const { data: seenRaw, error: seenErr } = await supabase
     .from("recommendation_cache")
-    .select("spotify_artist_id, artist_data, score, why, seen_at, skip_at")
+    .select("artist_id, artist_data, score, why, seen_at, skip_at")
     .eq("user_id", userId)
     .not("seen_at", "is", null)
     .order("seen_at", { ascending: false })
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest): Promise<Response> {
 
   const hasMore = (seenRaw ?? []).length > limit
   const seen = (seenRaw ?? []).slice(0, limit)
-  const seenArtistIds = seen.map((r) => r.spotify_artist_id)
+  const seenArtistIds = seen.map((r) => r.artist_id)
 
   if (seenArtistIds.length === 0) {
     return Response.json({ history: [], hasMore: false })
@@ -46,44 +46,44 @@ export async function GET(request: NextRequest): Promise<Response> {
   const [{ data: feedback }, { data: saves }] = await Promise.all([
     supabase
       .from("feedback")
-      .select("spotify_artist_id, signal")
+      .select("artist_id, signal")
       .eq("user_id", userId)
       .is("deleted_at", null)
-      .in("spotify_artist_id", seenArtistIds),
+      .in("artist_id", seenArtistIds),
     supabase
       .from("saves")
-      .select("spotify_artist_id")
+      .select("artist_id")
       .eq("user_id", userId)
-      .in("spotify_artist_id", seenArtistIds),
+      .in("artist_id", seenArtistIds),
   ])
 
   const feedbackMap = new Map<string, string>()
   for (const f of feedback ?? []) {
-    feedbackMap.set(f.spotify_artist_id, f.signal)
+    feedbackMap.set(f.artist_id, f.signal)
   }
 
-  const savedSet = new Set((saves ?? []).map((s) => s.spotify_artist_id))
+  const savedSet = new Set((saves ?? []).map((s) => s.artist_id))
 
   // 3. Merge into a single response.
   // Signal precedence: explicit feedback (thumbs_up/down) > permanent dismiss
   // (skip_at) > passive seen (skip). A user can't have both a feedback row and
   // a skip_at, but preferring feedback is the safe order.
   const history = (seen ?? []).map((rec) => {
-    const feedbackSignal = feedbackMap.get(rec.spotify_artist_id as string)
+    const feedbackSignal = feedbackMap.get(rec.artist_id as string)
     const signal = feedbackSignal
       ? feedbackSignal
       : rec.skip_at
         ? "dismissed"
         : "skip"
     return {
-      spotify_artist_id: rec.spotify_artist_id,
+      artist_id: rec.artist_id,
       artist_data: rec.artist_data,
       score: rec.score,
       why: rec.why,
       artist_color: (rec.artist_data as Record<string, unknown>)?.artist_color as string | null ?? null,
       seen_at: rec.seen_at,
       signal,
-      bookmarked: savedSet.has(rec.spotify_artist_id),
+      bookmarked: savedSet.has(rec.artist_id),
     }
   })
 

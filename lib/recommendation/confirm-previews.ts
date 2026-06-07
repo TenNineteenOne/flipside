@@ -21,13 +21,24 @@ export function hasPlayablePreview(
 export interface ConfirmPreviewDeps {
   /** iTunes search by artist name. Returns tracks, [] for no match, or null on failure. */
   searchItunes: (name: string) => Promise<Track[] | null>
-  /** Spotify top-tracks by artist id. Returns tracks ([] on none/failure). Fallback source. */
-  getSpotifyTopTracks: (artistId: string) => Promise<Track[]>
+  /**
+   * Spotify top-tracks by *Spotify* artist id. Returns tracks ([] on
+   * none/failure). Fallback source. Accepts null (no Spotify id known, e.g. a
+   * Last.fm-only artist) and no-ops to [] — NEVER call Spotify with the
+   * internal uuid identity, which would 404 and trip the breaker.
+   */
+  getSpotifyTopTracks: (spotifyId: string | null) => Promise<Track[]>
 }
 
 export interface ConfirmInput {
   id: string
   name: string
+  /**
+   * Spotify artist id (the attribute, not the identity). Used for the Spotify
+   * top-tracks fallback. Null/undefined when unknown (Last.fm-only artist) →
+   * the Spotify fallback no-ops.
+   */
+  spotifyId?: string | null
   /**
    * Previously-confirmed tracks from the name cache (artist_data.topTracks).
    *  - undefined  → never confirmed: resolve via iTunes/Spotify
@@ -111,8 +122,8 @@ export async function confirmPlayableTracks(
   const p = playableTracks(it ?? [])
   if (p.length > 0) return p
 
-  // 3. Spotify fallback
-  const sp = await deps.getSpotifyTopTracks(artist.id).catch(() => [])
+  // 3. Spotify fallback — keyed on the SPOTIFY id, never the uuid identity.
+  const sp = await deps.getSpotifyTopTracks(artist.spotifyId ?? null).catch(() => [])
   const p2 = playableTracks(sp)
   if (p2.length > 0) return p2
 

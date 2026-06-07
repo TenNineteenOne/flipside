@@ -41,12 +41,12 @@ export default async function SettingsPage() {
 
   const { data: seedArtistsData } = await supabase
     .from("seed_artists")
-    .select("spotify_artist_id, name, image_url, added_at")
+    .select("artist_id, name, image_url, added_at")
     .eq("user_id", userId)
     .order("added_at", { ascending: true })
 
   const seedArtists = (seedArtistsData ?? []).map((r) => ({
-    id: r.spotify_artist_id,
+    id: r.artist_id,
     name: r.name,
     genres: [] as string[],
     imageUrl: r.image_url,

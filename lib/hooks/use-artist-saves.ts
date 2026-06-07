@@ -21,7 +21,7 @@ export interface UseArtistSavesResult {
   savedIds: Set<string>
   /**
    * Optimistically toggle the saved state for an artist, then POST or DELETE
-   * /api/saves with `{ spotifyArtistId }`.
+   * /api/saves with `{ artistId }`.
    *
    * Calls for the same artistId are serialized so rapid save/unsave clicks
    * hit the server in click order and don't leave the saved set out of sync
@@ -48,7 +48,7 @@ export function buildSaveFetchInit(artistId: string, willUnsave: boolean): Reque
   return {
     method: willUnsave ? "DELETE" : "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ spotifyArtistId: artistId }),
+    body: JSON.stringify({ artistId }),
   }
 }
 

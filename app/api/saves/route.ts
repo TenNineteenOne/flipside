@@ -3,7 +3,7 @@ import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, apiUnauthorized, dbError } from "@/lib/errors"
 import { enforceSameOrigin } from "@/lib/csrf"
 import { getAccessToken } from "@/lib/get-access-token"
-import { isValidSpotifyId } from "@/lib/spotify-ids"
+import { isValidArtistId, isValidSpotifyId } from "@/lib/spotify-ids"
 import { invalidateExploreCache } from "@/lib/recommendation/explore-engine"
 import { type NextRequest } from "next/server"
 
@@ -27,17 +27,17 @@ export async function POST(request: NextRequest) {
 
   const userId = session.user.id
 
-  let body: { spotifyArtistId?: string; spotifyTrackId?: string; addToPlaylist?: boolean }
+  let body: { artistId?: string; spotifyTrackId?: string; addToPlaylist?: boolean }
   try {
     body = await request.json()
   } catch {
     return apiError("Invalid JSON", 400)
   }
 
-  const { spotifyArtistId, spotifyTrackId, addToPlaylist = false } = body
+  const { artistId, spotifyTrackId, addToPlaylist = false } = body
 
-  if (!spotifyArtistId || !isValidSpotifyId(spotifyArtistId)) {
-    return apiError("Valid spotifyArtistId is required", 400)
+  if (!artistId || !isValidArtistId(artistId)) {
+    return apiError("Valid artistId (uuid) is required", 400)
   }
   if (spotifyTrackId !== undefined && !isValidSpotifyId(spotifyTrackId)) {
     return apiError("Invalid spotifyTrackId format", 400)
@@ -52,24 +52,24 @@ export async function POST(request: NextRequest) {
       .from("recommendation_cache")
       .select("artist_data")
       .eq("user_id", userId)
-      .eq("spotify_artist_id", spotifyArtistId)
+      .eq("artist_id", artistId)
       .maybeSingle()
     if (cached?.artist_data?.name) {
       resolvedArtistName = cached.artist_data.name
     }
   }
 
-  // Upsert the artist bookmark (idempotent — unique on user_id + spotify_artist_id)
+  // Upsert the artist bookmark (idempotent — unique on user_id + artist_id)
   const { error: saveError } = await supabase
     .from("saves")
     .upsert(
       {
         user_id: userId,
-        spotify_artist_id: spotifyArtistId,
+        artist_id: artistId,
         spotify_track_id: spotifyTrackId ?? null,
         artist_name: resolvedArtistName || null,
       },
-      { onConflict: "user_id,spotify_artist_id" }
+      { onConflict: "user_id,artist_id" }
     )
 
   if (saveError) return dbError(saveError, "saves/upsert")
@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
     .from("recommendation_cache")
     .update({ seen_at: new Date().toISOString() })
     .eq("user_id", userId)
-    .eq("spotify_artist_id", spotifyArtistId)
+    .eq("artist_id", artistId)
   if (seenError) console.error(`[saves] seen_at err=${seenError.message}`)
 
   // Only add to Spotify playlist when explicitly requested and user has Spotify access
@@ -171,16 +171,16 @@ export async function DELETE(request: NextRequest) {
 
   const userId = session.user.id
 
-  let body: { spotifyArtistId?: string }
+  let body: { artistId?: string }
   try {
     body = await request.json()
   } catch {
     return apiError("Invalid JSON", 400)
   }
 
-  const { spotifyArtistId } = body
-  if (!spotifyArtistId || !isValidSpotifyId(spotifyArtistId)) {
-    return apiError("Valid spotifyArtistId is required", 400)
+  const { artistId } = body
+  if (!artistId || !isValidArtistId(artistId)) {
+    return apiError("Valid artistId (uuid) is required", 400)
   }
 
   const supabase = createServiceClient()
@@ -188,7 +188,7 @@ export async function DELETE(request: NextRequest) {
     .from("saves")
     .delete()
     .eq("user_id", userId)
-    .eq("spotify_artist_id", spotifyArtistId)
+    .eq("artist_id", artistId)
 
   if (error) return dbError(error, "saves/delete")
 

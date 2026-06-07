@@ -1,5 +1,11 @@
 export interface Artist {
-  id: string           // Spotify artist ID
+  id: string           // canonical artist identity — internal UUID (artists.id) after the Stage 2 cutover
+  /**
+   * Spotify artist id — an *attribute*, not the identity. Used only to talk to
+   * the Spotify API and build Spotify links; null/undefined when unknown (e.g.
+   * a Last.fm-only artist). Distinct from `id` (the internal UUID).
+   */
+  spotifyId?: string | null
   name: string
   genres: string[]
   imageUrl: string | null

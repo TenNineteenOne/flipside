@@ -11,7 +11,7 @@ function rec(id: string, previewUrl: string | null | undefined): FeedRec {
       ? undefined
       : [{ previewUrl }]
   return {
-    spotify_artist_id: id,
+    artist_id: id,
     artist_data: { topTracks },
   }
 }
@@ -25,7 +25,7 @@ function unplayableRec(id: string): FeedRec {
 }
 
 function noTracksRec(id: string): FeedRec {
-  return { spotify_artist_id: id, artist_data: {} }
+  return { artist_id: id, artist_data: {} }
 }
 
 // ---------------------------------------------------------------------------
@@ -51,13 +51,13 @@ describe("isPlayable", () => {
   })
 
   it("is false when topTracks is an empty array", () => {
-    const r: FeedRec = { spotify_artist_id: "a", artist_data: { topTracks: [] } }
+    const r: FeedRec = { artist_id: "a", artist_data: { topTracks: [] } }
     expect(isPlayable(r)).toBe(false)
   })
 
   it("is true when mixed tracks include at least one playable", () => {
     const r: FeedRec = {
-      spotify_artist_id: "a",
+      artist_id: "a",
       artist_data: {
         topTracks: [{ previewUrl: null }, { previewUrl: "https://audio.example.com/t.m4a" }],
       },
@@ -75,21 +75,21 @@ describe("selectNewPlayable", () => {
     const seen = new Set(["a"])
     const fetched = [playableRec("a"), playableRec("b"), playableRec("c")]
     const result = selectNewPlayable(seen, fetched)
-    expect(result.map((r) => r.spotify_artist_id)).toEqual(["b", "c"])
+    expect(result.map((r) => r.artist_id)).toEqual(["b", "c"])
   })
 
   it("excludes unplayable recs even if not in seenIds", () => {
     const seen = new Set<string>()
     const fetched = [playableRec("a"), unplayableRec("b"), noTracksRec("c")]
     const result = selectNewPlayable(seen, fetched)
-    expect(result.map((r) => r.spotify_artist_id)).toEqual(["a"])
+    expect(result.map((r) => r.artist_id)).toEqual(["a"])
   })
 
   it("excludes recs already in seenIds regardless of playability", () => {
     const seen = new Set(["a", "b"])
     const fetched = [playableRec("a"), playableRec("b"), playableRec("c")]
     const result = selectNewPlayable(seen, fetched)
-    expect(result.map((r) => r.spotify_artist_id)).toEqual(["c"])
+    expect(result.map((r) => r.artist_id)).toEqual(["c"])
   })
 
   it("returns empty array when all are seen", () => {
@@ -113,7 +113,7 @@ describe("selectNewPlayable", () => {
     const seen = new Set<string>()
     const fetched = [playableRec("c"), playableRec("a"), playableRec("b")]
     const result = selectNewPlayable(seen, fetched)
-    expect(result.map((r) => r.spotify_artist_id)).toEqual(["c", "a", "b"])
+    expect(result.map((r) => r.artist_id)).toEqual(["c", "a", "b"])
   })
 
   it("handles idle scenario: all fetched recs already seen", () => {

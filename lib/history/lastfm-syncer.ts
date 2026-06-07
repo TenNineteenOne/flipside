@@ -163,7 +163,7 @@ async function batchUpsertLastFmArtists(
 
   const toInsert: Array<{
     user_id: string
-    spotify_artist_id: null
+    artist_id: null
     lastfm_artist_name: string
     source: string
     play_count: number
@@ -179,7 +179,7 @@ async function batchUpsertLastFmArtists(
     } else {
       toInsert.push({
         user_id: userId,
-        spotify_artist_id: null,
+        artist_id: null,
         lastfm_artist_name: name,
         source: "lastfm",
         play_count: 1,

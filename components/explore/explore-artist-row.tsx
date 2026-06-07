@@ -11,6 +11,7 @@ const MemoArtistCard = memo(ArtistCard)
 
 interface ArtistWithTracks {
   id: string
+  spotifyId?: string | null
   name: string
   genres: string[]
   imageUrl: string | null
@@ -19,7 +20,7 @@ interface ArtistWithTracks {
 }
 
 interface RecommendationShape {
-  spotify_artist_id: string
+  artist_id: string
   artist_data: ArtistWithTracks
   score: number
   why: {
@@ -34,9 +35,10 @@ function railArtistToRecommendation(a: RailArtist): RecommendationShape {
   const sourceArtists = a.why?.sourceArtist ? [a.why.sourceArtist] : []
   const genres = a.why?.tag ? [a.why.tag] : []
   return {
-    spotify_artist_id: a.id,
+    artist_id: a.id,
     artist_data: {
       id: a.id,
+      spotifyId: a.spotifyId ?? null,
       name: a.name,
       genres: a.genres,
       imageUrl: a.imageUrl,

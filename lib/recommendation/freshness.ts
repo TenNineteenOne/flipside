@@ -12,7 +12,7 @@ export async function hasFreshRecs(userId: string): Promise<boolean> {
   const supabase = createServiceClient()
   const { count } = await supabase
     .from("recommendation_cache")
-    .select("spotify_artist_id", { count: "exact", head: true })
+    .select("artist_id", { count: "exact", head: true })
     .eq("user_id", userId)
     .is("seen_at", null)
     .gt("expires_at", new Date().toISOString())

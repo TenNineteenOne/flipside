@@ -9,10 +9,11 @@ import { DEFAULT_MUSIC_PLATFORM, isMusicPlatform, type MusicPlatform } from "@/l
 import { hasPlayablePreview } from "@/lib/recommendation/confirm-previews"
 
 interface Rec {
-  spotify_artist_id: string
-  artist_data: { 
-    id: string; 
-    name: string; 
+  artist_id: string
+  artist_data: {
+    id: string;
+    spotifyId?: string | null;
+    name: string;
     genres: string[]; 
     imageUrl: string | null; 
     popularity: number; 
@@ -69,7 +70,7 @@ export default async function FeedPage() {
   // Fetch cached recommendations
   const { data: recs, error: recsError } = await supabase
     .from("recommendation_cache")
-    .select("spotify_artist_id, artist_data, score, why")
+    .select("artist_id, artist_data, score, why")
     .eq("user_id", user.id)
     .is("seen_at", null)
     .gt("expires_at", new Date().toISOString())
@@ -103,7 +104,7 @@ export default async function FeedPage() {
   // Fetch tracks + signal counts in parallel — counts depend only on user.id,
   // tracks fetch needs artistIds (already known). Saves one DB round-trip vs.
   // running tracks sequentially before the count Promise.all.
-  const artistIds = validRecs.map((r) => r.spotify_artist_id)
+  const artistIds = validRecs.map((r) => r.artist_id)
 
   const [
     { data: tracksCache },
@@ -113,8 +114,8 @@ export default async function FeedPage() {
   ] = await Promise.all([
     supabase
       .from("artist_tracks_cache")
-      .select("spotify_artist_id, tracks")
-      .in("spotify_artist_id", artistIds),
+      .select("artist_id, tracks")
+      .in("artist_id", artistIds),
     supabase.from("listened_artists").select("*", { count: "exact", head: true }).eq("user_id", user.id),
     supabase.from("feedback").select("*", { count: "exact", head: true }).eq("user_id", user.id).is("deleted_at", null),
     supabase.from("saves").select("*", { count: "exact", head: true }).eq("user_id", user.id),
@@ -122,7 +123,7 @@ export default async function FeedPage() {
 
   const tracksMap = new Map<string, Rec["artist_data"]["topTracks"]>()
   for (const row of tracksCache ?? []) {
-    tracksMap.set(row.spotify_artist_id, (row.tracks as Rec["artist_data"]["topTracks"]) ?? [])
+    tracksMap.set(row.artist_id, (row.tracks as Rec["artist_data"]["topTracks"]) ?? [])
   }
 
   const recsWithColor = validRecs.map((rec) => {
@@ -130,7 +131,7 @@ export default async function FeedPage() {
     // back to artist_tracks_cache for legacy rows written before the bake.
     const baked = rec.artist_data.topTracks
     rec.artist_data.topTracks =
-      baked && baked.length > 0 ? baked : tracksMap.get(rec.spotify_artist_id) ?? []
+      baked && baked.length > 0 ? baked : tracksMap.get(rec.artist_id) ?? []
     const artist_color = (rec.artist_data as Record<string, unknown>).artist_color as string | null ?? null
     return { ...rec, artist_color }
   })

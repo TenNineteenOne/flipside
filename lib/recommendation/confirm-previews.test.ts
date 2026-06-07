@@ -57,19 +57,26 @@ function makeDeps(opts: {
   itunesRejects?: boolean
   spotifyResult?: Track[]
   spotifyRejects?: boolean
-} = {}): ConfirmPreviewDeps & { itunesCallCount: number; spotifyCallCount: number } {
+} = {}): ConfirmPreviewDeps & {
+  itunesCallCount: number
+  spotifyCallCount: number
+  spotifyCalledWith: Array<string | null>
+} {
   let itunesCallCount = 0
   let spotifyCallCount = 0
+  const spotifyCalledWith: Array<string | null> = []
   return {
     get itunesCallCount() { return itunesCallCount },
     get spotifyCallCount() { return spotifyCallCount },
+    get spotifyCalledWith() { return spotifyCalledWith },
     searchItunes: async () => {
       itunesCallCount++
       if (opts.itunesRejects) throw new Error("iTunes unavailable")
       return opts.itunesResult ?? []
     },
-    getSpotifyTopTracks: async () => {
+    getSpotifyTopTracks: async (spotifyId: string | null) => {
       spotifyCallCount++
+      spotifyCalledWith.push(spotifyId)
       if (opts.spotifyRejects) throw new Error("Spotify unavailable")
       return opts.spotifyResult ?? []
     },
@@ -202,6 +209,26 @@ describe("confirmPlayableTracks — iTunes-first", () => {
 // ---------------------------------------------------------------------------
 // confirmPlayableTracks — Spotify fallback
 // ---------------------------------------------------------------------------
+
+describe("confirmPlayableTracks — Spotify fallback keys on spotifyId", () => {
+  it("passes artist.spotifyId (not the uuid identity) to getSpotifyTopTracks", async () => {
+    const deps = makeDeps({ itunesResult: [], spotifyResult: [withPreview] })
+    const artistWithSpotify: ConfirmInput = {
+      id: "uuid-identity",
+      name: "Test Artist",
+      spotifyId: "spotify-123",
+    }
+    await confirmPlayableTracks(artistWithSpotify, deps)
+    expect(deps.spotifyCalledWith).toEqual(["spotify-123"])
+  })
+
+  it("passes null to getSpotifyTopTracks when spotifyId is absent (Last.fm-only artist)", async () => {
+    const deps = makeDeps({ itunesResult: [], spotifyResult: [] })
+    // baseArtist has no spotifyId.
+    await confirmPlayableTracks(baseArtist, deps)
+    expect(deps.spotifyCalledWith).toEqual([null])
+  })
+})
 
 describe("confirmPlayableTracks — Spotify fallback", () => {
   it("both sources return empty → returns []", async () => {

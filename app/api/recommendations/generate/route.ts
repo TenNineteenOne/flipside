@@ -34,7 +34,7 @@ async function pLimit<T>(
   return results
 }
 
-type CachedRec = { spotify_artist_id: string; artist_data: unknown }
+type CachedRec = { artist_id: string; artist_data: unknown }
 type SupabaseServiceClient = ReturnType<typeof createServiceClient>
 
 async function runColorExtraction(
@@ -44,17 +44,17 @@ async function runColorExtraction(
   artistIds: string[]
 ): Promise<void> {
   const { data: cacheRows } = await supabase
-    .from("artist_search_cache")
-    .select("spotify_artist_id, artist_color")
-    .in("spotify_artist_id", artistIds)
+    .from("artists")
+    .select("id, artist_color")
+    .in("id", artistIds)
 
   const colorMap = new Map<string, string | null>()
   for (const row of cacheRows ?? []) {
-    colorMap.set(row.spotify_artist_id, row.artist_color ?? null)
+    colorMap.set(row.id, row.artist_color ?? null)
   }
 
   const needsColor = cachedRecs.filter((r) => {
-    const c = colorMap.get(r.spotify_artist_id)
+    const c = colorMap.get(r.artist_id)
     return !c || c.toLowerCase() === "#8b5cf6"
   })
 
@@ -65,15 +65,15 @@ async function runColorExtraction(
       if (!imageUrl) return
 
       const color = await extractArtistColor(imageUrl)
-      colorMap.set(r.spotify_artist_id, color)
+      colorMap.set(r.artist_id, color)
 
       const { error: colorErr } = await supabase
-        .from("artist_search_cache")
+        .from("artists")
         .update({ artist_color: color })
-        .eq("spotify_artist_id", r.spotify_artist_id)
+        .eq("id", r.artist_id)
 
       if (colorErr) {
-        console.error(`[generate] color-update-fail id=${r.spotify_artist_id} err=${colorErr.message}`)
+        console.error(`[generate] color-update-fail id=${r.artist_id} err=${colorErr.message}`)
       }
     })
     await pLimit(colorTasks, 5)
@@ -81,13 +81,13 @@ async function runColorExtraction(
 
   await Promise.all(
     cachedRecs.map(async (r) => {
-      const color = colorMap.get(r.spotify_artist_id)
+      const color = colorMap.get(r.artist_id)
       if (!color) return
       await supabase
         .from("recommendation_cache")
         .update({ artist_data: { ...(r.artist_data as object), artist_color: color } })
         .eq("user_id", userId)
-        .eq("spotify_artist_id", r.spotify_artist_id)
+        .eq("artist_id", r.artist_id)
     })
   )
 }
@@ -235,13 +235,13 @@ export async function POST(req: NextRequest): Promise<Response> {
 
       const { data: cachedRecs } = await supabase
         .from("recommendation_cache")
-        .select("spotify_artist_id, artist_data")
+        .select("artist_id, artist_data")
         .eq("user_id", user.id)
         .is("seen_at", null)
 
       if (!cachedRecs || cachedRecs.length === 0) return
 
-      const artistIds = cachedRecs.map((r) => r.spotify_artist_id)
+      const artistIds = cachedRecs.map((r) => r.artist_id)
 
       try {
         await runColorExtraction(supabase, user.id, cachedRecs, artistIds)

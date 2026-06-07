@@ -17,7 +17,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { ArtistNameCache } from './artist-name-cache'
 import { resolveArtistsByName } from './resolve-candidates'
 import { fetchArtistEnrichment } from './enrich-artist'
-import { getTagArtistNames, buildConfirmPreview } from './engine'
+import { getTagArtistNames, buildConfirmPreview, buildMintArtist } from './engine'
 import { confirmToTarget } from './confirm-previews'
 import {
   allLeavesWithAnchor,
@@ -119,17 +119,17 @@ export function rankByCurve(
 async function loadUserContext(supabase: SupabaseClient, userId: string) {
   const [{ data: user }, { data: seedArtists }, { data: listenedRows }, { data: thumbsUp }, { data: thumbsDown }] = await Promise.all([
     supabase.from('users').select('id, selected_genres, adventurous').eq('id', userId).maybeSingle(),
-    supabase.from('seed_artists').select('spotify_artist_id, name').eq('user_id', userId),
-    supabase.from('listened_artists').select('spotify_artist_id, play_count').eq('user_id', userId).not('spotify_artist_id', 'is', null),
-    supabase.from('feedback').select('spotify_artist_id').eq('user_id', userId).eq('signal', 'thumbs_up').is('deleted_at', null),
-    supabase.from('feedback').select('spotify_artist_id').eq('user_id', userId).eq('signal', 'thumbs_down').is('deleted_at', null),
+    supabase.from('seed_artists').select('artist_id, name').eq('user_id', userId),
+    supabase.from('listened_artists').select('artist_id, play_count').eq('user_id', userId).not('artist_id', 'is', null),
+    supabase.from('feedback').select('artist_id').eq('user_id', userId).eq('signal', 'thumbs_up').is('deleted_at', null),
+    supabase.from('feedback').select('artist_id').eq('user_id', userId).eq('signal', 'thumbs_down').is('deleted_at', null),
   ])
 
-  // Hydrate listened artists with their genres via artist_search_cache.
-  // Chunked at 200 to stay within Postgres IN-list limits; chunks run in
-  // parallel so a user with 1000+ listened artists pays one round-trip of
-  // latency instead of N.
-  const listenedIds = (listenedRows ?? []).map((r) => r.spotify_artist_id as string)
+  // Hydrate listened artists with their genres via the canonical `artists`
+  // table (keyed by the uuid identity). Chunked at 200 to stay within Postgres
+  // IN-list limits; chunks run in parallel so a user with 1000+ listened
+  // artists pays one round-trip of latency instead of N.
+  const listenedIds = (listenedRows ?? []).map((r) => r.artist_id as string)
   const genreById = new Map<string, string[]>()
   const CHUNK = 200
   const chunks: string[][] = []
@@ -139,37 +139,36 @@ async function loadUserContext(supabase: SupabaseClient, userId: string) {
   const chunkResults = await Promise.all(
     chunks.map((chunk) =>
       supabase
-        .from('artist_search_cache')
-        .select('spotify_artist_id, artist_data')
-        .in('spotify_artist_id', chunk),
+        .from('artists')
+        .select('id, name, genres')
+        .in('id', chunk),
     ),
   )
   for (const { data } of chunkResults) {
     for (const row of data ?? []) {
-      const artist = row.artist_data as { genres?: string[] } | null
-      genreById.set(row.spotify_artist_id as string, artist?.genres ?? [])
+      genreById.set(row.id as string, (row.genres as string[] | null) ?? [])
     }
   }
 
   const listened = (listenedRows ?? []).map((r) => ({
-    spotify_artist_id: r.spotify_artist_id as string,
+    artist_id: r.artist_id as string,
     play_count: (r.play_count as number) ?? 0,
-    genres: genreById.get(r.spotify_artist_id as string) ?? [],
+    genres: genreById.get(r.artist_id as string) ?? [],
   }))
 
   // Rolling like sample: up to 10 random likes per cache window. Prevents
   // thumbs-up-heavy accounts from flooding every rail with the same cluster.
   // See docs/prd-diversity-overhaul.md (M1).
-  const allThumbsUp = (thumbsUp ?? []).map((r) => r.spotify_artist_id as string)
+  const allThumbsUp = (thumbsUp ?? []).map((r) => r.artist_id as string)
 
   return {
     user,
     selectedGenres: ((user?.selected_genres ?? []) as string[]),
-    seedArtists: (seedArtists ?? []) as Array<{ spotify_artist_id: string; name: string }>,
+    seedArtists: (seedArtists ?? []) as Array<{ artist_id: string; name: string }>,
     listened,
     listenedIds: new Set(listenedIds),
     thumbsUpIds: new Set(sampleLikes(allThumbsUp, userId)),
-    thumbsDownIds: new Set((thumbsDown ?? []).map((r) => r.spotify_artist_id as string)),
+    thumbsDownIds: new Set((thumbsDown ?? []).map((r) => r.artist_id as string)),
   }
 }
 
@@ -226,6 +225,7 @@ async function resolveAndFilter(
     cache: nameCache,
     searchArtists: (name) => musicProvider.searchArtists(accessToken, name),
     enrichArtist: buildEnrichArtist(),
+    mintArtist: buildMintArtist(supabase),
   })
 
   // Playability guarantee (#143): confirm previews for only the artists that
@@ -273,19 +273,19 @@ async function loadExcludedIds(supabase: SupabaseClient, userId: string): Promis
   const [seenRes, skipRes] = await Promise.all([
     supabase
       .from('recommendation_cache')
-      .select('spotify_artist_id')
+      .select('artist_id')
       .eq('user_id', userId)
       .not('seen_at', 'is', null)
       .gte('seen_at', sevenDaysAgo),
     supabase
       .from('recommendation_cache')
-      .select('spotify_artist_id')
+      .select('artist_id')
       .eq('user_id', userId)
       .not('skip_at', 'is', null),
   ])
   const ids = new Set<string>()
-  for (const r of seenRes.data ?? []) ids.add(r.spotify_artist_id as string)
-  for (const r of skipRes.data ?? []) ids.add(r.spotify_artist_id as string)
+  for (const r of seenRes.data ?? []) ids.add(r.artist_id as string)
+  for (const r of skipRes.data ?? []) ids.add(r.artist_id as string)
   return ids
 }
 
@@ -581,10 +581,10 @@ export async function wildcardsRail(
     seedIds = shuffledIds.slice(0, seedCount)
   } else {
     const topListened = [...ctx.listened]
-      .filter((a) => !ctx.thumbsDownIds.has(a.spotify_artist_id))
+      .filter((a) => !ctx.thumbsDownIds.has(a.artist_id))
       .sort((a, b) => b.play_count - a.play_count)
       .slice(0, seedCount * 2)
-      .map((a) => a.spotify_artist_id)
+      .map((a) => a.artist_id)
     if (topListened.length === 0) {
       return { railKey: 'wildcards', artistIds: [], why: {} }
     }
@@ -593,19 +593,19 @@ export async function wildcardsRail(
     seedIds = seededShuffle(topListened, cacheWindowSeed(input.userId, 'wildcards')).slice(0, seedCount)
   }
 
-  // Resolve seed ids → seed names via artist_search_cache (plus seed_artists as
-  // a fallback since those live in `seed_artists` and may pre-date any cache row).
+  // Resolve seed ids (uuid identities) → seed names via the canonical `artists`
+  // table (plus seed_artists as a fallback since those live in `seed_artists`
+  // and may pre-date any artists row).
   const seedNameById = new Map<string, string>()
-  for (const s of ctx.seedArtists) seedNameById.set(s.spotify_artist_id, s.name)
+  for (const s of ctx.seedArtists) seedNameById.set(s.artist_id, s.name)
   const missingIds = seedIds.filter((id) => !seedNameById.has(id))
   if (missingIds.length > 0) {
     const { data } = await supabase
-      .from('artist_search_cache')
-      .select('spotify_artist_id, artist_data')
-      .in('spotify_artist_id', missingIds)
+      .from('artists')
+      .select('id, name')
+      .in('id', missingIds)
     for (const row of data ?? []) {
-      const a = row.artist_data as { name?: string } | null
-      if (a?.name) seedNameById.set(row.spotify_artist_id as string, a.name)
+      if (row.name) seedNameById.set(row.id as string, row.name as string)
     }
   }
 
@@ -886,10 +886,20 @@ export interface HydratedRailArtist {
 export interface BuildRailsResult {
   rails: RailResult[]
   cacheHit: boolean
-  /** Populated when `opts.hydrate === true`. Maps spotify_artist_id → cached artist record. */
+  /** Populated when `opts.hydrate === true`. Maps artist_id (uuid) → cached artist record. */
   hydrated?: Map<string, HydratedRailArtist>
 }
 
+/**
+ * Hydrate each rail's artist IDs (uuid identities) into display records.
+ *
+ * Metadata (name / genres / image / popularity / color) comes from the
+ * canonical `artists` table. Track previews come SEPARATELY from
+ * `artist_tracks_cache` (decision A1: explore previews are sourced from the
+ * tracks cache now, not a folded artist_data blob) and merged in as
+ * `topTracks`. Both reads key on `artist_id` (= artists.id). The returned map
+ * is keyed by artist_id → record.
+ */
 async function hydrateRailArtists(
   supabase: SupabaseClient,
   rails: RailResult[],
@@ -897,16 +907,35 @@ async function hydrateRailArtists(
   const allIds = Array.from(new Set(rails.flatMap((r) => r.artistIds)))
   const byId = new Map<string, HydratedRailArtist>()
   if (allIds.length === 0) return byId
-  const { data: rows } = await supabase
-    .from('artist_search_cache')
-    .select('spotify_artist_id, artist_data, artist_color')
-    .in('spotify_artist_id', allIds)
-  for (const row of rows ?? []) {
-    const a = (row.artist_data ?? {}) as Omit<HydratedRailArtist, 'id' | 'artist_color'>
-    byId.set(row.spotify_artist_id as string, {
-      ...a,
-      id: row.spotify_artist_id as string,
+
+  const [metaRes, tracksRes] = await Promise.all([
+    supabase
+      .from('artists')
+      .select('id, name, genres, image_url, popularity, artist_color')
+      .in('id', allIds),
+    supabase
+      .from('artist_tracks_cache')
+      .select('artist_id, tracks')
+      .in('artist_id', allIds),
+  ])
+
+  const tracksById = new Map<string, Track[]>()
+  for (const row of tracksRes.data ?? []) {
+    const id = row.artist_id as string | null
+    if (!id) continue
+    tracksById.set(id, (row.tracks as Track[] | null) ?? [])
+  }
+
+  for (const row of metaRes.data ?? []) {
+    const id = row.id as string
+    byId.set(id, {
+      id,
+      name: row.name as string,
+      genres: (row.genres as string[] | null) ?? [],
+      imageUrl: (row.image_url as string | null) ?? null,
+      popularity: (row.popularity as number | null) ?? 0,
       artist_color: (row.artist_color as string | null) ?? null,
+      topTracks: tracksById.get(id) ?? [],
     })
   }
   return byId

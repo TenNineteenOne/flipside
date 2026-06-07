@@ -2,8 +2,9 @@ import { createServiceClient } from "@/lib/supabase/server"
 import { musicProvider } from "@/lib/music-provider/provider"
 import { isRateLimited } from "@/lib/music-provider"
 import { stringSimilarity, SIMILARITY_THRESHOLD } from "@/lib/history/name-utils"
+import { ensureArtist, type ArtistsSupabaseClient } from "@/lib/artists"
 
-// ── Last.fm → Spotify ID resolution ──────────────────────────────────────────
+// ── Name → artist_id (uuid) resolution ───────────────────────────────────────
 
 const RESOLUTION_BATCH_SIZE = 10
 
@@ -13,14 +14,18 @@ interface UnresolvedRow {
 }
 
 /**
- * For every listened_artists row belonging to `userId` that has
- * `spotify_artist_id IS NULL` and hasn't been attempted in the last 7 days,
- * try to resolve the Spotify ID via the artist_search_cache first, then via a
- * live Spotify artist search.
+ * For every name-only listened_artists row belonging to `userId` —
+ * `artist_id IS NULL AND lastfm_artist_name IS NOT NULL AND
+ * spotify_artist_id IS NULL` — that hasn't been attempted in the last 7 days,
+ * try to resolve the canonical `artist_id` (uuid) via the `artists` table
+ * first, then via a live Spotify artist search (which mints an `artists` row).
  *
- * - Cache hit  → write spotify_artist_id, update id_resolution_attempted_at
- * - Search hit → write spotify_artist_id, upsert artist_search_cache, update timestamp
- * - No match   → leave spotify_artist_id as null, update timestamp (retry after 7 days)
+ * The tight filter preserves the old name-only semantics: rows that still carry
+ * a legacy `spotify_artist_id` are left to the migration backfill, not this pass.
+ *
+ * - Table hit  → write artist_id, update id_resolution_attempted_at
+ * - Search hit → ensureArtist (mint/resolve uuid), write artist_id, update timestamp
+ * - No match   → leave artist_id null, update timestamp (retry after 7 days)
  *
  * Processed in batches of RESOLUTION_BATCH_SIZE to stay within Spotify rate limits.
  * Never throws — all errors are logged so the parent sync call is not disrupted.
@@ -32,13 +37,16 @@ export async function resolveUnresolvedArtistIds(params: {
 }): Promise<void> {
   const { supabase, userId, accessToken } = params
 
-  // 1. Fetch unresolved rows for this user
+  // 1. Fetch unresolved rows for this user. TIGHT filter: genuine name-only rows
+  //    only (artist_id null AND a name present AND no legacy spotify_artist_id).
+  //    Rows that still carry a spotify_artist_id are the migration backfill's job.
   const { data: rows, error: fetchError } = await supabase
     .from("listened_artists")
     .select("id, lastfm_artist_name")
     .eq("user_id", userId)
-    .is("spotify_artist_id", null)
+    .is("artist_id", null)
     .not("lastfm_artist_name", "is", null)
+    .is("spotify_artist_id", null)
     .or(
       "id_resolution_attempted_at.is.null,id_resolution_attempted_at.lt." +
         new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
@@ -65,22 +73,26 @@ export async function resolveUnresolvedArtistIds(params: {
 }
 
 /**
- * Try to set spotify_artist_id on `orphanId`. If a row with the same
- * (user_id, spotify_artist_id) already exists (unique constraint 23505),
- * merge the orphan's play_count into the existing row and delete the orphan.
+ * Try to set artist_id on `orphanId`. If a row with the same
+ * (user_id, artist_id) already exists (unique constraint 23505), merge the
+ * orphan's play_count into the existing row and delete the orphan.
+ *
+ * Safeguard: if the merge can't find the target row by artist_id (the gap
+ * 3-row edge where the conflicting row is identified by some other column),
+ * log `merge-miss` and return `{merged:false}` rather than looping.
  */
 async function resolveOrMergeRow(params: {
   supabase: ReturnType<typeof createServiceClient>
   userId: string
   orphanId: string
-  spotifyArtistId: string
+  artistId: string
   now: string
 }): Promise<{ merged: boolean; error?: string }> {
-  const { supabase, userId, orphanId, spotifyArtistId, now } = params
+  const { supabase, userId, orphanId, artistId, now } = params
 
   const { error: updateErr } = await supabase
     .from("listened_artists")
-    .update({ spotify_artist_id: spotifyArtistId, id_resolution_attempted_at: now })
+    .update({ artist_id: artistId, id_resolution_attempted_at: now })
     .eq("id", orphanId)
 
   if (!updateErr) return { merged: false }
@@ -96,8 +108,15 @@ async function resolveOrMergeRow(params: {
     .from("listened_artists")
     .select("id, play_count, last_seen_at")
     .eq("user_id", userId)
-    .eq("spotify_artist_id", spotifyArtistId)
+    .eq("artist_id", artistId)
     .maybeSingle()
+
+  if (!target) {
+    // 23505 tripped but we can't locate the conflicting row by artist_id.
+    // Don't loop — leave the orphan in place (still name-only) and move on.
+    console.log(`[id-resolver] merge-miss artist_id=${artistId} orphan=${orphanId}`)
+    return { merged: false }
+  }
 
   if (target && orphan) {
     const mergedPlays = (target.play_count ?? 0) + (orphan.play_count ?? 0)
@@ -124,63 +143,74 @@ async function resolveLastFmBatch(params: {
   const { supabase, userId, accessToken, batch } = params
   const now = new Date().toISOString()
 
-  // 2a. Batch-read artist_search_cache for all names in this batch
+  // 2a. Batch-read the canonical `artists` table for all names in this batch.
+  //     name_lower is NON-unique → a name may map to several artist rows.
   const nameLowers = batch.map((r) => r.lastfm_artist_name.toLowerCase())
   const { data: cacheRows, error: cacheErr } = await supabase
-    .from("artist_search_cache")
-    .select("name_lower, spotify_artist_id, artist_name, artist_data")
+    .from("artists")
+    .select("id, spotify_id, name, name_lower")
     .in("name_lower", nameLowers)
 
   if (cacheErr) {
     console.error(
-      "[resolveLastFmArtistIds] Cache read error:",
+      "[resolveLastFmArtistIds] artists read error:",
       cacheErr.message
     )
-    // Proceed without cache — will fall back to live search
+    // Proceed without the table hit — will fall back to live search
   }
 
-  type CacheRow = {
+  type ArtistRow = {
+    id: string
+    spotify_id: string | null
+    name: string
     name_lower: string
-    spotify_artist_id: string
-    artist_name: string
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    artist_data: any
   }
-  const cacheByLower = new Map<string, CacheRow>()
-  for (const row of (cacheRows ?? []) as CacheRow[]) {
-    cacheByLower.set(row.name_lower, row)
+  // name_lower is non-unique → bucket rows per name and disambiguate below.
+  const artistsByLower = new Map<string, ArtistRow[]>()
+  for (const row of (cacheRows ?? []) as ArtistRow[]) {
+    const bucket = artistsByLower.get(row.name_lower)
+    if (bucket) bucket.push(row)
+    else artistsByLower.set(row.name_lower, [row])
   }
 
   for (const row of batch) {
     const nameLower = row.lastfm_artist_name.toLowerCase()
-    const cached = cacheByLower.get(nameLower)
+    const candidates = artistsByLower.get(nameLower) ?? []
 
-    if (cached) {
-      // Cache hit — write spotify_artist_id back to listened_artists, merging
-      // into an existing row for this user+artist if the unique constraint
-      // (user_id, spotify_artist_id) trips.
+    // Exactly one row → unambiguous table hit; use its uuid directly.
+    // More than one → ambiguous; skip the hit and fall through to live search
+    // (Option B). Zero → cache miss, also falls through.
+    if (candidates.length === 1) {
+      const hit = candidates[0]
       const res = await resolveOrMergeRow({
         supabase,
         userId,
         orphanId: row.id,
-        spotifyArtistId: cached.spotify_artist_id,
+        artistId: hit.id,
         now,
       })
       if (res.error) {
         console.error(
-          `[resolveLastFmArtistIds] Cache-hit update failed for "${row.lastfm_artist_name}":`,
+          `[resolveLastFmArtistIds] table-hit update failed for "${row.lastfm_artist_name}":`,
           res.error
         )
       } else {
         console.log(
-          `[resolveLastFmArtistIds] cache-hit name="${row.lastfm_artist_name}" id=${cached.spotify_artist_id}${res.merged ? " (merged)" : ""}`
+          `[resolveLastFmArtistIds] table-hit name="${row.lastfm_artist_name}" artist_id=${hit.id} spotifyId=${hit.spotify_id ?? "-"}${res.merged ? " (merged)" : ""}`
         )
       }
       continue
     }
 
-    // Cache miss — live Spotify search
-    let resolvedId: string | null = null
+    if (candidates.length > 1) {
+      console.log(
+        `[resolveLastFmArtistIds] ambiguous name="${row.lastfm_artist_name}" matches=${candidates.length} → live search`
+      )
+    }
+
+    // Cache miss (or ambiguous) — live Spotify search, then mint a canonical uuid.
+    let resolvedUuid: string | null = null
+    let resolvedSpotifyId: string | null = null
 
     try {
       const results = await musicProvider.searchArtists(accessToken, row.lastfm_artist_name)
@@ -208,31 +238,30 @@ async function resolveLastFmBatch(params: {
 
         const similarity = stringSimilarity(row.lastfm_artist_name, best.name)
         if (similarity >= SIMILARITY_THRESHOLD) {
-          resolvedId = best.id
+          // Mint/resolve the canonical artists.id (uuid) for this Spotify match.
+          const uuid = await ensureArtist(
+            supabase as unknown as ArtistsSupabaseClient,
+            {
+              spotifyId: best.id,
+              name: best.name,
+              genres: best.genres,
+              popularity: best.popularity,
+              imageUrl: best.imageUrl,
+            }
+          )
 
-          // Upsert artist_search_cache
-          const { error: cacheWriteErr } = await supabase
-            .from("artist_search_cache")
-            .upsert(
-              {
-                name_lower: nameLowerOrig,
-                spotify_artist_id: best.id,
-                artist_name: best.name,
-                artist_data: best,
-              },
-              { onConflict: "name_lower" }
+          if (uuid) {
+            resolvedUuid = uuid
+            resolvedSpotifyId = best.id
+            console.log(
+              `[resolveLastFmArtistIds] resolved name="${row.lastfm_artist_name}" artist_id=${uuid} spotifyId=${best.id} sim=${similarity.toFixed(2)}`
             )
-
-          if (cacheWriteErr) {
-            console.error(
-              `[resolveLastFmArtistIds] Cache write failed for "${row.lastfm_artist_name}":`,
-              cacheWriteErr.message
+          } else {
+            // Mint failed → treat as no-match (degrade, don't throw).
+            console.log(
+              `[resolveLastFmArtistIds] mint-failed name="${row.lastfm_artist_name}" spotifyId=${best.id} → unresolved`
             )
           }
-
-          console.log(
-            `[resolveLastFmArtistIds] resolved name="${row.lastfm_artist_name}" id=${best.id} sim=${similarity.toFixed(2)}`
-          )
         } else {
           console.log(
             `[resolveLastFmArtistIds] low-similarity name="${row.lastfm_artist_name}" best="${best.name}" sim=${similarity.toFixed(2)} → unresolved`
@@ -246,15 +275,15 @@ async function resolveLastFmBatch(params: {
       )
     }
 
-    // Write result (resolved ID or null) + update timestamp.
-    // When resolvedId is set, the update may trip the (user_id, spotify_artist_id)
+    // Write result (resolved uuid or null) + update timestamp.
+    // When resolvedUuid is set, the update may trip the (user_id, artist_id)
     // unique constraint if another source already owns that artist — merge in that case.
-    if (resolvedId) {
+    if (resolvedUuid) {
       const res = await resolveOrMergeRow({
         supabase,
         userId,
         orphanId: row.id,
-        spotifyArtistId: resolvedId,
+        artistId: resolvedUuid,
         now,
       })
       if (res.error) {
@@ -264,16 +293,15 @@ async function resolveLastFmBatch(params: {
         )
       } else if (res.merged) {
         console.log(
-          `[resolveLastFmArtistIds] merged orphan name="${row.lastfm_artist_name}" into existing id=${resolvedId}`
+          `[resolveLastFmArtistIds] merged orphan name="${row.lastfm_artist_name}" into existing artist_id=${resolvedUuid} spotifyId=${resolvedSpotifyId ?? "-"}`
         )
       }
     } else {
+      // No match — only bump the attempt timestamp; artist_id stays null and the
+      // row is retried after the 7-day window.
       const { error: updateErr } = await supabase
         .from("listened_artists")
-        .update({
-          spotify_artist_id: null,  // null stays null — retry via id_resolution_attempted_at window
-          id_resolution_attempted_at: now,
-        })
+        .update({ id_resolution_attempted_at: now })
         .eq("id", row.id)
 
       if (updateErr) {

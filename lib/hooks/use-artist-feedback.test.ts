@@ -91,7 +91,7 @@ describe("buildFeedbackPostBody", () => {
   it("includes railKey in the body when provided", () => {
     const body = buildFeedbackPostBody("artist1", "thumbs_up", "adjacent")
     expect(body).toEqual({
-      spotifyArtistId: "artist1",
+      artistId: "artist1",
       signal: "thumbs_up",
       railKey: "adjacent",
     })
@@ -101,7 +101,7 @@ describe("buildFeedbackPostBody", () => {
   it("omits railKey from the body when not provided", () => {
     const body = buildFeedbackPostBody("artist1", "thumbs_up", undefined)
     expect(body).toEqual({
-      spotifyArtistId: "artist1",
+      artistId: "artist1",
       signal: "thumbs_up",
     })
     expect("railKey" in body).toBe(false)
@@ -150,7 +150,7 @@ describe("POST path — network success", () => {
     expect(url).toBe("/api/feedback")
     expect(init.method).toBe("POST")
     expect(JSON.parse(init.body as string)).toEqual({
-      spotifyArtistId: "artist1",
+      artistId: "artist1",
       signal: "thumbs_up",
       railKey: "adjacent",
     })
@@ -191,7 +191,7 @@ describe("POST path — network success", () => {
 
     // When the thunk finally fires, the body should reflect the new rail.
     expect(buildBodyAtDispatchTime()).toEqual({
-      spotifyArtistId: "artist1",
+      artistId: "artist1",
       signal: "thumbs_up",
       railKey: "outside",
     })

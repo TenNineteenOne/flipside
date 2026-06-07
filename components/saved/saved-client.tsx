@@ -18,6 +18,7 @@ import { Ambient } from "@/components/visual/ambient"
 
 export interface SavedArtistRow {
   artistId: string
+  spotifyId?: string | null
   name: string
   genres: string[]
   imageUrl: string | null
@@ -52,7 +53,7 @@ export function SavedClient({ artists, hasLastfm, musicPlatform }: SavedClientPr
       const res = await fetch("/api/saves", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ spotifyArtistId: artistId }),
+        body: JSON.stringify({ artistId }),
       })
       if (!res.ok) throw new Error("Server error")
       router.refresh()
@@ -214,7 +215,7 @@ export function SavedClient({ artists, hasLastfm, musicPlatform }: SavedClientPr
                     <a
                       href={getArtistLink(musicPlatform, {
                         artistId: artist.artistId,
-                        spotifyId: artist.artistId,
+                        spotifyId: artist.spotifyId ?? null,
                         artistName: artist.name,
                       })}
                       target="_blank"
@@ -237,7 +238,7 @@ export function SavedClient({ artists, hasLastfm, musicPlatform }: SavedClientPr
                       onClick={() => {
                         const url = getShareableArtistLink(musicPlatform, {
                           artistId: artist.artistId,
-                          spotifyId: artist.artistId,
+                          spotifyId: artist.spotifyId ?? null,
                           artistName: artist.name,
                         })
                         navigator.clipboard.writeText(url)

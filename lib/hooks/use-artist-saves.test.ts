@@ -38,14 +38,14 @@ describe("buildSaveFetchInit", () => {
     expect(init.method).toBe("DELETE")
   })
 
-  it("includes spotifyArtistId in the body for POST", () => {
+  it("includes artistId in the body for POST", () => {
     const init = buildSaveFetchInit("artist1", false)
-    expect(JSON.parse(init.body as string)).toEqual({ spotifyArtistId: "artist1" })
+    expect(JSON.parse(init.body as string)).toEqual({ artistId: "artist1" })
   })
 
-  it("includes spotifyArtistId in the body for DELETE", () => {
+  it("includes artistId in the body for DELETE", () => {
     const init = buildSaveFetchInit("artist1", true)
-    expect(JSON.parse(init.body as string)).toEqual({ spotifyArtistId: "artist1" })
+    expect(JSON.parse(init.body as string)).toEqual({ artistId: "artist1" })
   })
 
   it("sets Content-Type to application/json", () => {
@@ -83,7 +83,7 @@ describe("POST path — saving an artist", () => {
     const [url, calledInit] = mockFetch.mock.calls[0] as [string, RequestInit]
     expect(url).toBe("/api/saves")
     expect(calledInit.method).toBe("POST")
-    expect(JSON.parse(calledInit.body as string)).toEqual({ spotifyArtistId: "artist1" })
+    expect(JSON.parse(calledInit.body as string)).toEqual({ artistId: "artist1" })
   })
 })
 

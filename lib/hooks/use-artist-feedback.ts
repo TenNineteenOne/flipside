@@ -78,7 +78,7 @@ export function buildFeedbackPostBody(
   signal: string,
   railKey: string | undefined,
 ): Record<string, string> {
-  const body: Record<string, string> = { spotifyArtistId: artistId, signal }
+  const body: Record<string, string> = { artistId, signal }
   if (railKey !== undefined) body.railKey = railKey
   return body
 }
