@@ -13,16 +13,12 @@ interface UnresolvedRow {
 
 /**
  * For every name-only listened_artists row belonging to `userId` —
- * `artist_id IS NULL AND lastfm_artist_name IS NOT NULL AND
- * spotify_artist_id IS NULL` — that hasn't been attempted in the last 7 days,
- * try to resolve the canonical `artist_id` (uuid) via the `artists` table
- * first, then — since the artist NAME is already known — by confirming the
- * artist exists via Last.fm getInfo (cached) and minting a canonical uuid by
- * name. No live Spotify call: the spotify_id is backfilled later by the #159
- * MusicBrainz worker.
- *
- * The tight filter preserves the old name-only semantics: rows that still carry
- * a legacy `spotify_artist_id` are left to the migration backfill, not this pass.
+ * `artist_id IS NULL AND lastfm_artist_name IS NOT NULL` — that hasn't been
+ * attempted in the last 7 days, resolve the canonical `artist_id` (uuid) via the
+ * `artists` table first, then — since the artist NAME is already known — by
+ * confirming the artist exists via Last.fm getInfo (cached) and minting a
+ * canonical uuid by name. No live Spotify call: the spotify_id is backfilled
+ * later by the #159 MusicBrainz worker.
  *
  * - Table hit  → write artist_id, update id_resolution_attempted_at
  * - getInfo hit → ensureArtist (mint/resolve uuid by name), write artist_id, update timestamp
@@ -38,16 +34,14 @@ export async function resolveUnresolvedArtistIds(params: {
 }): Promise<void> {
   const { supabase, userId } = params
 
-  // 1. Fetch unresolved rows for this user. TIGHT filter: genuine name-only rows
-  //    only (artist_id null AND a name present AND no legacy spotify_artist_id).
-  //    Rows that still carry a spotify_artist_id are the migration backfill's job.
+  // 1. Fetch unresolved rows for this user: genuine name-only rows
+  //    (artist_id null AND a name present) not attempted in the last 7 days.
   const { data: rows, error: fetchError } = await supabase
     .from("listened_artists")
     .select("id, lastfm_artist_name")
     .eq("user_id", userId)
     .is("artist_id", null)
     .not("lastfm_artist_name", "is", null)
-    .is("spotify_artist_id", null)
     .or(
       "id_resolution_attempted_at.is.null,id_resolution_attempted_at.lt." +
         new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
