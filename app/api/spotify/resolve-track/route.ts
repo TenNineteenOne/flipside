@@ -4,7 +4,7 @@ import { getAccessToken } from "@/lib/get-access-token"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, apiUnauthorized } from "@/lib/errors"
 import { enforceSameOrigin } from "@/lib/csrf"
-import { isValidSpotifyId } from "@/lib/spotify-ids"
+import { isValidArtistId, isValidSpotifyId } from "@/lib/spotify-ids"
 import type { Track } from "@/lib/music-provider/types"
 
 const SPOTIFY_BASE = "https://api.spotify.com/v1"
@@ -24,8 +24,10 @@ interface SpotifyTrackSearch {
  * Spotify and returns its track ID. Writes the result back into
  * artist_tracks_cache so repeat clicks are free.
  *
- * Body: { spotifyArtistId, artistName, trackName, localTrackId }
- *   - spotifyArtistId / localTrackId are used to update the cached track row
+ * Body: { artistId, artistName, trackName, localTrackId }
+ *   - artistId is the internal artist identity (uuid); the real Spotify id is
+ *     resolved from the artists table before any Spotify API call
+ *   - artistId / localTrackId are used to update the cached track row
  * Returns: { spotifyTrackId: string } or 404 if not found on Spotify
  */
 export async function POST(req: NextRequest): Promise<Response> {
@@ -38,7 +40,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (!accessToken) return apiUnauthorized()
 
   let body: {
-    spotifyArtistId?: string
+    artistId?: string
     artistName?: string
     trackName?: string
     localTrackId?: string
@@ -50,23 +52,22 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   let { artistName, trackName } = body
-  const { spotifyArtistId, localTrackId } = body
+  const { artistId, localTrackId } = body
 
-  // Defense-in-depth: spotifyArtistId is interpolated into a Spotify API path
-  // below. The DB-row guard already makes traversal unreachable, but validate
-  // the format explicitly so the safety never depends on cache contents.
-  if (spotifyArtistId !== undefined && !isValidSpotifyId(spotifyArtistId)) {
+  // artistId is the internal identity (uuid). Validate its format before using
+  // it as a cache key / artists lookup.
+  if (artistId !== undefined && !isValidArtistId(artistId)) {
     return apiError("Invalid artist ID", 400)
   }
 
   const supabase = createServiceClient()
 
   // ── [SECURITY PATCH] Validate against payload spoofing poisoning if caching occurs ──
-  if (spotifyArtistId && localTrackId) {
+  if (artistId && localTrackId) {
     const { data: cached } = await supabase
       .from("artist_tracks_cache")
       .select("tracks")
-      .eq("spotify_artist_id", spotifyArtistId)
+      .eq("artist_id", artistId)
       .maybeSingle()
 
     if (!cached || !cached.tracks) {
@@ -83,13 +84,28 @@ export async function POST(req: NextRequest): Promise<Response> {
     // Force secure overrides derived strictly natively from DB
     trackName = targetTrack.name
 
-    const artistReq = await fetch(`${SPOTIFY_BASE}/artists/${spotifyArtistId}`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      signal: AbortSignal.timeout(8000),
-    })
-    if (artistReq.ok) {
-        const aData = await artistReq.json()
-        artistName = aData.name
+    // Resolve the real Spotify id from the artists table. If the artist has no
+    // Spotify mapping, skip the Spotify artist lookup gracefully — the
+    // (artistName, trackName) search below still works off the cached track.
+    const { data: artistRow } = await supabase
+      .from("artists")
+      .select("spotify_id")
+      .eq("id", artistId)
+      .maybeSingle()
+
+    const spotifyId = artistRow?.spotify_id as string | null | undefined
+    // Defense-in-depth: spotifyId is interpolated into a Spotify API path
+    // below. Validate the resolved id's format so the safety never depends on
+    // artists-table contents.
+    if (spotifyId && isValidSpotifyId(spotifyId)) {
+      const artistReq = await fetch(`${SPOTIFY_BASE}/artists/${spotifyId}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        signal: AbortSignal.timeout(8000),
+      })
+      if (artistReq.ok) {
+          const aData = await artistReq.json()
+          artistName = aData.name
+      }
     }
   }
 
@@ -97,7 +113,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     return apiError("artistName and trackName required", 400)
   }
   // Length cap matches /api/onboarding/search — prevents oversized Spotify
-  // query strings on the untrusted path (when no cached spotifyArtistId+
+  // query strings on the untrusted path (when no cached artistId+
   // localTrackId pair was supplied, artistName/trackName come straight from
   // the client).
   if (artistName.length > 200 || trackName.length > 200) {
@@ -135,12 +151,12 @@ export async function POST(req: NextRequest): Promise<Response> {
   const spotifyTrackId = match.id
 
   // ── Persist back into the cached track row, if we can locate it ─────────
-  if (spotifyArtistId && localTrackId) {
+  if (artistId && localTrackId) {
     // Supabase client is already instatiated above
     const { data: cached } = await supabase
       .from("artist_tracks_cache")
       .select("tracks, source")
-      .eq("spotify_artist_id", spotifyArtistId)
+      .eq("artist_id", artistId)
       .maybeSingle()
     if (cached?.tracks) {
       const tracks = (cached.tracks as Track[]).map((t) =>
@@ -149,7 +165,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       await supabase
         .from("artist_tracks_cache")
         .update({ tracks })
-        .eq("spotify_artist_id", spotifyArtistId)
+        .eq("artist_id", artistId)
     }
   }
 

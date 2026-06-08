@@ -141,11 +141,9 @@ function ArtistCardImpl({
   const { play } = useAudio()
 
   const { tracks: localTracks, isFetching: isFetchingTracks } = useArtistTracks({
-    // The Show-Tracks route (/api/artists/[id]/tracks) is deferred — still
-    // Spotify-keyed this slice — so it must receive the Spotify id, not the
-    // surrogate uuid. spotifyId is null only for rare Last.fm-only artists,
-    // which degrades to "No tracks available".
-    artistId: artist_data.spotifyId ?? "",
+    // The Show-Tracks route (/api/artists/[id]/tracks) is keyed on the internal
+    // artist_id (Stage 2 re-key), so pass the surrogate uuid here.
+    artistId: recommendation.artist_id,
     artistName: artist_data.name,
     initialTracks: artist_data.topTracks,
   })

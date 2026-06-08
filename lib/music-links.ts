@@ -45,20 +45,21 @@ export function getArtistLink(
   platform: MusicPlatform,
   params: { artistId: string; spotifyId?: string | null; artistName: string }
 ): string {
-  // `artistId` is the internal identity (Stage 2: the surrogate UUID); links are
-  // built from the optional `spotifyId` attribute, which may be absent once an
-  // artist has no Spotify mapping — then we fall back to a zero-API search URL.
-  const { spotifyId, artistName } = params
+  // `artistId` is the internal identity (Stage 2: the surrogate UUID). The
+  // Spotify deep link is built from the optional `spotifyId` attribute, which
+  // may be absent once an artist has no Spotify mapping — then we fall back to a
+  // zero-API search URL. The Apple resolver is keyed on the internal artistId.
+  const { artistId, spotifyId, artistName } = params
   switch (platform) {
     case "spotify":
       return spotifyId
         ? `https://open.spotify.com/artist/${spotifyId}`
         : `https://open.spotify.com/search/${encodeURIComponent(artistName)}`
     case "apple_music":
-      // The Apple resolver still keys on the Spotify id (deferred re-key); when
-      // there's no Spotify id to resolve through, fall back to Apple's search.
-      return spotifyId
-        ? `/api/open/apple_music/${spotifyId}?name=${encodeURIComponent(artistName)}`
+      // The Apple resolver is keyed on the internal artist_id (Stage 2); when
+      // there's no internal id, fall back to Apple's search.
+      return artistId
+        ? `/api/open/apple_music/${artistId}?name=${encodeURIComponent(artistName)}`
         : `https://music.apple.com/search?term=${encodeURIComponent(artistName)}`
     case "youtube_music":
       return `https://music.youtube.com/search?q=${encodeURIComponent(artistName)}`

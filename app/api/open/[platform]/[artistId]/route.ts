@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, apiUnauthorized } from "@/lib/errors"
-import { isValidSpotifyId } from "@/lib/spotify-ids"
+import { isValidArtistId } from "@/lib/spotify-ids"
 import { runItunes } from "@/lib/itunes-limit"
 
 interface ITunesArtistResult {
@@ -100,7 +100,7 @@ export async function GET(
   if (platform !== "apple_music") {
     return apiError("Direct resolver only supports apple_music", 400)
   }
-  if (!isValidSpotifyId(artistId)) {
+  if (!isValidArtistId(artistId)) {
     return apiError("Invalid artist id", 400)
   }
 
@@ -124,7 +124,7 @@ export async function GET(
   const { data: cached } = await supabase
     .from("artist_external_links")
     .select("apple_music_url, updated_at")
-    .eq("spotify_artist_id", artistId)
+    .eq("artist_id", artistId)
     .maybeSingle()
 
   const isFresh = cached && cached.updated_at && cached.updated_at > cutoff
@@ -142,11 +142,11 @@ export async function GET(
     .from("artist_external_links")
     .upsert(
       {
-        spotify_artist_id: artistId,
+        artist_id: artistId,
         apple_music_url: resolved,
         updated_at: new Date().toISOString(),
       },
-      { onConflict: "spotify_artist_id" }
+      { onConflict: "artist_id" }
     )
   if (upsertError) {
     console.error(`[open/apple_music] cache upsert failed id=${artistId} err="${upsertError.message}"`)
