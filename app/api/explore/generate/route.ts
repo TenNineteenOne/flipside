@@ -23,7 +23,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     getSpotifyClientToken(),
     supabase
       .from("users")
-      .select("id, adventurous, underground_mode, popularity_curve, play_threshold")
+      .select("id, adventurous, underground_mode, popularity_curve, play_threshold, last_explore_generated_at")
       .eq("id", userId)
       .maybeSingle(),
   ])
@@ -43,6 +43,23 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   if (force) {
+    // Per-user cooldown on the expensive (54-74s) rebuild. Window is longer than
+    // the build itself so a second force can't schedule an overlapping build, and
+    // it caps how fast the shared Spotify/Last.fm key can be burned by repeated
+    // force-regens. Mirrors recommendations/generate's last_generated_at gate.
+    const FORCE_COOLDOWN_MS = 90_000
+    if (user.last_explore_generated_at) {
+      const elapsed = Date.now() - new Date(user.last_explore_generated_at).getTime()
+      if (elapsed < FORCE_COOLDOWN_MS) {
+        return apiError("Explore is already refreshing — please wait a moment", 429)
+      }
+    }
+    // Stamp the cooldown BEFORE scheduling so two rapid taps can't both pass the gate.
+    await supabase
+      .from("users")
+      .update({ last_explore_generated_at: new Date().toISOString() })
+      .eq("id", userId)
+
     // Non-blocking force-regen (#145a): schedule the 54-74s build to run after
     // the response is sent so the Shuffle / Settings-regenerate path returns
     // immediately. The cache write still completes; the client picks up fresh
