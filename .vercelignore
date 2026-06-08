@@ -1,0 +1,4 @@
+# Secrets + local rehearsal harness — never upload to Vercel (belt over .gitignore).
+.env.smoke
+.env.rehearsal
+scripts/_*.ts
