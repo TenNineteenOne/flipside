@@ -5,6 +5,7 @@ import {
   parseDeezerArtistId,
   extractExternalIds,
   createMbLimiter,
+  searchArtistMbid,
 } from "./musicbrainz"
 
 /** Real Radiohead url-rels (subset), captured live from MusicBrainz. */
@@ -95,6 +96,86 @@ describe("extractExternalIds", () => {
       { type: "official homepage", url: { resource: "https://www.radiohead.com" } },
     ])
     expect(out).toEqual({ spotifyId: null, appleId: null, deezerId: null })
+  })
+})
+
+describe("searchArtistMbid", () => {
+  // An instant (no real 1s wait) limiter so tests don't sleep.
+  const instantLimiter = createMbLimiter({ minIntervalMs: 0 })
+
+  const jsonResponse = (body: unknown, ok = true, status = 200) =>
+    ({
+      ok,
+      status,
+      json: async () => body,
+    }) as unknown as Response
+
+  it("returns the best (highest-score) mbid for a good match", async () => {
+    const fetchImpl = (async () =>
+      jsonResponse({
+        artists: [
+          { id: "low-id", name: "Radiohead (tribute)", score: 72 },
+          { id: "a74b1b7f-71a5-4011-9441-d0b5e4122711", name: "Radiohead", score: 100 },
+        ],
+      })) as unknown as typeof fetch
+
+    const mbid = await searchArtistMbid("Radiohead", { fetchImpl, limiter: instantLimiter })
+    expect(mbid).toBe("a74b1b7f-71a5-4011-9441-d0b5e4122711")
+  })
+
+  it("prefers an exact name match when scores tie", async () => {
+    const fetchImpl = (async () =>
+      jsonResponse({
+        artists: [
+          { id: "other-id", name: "The Beatles Revival", score: 100 },
+          { id: "exact-id", name: "The Beatles", score: 100 },
+        ],
+      })) as unknown as typeof fetch
+
+    const mbid = await searchArtistMbid("the beatles", { fetchImpl, limiter: instantLimiter })
+    expect(mbid).toBe("exact-id")
+  })
+
+  it("returns null when there are no results", async () => {
+    const fetchImpl = (async () => jsonResponse({ artists: [] })) as unknown as typeof fetch
+    expect(await searchArtistMbid("zzzznoartist", { fetchImpl, limiter: instantLimiter })).toBeNull()
+  })
+
+  it("returns null when the best score is below the confidence threshold", async () => {
+    const fetchImpl = (async () =>
+      jsonResponse({
+        artists: [{ id: "weak-id", name: "Something Else", score: 45 }],
+      })) as unknown as typeof fetch
+    expect(await searchArtistMbid("Radiohead", { fetchImpl, limiter: instantLimiter })).toBeNull()
+  })
+
+  it("returns null on a network error", async () => {
+    const fetchImpl = (async () => {
+      throw new Error("network down")
+    }) as unknown as typeof fetch
+    expect(await searchArtistMbid("Radiohead", { fetchImpl, limiter: instantLimiter })).toBeNull()
+  })
+
+  it("returns null on a non-2xx response", async () => {
+    const fetchImpl = (async () =>
+      jsonResponse({}, false, 503)) as unknown as typeof fetch
+    expect(await searchArtistMbid("Radiohead", { fetchImpl, limiter: instantLimiter })).toBeNull()
+  })
+
+  it("returns null on an MB error payload", async () => {
+    const fetchImpl = (async () =>
+      jsonResponse({ error: "rate limited" })) as unknown as typeof fetch
+    expect(await searchArtistMbid("Radiohead", { fetchImpl, limiter: instantLimiter })).toBeNull()
+  })
+
+  it("returns null for an empty / whitespace name without calling fetch", async () => {
+    let called = false
+    const fetchImpl = (async () => {
+      called = true
+      return jsonResponse({ artists: [] })
+    }) as unknown as typeof fetch
+    expect(await searchArtistMbid("   ", { fetchImpl, limiter: instantLimiter })).toBeNull()
+    expect(called).toBe(false)
   })
 })
 

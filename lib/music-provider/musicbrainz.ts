@@ -35,6 +35,22 @@ interface MbArtistResponse {
   error?: string
 }
 
+interface MbSearchArtist {
+  id?: string
+  name?: string
+  score?: number
+}
+
+interface MbSearchResponse {
+  artists?: MbSearchArtist[]
+  error?: string
+}
+
+// Minimum MB search score (0-100) to accept a name→mbid match. MB returns a
+// relevance score per candidate; weak/fuzzy matches score low. 90 keeps us to
+// confident matches (an exact-ish name almost always scores 100).
+const MB_SEARCH_MIN_SCORE = 90
+
 // ── Pure URL parsers ───────────────────────────────────────────────────────
 
 /** Extract a 22-char Spotify artist id from an open.spotify.com/artist/<id> URL. */
@@ -145,6 +161,69 @@ export async function fetchArtistRelations(
   const data = (await res.json()) as MbArtistResponse
   if (data.error) throw new Error(`musicbrainz error: ${data.error}`)
   return data.relations ?? []
+}
+
+// ── Name → MBID search ───────────────────────────────────────────────────────
+
+/** Lucene-escape a query value (MB search uses Lucene syntax). */
+function escapeLucene(s: string): string {
+  // Escape Lucene special chars so an artist name with +, -, (), ", etc. is
+  // treated as literal text rather than query operators.
+  return s.replace(/([+\-&|!(){}[\]^"~*?:\\/])/g, "\\$1")
+}
+
+/**
+ * Search MusicBrainz for an artist by name and return the best-match MBID, or
+ * null if there's no confident match. Runs under the shared 1-req/s limiter so
+ * it competes for the same MB budget as `resolveArtistExternalIds`. Never throws
+ * — returns null on any failure (mirrors `resolveArtistExternalIds`).
+ *
+ * "Best match" = highest score among results; accepted only if it clears
+ * MB_SEARCH_MIN_SCORE, with an exact (case-insensitive) name match preferred
+ * when scores tie. A null return means "MB couldn't confidently identify this
+ * name" — the worker stamps mbid_attempted_at and moves on.
+ */
+export async function searchArtistMbid(
+  name: string,
+  opts: { fetchImpl?: typeof fetch; limiter?: MbLimiter } = {},
+): Promise<string | null> {
+  const trimmed = name?.trim()
+  if (!trimmed) return null
+  const limiter = opts.limiter ?? defaultLimiter
+  const fetchImpl = opts.fetchImpl ?? fetch
+  try {
+    return await limiter.run(async () => {
+      const query = `artist:"${escapeLucene(trimmed)}"`
+      const url = `${MB_BASE}/artist/?query=${encodeURIComponent(query)}&fmt=json&limit=5`
+      const res = await fetchImpl(url, {
+        headers: { "User-Agent": USER_AGENT },
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      })
+      if (!res.ok) return null
+      const data = (await res.json()) as MbSearchResponse
+      if (data.error || !Array.isArray(data.artists) || data.artists.length === 0) return null
+
+      const lowerName = trimmed.toLowerCase()
+      let best: MbSearchArtist | null = null
+      let bestScore = -1
+      let bestExact = false
+      for (const a of data.artists) {
+        if (!a?.id) continue
+        const score = typeof a.score === "number" ? a.score : 0
+        const exact = typeof a.name === "string" && a.name.toLowerCase() === lowerName
+        // Prefer higher score; on a tie prefer an exact name match.
+        if (score > bestScore || (score === bestScore && exact && !bestExact)) {
+          best = a
+          bestScore = score
+          bestExact = exact
+        }
+      }
+      if (!best || bestScore < MB_SEARCH_MIN_SCORE) return null
+      return best.id ?? null
+    })
+  } catch {
+    return null
+  }
 }
 
 /**
