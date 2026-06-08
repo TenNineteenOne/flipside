@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
 
-// ── Mock the music provider singleton ────────────────────────────────────────
-// resolveUnresolvedArtistIds imports `musicProvider` from the provider module;
-// mock searchArtists so we can drive the live-search branch deterministically.
-const searchArtists = vi.fn()
-vi.mock("@/lib/music-provider/provider", () => ({
-  musicProvider: {
-    searchArtists: (...args: unknown[]) => searchArtists(...args),
-  },
+// ── Mock the Last.fm enrichment (getInfo) ────────────────────────────────────
+// resolveUnresolvedArtistIds confirms an artist exists via fetchArtistEnrichment
+// (cached Last.fm getInfo). Mock it to drive the cache-miss / ambiguous branch:
+//   found ({genres, popularity}) → mints by name → artist_id
+//   null                         → genuine not-found → unresolved
+const fetchArtistEnrichment = vi.fn()
+vi.mock("@/lib/recommendation/enrich-artist", () => ({
+  fetchArtistEnrichment: (...args: unknown[]) => fetchArtistEnrichment(...args),
 }))
 
 import { resolveUnresolvedArtistIds } from "./id-resolver"
@@ -54,6 +54,28 @@ function makeSupabase(listened: ListenedRow[], artists: ArtistRow[]) {
         }
         return { error: null }
       },
+      // ensureArtistByName insert(): name-only mint (no spotify_id).
+      insert(row: Partial<ArtistRow>) {
+        return {
+          select(_c: string) {
+            return {
+              async single() {
+                const minted: ArtistRow = {
+                  id: `artist-uuid-${++artistSeq}`,
+                  spotify_id: row.spotify_id ?? null,
+                  name: row.name ?? "",
+                  name_lower: row.name_lower ?? (row.name ?? "").toLowerCase(),
+                  genres: row.genres ?? [],
+                  popularity: row.popularity ?? null,
+                  image_url: row.image_url ?? null,
+                }
+                artists.push(minted)
+                return { data: { id: minted.id }, error: null }
+              },
+            }
+          },
+        }
+      },
       select(_cols: string) {
         return {
           // ensureArtists read-back: .in("spotify_id", chunk)
@@ -68,6 +90,17 @@ function makeSupabase(listened: ListenedRow[], artists: ArtistRow[]) {
                 name_lower: x.name_lower,
               }))
             return { data, error: null }
+          },
+          // ensureArtistByName read: .eq("name_lower", v).limit(5)
+          eq(column: string, value: string) {
+            return {
+              async limit(_n: number) {
+                const data = artists
+                  .filter((x) => (x as unknown as Record<string, unknown>)[column] === value)
+                  .map((x) => ({ id: x.id, spotify_id: x.spotify_id, popularity: x.popularity ?? null }))
+                return { data, error: null }
+              },
+            }
           },
         }
       },
@@ -177,23 +210,23 @@ const baseRow = (over: Partial<ListenedRow>): ListenedRow => ({
 })
 
 beforeEach(() => {
-  searchArtists.mockReset()
+  fetchArtistEnrichment.mockReset()
 })
 
 describe("resolveUnresolvedArtistIds — tight unresolved filter", () => {
   it("skips rows that already carry a legacy spotify_artist_id", async () => {
     const listened = [baseRow({ spotify_artist_id: "sp-legacy" })]
     const supabase = makeSupabase(listened, [])
-    await resolveUnresolvedArtistIds({ supabase, userId: "user-1", accessToken: "tok" })
-    expect(searchArtists).not.toHaveBeenCalled()
+    await resolveUnresolvedArtistIds({ supabase, userId: "user-1" })
+    expect(fetchArtistEnrichment).not.toHaveBeenCalled()
     expect(listened[0].artist_id).toBeNull()
   })
 
   it("skips rows that already have an artist_id", async () => {
     const listened = [baseRow({ artist_id: "artist-uuid-existing" })]
     const supabase = makeSupabase(listened, [])
-    await resolveUnresolvedArtistIds({ supabase, userId: "user-1", accessToken: "tok" })
-    expect(searchArtists).not.toHaveBeenCalled()
+    await resolveUnresolvedArtistIds({ supabase, userId: "user-1" })
+    expect(fetchArtistEnrichment).not.toHaveBeenCalled()
   })
 })
 
@@ -204,60 +237,58 @@ describe("resolveUnresolvedArtistIds — artists table hit", () => {
       { id: "artist-uuid-7", spotify_id: "sp-7", name: "Radiohead", name_lower: "radiohead" },
     ]
     const supabase = makeSupabase(listened, artists)
-    await resolveUnresolvedArtistIds({ supabase, userId: "user-1", accessToken: "tok" })
-    expect(searchArtists).not.toHaveBeenCalled()
+    await resolveUnresolvedArtistIds({ supabase, userId: "user-1" })
+    expect(fetchArtistEnrichment).not.toHaveBeenCalled()
     expect(listened[0].artist_id).toBe("artist-uuid-7")
     expect(listened[0].id_resolution_attempted_at).not.toBeNull()
   })
 
-  it("Option B: ambiguous name (>1 row) skips the hit and falls through to live search", async () => {
+  it("Option B: ambiguous name (>1 row) skips the hit and falls through to mint-by-name", async () => {
     const listened = [baseRow({})]
     const artists: ArtistRow[] = [
       { id: "artist-uuid-a", spotify_id: "sp-a", name: "Radiohead", name_lower: "radiohead" },
       { id: "artist-uuid-b", spotify_id: "sp-b", name: "Radiohead", name_lower: "radiohead" },
     ]
-    searchArtists.mockResolvedValue([
-      { id: "sp-live", name: "Radiohead", genres: [], popularity: 80, imageUrl: null },
-    ])
+    // getInfo confirms the artist exists → ensureArtist(by name) reuses the best
+    // existing row (spotify_id NOT NULL first) rather than minting a duplicate.
+    fetchArtistEnrichment.mockResolvedValue({ genres: ["rock"], popularity: 80 })
     const supabase = makeSupabase(listened, artists)
-    await resolveUnresolvedArtistIds({ supabase, userId: "user-1", accessToken: "tok" })
-    expect(searchArtists).toHaveBeenCalledOnce()
-    // minted a fresh artists row for sp-live and wrote its uuid
-    expect(listened[0].artist_id).toBe("artist-uuid-1")
+    await resolveUnresolvedArtistIds({ supabase, userId: "user-1" })
+    expect(fetchArtistEnrichment).toHaveBeenCalledOnce()
+    // reused an existing same-name row; no fresh mint
+    expect(["artist-uuid-a", "artist-uuid-b"]).toContain(listened[0].artist_id)
   })
 })
 
-describe("resolveUnresolvedArtistIds — live search + mint", () => {
-  it("mints a uuid via ensureArtist on a high-similarity match and writes artist_id", async () => {
+describe("resolveUnresolvedArtistIds — getInfo confirm + mint-by-name", () => {
+  it("mints a uuid via ensureArtist when getInfo confirms the artist", async () => {
     const listened = [baseRow({})]
-    searchArtists.mockResolvedValue([
-      { id: "sp-live", name: "Radiohead", genres: ["rock"], popularity: 90, imageUrl: "http://img" },
-    ])
+    fetchArtistEnrichment.mockResolvedValue({ genres: ["rock"], popularity: 90 })
     const artists: ArtistRow[] = []
     const supabase = makeSupabase(listened, artists)
-    await resolveUnresolvedArtistIds({ supabase, userId: "user-1", accessToken: "tok" })
+    await resolveUnresolvedArtistIds({ supabase, userId: "user-1" })
     expect(listened[0].artist_id).toBe("artist-uuid-1")
+    // minted a name-only row (no spotify_id — backfilled later by #159)
     expect(artists).toHaveLength(1)
-    expect(artists[0].spotify_id).toBe("sp-live")
+    expect(artists[0].spotify_id).toBeNull()
+    expect(artists[0].name).toBe("Radiohead")
   })
 
-  it("leaves artist_id null + only bumps timestamp on low similarity (no match)", async () => {
+  it("leaves artist_id null + only bumps timestamp when getInfo returns null (not found)", async () => {
     const listened = [baseRow({ lastfm_artist_name: "Radiohead" })]
-    searchArtists.mockResolvedValue([
-      { id: "sp-other", name: "Completely Different", genres: [], popularity: 10, imageUrl: null },
-    ])
+    fetchArtistEnrichment.mockResolvedValue(null)
     const supabase = makeSupabase(listened, [])
-    await resolveUnresolvedArtistIds({ supabase, userId: "user-1", accessToken: "tok" })
+    await resolveUnresolvedArtistIds({ supabase, userId: "user-1" })
     expect(listened[0].artist_id).toBeNull()
     expect(listened[0].id_resolution_attempted_at).not.toBeNull()
     expect(listened[0].spotify_artist_id).toBeNull()
   })
 
-  it("rate-limited search only bumps timestamp, leaves artist_id null", async () => {
+  it("never throws: getInfo rejecting only bumps timestamp, leaves artist_id null", async () => {
     const listened = [baseRow({})]
-    searchArtists.mockResolvedValue({ rateLimited: true, retryAfterSec: 30 })
+    fetchArtistEnrichment.mockRejectedValue(new Error("lastfm getInfo 500"))
     const supabase = makeSupabase(listened, [])
-    await resolveUnresolvedArtistIds({ supabase, userId: "user-1", accessToken: "tok" })
+    await resolveUnresolvedArtistIds({ supabase, userId: "user-1" })
     expect(listened[0].artist_id).toBeNull()
     expect(listened[0].id_resolution_attempted_at).not.toBeNull()
   })
@@ -278,7 +309,7 @@ describe("resolveUnresolvedArtistIds — 23505 merge path on artist_id", () => {
       { id: "artist-uuid-9", spotify_id: "sp-9", name: "Radiohead", name_lower: "radiohead" },
     ]
     const supabase = makeSupabase(listened, artists)
-    await resolveUnresolvedArtistIds({ supabase, userId: "user-1", accessToken: "tok" })
+    await resolveUnresolvedArtistIds({ supabase, userId: "user-1" })
 
     // orphan deleted, target merged
     expect(listened.find((r) => r.id === "orphan")).toBeUndefined()
@@ -313,7 +344,7 @@ describe("resolveUnresolvedArtistIds — 23505 merge path on artist_id", () => {
       }
       return t
     }
-    await resolveUnresolvedArtistIds({ supabase, userId: "user-1", accessToken: "tok" })
+    await resolveUnresolvedArtistIds({ supabase, userId: "user-1" })
     // orphan still present (not deleted), artist_id still null
     const still = listened.find((r) => r.id === "orphan")!
     expect(still).toBeDefined()

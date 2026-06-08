@@ -137,7 +137,7 @@ describe("accumulateStatsFmHistory — resolved (spotify-id) branch", () => {
     currentSupabase = makeSupabase(listened, artists)
     stubFetch([{ name: "Burial", spotifyIds: ["sp-burial"] }])
 
-    await accumulateStatsFmHistory({ userId: "user-1", statsfmUsername: "u", accessToken: "tok" })
+    await accumulateStatsFmHistory({ userId: "user-1", statsfmUsername: "u" })
 
     expect(artists).toHaveLength(1)
     expect(artists[0].spotify_id).toBe("sp-burial")
@@ -165,7 +165,7 @@ describe("accumulateStatsFmHistory — resolved (spotify-id) branch", () => {
     currentSupabase = makeSupabase(listened, artists)
     stubFetch([{ name: "X", spotifyIds: ["sp-x"] }])
 
-    await accumulateStatsFmHistory({ userId: "user-1", statsfmUsername: "u", accessToken: "tok" })
+    await accumulateStatsFmHistory({ userId: "user-1", statsfmUsername: "u" })
 
     expect(listened).toHaveLength(1)
     expect(listened[0].play_count).toBe(6)
@@ -179,7 +179,7 @@ describe("accumulateStatsFmHistory — name-only branch", () => {
     currentSupabase = makeSupabase(listened, artists)
     stubFetch([{ name: "Unknown Artist" }]) // no spotifyIds
 
-    await accumulateStatsFmHistory({ userId: "user-1", statsfmUsername: "u", accessToken: "tok" })
+    await accumulateStatsFmHistory({ userId: "user-1", statsfmUsername: "u" })
 
     expect(artists).toHaveLength(0) // nothing minted for a name-only row
     expect(listened).toHaveLength(1)

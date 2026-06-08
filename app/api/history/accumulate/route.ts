@@ -4,7 +4,6 @@ import { createServiceClient } from "@/lib/supabase/server"
 import { enforceSameOrigin } from "@/lib/csrf"
 import { accumulateLastFmHistory } from "@/lib/listened-artists"
 import { accumulateStatsFmHistory } from "@/lib/statsfm-listened-artists"
-import { getSpotifyClientToken } from "@/lib/spotify-client-token"
 import { decryptUsername } from "@/lib/crypto/username"
 
 const COOLDOWN_MS = 15 * 60_000
@@ -70,11 +69,10 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   try {
-    const accessToken = (await getSpotifyClientToken()) ?? ""
     if (source === "lastfm") {
-      await accumulateLastFmHistory({ userId, lastfmUsername: username, accessToken })
+      await accumulateLastFmHistory({ userId, lastfmUsername: username })
     } else {
-      await accumulateStatsFmHistory({ userId, statsfmUsername: username, accessToken })
+      await accumulateStatsFmHistory({ userId, statsfmUsername: username })
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : "Accumulation failed"

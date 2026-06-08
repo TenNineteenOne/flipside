@@ -1,7 +1,5 @@
 import { createServiceClient } from "@/lib/supabase/server"
-import { musicProvider } from "@/lib/music-provider/provider"
-import { isRateLimited } from "@/lib/music-provider"
-import { stringSimilarity, SIMILARITY_THRESHOLD } from "@/lib/history/name-utils"
+import { fetchArtistEnrichment } from "@/lib/recommendation/enrich-artist"
 import { ensureArtist, type ArtistsSupabaseClient } from "@/lib/artists"
 
 // ── Name → artist_id (uuid) resolution ───────────────────────────────────────
@@ -18,24 +16,27 @@ interface UnresolvedRow {
  * `artist_id IS NULL AND lastfm_artist_name IS NOT NULL AND
  * spotify_artist_id IS NULL` — that hasn't been attempted in the last 7 days,
  * try to resolve the canonical `artist_id` (uuid) via the `artists` table
- * first, then via a live Spotify artist search (which mints an `artists` row).
+ * first, then — since the artist NAME is already known — by confirming the
+ * artist exists via Last.fm getInfo (cached) and minting a canonical uuid by
+ * name. No live Spotify call: the spotify_id is backfilled later by the #159
+ * MusicBrainz worker.
  *
  * The tight filter preserves the old name-only semantics: rows that still carry
  * a legacy `spotify_artist_id` are left to the migration backfill, not this pass.
  *
  * - Table hit  → write artist_id, update id_resolution_attempted_at
- * - Search hit → ensureArtist (mint/resolve uuid), write artist_id, update timestamp
+ * - getInfo hit → ensureArtist (mint/resolve uuid by name), write artist_id, update timestamp
  * - No match   → leave artist_id null, update timestamp (retry after 7 days)
  *
- * Processed in batches of RESOLUTION_BATCH_SIZE to stay within Spotify rate limits.
+ * Processed in batches of RESOLUTION_BATCH_SIZE. The getInfo calls are cached
+ * and share the global Last.fm limiter, so this stays within rate budget.
  * Never throws — all errors are logged so the parent sync call is not disrupted.
  */
 export async function resolveUnresolvedArtistIds(params: {
   supabase: ReturnType<typeof createServiceClient>
   userId: string
-  accessToken: string
 }): Promise<void> {
-  const { supabase, userId, accessToken } = params
+  const { supabase, userId } = params
 
   // 1. Fetch unresolved rows for this user. TIGHT filter: genuine name-only rows
   //    only (artist_id null AND a name present AND no legacy spotify_artist_id).
@@ -68,7 +69,7 @@ export async function resolveUnresolvedArtistIds(params: {
   // 2. Process in batches
   for (let i = 0; i < unresolved.length; i += RESOLUTION_BATCH_SIZE) {
     const batch = unresolved.slice(i, i + RESOLUTION_BATCH_SIZE)
-    await resolveLastFmBatch({ supabase, userId, accessToken, batch })
+    await resolveLastFmBatch({ supabase, userId, batch })
   }
 }
 
@@ -137,11 +138,11 @@ async function resolveOrMergeRow(params: {
 async function resolveLastFmBatch(params: {
   supabase: ReturnType<typeof createServiceClient>
   userId: string
-  accessToken: string
   batch: UnresolvedRow[]
 }): Promise<void> {
-  const { supabase, userId, accessToken, batch } = params
+  const { supabase, userId, batch } = params
   const now = new Date().toISOString()
+  const lastfmApiKey = process.env.LASTFM_API_KEY ?? ""
 
   // 2a. Batch-read the canonical `artists` table for all names in this batch.
   //     name_lower is NON-unique → a name may map to several artist rows.
@@ -156,7 +157,7 @@ async function resolveLastFmBatch(params: {
       "[resolveLastFmArtistIds] artists read error:",
       cacheErr.message
     )
-    // Proceed without the table hit — will fall back to live search
+    // Proceed without the table hit — will fall back to mint-by-name
   }
 
   type ArtistRow = {
@@ -178,7 +179,7 @@ async function resolveLastFmBatch(params: {
     const candidates = artistsByLower.get(nameLower) ?? []
 
     // Exactly one row → unambiguous table hit; use its uuid directly.
-    // More than one → ambiguous; skip the hit and fall through to live search
+    // More than one → ambiguous; skip the hit and fall through to mint-by-name
     // (Option B). Zero → cache miss, also falls through.
     if (candidates.length === 1) {
       const hit = candidates[0]
@@ -204,73 +205,50 @@ async function resolveLastFmBatch(params: {
 
     if (candidates.length > 1) {
       console.log(
-        `[resolveLastFmArtistIds] ambiguous name="${row.lastfm_artist_name}" matches=${candidates.length} → live search`
+        `[resolveLastFmArtistIds] ambiguous name="${row.lastfm_artist_name}" matches=${candidates.length} → mint-by-name`
       )
     }
 
-    // Cache miss (or ambiguous) — live Spotify search, then mint a canonical uuid.
+    // Cache miss (or ambiguous) — the NAME is already known, so confirm the
+    // artist exists via Last.fm getInfo (cached) and mint a canonical uuid by
+    // name. spotify_id is backfilled later by the #159 MB worker.
     let resolvedUuid: string | null = null
-    let resolvedSpotifyId: string | null = null
 
     try {
-      const results = await musicProvider.searchArtists(accessToken, row.lastfm_artist_name)
+      const enrichment = await fetchArtistEnrichment(row.lastfm_artist_name, lastfmApiKey)
 
-      if (isRateLimited(results)) {
-        // Rate limited — skip this artist for now; retry next sync
-        console.warn(
-          `[resolveLastFmArtistIds] Rate limited searching "${row.lastfm_artist_name}", skipping`
+      if (!enrichment) {
+        // Genuine "artist not found" (or no apiKey / transient swallowed to null).
+        // Leave unresolved — fall through to the timestamp-only path below.
+        console.log(
+          `[resolveLastFmArtistIds] no-getInfo name="${row.lastfm_artist_name}" → unresolved`
         )
-        // Update timestamp so we don't hammer Spotify again immediately
-        await supabase
-          .from("listened_artists")
-          .update({ id_resolution_attempted_at: now })
-          .eq("id", row.id)
-        continue
-      }
-
-      if (results.length > 0) {
-        // Find the best match by name similarity
-        const nameLowerOrig = row.lastfm_artist_name.toLowerCase()
-        const exactMatch = results.find(
-          (a) => a.name.toLowerCase() === nameLowerOrig
-        )
-        const best = exactMatch ?? results[0]
-
-        const similarity = stringSimilarity(row.lastfm_artist_name, best.name)
-        if (similarity >= SIMILARITY_THRESHOLD) {
-          // Mint/resolve the canonical artists.id (uuid) for this Spotify match.
-          const uuid = await ensureArtist(
-            supabase as unknown as ArtistsSupabaseClient,
-            {
-              spotifyId: best.id,
-              name: best.name,
-              genres: best.genres,
-              popularity: best.popularity,
-              imageUrl: best.imageUrl,
-            }
-          )
-
-          if (uuid) {
-            resolvedUuid = uuid
-            resolvedSpotifyId = best.id
-            console.log(
-              `[resolveLastFmArtistIds] resolved name="${row.lastfm_artist_name}" artist_id=${uuid} spotifyId=${best.id} sim=${similarity.toFixed(2)}`
-            )
-          } else {
-            // Mint failed → treat as no-match (degrade, don't throw).
-            console.log(
-              `[resolveLastFmArtistIds] mint-failed name="${row.lastfm_artist_name}" spotifyId=${best.id} → unresolved`
-            )
+      } else {
+        // Mint/resolve the canonical artists.id (uuid) by name (no spotifyId).
+        const uuid = await ensureArtist(
+          supabase as unknown as ArtistsSupabaseClient,
+          {
+            name: row.lastfm_artist_name,
+            genres: enrichment.genres,
+            popularity: enrichment.popularity,
           }
-        } else {
+        )
+
+        if (uuid) {
+          resolvedUuid = uuid
           console.log(
-            `[resolveLastFmArtistIds] low-similarity name="${row.lastfm_artist_name}" best="${best.name}" sim=${similarity.toFixed(2)} → unresolved`
+            `[resolveLastFmArtistIds] resolved name="${row.lastfm_artist_name}" artist_id=${uuid} (mint-by-name)`
+          )
+        } else {
+          // Mint failed → treat as no-match (degrade, don't throw).
+          console.log(
+            `[resolveLastFmArtistIds] mint-failed name="${row.lastfm_artist_name}" → unresolved`
           )
         }
       }
     } catch (err) {
       console.error(
-        `[resolveLastFmArtistIds] Search threw for "${row.lastfm_artist_name}":`,
+        `[resolveLastFmArtistIds] getInfo/mint threw for "${row.lastfm_artist_name}":`,
         err instanceof Error ? err.message : err
       )
     }
@@ -293,7 +271,7 @@ async function resolveLastFmBatch(params: {
         )
       } else if (res.merged) {
         console.log(
-          `[resolveLastFmArtistIds] merged orphan name="${row.lastfm_artist_name}" into existing artist_id=${resolvedUuid} spotifyId=${resolvedSpotifyId ?? "-"}`
+          `[resolveLastFmArtistIds] merged orphan name="${row.lastfm_artist_name}" into existing artist_id=${resolvedUuid}`
         )
       }
     } else {

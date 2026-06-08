@@ -27,10 +27,8 @@ interface ResolvedEntry {
 export async function accumulateStatsFmHistory(params: {
   userId: string
   statsfmUsername: string
-  /** Spotify access token — used for the ID resolution pass after upserting name-only rows. */
-  accessToken: string
 }): Promise<void> {
-  const { userId, statsfmUsername, accessToken } = params
+  const { userId, statsfmUsername } = params
 
   const url = `https://api.stats.fm/api/v1/users/${encodeURIComponent(statsfmUsername)}/top/artists?range=lifetime`
   const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
@@ -66,7 +64,7 @@ export async function accumulateStatsFmHistory(params: {
   }
 
   try {
-    await resolveUnresolvedArtistIds({ supabase, userId, accessToken })
+    await resolveUnresolvedArtistIds({ supabase, userId })
   } catch (err) {
     console.error(
       "[accumulateStatsFmHistory] Resolution pass failed:",

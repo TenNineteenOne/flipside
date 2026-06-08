@@ -90,7 +90,7 @@ describe("accumulateLastFmHistory", () => {
     const listened: ListenedRow[] = []
     currentSupabase = makeSupabase(listened)
 
-    await accumulateLastFmHistory({ userId: "user-1", lastfmUsername: "u", accessToken: "tok" })
+    await accumulateLastFmHistory({ userId: "user-1", lastfmUsername: "u" })
 
     expect(listened).toHaveLength(2)
     for (const row of listened) {
@@ -117,7 +117,7 @@ describe("accumulateLastFmHistory", () => {
     ]
     currentSupabase = makeSupabase(listened)
 
-    await accumulateLastFmHistory({ userId: "user-1", lastfmUsername: "u", accessToken: "tok" })
+    await accumulateLastFmHistory({ userId: "user-1", lastfmUsername: "u" })
 
     const aphex = listened.find((r) => r.lastfm_artist_name === "Aphex Twin")!
     expect(aphex.play_count).toBe(8)

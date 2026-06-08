@@ -26,10 +26,8 @@ interface LastFmRecentTracksResponse {
 export async function accumulateLastFmHistory(params: {
   userId: string
   lastfmUsername: string
-  /** Spotify access token — used for the ID resolution pass after upserting Last.fm rows. */
-  accessToken: string
 }): Promise<void> {
-  const { userId, lastfmUsername, accessToken } = params
+  const { userId, lastfmUsername } = params
   const apiKey = process.env.LASTFM_API_KEY
 
   if (!apiKey) {
@@ -107,7 +105,7 @@ export async function accumulateLastFmHistory(params: {
   // that still have NULL.  Runs non-blocking (no throw) so a Spotify hiccup
   // does not break the sync response for the user.
   try {
-    await resolveUnresolvedArtistIds({ supabase, userId, accessToken })
+    await resolveUnresolvedArtistIds({ supabase, userId })
   } catch (err) {
     console.error(
       "[accumulateLastFmHistory] Resolution pass failed:",
