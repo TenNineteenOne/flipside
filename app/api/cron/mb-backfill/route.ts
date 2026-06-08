@@ -6,7 +6,10 @@
  * (spotify_id / mbid / apple_id / deezer_id) via MusicBrainz — WITHOUT calling
  * the Spotify API — so "open in Spotify" links and real images come back.
  *
- * Schedule: every 10 minutes (see vercel.json crons → /api/cron/mb-backfill).
+ * Schedule: once daily (see vercel.json crons → /api/cron/mb-backfill). The
+ * Vercel Hobby plan caps cron jobs at once/day (a more frequent expression fails
+ * the build), and MusicBrainz's 1-req/s limit — not the cron cadence — is the
+ * real throughput ceiling, so once/day with a large per-run batch is optimal.
  *
  * 🔴 SINGLE-PROCESS ONLY. The MB 1-req/s limiter in lib/music-provider/
  * musicbrainz.ts is per-process; running this on multiple instances would
@@ -23,10 +26,16 @@ import { resolveArtistExternalIds, searchArtistMbid } from "@/lib/music-provider
 import { createHmac, timingSafeEqual } from "crypto"
 import { NextRequest } from "next/server"
 
+// This worker is almost entirely I/O-wait on the 1-req/s MusicBrainz limiter, so
+// allow the full Hobby/Fluid 300s function budget for a single daily run.
+export const maxDuration = 300
+
 // Per-run cap. The MB limiter is 1 req/s and each artist costs up to 2 MB calls
-// (search + resolve), so ~20 artists ≈ ~40s of MB work — comfortably inside a
-// function timeout and short enough not to overlap the 10-min schedule.
-const BATCH_LIMIT = 20
+// (search + resolve), so ~120 artists ≈ ~240s of MB work — inside the 300s
+// maxDuration with margin. At once/day this clears a sizeable backlog in one run
+// while staying well under the Hobby compute budget (the time is mostly waiting
+// on MB, not active CPU).
+const BATCH_LIMIT = 120
 
 // Don't re-attempt an artist MB already failed to resolve more often than this.
 const REATTEMPT_INTERVAL_DAYS = 14
