@@ -351,23 +351,45 @@ describe("resolveArtistsByName", () => {
 
   // ── mintArtist wiring ────────────────────────────────────────────────────
 
-  it("mints the uuid identity: moves Spotify id to spotifyId, sets id to the minted uuid", async () => {
+  it("mints the uuid identity: assigns the minted uuid to id, preserves the adapter's spotifyId", async () => {
     const writes = new Map<string, Artist>()
-    const search = async (name: string): Promise<Artist[] | RateLimited> => [artist(`spotify-${name}`, name)]
+    // Provider-agnostic: the search adapter sets spotifyId itself. Here a
+    // (hypothetical) Spotify-style adapter sets a real spotifyId.
+    const search = async (name: string): Promise<Artist[] | RateLimited> => [
+      { id: "", spotifyId: `spotify-${name}`, name, genres: [], imageUrl: null, popularity: 50 },
+    ]
     const mintArtist = vi.fn(async (_a: Artist): Promise<string | null> => "uuid-123")
     const deps: ResolveDeps = { ...makeDeps({ search, cacheWrites: writes }), mintArtist }
     const r = await resolveArtistsByName(["A"], deps)
 
     expect(mintArtist).toHaveBeenCalledTimes(1)
-    // The artist passed to mint still carries the Spotify id as `.id`.
-    expect(mintArtist.mock.calls[0][0].id).toBe("spotify-A")
+    // The artist passed to mint carries the adapter's spotifyId, NOT derived from .id.
+    expect(mintArtist.mock.calls[0][0].spotifyId).toBe("spotify-A")
 
     const resolved = r.resolved.get("A")!
-    expect(resolved.id).toBe("uuid-123")        // identity = minted uuid
-    expect(resolved.spotifyId).toBe("spotify-A") // attribute = original Spotify id
+    expect(resolved.id).toBe("uuid-123")          // identity = minted uuid
+    expect(resolved.spotifyId).toBe("spotify-A")  // attribute = adapter-supplied, untouched
     // Cache write carries the re-keyed artist.
     expect(writes.get("a")?.id).toBe("uuid-123")
     expect(writes.get("a")?.spotifyId).toBe("spotify-A")
+  })
+
+  it("Last.fm-resolved artist ends with spotifyId=null and a minted uuid id", async () => {
+    const writes = new Map<string, Artist>()
+    // Last.fm adapter: spotifyId null, id "" (uuid minted downstream).
+    const search = async (name: string): Promise<Artist[] | RateLimited> => [
+      { id: "", spotifyId: null, name, genres: ["indie"], imageUrl: null, popularity: 40 },
+    ]
+    const mintArtist = vi.fn(async (_a: Artist): Promise<string | null> => "uuid-lfm")
+    const deps: ResolveDeps = { ...makeDeps({ search, cacheWrites: writes }), mintArtist }
+    const r = await resolveArtistsByName(["A"], deps)
+
+    // mintArtist sees a null spotifyId → ensureArtist mints by name.
+    expect(mintArtist.mock.calls[0][0].spotifyId).toBeNull()
+    const resolved = r.resolved.get("A")!
+    expect(resolved.id).toBe("uuid-lfm")
+    expect(resolved.spotifyId).toBeNull()
+    expect(writes.get("a")?.spotifyId).toBeNull()
   })
 
   it("drops the name (no resolve, no cache write, counts fail) when mint returns null", async () => {

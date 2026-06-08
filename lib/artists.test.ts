@@ -1,10 +1,13 @@
 import { describe, it, expect } from "vitest"
 import { ensureArtists, ensureArtist, type ArtistsSupabaseClient } from "./artists"
 
-interface Row { id: string; spotify_id: string | null; name: string }
+interface Row { id: string; spotify_id: string | null; name: string; name_lower?: string; popularity?: number | null }
 
 /** In-memory fake of the minimal Supabase surface ensureArtists uses. */
-function makeClient(initial: Row[] = [], opts: { failUpsert?: boolean; failSelect?: boolean } = {}) {
+function makeClient(
+  initial: Row[] = [],
+  opts: { failUpsert?: boolean; failSelect?: boolean; failByNameSelect?: boolean; failInsert?: boolean } = {},
+) {
   const rows: Row[] = [...initial]
   let seq = 0
   const client: ArtistsSupabaseClient = {
@@ -18,7 +21,7 @@ function makeClient(initial: Row[] = [], opts: { failUpsert?: boolean; failSelec
               if (!options.ignoreDuplicates) Object.assign(existing, { name: r.name })
               continue
             }
-            rows.push({ id: `uuid-${++seq}`, spotify_id: r.spotify_id, name: r.name })
+            rows.push({ id: `uuid-${++seq}`, spotify_id: r.spotify_id, name: r.name, name_lower: r.name_lower })
           }
           return { error: null }
         },
@@ -30,6 +33,37 @@ function makeClient(initial: Row[] = [], opts: { failUpsert?: boolean; failSelec
                 .filter((x) => values.includes((x as unknown as Record<string, unknown>)[column] as string))
                 .map((x) => ({ id: x.id, spotify_id: x.spotify_id }))
               return { data, error: null }
+            },
+            eq(column, value) {
+              return {
+                async limit(_n: number) {
+                  if (opts.failByNameSelect) return { data: null, error: { message: "by-name boom" } }
+                  const data = rows
+                    .filter((x) => (x as unknown as Record<string, unknown>)[column] === value)
+                    .map((x) => ({ id: x.id, spotify_id: x.spotify_id, popularity: x.popularity ?? null }))
+                  return { data, error: null }
+                },
+              }
+            },
+          }
+        },
+        insert(row) {
+          return {
+            select() {
+              return {
+                async single() {
+                  if (opts.failInsert) return { data: null, error: { message: "insert boom" } }
+                  const newRow: Row = {
+                    id: `uuid-${++seq}`,
+                    spotify_id: null,
+                    name: row.name,
+                    name_lower: row.name_lower,
+                    popularity: row.popularity,
+                  }
+                  rows.push(newRow)
+                  return { data: { id: newRow.id }, error: null }
+                },
+              }
             },
           }
         },
@@ -86,15 +120,70 @@ describe("ensureArtists", () => {
 })
 
 describe("ensureArtist", () => {
-  it("returns the canonical uuid for a single seed", async () => {
+  it("returns the canonical uuid for a single seed (spotify-id path)", async () => {
     const { client } = makeClient()
     const id = await ensureArtist(client, { spotifyId: "spZ", name: "Zeta" })
     expect(id).toBeTruthy()
   })
+})
 
-  it("returns null for a seed with no spotifyId", async () => {
-    const { client } = makeClient()
-    const id = await ensureArtist(client, { spotifyId: "", name: "NoId" })
+describe("ensureArtist — mint-by-name (no spotifyId)", () => {
+  it("creates a name-only row when no existing row matches", async () => {
+    const { client, rows } = makeClient()
+    const id = await ensureArtist(client, { name: "Fresh Band", genres: ["indie"], popularity: 40 })
+    expect(id).toBeTruthy()
+    expect(rows).toHaveLength(1)
+    expect(rows[0].name).toBe("Fresh Band")
+    expect(rows[0].name_lower).toBe("fresh band")
+    expect(rows[0].spotify_id).toBeNull() // minted WITHOUT a spotify_id (#159 backfills)
+  })
+
+  it("treats a null spotifyId the same as absent (mint by name)", async () => {
+    const { client, rows } = makeClient()
+    const id = await ensureArtist(client, { spotifyId: null, name: "Nully" })
+    expect(id).toBeTruthy()
+    expect(rows).toHaveLength(1)
+  })
+
+  it("reuses an existing row by name_lower instead of inserting a duplicate", async () => {
+    const { client, rows } = makeClient([
+      { id: "existing-uuid", spotify_id: "spX", name: "Khruangbin", name_lower: "khruangbin", popularity: 60 },
+    ])
+    const id = await ensureArtist(client, { name: "khruangbin" }) // different casing
+    expect(id).toBe("existing-uuid")
+    expect(rows).toHaveLength(1) // no duplicate minted
+  })
+
+  it("reuses the best row when multiple match: spotify_id NOT NULL first, then popularity", async () => {
+    const { client, rows } = makeClient([
+      { id: "no-sp-high", spotify_id: null, name: "Dup", name_lower: "dup", popularity: 90 },
+      { id: "sp-low", spotify_id: "spA", name: "Dup", name_lower: "dup", popularity: 10 },
+      { id: "no-sp-low", spotify_id: null, name: "Dup", name_lower: "dup", popularity: 5 },
+    ])
+    const id = await ensureArtist(client, { name: "Dup" })
+    // spotify_id NOT NULL wins even though its popularity is lowest.
+    expect(id).toBe("sp-low")
+    expect(rows).toHaveLength(3)
+  })
+
+  it("picks highest popularity among rows that all have a spotify_id", async () => {
+    const { client } = makeClient([
+      { id: "low", spotify_id: "spA", name: "Dup", name_lower: "dup", popularity: 20 },
+      { id: "high", spotify_id: "spB", name: "Dup", name_lower: "dup", popularity: 80 },
+    ])
+    const id = await ensureArtist(client, { name: "Dup" })
+    expect(id).toBe("high")
+  })
+
+  it("returns null (never throws) on a by-name read failure", async () => {
+    const { client } = makeClient([], { failByNameSelect: true })
+    const id = await ensureArtist(client, { name: "Boom" })
+    expect(id).toBeNull()
+  })
+
+  it("returns null (never throws) on an insert failure", async () => {
+    const { client } = makeClient([], { failInsert: true })
+    const id = await ensureArtist(client, { name: "Boom" })
     expect(id).toBeNull()
   })
 })

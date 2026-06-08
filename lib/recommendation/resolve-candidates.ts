@@ -11,17 +11,22 @@ const FUZZY_ACCEPT_THRESHOLD = 0.8
 export interface ResolveDeps {
   cache: Pick<ArtistNameCache, "batchRead" | "write">
   /**
-   * Live Spotify search. Returns the artist array on success, an empty
-   * array on no-match, or a `RateLimited` sentinel on 429.
+   * Provider-agnostic name resolver. Returns the artist array on success, an
+   * empty array on no-match, or a `RateLimited` sentinel on 429. Wired to
+   * Last.fm artist.getInfo in Stage 2 (#157) so generation is Spotify-free; the
+   * adapter is responsible for setting `.spotifyId` on each result (null for
+   * Last.fm-resolved artists). A `RateLimited` return is still honored for any
+   * future rate-limiting provider.
    */
   searchArtists: (name: string) => Promise<Artist[] | RateLimited>
   /**
-   * Mint/resolve the canonical `artists.id` (uuid) for a resolved Spotify
-   * artist. The caller wires this to `ensureArtist(serviceClient, …)`. Returns
-   * the uuid, or null when minting failed (e.g. DB unavailable) — in which case
-   * the resolver SKIPS caching that name rather than persist a Spotify id as the
-   * identity. Optional: when omitted (legacy/tests) the Spotify result is used
-   * as-is and `.id` stays the Spotify id.
+   * Mint/resolve the canonical `artists.id` (uuid) for a resolved artist. The
+   * caller wires this to `ensureArtist(serviceClient, …)`, which dedups on
+   * spotify_id when the artist carries one, else get-or-creates by name.
+   * Returns the uuid, or null when minting failed (e.g. DB unavailable) — in
+   * which case the resolver SKIPS caching that name rather than persist a
+   * non-uuid `.id` as the identity. Optional: when omitted (legacy/tests) the
+   * resolved result is used as-is and `.id` is left untouched.
    */
   mintArtist?: (artist: Artist) => Promise<string | null>
   /**
@@ -196,21 +201,23 @@ export async function resolveArtistsByName(
         const enrichment = await enrichmentPromise
         resolvedArtist = mergeEnrichment(resolvedArtist, enrichment)
 
-        // Mint the canonical uuid identity. The Spotify result's `.id` is the
-        // Spotify artist id; move it to `.spotifyId` and replace `.id` with the
-        // minted uuid.
+        // Mint the canonical uuid identity. Provider-agnostic: the search
+        // adapter already set `.spotifyId` correctly (the Last.fm adapter sets
+        // it to null; a Spotify adapter would set the real Spotify id), so we
+        // ONLY assign the minted uuid to `.id` — we never derive `.spotifyId`
+        // from `.id` here.
         if (deps.mintArtist) {
           const uuid = await deps.mintArtist(resolvedArtist)
           if (uuid) {
-            resolvedArtist = { ...resolvedArtist, spotifyId: resolvedArtist.id, id: uuid }
+            resolvedArtist = { ...resolvedArtist, id: uuid }
             result.searchOk++
             result.resolved.set(name, resolvedArtist)
             await deps.cache.write(name, resolvedArtist)
             firstSuccessfulSearch = false
           } else {
-            // Mint failed (e.g. DB unavailable). We must NEVER let a Spotify id
+            // Mint failed (e.g. DB unavailable). We must NEVER let a non-uuid id
             // leak downstream as the artist identity — recommendation_cache /
-            // explore now key on artists.id (a uuid FK), so a Spotify-id `.id`
+            // explore now key on artists.id (a uuid FK), so a placeholder `.id`
             // would either violate the FK or poison dedup. Drop the name: skip
             // both the resolved map and the cache write, count as a fail.
             result.searchFail++

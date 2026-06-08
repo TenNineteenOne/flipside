@@ -16,8 +16,14 @@
  */
 
 export interface ArtistSeed {
-  /** Spotify artist id — the dedup key. Seeds without one are skipped. */
-  spotifyId: string
+  /**
+   * Spotify artist id — the dedup key for the spotify-id mint path. When
+   * present, dedups on `spotify_id`. When absent/null (Last.fm-resolved
+   * artists, Stage 2 Spotify-free generation), `ensureArtist` falls back to a
+   * get-or-create by `name_lower` — the new row is minted WITHOUT a spotify_id
+   * (the #159 backfill worker fills it later).
+   */
+  spotifyId?: string | null
   name: string
   genres?: string[]
   popularity?: number | null
@@ -49,8 +55,33 @@ export interface ArtistsSupabaseClient {
         data: Array<{ id: string; spotify_id: string | null }> | null
         error: { message: string } | null
       }>
+      // Mint-by-name path: look up existing rows for a name_lower.
+      eq(column: string, value: string): {
+        limit(n: number): Promise<{
+          data: Array<{ id: string; spotify_id: string | null; popularity: number | null }> | null
+          error: { message: string } | null
+        }>
+      }
+    }
+    // Mint-by-name path: insert a name-only row and read the new id back.
+    insert(row: ArtistInsertRow): {
+      select(columns: string): {
+        single(): Promise<{
+          data: { id: string } | null
+          error: { message: string } | null
+        }>
+      }
     }
   }
+}
+
+/** Row shape for the name-only insert (no spotify_id). */
+interface ArtistInsertRow {
+  name: string
+  name_lower: string
+  genres: string[]
+  popularity: number | null
+  image_url: string | null
 }
 
 const TABLE = "artists"
@@ -75,8 +106,8 @@ export async function ensureArtists(
   }
   if (bySpotify.size === 0) return out
 
-  const rows: ArtistUpsertRow[] = [...bySpotify.values()].map((s) => ({
-    spotify_id: s.spotifyId,
+  const rows: ArtistUpsertRow[] = [...bySpotify.entries()].map(([spotifyId, s]) => ({
+    spotify_id: spotifyId,
     name: s.name,
     name_lower: s.name.toLowerCase(),
     genres: s.genres ?? [],
@@ -116,12 +147,89 @@ export async function ensureArtists(
   return out
 }
 
-/** Single-artist convenience. Returns the canonical uuid, or null on failure. */
+/**
+ * Single-artist convenience. Returns the canonical uuid, or null on failure.
+ *
+ * Two paths:
+ *  - `seed.spotifyId` truthy → the existing spotify_id dedup path (unchanged).
+ *  - else → get-or-create by `name_lower` (Stage 2 Spotify-free mint). New rows
+ *    are minted WITHOUT a spotify_id; the #159 backfill worker fills it later.
+ */
 export async function ensureArtist(
   client: ArtistsSupabaseClient,
   seed: ArtistSeed,
 ): Promise<string | null> {
-  if (!seed.spotifyId) return null
-  const map = await ensureArtists(client, [seed])
-  return map.get(seed.spotifyId) ?? null
+  if (seed.spotifyId) {
+    const map = await ensureArtists(client, [seed])
+    return map.get(seed.spotifyId) ?? null
+  }
+  return ensureArtistByName(client, seed)
+}
+
+/**
+ * Get-or-create an `artists` row keyed on `name_lower` (Spotify-free mint).
+ *
+ * Reuses any existing row — preferring one that already has a spotify_id (e.g.
+ * the 6254 seeded artists), then by popularity — so a Last.fm-resolved name
+ * converges onto the canonical row and we don't proliferate duplicates. This is
+ * a pragmatic resolution of the rare same-name collision: a single canonical
+ * row per name beats minting near-duplicates. When no row exists, inserts a
+ * name-only row (no spotify_id) and returns the new id.
+ *
+ * Never throws — logs + returns null on error, matching the module's style.
+ */
+async function ensureArtistByName(
+  client: ArtistsSupabaseClient,
+  seed: ArtistSeed,
+): Promise<string | null> {
+  const nameLower = seed.name.toLowerCase()
+
+  // 1. Look up existing rows for this name.
+  try {
+    const { data, error } = await client
+      .from(TABLE)
+      .select("id, spotify_id, popularity")
+      .eq("name_lower", nameLower)
+      .limit(5)
+    if (error) {
+      console.log(`[artists-mint] by-name read-fail name="${nameLower}" err="${error.message}"`)
+      return null
+    }
+    if (data && data.length > 0) {
+      // Reuse the best existing row: spotify_id NOT NULL first, then popularity desc.
+      const best = [...data].sort((a, b) => {
+        const aHas = a.spotify_id ? 1 : 0
+        const bHas = b.spotify_id ? 1 : 0
+        if (aHas !== bHas) return bHas - aHas
+        return (b.popularity ?? 0) - (a.popularity ?? 0)
+      })[0]
+      return best.id
+    }
+  } catch (err) {
+    console.log(`[artists-mint] by-name read-throw name="${nameLower}" err="${err instanceof Error ? err.message : String(err)}"`)
+    return null
+  }
+
+  // 2. No existing row — insert a name-only row (no spotify_id).
+  try {
+    const { data, error } = await client
+      .from(TABLE)
+      .insert({
+        name: seed.name,
+        name_lower: nameLower,
+        genres: seed.genres ?? [],
+        popularity: seed.popularity ?? null,
+        image_url: seed.imageUrl ?? null,
+      })
+      .select("id")
+      .single()
+    if (error) {
+      console.log(`[artists-mint] by-name insert-fail name="${nameLower}" err="${error.message}"`)
+      return null
+    }
+    return data?.id ?? null
+  } catch (err) {
+    console.log(`[artists-mint] by-name insert-throw name="${nameLower}" err="${err instanceof Error ? err.message : String(err)}"`)
+    return null
+  }
 }

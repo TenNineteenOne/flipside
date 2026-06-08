@@ -96,6 +96,7 @@ async function batchUpsertSpotifyArtists(
 
   const seenUuids = new Set<string>()
   for (const seed of seeds) {
+    if (!seed.spotifyId) continue
     const uuid = idMap.get(seed.spotifyId)
     if (!uuid || seenUuids.has(uuid)) continue
     seenUuids.add(uuid)

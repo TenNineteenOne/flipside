@@ -134,16 +134,24 @@ describe("confirmPlayableTracks — cache reuse", () => {
     expect(deps.spotifyCallCount).toBe(0)
   })
 
-  it("topTracks === [] (negative cache) → returns [], no dep calls", async () => {
-    const deps = makeDeps()
+  it("topTracks === [] is NO LONGER a negative cache → falls through to iTunes", async () => {
+    // Post-fold, an empty topTracks is usually the `?? []` type-coercion default
+    // (the name cache no longer carries topTracks), not a real "confirmed-empty"
+    // signal. So it must re-confirm via iTunes/Spotify rather than drop the card.
+    const deps = makeDeps({ itunesResult: [withPreview] })
     const artist: ConfirmInput = { ...baseArtist, topTracks: [] }
     const result = await confirmPlayableTracks(artist, deps)
-    expect(result).toHaveLength(0)
-    expect(deps.itunesCallCount).toBe(0)
-    expect(deps.spotifyCallCount).toBe(0)
+    expect(result).toHaveLength(1)
+    expect(result[0].id).toBe("p1")
+    expect(deps.itunesCallCount).toBe(1)
   })
 
-  it("topTracks with only non-playable tracks → returns [], no dep calls", async () => {
+  it("topTracks NON-EMPTY but all non-playable → reused as a real confirmation → returns [], no dep calls", async () => {
+    // A non-empty cached set IS a positive confirmation (the artist was confirmed
+    // and these are the tracks we found). If none are playable, that's a genuine
+    // "confirmed-no-preview" and we drop without re-confirming. The empty-array
+    // fall-through only applies to the `?? []` coercion default, not to a real
+    // cached set that happens to filter down to zero playable tracks.
     const deps = makeDeps()
     const artist: ConfirmInput = {
       ...baseArtist,

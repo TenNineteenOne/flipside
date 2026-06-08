@@ -40,10 +40,14 @@ export interface ConfirmInput {
    */
   spotifyId?: string | null
   /**
-   * Previously-confirmed tracks from the name cache (artist_data.topTracks).
-   *  - undefined  → never confirmed: resolve via iTunes/Spotify
-   *  - []         → confirmed-no-preview (negative cache): reuse, returns []
-   *  - [..]       → confirmed: reuse (filtered to playable)
+   * Previously-confirmed tracks, rehydrated from `artist_tracks_cache` on the
+   * generation path (or carried on a warm explore artist).
+   *  - undefined  → never confirmed / no cached set: resolve via iTunes/Spotify
+   *  - []         → NOT a reliable negative post-fold (usually the `?? []`
+   *                 type-coercion default, since the name-cache no longer
+   *                 carries topTracks): treated as "unconfirmed" → re-confirm
+   *                 via iTunes/Spotify
+   *  - [..]       → confirmed: reuse (filtered to playable), no network
    */
   topTracks?: Track[]
 }
@@ -112,8 +116,15 @@ export async function confirmPlayableTracks(
   artist: ConfirmInput,
   deps: ConfirmPreviewDeps,
 ): Promise<Track[]> {
-  // 1. Cache reuse — covers positive AND negative cache (empty array included)
-  if (artist.topTracks !== undefined) {
+  // 1. Cache reuse — a NON-EMPTY cached set is a positive confirmation, reuse it.
+  //    An empty array is NOT a reliable negative post-fold (it's usually the
+  //    `?? []` type-coercion default, not a real confirmation), so treat empty
+  //    (and undefined) as "unconfirmed" and fall through to iTunes/Spotify.
+  //    This trades away the #145 negative-cache optimization (known-empty
+  //    artists re-confirm each gen) — acceptable because post-fold that
+  //    optimization was already defunct (the name-cache no longer carries
+  //    topTracks), and correctness (not dropping confirmable artists) wins.
+  if (artist.topTracks && artist.topTracks.length > 0) {
     return playableTracks(artist.topTracks)
   }
 

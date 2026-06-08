@@ -172,14 +172,15 @@ export async function POST(req: NextRequest): Promise<Response> {
     // This allows users to request "more" natively and gracefully append them to their existing batch.
     // Replace mode (above) wipes unseen first so Settings-driven regen reflects new anchors.
 
-    // Use user's Spotify token if available, otherwise fall back to client
-    // credentials. Fail loudly if neither is available — silently passing an
-    // empty bearer to Spotify would return 401 on every downstream call and
-    // produce a batch of empty recommendations the client can't diagnose.
-    const accessToken = userAccessToken ?? (await clientTokenPromise)
+    // Spotify token is OPTIONAL (Stage 2 / #157): candidate resolution is now
+    // Last.fm-based and previews fall back to iTunes, so generation runs fully
+    // Spotify-free. Use a token when we have one (enables richer Spotify previews
+    // via confirm), otherwise generate without it.
+    // '' = no Spotify (the established RecommendationInput convention) — generation
+    // runs Spotify-free (Last.fm resolver + iTunes previews).
+    const accessToken = userAccessToken ?? (await clientTokenPromise) ?? ""
     if (!accessToken) {
-      console.error("[generate] no Spotify token available (user + client credentials both failed)")
-      return apiError("Music service temporarily unavailable", 503)
+      console.log("[generate] no Spotify token — generating Spotify-free (Last.fm resolver + iTunes previews)")
     }
 
     // Optional genre filter from query params

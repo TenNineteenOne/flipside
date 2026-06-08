@@ -17,7 +17,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { ArtistNameCache } from './artist-name-cache'
 import { resolveArtistsByName } from './resolve-candidates'
 import { fetchArtistEnrichment } from './enrich-artist'
-import { getTagArtistNames, buildConfirmPreview, buildMintArtist } from './engine'
+import { getTagArtistNames, buildConfirmPreview, buildMintArtist, lastfmResolve } from './engine'
 import { confirmToTarget } from './confirm-previews'
 import {
   allLeavesWithAnchor,
@@ -223,7 +223,7 @@ async function resolveAndFilter(
   const nameCache = new ArtistNameCache(supabase as any)
   const resolved = await resolveArtistsByName(unique, {
     cache: nameCache,
-    searchArtists: (name) => musicProvider.searchArtists(accessToken, name),
+    searchArtists: (name) => lastfmResolve(name),
     enrichArtist: buildEnrichArtist(),
     mintArtist: buildMintArtist(supabase),
   })

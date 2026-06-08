@@ -7,10 +7,11 @@ import {
   isEligibleForCooldown,
   augmentWithAdjacent,
   runWithSoftening,
+  rehydrateTopTracks,
   type RunPipelineOpts,
 } from "./engine"
 import type { BuildResult, ScoredArtist } from "./types"
-import type { Artist, ArtistWithTracks } from "@/lib/music-provider/types"
+import type { Artist, ArtistWithTracks, Track } from "@/lib/music-provider/types"
 import type { SimilarArtistRef } from "@/lib/music-provider"
 
 function artist(id: string, name: string, popularity = 50, genre = "rock"): ArtistWithTracks {
@@ -689,5 +690,108 @@ describe("runWithSoftening cascade order", () => {
     expect(calls).toHaveLength(3)
     expect(result.count).toBe(0)
     expect(result.softenedFilters).toEqual({ playThreshold: true, coldStart: true })
+  })
+})
+
+describe("rehydrateTopTracks", () => {
+  function pTrack(id: string): Track {
+    return {
+      id,
+      spotifyTrackId: null,
+      name: `Track ${id}`,
+      previewUrl: `https://audio.example.com/${id}.m4a`,
+      durationMs: 30000,
+      albumName: "Album",
+      albumImageUrl: null,
+      source: "itunes",
+    }
+  }
+
+  // Minimal supabase stub: only the artist_tracks_cache read chain is exercised.
+  function makeSupabase(opts: {
+    rows?: Array<{ artist_id: string; tracks: Track[] | null }>
+    error?: { message: string }
+    capture?: { tables: string[]; inArgs: unknown[][] }
+  }) {
+    return {
+      from(table: string) {
+        opts.capture?.tables.push(table)
+        return {
+          select() {
+            return {
+              in(_col: string, ids: unknown[]) {
+                opts.capture?.inArgs.push(ids)
+                return Promise.resolve(
+                  opts.error
+                    ? { data: null, error: opts.error }
+                    : { data: opts.rows ?? [], error: null },
+                )
+              },
+            }
+          },
+        }
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any
+  }
+
+  it("sets topTracks on candidates whose artist_id has a cached non-empty set", async () => {
+    const candidates = [
+      { artist: artist("warm-1", "Warm One") },
+      { artist: artist("cold-1", "Cold One") },
+    ]
+    const tracks = [pTrack("t1"), pTrack("t2")]
+    const supabase = makeSupabase({ rows: [{ artist_id: "warm-1", tracks }] })
+
+    await rehydrateTopTracks(supabase, candidates)
+
+    expect(candidates[0].artist.topTracks).toEqual(tracks)
+    // Cold artist keeps its original topTracks (the test fixture defaults to []).
+    expect(candidates[1].artist.topTracks).toEqual([])
+  })
+
+  it("leaves cold candidates' topTracks undefined when the cached set is empty", async () => {
+    // A cold artist (no cached set / empty cached set) keeps topTracks undefined,
+    // so it falls through to iTunes/Spotify at confirm time.
+    const candidates: Array<{ artist: Artist }> = [
+      { artist: { id: "warm-1", name: "Warm One", genres: ["rock"], imageUrl: null, popularity: 50 } },
+    ]
+    const supabase = makeSupabase({ rows: [{ artist_id: "warm-1", tracks: [] }] })
+
+    await rehydrateTopTracks(supabase, candidates)
+
+    expect((candidates[0].artist as ArtistWithTracks).topTracks).toBeUndefined()
+  })
+
+  it("degrades to no rehydration on read error (never throws)", async () => {
+    const candidates: Array<{ artist: Artist }> = [
+      { artist: { id: "warm-1", name: "Warm One", genres: ["rock"], imageUrl: null, popularity: 50 } },
+    ]
+    const supabase = makeSupabase({ error: { message: "boom" } })
+
+    await expect(rehydrateTopTracks(supabase, candidates)).resolves.toBeUndefined()
+    expect((candidates[0].artist as ArtistWithTracks).topTracks).toBeUndefined()
+  })
+
+  it("no-ops on empty candidate list (no query)", async () => {
+    const capture = { tables: [] as string[], inArgs: [] as unknown[][] }
+    const supabase = makeSupabase({ capture })
+    await rehydrateTopTracks(supabase, [])
+    expect(capture.tables).toHaveLength(0)
+  })
+
+  it("dedupes ids and queries artist_tracks_cache", async () => {
+    const capture = { tables: [] as string[], inArgs: [] as unknown[][] }
+    const candidates = [
+      { artist: artist("dup", "Dup") },
+      { artist: artist("dup", "Dup") },
+      { artist: artist("other", "Other") },
+    ]
+    const supabase = makeSupabase({ rows: [], capture })
+
+    await rehydrateTopTracks(supabase, candidates)
+
+    expect(capture.tables).toEqual(["artist_tracks_cache"])
+    expect(capture.inArgs[0]).toEqual(["dup", "other"])
   })
 })
