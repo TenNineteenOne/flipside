@@ -175,6 +175,17 @@ describe("ensureArtist — mint-by-name (no spotifyId)", () => {
     expect(id).toBe("high")
   })
 
+  it("breaks metadata ties deterministically (lowest id) regardless of row order (#161)", async () => {
+    // Duplicate rows minted by the pre-#161 write bug carry identical
+    // metadata; the pick must not flap between generations or thumbs-down /
+    // cooldown filters keyed on artist_id stop matching.
+    const dup = (id: string) => ({ id, spotify_id: null, name: "Teethe", name_lower: "teethe", popularity: 12 })
+    const idA = await ensureArtist(makeClient([dup("uuid-b"), dup("uuid-a"), dup("uuid-c")]).client, { name: "Teethe" })
+    const idB = await ensureArtist(makeClient([dup("uuid-c"), dup("uuid-b"), dup("uuid-a")]).client, { name: "Teethe" })
+    expect(idA).toBe("uuid-a")
+    expect(idB).toBe("uuid-a")
+  })
+
   it("returns null (never throws) on a by-name read failure", async () => {
     const { client } = makeClient([], { failByNameSelect: true })
     const id = await ensureArtist(client, { name: "Boom" })

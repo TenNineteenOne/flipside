@@ -40,6 +40,13 @@ export interface CacheSupabaseClient {
       },
       options: { onConflict?: string; ignoreDuplicates?: boolean }
     ): Promise<{ error: { message: string } | null }>
+    update(values: {
+      genres?: string[]
+      popularity?: number
+      image_url?: string
+    }): {
+      eq(column: string, value: string): Promise<{ error: { message: string } | null }>
+    }
   }
 }
 
@@ -154,28 +161,45 @@ export class ArtistNameCache {
    *
    * NEVER writes `artist.id` (the uuid identity) into `spotify_id` — only the
    * real Spotify id (`artist.spotifyId`) goes there. When spotifyId is present
-   * the write upserts on `spotify_id` (the dedup key); when it's null there is
-   * no conflict target, so it's a best-effort plain insert (a name-only row).
+   * the write upserts on `spotify_id` (the dedup key). When it's null, the row
+   * was already minted by `ensureArtistByName`, so this is a metadata refresh
+   * UPDATE on that identity row — NEVER an insert. (`name_lower` is non-unique,
+   * so a bare insert here duplicated the just-minted row and made the name
+   * permanently ambiguous → cache miss; #161.) The canonical row's name is
+   * left untouched — it may be a better spelling than this resolve's query.
    */
   async write(name: string, artist: Artist): Promise<void> {
     try {
-      const row = {
-        spotify_id: artist.spotifyId ?? null,
-        name: artist.name,
-        name_lower: name.toLowerCase(),
-        genres: artist.genres,
-        popularity: artist.popularity,
-        image_url: artist.imageUrl,
-      }
-      // With a spotify id we can dedup on it; without one there is no unique
-      // key to conflict on, so insert best-effort (ignoreDuplicates avoids a
-      // hard error if a matching row already exists under some constraint).
-      const options = artist.spotifyId
-        ? { onConflict: "spotify_id" }
-        : { ignoreDuplicates: true }
-      const { error } = await this.client.from(TABLE).upsert(row, options)
-      if (error) {
-        console.log(`[cache-write] fail name="${name}" err="${error.message}"`)
+      if (artist.spotifyId) {
+        const row = {
+          spotify_id: artist.spotifyId,
+          name: artist.name,
+          name_lower: name.toLowerCase(),
+          genres: artist.genres,
+          popularity: artist.popularity,
+          image_url: artist.imageUrl,
+        }
+        const { error } = await this.client.from(TABLE).upsert(row, { onConflict: "spotify_id" })
+        if (error) {
+          console.log(`[cache-write] fail name="${name}" err="${error.message}"`)
+          return
+        }
+      } else if (artist.id) {
+        // Fill-only metadata refresh keyed on the minted uuid identity.
+        const patch: { genres?: string[]; popularity?: number; image_url?: string } = {}
+        if (artist.genres.length > 0) patch.genres = artist.genres
+        if (artist.popularity > 0) patch.popularity = artist.popularity
+        if (artist.imageUrl) patch.image_url = artist.imageUrl
+        if (Object.keys(patch).length === 0) return // nothing worth writing
+        const { error } = await this.client.from(TABLE).update(patch).eq("id", artist.id)
+        if (error) {
+          console.log(`[cache-write] fail name="${name}" err="${error.message}"`)
+          return
+        }
+      } else {
+        // No spotify id AND no minted identity — there is no row we can safely
+        // target, and inserting would mint an orphan. Skip.
+        console.log(`[cache-write] skip name="${name}" (no spotifyId, no id)`)
         return
       }
       console.log(`[cache-write] ok name="${name}" spotifyId=${artist.spotifyId ?? "null"}`)
