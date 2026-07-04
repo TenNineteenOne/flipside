@@ -55,12 +55,15 @@ export interface ArtistsSupabaseClient {
         data: Array<{ id: string; spotify_id: string | null }> | null
         error: { message: string } | null
       }>
-      // Mint-by-name path: look up existing rows for a name_lower.
+      // Mint-by-name path: look up existing rows for a name_lower, in a
+      // stable order so the limited window is the same set every run.
       eq(column: string, value: string): {
-        limit(n: number): Promise<{
-          data: Array<{ id: string; spotify_id: string | null; popularity: number | null }> | null
-          error: { message: string } | null
-        }>
+        order(column: string, opts: { ascending: boolean }): {
+          limit(n: number): Promise<{
+            data: Array<{ id: string; spotify_id: string | null; popularity: number | null }> | null
+            error: { message: string } | null
+          }>
+        }
       }
     }
     // Mint-by-name path: insert a name-only row and read the new id back.
@@ -192,6 +195,10 @@ async function ensureArtistByName(
       .from(TABLE)
       .select("id, spotify_id, popularity")
       .eq("name_lower", nameLower)
+      // Without ORDER BY, LIMIT returns an arbitrary page — a >20-row dup pile
+      // could yield a different subset per run, silently defeating the
+      // deterministic tiebreak below.
+      .order("id", { ascending: true })
       .limit(20)
     if (error) {
       console.log(`[artists-mint] by-name read-fail name="${nameLower}" err="${error.message}"`)

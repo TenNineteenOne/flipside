@@ -36,12 +36,22 @@ function makeClient(
             },
             eq(column, value) {
               return {
-                async limit(_n: number) {
-                  if (opts.failByNameSelect) return { data: null, error: { message: "by-name boom" } }
-                  const data = rows
-                    .filter((x) => (x as unknown as Record<string, unknown>)[column] === value)
-                    .map((x) => ({ id: x.id, spotify_id: x.spotify_id, popularity: x.popularity ?? null }))
-                  return { data, error: null }
+                order(orderCol: string, o: { ascending: boolean }) {
+                  return {
+                    async limit(_n: number) {
+                      if (opts.failByNameSelect) return { data: null, error: { message: "by-name boom" } }
+                      const data = rows
+                        .filter((x) => (x as unknown as Record<string, unknown>)[column] === value)
+                        .map((x) => ({ id: x.id, spotify_id: x.spotify_id, popularity: x.popularity ?? null }))
+                        .sort((a, b) => {
+                          const av = (a as unknown as Record<string, unknown>)[orderCol] as string
+                          const bv = (b as unknown as Record<string, unknown>)[orderCol] as string
+                          const cmp = av < bv ? -1 : av > bv ? 1 : 0
+                          return o.ascending ? cmp : -cmp
+                        })
+                      return { data, error: null }
+                    },
+                  }
                 },
               }
             },
