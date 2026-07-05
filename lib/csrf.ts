@@ -11,7 +11,8 @@ import { apiError } from "@/lib/errors"
  * from our own pages when stripped by a proxy. Everything else is rejected.
  *
  * Known origins come from `AUTH_URL` / `NEXTAUTH_URL` and
- * `NEXT_PUBLIC_APP_URL` plus, in development, 127.0.0.1 / localhost.
+ * `NEXT_PUBLIC_APP_URL` plus, in development, 127.0.0.1 / localhost — and
+ * always the host the request itself arrived on (see requestOwnOrigins).
  */
 
 function knownOrigins(): Set<string> {
@@ -41,8 +42,30 @@ function knownOrigins(): Set<string> {
   return origins
 }
 
+/**
+ * Origins this request is being served on. A browser never sends an `Origin`
+ * equal to OUR host from a foreign page (Origin is set by the browser to the
+ * attacking page's origin and is not script-forgeable), so "Origin equals the
+ * host the request arrived on" is a sound same-origin signal on ANY alias —
+ * Vercel git-branch URLs, unique deployment URLs, custom domains — without
+ * enumerating them in env. This is what unblocks preview testing: the env
+ * allowlist knows VERCEL_URL (unique deployment host) but the browser sits on
+ * the git-branch alias (VERCEL_BRANCH_URL-shaped), which used to 403.
+ * Scheme is pinned to https outside development.
+ */
+function requestOwnOrigins(request: Request): Set<string> {
+  const origins = new Set<string>()
+  const raw = request.headers.get("x-forwarded-host") ?? request.headers.get("host")
+  const host = raw?.split(",")[0]?.trim()
+  if (!host) return origins
+  origins.add(`https://${host}`)
+  if (process.env.NODE_ENV !== "production") origins.add(`http://${host}`)
+  return origins
+}
+
 export function isSameOrigin(request: Request): boolean {
   const allowed = knownOrigins()
+  for (const o of requestOwnOrigins(request)) allowed.add(o)
   if (allowed.size === 0) {
     // In production a missing origin allowlist is a misconfiguration that
     // would silently disable CSRF protection — fail closed so the error is
