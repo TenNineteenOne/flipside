@@ -764,8 +764,7 @@ export async function leftfieldRail(
         if (names.length === 0) return null
         const mid = names.slice(LEFTFIELD_MID_START, LEFTFIELD_MID_END)
         const slice = mid.length > 0 ? mid : names
-        const offset = seed ^ hashString(leaf.lastfmTag)
-        const start = offset % slice.length
+        const start = midListStart(seed, leaf.lastfmTag, slice.length)
         const picksForTag: string[] = []
         const seenName = new Set<string>()
         for (let k = 0; k < picksPerTag && picksForTag.length < slice.length; k++) {
@@ -861,6 +860,20 @@ function hashString(s: string): number {
     h = Math.imul(h, 16777619) >>> 0
   }
   return h
+}
+
+/**
+ * Deterministic seeded start index within a mid-list slice of length `len`.
+ * (A1 fix) `>>> 0` after the XOR is load-bearing: `seed` (from
+ * cacheWindowSeed) can exceed the Int32 range, and JS's `^` operator
+ * truncates both operands to signed Int32 — without the unsigned coercion,
+ * `offset` can land negative, making `offset % len` negative too and
+ * producing `slice[negativeIndex]` (undefined) picks that collapse the
+ * seeded rotation.
+ */
+export function midListStart(seed: number, tag: string, len: number): number {
+  const offset = (seed ^ hashString(tag)) >>> 0
+  return offset % len
 }
 
 // ── Orchestrator ────────────────────────────────────────────────────────────
