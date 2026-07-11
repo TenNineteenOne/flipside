@@ -5,6 +5,7 @@ import Image from "next/image"
 import { toast } from "sonner"
 import { ThumbsUp, ThumbsDown, SkipForward, Bookmark, Undo2 } from "lucide-react"
 import { stringToVibrantHex, hexToRgba, sanitizeHex } from "@/lib/color-utils"
+import { useArtistFeedback } from "@/lib/hooks/use-artist-feedback"
 
 interface HistoryEntry {
   artist_id: string
@@ -118,18 +119,43 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
 
   const groups = useMemo(() => groupByPeriod(filtered), [filtered])
 
+  // Signal changes (thumbs up/down) and undo go through the shared hook so
+  // rapid taps on the same artist (e.g. "Change to Liked" immediately
+  // followed by "Undo") are serialized in click order instead of racing as
+  // independent fetches. HistoryClient renders from its own `history` array
+  // rather than the hook's internal signals map — the hook is used here for
+  // its network/serialization/toast plumbing, with setSignal/removeSignal's
+  // resolved boolean driving the same optimistic-then-rollback updates the
+  // original hand-rolled fetches did.
+  const { setSignal, removeSignal } = useArtistFeedback({
+    errorMessages: {
+      // undoFailed default ("Couldn't undo — try again") already matches
+      // this page's copy for both undo paths below.
+      saveFailed: "Couldn't update signal — try again",
+    },
+  })
+
   async function handleUndo(artistId: string, signal: string) {
     setUndoingIds((prev) => new Set(prev).add(artistId))
-    // Dismissed items have no feedback row (the skip RPC only stamps
-    // recommendation_cache.skip_at). Clearing requires a separate endpoint
-    // that wipes skip_at + seen_at so the artist is fully eligible again.
-    const endpoint = signal === "dismissed"
-      ? `/api/dismiss/${artistId}`
-      : `/api/feedback/${artistId}`
     try {
-      const res = await fetch(endpoint, { method: "DELETE" })
-      if (!res.ok) throw new Error("Server error")
-      setHistory((prev) => prev.filter((h) => h.artist_id !== artistId))
+      if (signal === "dismissed") {
+        // Dismissed items have no feedback row (the skip RPC only stamps
+        // recommendation_cache.skip_at). Clearing requires a separate endpoint
+        // that wipes skip_at + seen_at so the artist is fully eligible again.
+        // ponytail: dismissed rows only ever expose this one action (no
+        // concurrent button), so there's no race to serialize — raw fetch is fine.
+        const res = await fetch(`/api/dismiss/${artistId}`, { method: "DELETE" })
+        if (!res.ok) throw new Error("Server error")
+        setHistory((prev) => prev.filter((h) => h.artist_id !== artistId))
+      } else {
+        // removeSignal shows its own toast and rolls back its internal state
+        // on failure; onSettled tells us whether to also drop the row here.
+        await removeSignal(artistId, {
+          onSettled: (ok) => {
+            if (ok) setHistory((prev) => prev.filter((h) => h.artist_id !== artistId))
+          },
+        })
+      }
     } catch {
       toast.error("Couldn't undo — try again")
     } finally {
@@ -146,19 +172,17 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
     setHistory((prev) =>
       prev.map((h) => (h.artist_id === artistId ? { ...h, signal: newSignal } : h))
     )
-    try {
-      const res = await fetch("/api/feedback", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ artistId, signal: newSignal }),
-      })
-      if (!res.ok) throw new Error("Server error")
-    } catch {
-      setHistory((prev) =>
-        prev.map((h) => (h.artist_id === artistId ? { ...h, signal: prevSignal ?? "skip" } : h))
-      )
-      toast.error("Couldn't update signal — try again")
-    }
+    // setSignal shows its own toast (overridden above) and rolls back its
+    // internal state on failure; onSettled mirrors that into our own history array.
+    await setSignal(artistId, newSignal, {
+      onSettled: (ok) => {
+        if (!ok) {
+          setHistory((prev) =>
+            prev.map((h) => (h.artist_id === artistId ? { ...h, signal: prevSignal ?? "skip" } : h))
+          )
+        }
+      },
+    })
   }
 
   async function handleLoadMore() {
