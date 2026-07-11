@@ -3,8 +3,15 @@ import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, apiUnauthorized } from "@/lib/errors"
 import { getAccessToken } from "@/lib/get-access-token"
 import { getSpotifyClientToken } from "@/lib/spotify-client-token"
-import { buildExploreRails } from "@/lib/recommendation/explore-engine"
+import { buildExploreRails, RAIL_KEYS } from "@/lib/recommendation/explore-engine"
 import type { NextRequest } from "next/server"
+
+// Mirrors explore/generate's force-regen cooldown (C1 hardening): this GET
+// has no `force` flag, but on a cold cache it runs the SAME 54-74s rail
+// build with no gate at all, so rapid Feed<->Explore navigation (or several
+// tabs) could fan out overlapping expensive builds against the shared
+// Last.fm/Spotify key.
+const FORCE_COOLDOWN_MS = 90_000
 
 /**
  * Background warm for the Explore page. Triggered from the Feed page while the
@@ -23,7 +30,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const [{ data: user, error: userError }, userAccessToken, clientToken] = await Promise.all([
     supabase
       .from("users")
-      .select("id, adventurous, underground_mode, popularity_curve, play_threshold")
+      .select("id, adventurous, underground_mode, popularity_curve, play_threshold, last_explore_generated_at")
       .eq("id", userId)
       .maybeSingle(),
     getAccessToken(req),
@@ -34,6 +41,31 @@ export async function GET(req: NextRequest): Promise<Response> {
   const accessToken = userAccessToken ?? clientToken ?? ""
 
   try {
+    // Cheap warm/cold check (mirrors buildExploreRails' own cache read) so the
+    // cooldown only gates the expensive cold-cache build path — a warm-cache
+    // preload stays a cheap no-op read and doesn't burn the shared cooldown.
+    const { data: cached } = await supabase
+      .from("explore_cache")
+      .select("rail_key")
+      .eq("user_id", userId)
+      .gt("expires_at", new Date().toISOString())
+    const isCold = (cached?.length ?? 0) < RAIL_KEYS.length
+
+    if (isCold) {
+      if (user.last_explore_generated_at) {
+        const elapsed = Date.now() - new Date(user.last_explore_generated_at).getTime()
+        if (elapsed < FORCE_COOLDOWN_MS) {
+          return Response.json({ ok: true })
+        }
+      }
+      // Stamp the cooldown BEFORE building so two rapid preload taps (or a
+      // preload racing a Shuffle force-regen) can't both pass the gate.
+      await supabase
+        .from("users")
+        .update({ last_explore_generated_at: new Date().toISOString() })
+        .eq("id", userId)
+    }
+
     await buildExploreRails(
       {
         userId: user.id,
