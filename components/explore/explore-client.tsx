@@ -231,6 +231,10 @@ export function ExploreClient({
   // stale closure issues. Declared here (before regenAndPoll) so the closure
   // sees it during regen calls.
   const orderedRailsRef = useRef(orderedRails)
+  // Ref to the latest activeKey so regenAndPoll's dropThumbsUp path reads the
+  // rail the user is actually looking at, even if they switch tabs while the
+  // regen request is in flight (B4).
+  const activeKeyRef = useRef(activeKey)
 
   function stopPolling() {
     if (pollTimerRef.current !== null) {
@@ -334,7 +338,9 @@ export function ExploreClient({
 
     if (opts.dropThumbsUp) {
       setSignals((prev) => {
-        const active = orderedRailsRef.current?.[0]
+        // Active rail, not orderedRails[0] — this used to hardcode the first
+        // rail regardless of which tab the user was viewing (B4).
+        const active = orderedRailsRef.current.find((r) => r.railKey === activeKeyRef.current)
         if (!active) return prev
         let changed = false
         const n = new Map(prev)
@@ -396,6 +402,8 @@ export function ExploreClient({
 
   // Keep orderedRailsRef current on every render.
   useEffect(() => { orderedRailsRef.current = orderedRails }, [orderedRails])
+  // Keep activeKeyRef current on every render (B4).
+  useEffect(() => { activeKeyRef.current = activeKey }, [activeKey])
 
   async function handleApplyAdventurous() {
     if (!isAdvDirty || isApplyingAdv) return
