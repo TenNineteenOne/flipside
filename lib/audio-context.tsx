@@ -61,8 +61,19 @@ export function AudioProvider({ children }: { children: ReactNode }) {
       setState(prev => ({ ...prev, progress: p }))
     }
 
-    audio.play().catch(() => {})
+    // play() can reject (e.g. expired preview URL) after we've already set
+    // isPlaying: true below — roll the state back rather than leaving a ghost
+    // "playing" MiniPlayer. Guard against a newer play()/stop() call having
+    // superseded this audio element by the time the rejection/error fires.
+    audio.play().catch(() => {
+      if (audioRef.current !== audio) return
+      setState(prev => ({ ...prev, isPlaying: false }))
+    })
     audio.onended = () => setState(prev => ({ ...prev, isPlaying: false, progress: 1 }))
+    audio.onerror = () => {
+      if (audioRef.current !== audio) return
+      setState(prev => ({ ...prev, isPlaying: false }))
+    }
 
     setState({ currentTrack: track, artistName, artistImageUrl, artistColor: artistColor ?? null, isPlaying: true, progress: 0 })
   }, [])
@@ -73,8 +84,12 @@ export function AudioProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const resume = useCallback(() => {
-    if (!audioRef.current) return
-    audioRef.current.play().catch(() => {})
+    const audio = audioRef.current
+    if (!audio) return
+    audio.play().catch(() => {
+      if (audioRef.current !== audio) return
+      setState(prev => ({ ...prev, isPlaying: false }))
+    })
     setState(prev => ({ ...prev, isPlaying: true }))
   }, [])
 
