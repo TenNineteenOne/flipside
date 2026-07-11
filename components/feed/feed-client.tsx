@@ -93,7 +93,7 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
   // Append-poller: after first paint, poll for newly-confirmed cards that the
   // background after() block has written. Appends deduped, playable-only recs to
   // the end of the list without disturbing the current/earlier cards.
-  useFeedFill<Recommendation>({
+  const { restart: restartFeedFill } = useFeedFill<Recommendation>({
     initialIds: recommendations.map((r) => r.artist_id),
     targetCount: 20,
     onAppend: (newRecs) => {
@@ -121,6 +121,12 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
     setIsGenerating(true)
     let cancelled = false
     fetch("/api/recommendations/generate", { method: "POST" })
+      .then((res) => {
+        // New cards land server-side; restart the poller so they surface
+        // without waiting for a hard navigation (router.refresh() alone
+        // doesn't re-arm an already-stopped/never-started poller).
+        if (!cancelled && res.ok) restartFeedFill()
+      })
       .catch(() => {})
       .finally(() => {
         if (cancelled) return
@@ -186,6 +192,10 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
           toast(`Widened the search for this batch — ${bits.join(" and ")}.`)
         }
       }
+      // New cards land server-side; restart the poller so they surface
+      // without waiting for a hard navigation (router.refresh() alone
+      // doesn't re-arm an already-stopped/never-started poller).
+      restartFeedFill()
       router.refresh()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Generation failed")
