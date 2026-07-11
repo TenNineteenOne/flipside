@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useRef } from "react"
 import Image from "next/image"
 import { toast } from "sonner"
 import { ThumbsUp, ThumbsDown, SkipForward, Bookmark, Undo2 } from "lucide-react"
@@ -98,6 +98,13 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
   const [undoingIds, setUndoingIds] = useState<Set<string>>(new Set())
   const [hasMore, setHasMore] = useState(initialHasMore)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
+  // Server-side fetch offset, independent of `history.length`: undo removes
+  // rows client-side without shrinking the server's row count (feedback
+  // delete leaves recommendation_cache.seen_at set), so paginating off
+  // history.length re-fetches an already-seen boundary row and produces a
+  // duplicate React key + duplicate visible row. Track what we've actually
+  // pulled from the server instead.
+  const fetchedCountRef = useRef(initialHistory.length)
 
   const filtered = useMemo(() => {
     if (filter === "all") return history
@@ -188,11 +195,16 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
   async function handleLoadMore() {
     setIsLoadingMore(true)
     try {
-      const res = await fetch(`/api/history?offset=${history.length}&limit=50`)
+      const res = await fetch(`/api/history?offset=${fetchedCountRef.current}&limit=50`)
       if (!res.ok) throw new Error("Server error")
       const data = await res.json()
       if (data.history?.length) {
-        setHistory((prev) => [...prev, ...data.history])
+        fetchedCountRef.current += data.history.length
+        setHistory((prev) => {
+          const seenIds = new Set(prev.map((h) => h.artist_id))
+          const deduped = (data.history as HistoryEntry[]).filter((h) => !seenIds.has(h.artist_id))
+          return [...prev, ...deduped]
+        })
         setHasMore(data.hasMore ?? false)
       } else {
         setHasMore(false)
