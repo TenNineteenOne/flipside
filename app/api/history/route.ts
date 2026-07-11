@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiUnauthorized, dbError } from "@/lib/errors"
+import { getHistoryPage } from "@/lib/history/query"
 import { type NextRequest } from "next/server"
 
 /**
@@ -20,72 +21,10 @@ export async function GET(request: NextRequest): Promise<Response> {
   const offset = Math.max(0, parseInt(url.searchParams.get("offset") ?? "0", 10) || 0)
   const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get("limit") ?? "50", 10) || 50))
 
-  // Fetch limit+1 and trim so hasMore is accurate at the exact boundary —
-  // the previous `length === limit` heuristic reported hasMore=true even when
-  // the page we just returned was the last, causing a spurious empty page
-  // request from the client.
-  const { data: seenRaw, error: seenErr } = await supabase
-    .from("recommendation_cache")
-    .select("artist_id, artist_data, score, why, seen_at, skip_at")
-    .eq("user_id", userId)
-    .not("seen_at", "is", null)
-    .order("seen_at", { ascending: false })
-    .range(offset, offset + limit)
-
-  if (seenErr) return dbError(seenErr, "history/seen")
-
-  const hasMore = (seenRaw ?? []).length > limit
-  const seen = (seenRaw ?? []).slice(0, limit)
-  const seenArtistIds = seen.map((r) => r.artist_id)
-
-  if (seenArtistIds.length === 0) {
-    return Response.json({ history: [], hasMore: false })
+  try {
+    const { history, hasMore } = await getHistoryPage(supabase, userId, { offset, limit })
+    return Response.json({ history, hasMore })
+  } catch (err) {
+    return dbError(err as { message: string }, "history/seen")
   }
-
-  // 2. Feedback + saves scoped to only the returned artist IDs
-  const [{ data: feedback }, { data: saves }] = await Promise.all([
-    supabase
-      .from("feedback")
-      .select("artist_id, signal")
-      .eq("user_id", userId)
-      .is("deleted_at", null)
-      .in("artist_id", seenArtistIds),
-    supabase
-      .from("saves")
-      .select("artist_id")
-      .eq("user_id", userId)
-      .in("artist_id", seenArtistIds),
-  ])
-
-  const feedbackMap = new Map<string, string>()
-  for (const f of feedback ?? []) {
-    feedbackMap.set(f.artist_id, f.signal)
-  }
-
-  const savedSet = new Set((saves ?? []).map((s) => s.artist_id))
-
-  // 3. Merge into a single response.
-  // Signal precedence: explicit feedback (thumbs_up/down) > permanent dismiss
-  // (skip_at) > passive seen (skip). A user can't have both a feedback row and
-  // a skip_at, but preferring feedback is the safe order.
-  const history = (seen ?? []).map((rec) => {
-    const feedbackSignal = feedbackMap.get(rec.artist_id as string)
-    const signal = feedbackSignal
-      ? feedbackSignal
-      : rec.skip_at
-        ? "dismissed"
-        : "skip"
-    return {
-      artist_id: rec.artist_id,
-      artist_data: rec.artist_data,
-      score: rec.score,
-      why: rec.why,
-      artist_color: (rec.artist_data as Record<string, unknown>)?.artist_color as string | null ?? null,
-      seen_at: rec.seen_at,
-      signal,
-      bookmarked: savedSet.has(rec.artist_id),
-    }
-  })
-
-  return Response.json({ history, hasMore: seenArtistIds.length === limit })
 }
