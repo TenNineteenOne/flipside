@@ -64,7 +64,6 @@ core — see [[explore-engine]].
 | `enrich-artist.ts` | Last.fm `artist.getInfo` → fills genres + popularity (see below) |
 | `cluster-cap.ts` | 25% per-genre diversity cap (single-list + cross-rail) |
 | `scoring` (in engine) | `k^popularity` tier multiplier + relevance |
-| `chain-walker.ts` | BFS similarity-chain finder (used 1-hop for Explore provenance) |
 | `artist-name-cache.ts` | read-through name cache over the canonical `artists` table (Stage-2 fold; chunked at 500). Ambiguous names (>1 row per `name_lower`) read as misses — `batchRead` is THE doorway lookup, also consumed by `lib/history/id-resolver.ts` and `POST /api/onboarding/resolve`. **Write path (#161, hardened 2026-07-11): ONE fill-only policy shared with `ensureArtists` — minted uuid → fill-only metadata UPDATE keyed on the uuid (never an insert; a bare insert duplicated the just-minted row and made the name permanently ambiguous); no uuid but a spotifyId (legacy/test callers only) → insert-if-absent (`ignoreDuplicates`) + fill-only refresh. `name`/`name_lower` are never overwritten, and empty genres / zero popularity / null image never clobber richer values** |
 | `window.ts` | weekly-stable seeds: `cacheWindowSeed`, `seededShuffle`, `sampleLikes` |
 | `freshness.ts` | "has ≥5 unseen unexpired recs?" for splash redirect |
@@ -90,7 +89,7 @@ core — see [[explore-engine]].
 ## Gotchas worth knowing
 
 - `FIRST_BATCH_TARGET = 8` is hardcoded; not per-user settable.
-- `chain-walker.ts` multi-hop BFS is built + tested but only used 1-hop in production.
+- `chain-walker.ts` (speculative multi-hop BFS) was deleted 2026-07-11 — it had zero callers.
 - Explore artists only land in `recommendation_cache` (and the 7-day cooldown) once the
   user *acts* on them — a behavioral gap vs the Feed.
 - Last.fm tags hyphenated in flipside's tree (e.g. `dutch-black-metal`) may return 0 from
