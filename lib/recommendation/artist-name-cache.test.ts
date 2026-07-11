@@ -269,24 +269,53 @@ describe("ArtistNameCache.write", () => {
     vi.spyOn(console, "log").mockImplementation(() => {})
   })
 
-  it("upserts the canonical record with spotify_id from the attribute, never the uuid", async () => {
-    const { client, upserts } = makeFakeClient()
+  it("no minted uuid: insert-if-absent on spotify_id (never a clobbering upsert), then fill-only refresh", async () => {
+    const { client, upserts, updates } = makeFakeClient()
     const cache = new ArtistNameCache(client)
-    await cache.write("Khruangbin", artist("uuid-k", "Khruangbin", "k1"))
+    await cache.write("Khruangbin", artist("not-a-uuid", "Khruangbin", "k1"))
     expect(upserts).toHaveLength(1)
     expect(upserts[0].row.name_lower).toBe("khruangbin")
     // spotify_id is the Spotify attribute, NOT the uuid identity.
     expect(upserts[0].row.spotify_id).toBe("k1")
-    expect(upserts[0].row.spotify_id).not.toBe("uuid-k")
+    expect(upserts[0].row.spotify_id).not.toBe("not-a-uuid")
     expect(upserts[0].options.onConflict).toBe("spotify_id")
+    // Same non-clobber contract as ensureArtists: never overwrite an existing
+    // row via upsert; metadata refresh happens as a separate fill-only patch.
+    expect(upserts[0].options.ignoreDuplicates).toBe(true)
+    expect(updates).toHaveLength(1)
+    expect(updates[0].column).toBe("spotify_id")
+    expect(updates[0].value).toBe("k1")
+    expect(updates[0].values).toEqual({ popularity: 50 }) // genres [] / null image not written
+  })
+
+  it("minted uuid identity wins over spotifyId: fill-only update by id, no upsert (C5)", async () => {
+    const UUID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    const existing = row({ id: UUID, spotifyId: "k1", name: "Khruangbin" })
+    const { client, upserts, updates, rows } = makeFakeClient({ initialRows: [existing] })
+    const cache = new ArtistNameCache(client)
+    await cache.write("Khruangbin", {
+      id: UUID,
+      spotifyId: "k1",
+      name: "khruangbin (alt spelling)",
+      genres: ["psych"],
+      popularity: 61,
+      imageUrl: "https://img/k.jpg",
+    })
+    expect(upserts).toHaveLength(0)
+    expect(updates).toHaveLength(1)
+    expect(updates[0].column).toBe("id")
+    expect(updates[0].value).toBe(UUID)
+    // name/name_lower are never touched — the canonical spelling survives.
+    expect(rows[0].name).toBe("Khruangbin")
+    expect(rows[0].genres).toEqual(["psych"])
   })
 
   it("when spotifyId is null, UPDATES the minted identity row by id — never inserts (#161)", async () => {
-    const existing = row({ id: "uuid-l", spotifyId: null, name: "Lastfm Only", genres: null, popularity: null })
+    const existing = row({ id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", spotifyId: null, name: "Lastfm Only", genres: null, popularity: null })
     const { client, rows, upserts, updates } = makeFakeClient({ initialRows: [existing] })
     const cache = new ArtistNameCache(client)
     const a: Artist = {
-      id: "uuid-l",
+      id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
       spotifyId: null,
       name: "Lastfm Only",
       genres: ["shoegaze"],
@@ -300,7 +329,7 @@ describe("ArtistNameCache.write", () => {
     expect(rows).toHaveLength(1)
     expect(updates).toHaveLength(1)
     expect(updates[0].column).toBe("id")
-    expect(updates[0].value).toBe("uuid-l")
+    expect(updates[0].value).toBe("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
     expect(rows[0].genres).toEqual(["shoegaze"])
     expect(rows[0].popularity).toBe(33)
     expect(rows[0].image_url).toBe("https://img/l.jpg")

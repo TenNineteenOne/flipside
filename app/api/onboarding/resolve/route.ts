@@ -6,6 +6,7 @@ import { createServiceClient } from "@/lib/supabase/server"
 import { isValidSpotifyId } from "@/lib/spotify-ids"
 import { ensureArtist, type ArtistsSupabaseClient } from "@/lib/artists"
 import { resolveArtistExternalIds } from "@/lib/music-provider/musicbrainz"
+import { ArtistNameCache, type CacheSupabaseClient } from "@/lib/recommendation/artist-name-cache"
 
 // Resolution is low-volume (only when a user SELECTS a Last.fm-only suggestion,
 // not per keystroke) and each miss can trigger a MusicBrainz call, so cap it
@@ -26,28 +27,6 @@ function isRateLimited(userId: string): boolean {
   if (bucket.count >= RESOLVE_MAX_PER_MIN) return true
   bucket.count += 1
   return false
-}
-
-/**
- * Exact-name lookup against the folded `artists` table → the artist's internal
- * uuid id and image, or null. `name_lower` is NOT unique (two distinct artists
- * can share a name), so an ambiguous hit (>1 row) is treated as a miss — we
- * can't safely pick one, and the MusicBrainz/mbid path disambiguates instead.
- */
-async function resolveFromCache(name: string): Promise<{ id: string; imageUrl: string | null } | null> {
-  try {
-    const supabase = createServiceClient()
-    const { data, error } = await supabase
-      .from("artists")
-      .select("id, image_url")
-      .eq("name_lower", name.toLowerCase())
-      .limit(2)
-    if (error || !data || data.length !== 1) return null
-    const row = data[0]
-    return { id: row.id, imageUrl: row.image_url ?? null }
-  } catch {
-    return null
-  }
 }
 
 /**
@@ -85,8 +64,15 @@ export async function POST(req: NextRequest) {
   }
   const mbid = typeof body.mbid === "string" && MBID_RE.test(body.mbid) ? body.mbid : null
 
-  // 1. Folded `artists` table by exact name → our internal uuid + image.
-  const cached = await resolveFromCache(name)
+  const supabase = createServiceClient()
+
+  // 1. Folded `artists` table by exact name, through the ONE doorway lookup
+  //    (ArtistNameCache.batchRead): an ambiguous name_lower (>1 row) is a
+  //    miss — we can't safely pick one, and the MusicBrainz/mbid path
+  //    disambiguates instead. Errors degrade to a miss (empty map).
+  const cached = (
+    await new ArtistNameCache(supabase as unknown as CacheSupabaseClient).batchRead([name])
+  ).get(name.toLowerCase())
   if (cached) {
     return Response.json({ id: cached.id, name, imageUrl: cached.imageUrl })
   }
@@ -96,7 +82,6 @@ export async function POST(req: NextRequest) {
   if (mbid) {
     const { spotifyId } = await resolveArtistExternalIds(mbid)
     if (spotifyId && isValidSpotifyId(spotifyId)) {
-      const supabase = createServiceClient()
       const uuid = await ensureArtist(supabase as unknown as ArtistsSupabaseClient, { spotifyId, name })
       if (uuid) {
         console.log(`[onboard-resolve] mb-resolved name="${name}" mbid=${mbid} uuid=${uuid}`)
