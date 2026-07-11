@@ -1,6 +1,6 @@
 ---
 title: Generation Engine (Feed)
-updated: 2026-06-06
+updated: 2026-07-03
 related: [[explore-engine]], [[music-providers]], [[external-apis]], [[genre-system]], [[data-model]]
 ---
 
@@ -65,7 +65,7 @@ core — see [[explore-engine]].
 | `cluster-cap.ts` | 25% per-genre diversity cap (single-list + cross-rail) |
 | `scoring` (in engine) | `k^popularity` tier multiplier + relevance |
 | `chain-walker.ts` | BFS similarity-chain finder (used 1-hop for Explore provenance) |
-| `artist-name-cache.ts` | read-through cache over `artist_search_cache` (chunked at 500) |
+| `artist-name-cache.ts` | read-through name cache over the canonical `artists` table (Stage-2 fold; chunked at 500). Ambiguous names (>1 row per `name_lower`) read as misses. **Write path (#161): spotifyId → upsert on `spotify_id`; spotifyId-null → fill-only metadata UPDATE keyed on the minted uuid — never an insert** (a bare insert duplicated the just-minted row and made the name permanently ambiguous) |
 | `window.ts` | weekly-stable seeds: `cacheWindowSeed`, `seededShuffle`, `sampleLikes` |
 | `freshness.ts` | "has ≥5 unseen unexpired recs?" for splash redirect |
 | `user-market.ts` | DB-cached Spotify market, falls back to "US" |
