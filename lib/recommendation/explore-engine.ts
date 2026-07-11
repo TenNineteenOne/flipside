@@ -346,6 +346,9 @@ export async function adjacentRail(
   }
 
   // Round-robin across tags → name list + name→tag map for provenance.
+  // Keyed by name.toLowerCase() (A2) — dedup must be case-insensitive so the
+  // same artist spelled differently by two tags doesn't produce two picks;
+  // the round-robin list itself keeps the original (first-seen) casing.
   const nameToTag = new Map<string, string>()
   const namesRoundRobin: string[] = []
   let exhausted = false
@@ -357,8 +360,9 @@ export async function adjacentRail(
       if (idx < list.length) {
         exhausted = false
         const name = list[idx]
-        if (!nameToTag.has(name)) {
-          nameToTag.set(name, tag)
+        const key = name.toLowerCase()
+        if (!nameToTag.has(key)) {
+          nameToTag.set(key, tag)
           namesRoundRobin.push(name)
         }
       }
@@ -386,7 +390,7 @@ export async function adjacentRail(
     const a = artistByName.get(name)
     if (!a || seen.has(a.id)) continue
     seen.add(a.id)
-    const tag = nameToTag.get(name)
+    const tag = nameToTag.get(name.toLowerCase())
     why[a.id] = tag ? { tag, anchor: genreToAnchor(tag) ?? undefined } : {}
     if (picks.length < target) picks.push(a)
     else leftover.push(a)
@@ -480,6 +484,7 @@ export async function outsideRail(
   )
 
   // Round-robin across picked anchors so no single anchor dominates.
+  // Keyed by name.toLowerCase() (A2) — see adjacentRail's nameToTag for why.
   const nameToAnchor = new Map<string, string>()
   const namesRoundRobin: string[] = []
   let idx = 0
@@ -491,8 +496,9 @@ export async function outsideRail(
       if (idx < list.length && idx < OUTSIDE_PER_ANCHOR_TARGET) {
         exhausted = false
         const name = list[idx]
-        if (!nameToAnchor.has(name)) {
-          nameToAnchor.set(name, tagList[i][0])
+        const key = name.toLowerCase()
+        if (!nameToAnchor.has(key)) {
+          nameToAnchor.set(key, tagList[i][0])
           namesRoundRobin.push(name)
         }
       }
@@ -520,7 +526,7 @@ export async function outsideRail(
     const a = artistByName.get(name)
     if (!a || seenArtist.has(a.id)) continue
     seenArtist.add(a.id)
-    const anchorId = nameToAnchor.get(name)
+    const anchorId = nameToAnchor.get(name.toLowerCase())
     const anchorLabel = picked.find((p) => p.id === anchorId)?.label
     why[a.id] = { anchor: anchorLabel ?? anchorId }
     if (picks.length < target) picks.push(a)
@@ -617,6 +623,7 @@ export async function wildcardsRail(
   )
 
   // Round-robin across seeds with provenance map.
+  // Keyed by name.toLowerCase() (A2) — see adjacentRail's nameToTag for why.
   const nameToSeed = new Map<string, { id: string; name: string }>()
   const nameToMatch = new Map<string, number>()
   const namesRoundRobin: string[] = []
@@ -628,9 +635,10 @@ export async function wildcardsRail(
       if (idx < tailFirst.length) {
         exhausted = false
         const ref = tailFirst[idx]
-        if (ref.name && !nameToSeed.has(ref.name)) {
-          nameToSeed.set(ref.name, seed)
-          nameToMatch.set(ref.name, ref.match)
+        const key = ref.name?.toLowerCase()
+        if (key && !nameToSeed.has(key)) {
+          nameToSeed.set(key, seed)
+          nameToMatch.set(key, ref.match)
           namesRoundRobin.push(ref.name)
         }
       }
@@ -659,8 +667,8 @@ export async function wildcardsRail(
     // Don't surface the thumbs-up seed itself.
     if (ctx.thumbsUpIds.has(a.id)) continue
     seenArtist.add(a.id)
-    const seed = nameToSeed.get(name)
-    const match = nameToMatch.get(name)
+    const seed = nameToSeed.get(name.toLowerCase())
+    const match = nameToMatch.get(name.toLowerCase())
     why[a.id] = seed
       ? {
           sourceArtist: seed.name,
@@ -781,13 +789,15 @@ export async function leftfieldRail(
     // variety wins over any single tag flooding the candidate list.
     const picks = perTag.filter((p): p is { tag: string; anchorId: string; names: string[] } => !!p)
     const namesRoundRobin: string[] = []
+    // Keyed by name.toLowerCase() (A2) — see adjacentRail's nameToTag for why.
     const nameMeta = new Map<string, { tag: string; anchorId: string }>()
     for (let k = 0; k < picksPerTag; k++) {
       for (const p of picks) {
         if (k >= p.names.length) continue
         const name = p.names[k]
-        if (nameMeta.has(name)) continue
-        nameMeta.set(name, { tag: p.tag, anchorId: p.anchorId })
+        const key = name.toLowerCase()
+        if (nameMeta.has(key)) continue
+        nameMeta.set(key, { tag: p.tag, anchorId: p.anchorId })
         namesRoundRobin.push(name)
       }
     }
@@ -832,7 +842,7 @@ export async function leftfieldRail(
       const a = artistByName.get(name)
       if (!a || seenArtist.has(a.id)) continue
       if (excludeIds.has(a.id)) continue
-      const meta = nameMeta.get(name)
+      const meta = nameMeta.get(name.toLowerCase())
       if (!meta) continue
       seenArtist.add(a.id)
       why[a.id] = { tag: meta.tag, anchor: meta.anchorId }
