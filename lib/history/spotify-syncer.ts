@@ -68,6 +68,9 @@ async function batchUpsertSpotifyArtists(
     keys: uuids,
     keyColumn: "artist_id",
     source,
+    // Concurrent stats.fm sync may insert the same (user_id, artist_id) first;
+    // recover per-row instead of dropping the batch (0041 restored the unique).
+    conflictFallback: true,
     logPrefix: "[accumulateSpotifyHistory]",
     logLabel: `batch source=${source}`,
   })

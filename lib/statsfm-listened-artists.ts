@@ -101,6 +101,9 @@ async function batchUpsertStatsFmResolved(
     keyColumn: "artist_id",
     source: "statsfm",
     chunkSize: CHUNK,
+    // Concurrent Spotify sync may insert the same (user_id, artist_id) first;
+    // recover per-row instead of dropping the batch (0041 restored the unique).
+    conflictFallback: true,
     logPrefix: "[accumulateStatsFmHistory]",
     logLabel: "resolved batch",
     errorSuffix: " (resolved)",
