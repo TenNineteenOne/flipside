@@ -64,3 +64,37 @@ export async function isRateLimited(ip: string): Promise<boolean> {
 
   return data === true
 }
+
+/**
+ * Fixed-window per-key limiter backed by an in-memory Map.
+ *
+ * ⚠️ Deliberately per-serverless-instance, NOT global — unlike `isRateLimited`
+ * above (DB-backed via `rpc_register_login_attempt`, consistent across every
+ * instance), this counter lives in one Lambda/Edge instance's memory and
+ * resets on cold start. Multiple concurrent instances each get their own
+ * budget, so the *effective* ceiling under scale-out is `max * instanceCount`,
+ * not `max`. Fine for a speed-bump against casual abuse; not a real cap.
+ * Upgrade path: move to the DB-backed pattern above (or Redis) if this ever
+ * needs to be a hard limit.
+ *
+ * Semantics (fixed window, not sliding): the first call for a key opens a
+ * window and is always allowed. Each subsequent call within `windowMs` of the
+ * window's start is allowed and increments the count *unless* the count has
+ * already reached `max`, in which case it's rejected and the count does not
+ * increment further. So exactly `max` calls are allowed per window, and the
+ * window resets on the first call after it expires.
+ */
+export function createWindowLimiter(opts: { max: number; windowMs: number }) {
+  const buckets = new Map<string, { count: number; windowStart: number }>()
+  return function checkAndConsume(key: string): boolean {
+    const now = Date.now()
+    const bucket = buckets.get(key)
+    if (!bucket || now - bucket.windowStart > opts.windowMs) {
+      buckets.set(key, { count: 1, windowStart: now })
+      return false
+    }
+    if (bucket.count >= opts.max) return true
+    bucket.count += 1
+    return false
+  }
+}

@@ -1,5 +1,5 @@
 import { after } from "next/server"
-import { auth } from "@/lib/auth"
+import { safeAuth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, apiUnauthorized } from "@/lib/errors"
 import { enforceSameOrigin } from "@/lib/csrf"
@@ -11,7 +11,7 @@ import type { NextRequest } from "next/server"
 export async function POST(req: NextRequest): Promise<Response> {
   const blocked = enforceSameOrigin(req)
   if (blocked) return blocked
-  const session = await auth()
+  const session = await safeAuth()
   if (!session?.user?.id) return apiUnauthorized()
 
   const userId = session.user.id

@@ -1,7 +1,8 @@
 import { type NextRequest } from "next/server"
-import { auth } from "@/lib/auth"
+import { safeAuth } from "@/lib/auth"
 import { apiError, apiUnauthorized } from "@/lib/errors"
 import { createServiceClient } from "@/lib/supabase/server"
+import { createWindowLimiter } from "@/lib/rate-limiter"
 import { searchArtistCandidates } from "@/lib/music-provider/lastfm-search"
 import { normalizeArtistName } from "@/lib/history/name-utils"
 import type { Artist } from "@/lib/music-provider/types"
@@ -9,27 +10,13 @@ import type { Artist } from "@/lib/music-provider/types"
 // Per-user in-memory rate limit. A debounced UI already throttles typing; this
 // is a per-instance speed bump against abuse. Last.fm calls additionally route
 // through the shared limiter (#150), so this protects that budget too.
-const SEARCH_MAX_PER_MIN = 120
-const SEARCH_WINDOW_MS = 60_000
-const searchBuckets = new Map<string, { count: number; windowStart: number }>()
+const isSearchRateLimited = createWindowLimiter({ max: 120, windowMs: 60_000 })
 
 // Minimum query length enforced server-side (the client also gates this).
 const MIN_QUERY_LEN = 2
 // If the cache already returns at least this many hits, skip Last.fm entirely.
 const CACHE_SUFFICIENT = 5
 const RESULT_CAP = 10
-
-function isSearchRateLimited(userId: string): boolean {
-  const now = Date.now()
-  const bucket = searchBuckets.get(userId)
-  if (!bucket || now - bucket.windowStart > SEARCH_WINDOW_MS) {
-    searchBuckets.set(userId, { count: 1, windowStart: now })
-    return false
-  }
-  if (bucket.count >= SEARCH_MAX_PER_MIN) return true
-  bucket.count += 1
-  return false
-}
 
 // Escape %/_/\ so user input can't turn into a wildcard in ILIKE.
 function escapeIlike(s: string): string {
@@ -100,7 +87,7 @@ function cacheToSuggestion(a: Artist): OnboardingSuggestion {
  * (resolved to a real id on selection).
  */
 export async function GET(req: NextRequest) {
-  const session = await auth()
+  const session = await safeAuth()
   if (!session?.user?.id) {
     console.log("[onboard-search] unauth")
     return apiUnauthorized()

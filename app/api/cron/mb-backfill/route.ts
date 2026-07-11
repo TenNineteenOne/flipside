@@ -25,6 +25,7 @@ import { createServiceClient } from "@/lib/supabase/server"
 import { resolveArtistExternalIds, searchArtistMbid } from "@/lib/music-provider/musicbrainz"
 import { createHmac, timingSafeEqual } from "crypto"
 import { NextRequest } from "next/server"
+import { apiError, apiUnauthorized } from "@/lib/errors"
 
 // This worker is almost entirely I/O-wait on the 1-req/s MusicBrainz limiter, so
 // allow the full Hobby/Fluid 300s function budget for a single daily run.
@@ -53,14 +54,14 @@ export async function GET(req: NextRequest) {
   const cronSecret = process.env.CRON_SECRET
   if (!cronSecret) {
     console.error("[mb-backfill] CRON_SECRET is not set — refusing request")
-    return Response.json({ error: "Server misconfigured" }, { status: 500 })
+    return apiError("Server misconfigured", 500)
   }
   const authHeader = req.headers.get("authorization") ?? ""
   const expected = `Bearer ${cronSecret}`
   // HMAC both values to fixed-length digests — prevents length-leak from direct comparison.
   const hmac = (v: string) => createHmac("sha256", "cron-compare").update(v).digest()
   if (!timingSafeEqual(hmac(authHeader), hmac(expected))) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 })
+    return apiUnauthorized()
   }
 
   const supabase = createServiceClient()
@@ -81,7 +82,7 @@ export async function GET(req: NextRequest) {
 
   if (queueErr) {
     console.error("[mb-backfill] Queue scan error:", queueErr.message)
-    return Response.json({ error: "An unexpected error occurred" }, { status: 500 })
+    return apiError("An unexpected error occurred", 500)
   }
 
   const batch = (rows ?? []) as ArtistRow[]

@@ -1,10 +1,10 @@
-import { auth } from "@/lib/auth"
+import { safeAuth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiUnauthorized, dbError } from "@/lib/errors"
 import { getUnseenRecommendations } from "@/lib/recommendation/feed-query"
 
 export async function GET(): Promise<Response> {
-  const session = await auth()
+  const session = await safeAuth()
   if (!session?.user?.id) return apiUnauthorized()
 
   const userId = session.user.id

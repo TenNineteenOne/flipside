@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth"
+import { safeAuth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiUnauthorized, dbError } from "@/lib/errors"
 import { getHistoryPage } from "@/lib/history/query"
@@ -11,7 +11,7 @@ import { type NextRequest } from "next/server"
  * Supports pagination via `offset` and `limit` query params.
  */
 export async function GET(request: NextRequest): Promise<Response> {
-  const session = await auth()
+  const session = await safeAuth()
   if (!session?.user?.id) return apiUnauthorized()
 
   const userId = session.user.id

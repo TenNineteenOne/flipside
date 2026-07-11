@@ -1,11 +1,11 @@
-import { auth } from "@/lib/auth"
+import { safeAuth } from "@/lib/auth"
 import { apiUnauthorized } from "@/lib/errors"
 import { createServiceClient } from "@/lib/supabase/server"
 
 // After the auth pivot, onboarding is always needed for new users.
 // A user is considered onboarded once they have at least one seed_artist OR lastfm_username set.
 export async function GET() {
-  const session = await auth()
+  const session = await safeAuth()
   if (!session?.user?.id) return apiUnauthorized()
 
   const userId = session.user.id

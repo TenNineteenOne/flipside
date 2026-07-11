@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest"
-import { hashIp, evaluateRateLimit } from "../rate-limiter"
+import { describe, it, expect, vi, afterEach } from "vitest"
+import { hashIp, evaluateRateLimit, createWindowLimiter } from "../rate-limiter"
 
 describe("hashIp", () => {
   it("returns a 64-char hex string (SHA-256)", () => {
@@ -70,5 +70,37 @@ describe("evaluateRateLimit", () => {
     const result = evaluateRateLimit(existing, now)
     expect(result.limited).toBe(false)
     expect(result.newCount).toBe(10)
+  })
+})
+
+describe("createWindowLimiter", () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it("allows exactly `max` calls per key within the window, then blocks", () => {
+    const check = createWindowLimiter({ max: 3, windowMs: 60_000 })
+    expect(check("u1")).toBe(false) // 1st
+    expect(check("u1")).toBe(false) // 2nd
+    expect(check("u1")).toBe(false) // 3rd
+    expect(check("u1")).toBe(true) // 4th — blocked
+    expect(check("u1")).toBe(true) // stays blocked, doesn't overflow count
+  })
+
+  it("tracks separate buckets per key", () => {
+    const check = createWindowLimiter({ max: 1, windowMs: 60_000 })
+    expect(check("a")).toBe(false)
+    expect(check("b")).toBe(false)
+    expect(check("a")).toBe(true)
+  })
+
+  it("resets the window after windowMs elapses", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-04-18T12:00:00Z"))
+    const check = createWindowLimiter({ max: 1, windowMs: 60_000 })
+    expect(check("u1")).toBe(false)
+    expect(check("u1")).toBe(true)
+    vi.setSystemTime(new Date("2026-04-18T12:01:01Z")) // 61s later
+    expect(check("u1")).toBe(false)
   })
 })

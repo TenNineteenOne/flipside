@@ -1,11 +1,11 @@
 import { redirect } from "next/navigation"
-import { auth } from "@/lib/auth"
+import { safeAuth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { HistoryClient } from "@/components/history/history-client"
 import { getHistoryPage } from "@/lib/history/query"
 
 export default async function HistoryPage() {
-  const session = await auth()
+  const session = await safeAuth()
   if (!session?.user?.id) {
     redirect("/sign-in")
   }

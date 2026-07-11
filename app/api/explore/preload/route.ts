@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth"
+import { safeAuth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, apiUnauthorized } from "@/lib/errors"
 import { getAccessToken } from "@/lib/get-access-token"
@@ -14,7 +14,7 @@ import type { NextRequest } from "next/server"
  * `explore_cache` and `artist_search_cache`.
  */
 export async function GET(req: NextRequest): Promise<Response> {
-  const session = await auth()
+  const session = await safeAuth()
   if (!session?.user?.id) return apiUnauthorized()
 
   const userId = session.user.id

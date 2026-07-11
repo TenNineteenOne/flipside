@@ -1,15 +1,9 @@
-import { auth, signOut } from "@/lib/auth"
+import { signOut } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
-import { apiUnauthorized, apiError } from "@/lib/errors"
-import { enforceSameOrigin } from "@/lib/csrf"
+import { apiError } from "@/lib/errors"
+import { withAuthedCsrfRoute } from "@/lib/api/with-authed-route"
 
-export async function DELETE(request: Request): Promise<Response> {
-  const blocked = enforceSameOrigin(request)
-  if (blocked) return blocked
-  const session = await auth()
-  if (!session?.user?.id) return apiUnauthorized()
-
-  const userId = session.user.id
+export const DELETE = withAuthedCsrfRoute(async ({ userId }): Promise<Response> => {
   const supabase = createServiceClient()
 
   // All child tables have ON DELETE CASCADE — deleting the user row cascades to all data
@@ -26,4 +20,4 @@ export async function DELETE(request: Request): Promise<Response> {
 
   // Unreachable — signOut always throws NEXT_REDIRECT. Satisfies TypeScript return type.
   return new Response(null, { status: 204 })
-}
+})

@@ -1,18 +1,17 @@
 import { type NextRequest } from "next/server"
 import { getToken } from "next-auth/jwt"
-import { auth } from "@/lib/auth"
 import { getAccessToken } from "@/lib/get-access-token"
 import { musicProvider } from "@/lib/music-provider/provider"
 import { isValidSpotifyId } from "@/lib/spotify-ids"
 import { apiError, apiUnauthorized } from "@/lib/errors"
-import { enforceSameOrigin } from "@/lib/csrf"
+import { withAuthedCsrfRoute } from "@/lib/api/with-authed-route"
 
-export async function POST(req: NextRequest): Promise<Response> {
-  const blocked = enforceSameOrigin(req)
-  if (blocked) return blocked
-  const session = await auth()
-  if (!session?.user?.id) return apiUnauthorized()
-
+// withAuthedCsrfRoute (not withAuthedJsonRoute): this route checks the Spotify
+// access token BEFORE parsing the body, so a missing/expired token 401s ahead
+// of a body-parse failure — preserving that check order needs body-parsing
+// done locally rather than by the wrapper.
+export const POST = withAuthedCsrfRoute(async ({ request }): Promise<Response> => {
+  const req = request as NextRequest
   const accessToken = await getAccessToken(req)
   if (!accessToken) return apiUnauthorized()
 
@@ -50,4 +49,4 @@ export async function POST(req: NextRequest): Promise<Response> {
     if (msg === 'auth_expired') return apiUnauthorized()
     return apiError("Failed to like track", 500)
   }
-}
+})

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation"
-import { auth } from "@/lib/auth"
+import { safeAuth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { getCachedUser } from "@/lib/user-cache"
 import { FeedClient } from "@/components/feed/feed-client"
@@ -54,7 +54,7 @@ function interleave(recs: Rec[]): Rec[] {
 }
 
 export default async function FeedPage() {
-  const session = await auth()
+  const session = await safeAuth()
   if (!session?.user?.id) {
     redirect("/sign-in")
   }

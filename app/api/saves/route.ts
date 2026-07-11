@@ -1,28 +1,14 @@
-import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
-import { apiError, apiUnauthorized, dbError } from "@/lib/errors"
-import { enforceSameOrigin } from "@/lib/csrf"
+import { apiError, dbError } from "@/lib/errors"
 import { getAccessToken } from "@/lib/get-access-token"
 import { isValidArtistId, isValidSpotifyId } from "@/lib/spotify-ids"
 import { invalidateExploreCache } from "@/lib/recommendation/explore-engine"
 import { musicProvider } from "@/lib/music-provider/provider"
 import { type NextRequest } from "next/server"
+import { withAuthedJsonRoute } from "@/lib/api/with-authed-route"
 
-export async function POST(request: NextRequest) {
-  const blocked = enforceSameOrigin(request)
-  if (blocked) return blocked
-  const session = await auth()
-  if (!session?.user?.id) return apiUnauthorized()
-
-  const userId = session.user.id
-
-  let body: { artistId?: string; spotifyTrackId?: string; addToPlaylist?: boolean }
-  try {
-    body = await request.json()
-  } catch {
-    return apiError("Invalid JSON", 400)
-  }
-
+export const POST = withAuthedJsonRoute(async ({ userId, request, body: rawBody }) => {
+  const body = rawBody as { artistId?: string; spotifyTrackId?: string; addToPlaylist?: boolean }
   const { artistId, spotifyTrackId, addToPlaylist = false } = body
 
   if (!artistId || !isValidArtistId(artistId)) {
@@ -81,7 +67,7 @@ export async function POST(request: NextRequest) {
   // Only add to Spotify playlist when explicitly requested and user has Spotify access
   let playlistId: string | null = null
   if (spotifyTrackId && addToPlaylist) {
-    const accessToken = await getAccessToken(request)
+    const accessToken = await getAccessToken(request as NextRequest)
     if (accessToken) {
       const { data: user } = await supabase
         .from("users")
@@ -150,24 +136,10 @@ export async function POST(request: NextRequest) {
   }
 
   return Response.json({ success: true, saved: true, playlistId: playlistId ?? null })
-}
+})
 
-export async function DELETE(request: NextRequest) {
-  const blocked = enforceSameOrigin(request)
-  if (blocked) return blocked
-  const session = await auth()
-  if (!session?.user?.id) return apiUnauthorized()
-
-  const userId = session.user.id
-
-  let body: { artistId?: string }
-  try {
-    body = await request.json()
-  } catch {
-    return apiError("Invalid JSON", 400)
-  }
-
-  const { artistId } = body
+export const DELETE = withAuthedJsonRoute(async ({ userId, body: rawBody }) => {
+  const { artistId } = rawBody as { artistId?: string }
   if (!artistId || !isValidArtistId(artistId)) {
     return apiError("Valid artistId (uuid) is required", 400)
   }
@@ -186,4 +158,4 @@ export async function DELETE(request: NextRequest) {
   })
 
   return Response.json({ success: true })
-}
+})
