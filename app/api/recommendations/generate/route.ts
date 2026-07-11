@@ -10,6 +10,11 @@ import { extractArtistColor } from "@/lib/colour-extraction"
 import { after, type NextRequest } from "next/server"
 import type { Artist } from "@/lib/music-provider/types"
 
+// The blocking buildRecommendations() call plus after()'s background
+// runSecondary()/color-extraction work can run long; give it the full
+// Hobby/Fluid function budget (F-hardening).
+export const maxDuration = 300
+
 /** Run an array of async tasks with a maximum concurrency of `limit`. */
 async function pLimit<T>(
   tasks: (() => Promise<T>)[],

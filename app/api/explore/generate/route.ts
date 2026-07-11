@@ -8,6 +8,10 @@ import { getSpotifyClientToken } from "@/lib/spotify-client-token"
 import { buildExploreRails, type BuildRailsResult } from "@/lib/recommendation/explore-engine"
 import type { NextRequest } from "next/server"
 
+// The warm-cache/non-force path can still fall through to a cold-cache
+// 54-74s rail build; give it the full Hobby/Fluid function budget (F-hardening).
+export const maxDuration = 300
+
 export async function POST(req: NextRequest): Promise<Response> {
   const blocked = enforceSameOrigin(req)
   if (blocked) return blocked

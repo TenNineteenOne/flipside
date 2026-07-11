@@ -13,6 +13,10 @@ import type { NextRequest } from "next/server"
 // Last.fm/Spotify key.
 const FORCE_COOLDOWN_MS = 90_000
 
+// Cold-cache builds run all four rails (Last.fm + Spotify/iTunes I/O) and can
+// take 54-74s; give it the full Hobby/Fluid function budget (F-hardening).
+export const maxDuration = 300
+
 /**
  * Background warm for the Explore page. Triggered from the Feed page while the
  * user is viewing it, so that when they tap Explore the rails + artist cache
