@@ -116,34 +116,70 @@ export async function GET(req: NextRequest) {
       if (updErr) {
         // A unique conflict means another artists row already holds this mbid or
         // spotify_id — the name-only artist is really a duplicate of an existing
-        // one. Don't crash: retry the update WITHOUT the conflicting columns so
-        // we still record the rest + stamp attempted_at, and log it for a future
-        // merge pass (full artist-merge is OUT OF SCOPE for #159).
+        // one. Only mbid and spotify_id are unique, so one of them caused it.
+        // Don't discard a possibly-good spotify_id by dropping BOTH: recover as
+        // much as we can. Try spotify_id-only first (it's the more valuable id),
+        // then mbid-only, then stamp-only. `base` keeps the stamp + non-unique
+        // cols (apple_id/deezer_id). Log for a future merge pass (full
+        // artist-merge is OUT OF SCOPE for #159).
         if (updErr.code === PG_UNIQUE_VIOLATION) {
           conflicts++
+          const base = { ...update }
+          delete base.spotify_id
+          delete base.mbid
+
+          const tryUpdate = async (extra: Record<string, string | null>) =>
+            (await supabase.from("artists").update({ ...base, ...extra }).eq("id", artist.id)).error
+
+          let recovered = false
+          let keptSpotify = false
+
           if (update.spotify_id) {
+            const e = await tryUpdate({ spotify_id: update.spotify_id })
+            if (!e) {
+              recovered = true
+              keptSpotify = true
+              if (update.mbid) {
+                console.warn(
+                  `[mb-backfill] mbid conflict artist=${artist.id} mbid=${update.mbid} (kept spotify_id; mbid needs merge)`,
+                )
+              }
+            } else if (e.code !== PG_UNIQUE_VIOLATION) {
+              console.error(`[mb-backfill] retry update failed artist=${artist.id}: ${e.message}`)
+              continue
+            }
+          }
+
+          if (!recovered && update.mbid) {
+            const e = await tryUpdate({ mbid: update.mbid })
+            if (!e) {
+              recovered = true
+              if (update.spotify_id) {
+                console.warn(
+                  `[mb-backfill] spotify_id conflict artist=${artist.id} spotify=${update.spotify_id} (kept mbid; spotify_id needs merge)`,
+                )
+              }
+            } else if (e.code !== PG_UNIQUE_VIOLATION) {
+              console.error(`[mb-backfill] retry update failed artist=${artist.id}: ${e.message}`)
+              continue
+            }
+          }
+
+          if (!recovered) {
+            // Both spotify_id and mbid conflict — stamp only (+ apple/deezer) so
+            // we still record attempted_at and don't re-queue the row instantly.
+            const e = await tryUpdate({})
+            if (e) {
+              console.error(`[mb-backfill] stamp-only update failed artist=${artist.id}: ${e.message}`)
+              continue
+            }
             console.warn(
-              `[mb-backfill] spotify_id conflict artist=${artist.id} spotify=${update.spotify_id} (skipping spotify_id; needs merge)`,
+              `[mb-backfill] spotify_id + mbid both conflict artist=${artist.id} (stamp-only; needs merge)`,
             )
           }
-          if (update.mbid) {
-            console.warn(
-              `[mb-backfill] mbid conflict artist=${artist.id} mbid=${update.mbid} (skipping mbid; needs merge)`,
-            )
-          }
-          delete update.spotify_id
-          delete update.mbid
-          const { error: retryErr } = await supabase
-            .from("artists")
-            .update(update)
-            .eq("id", artist.id)
-          if (retryErr) {
-            console.error(
-              `[mb-backfill] retry update failed artist=${artist.id}: ${retryErr.message}`,
-            )
-            continue
-          }
+
           attempted++
+          if (keptSpotify) resolved++
           continue
         }
         console.error(`[mb-backfill] update failed artist=${artist.id}: ${updErr.message}`)
