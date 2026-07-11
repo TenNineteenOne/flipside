@@ -27,6 +27,17 @@ export interface UseArtistFeedbackOptions {
   }
 }
 
+export interface FeedbackCallOptions {
+  /**
+   * Called once the operation settles, after any optimistic rollback + toast
+   * has already happened. `success` is false when the network call failed.
+   * Optional — feed/explore ignore it and just fire-and-forget; callers that
+   * keep their own parallel state (e.g. a list rendered independently of
+   * `signals`) can use it to mirror the rollback.
+   */
+  onSettled?: (success: boolean) => void
+}
+
 export interface UseArtistFeedbackResult {
   signals: Map<string, string>
   /**
@@ -41,7 +52,17 @@ export interface UseArtistFeedbackResult {
    * All calls for the same artistId are serialized so rapid taps (like → unlike
    * → like) always hit the server in intent order.
    */
-  setSignal: (artistId: string, signal: string) => Promise<void>
+  setSignal: (artistId: string, signal: string, callOpts?: FeedbackCallOptions) => Promise<void>
+  /**
+   * Unconditionally clear an artist's feedback signal — DELETE /api/feedback/{id}
+   * regardless of what the current signal is (unlike `setSignal`, which only
+   * deletes on the thumbs_up-toggle-off case). For "undo" UIs where any signal
+   * (liked, passed, skipped) can be undone, not just a like.
+   *
+   * Shares the same per-artist queue as `setSignal`, so an undo and a signal
+   * change for the same artist always land on the server in click order.
+   */
+  removeSignal: (artistId: string, callOpts?: FeedbackCallOptions) => Promise<void>
   /**
    * Replace the entire signals Map. Pass `new Map()` to clear all signals —
    * used by explore-client after a shuffle or adventurous apply so stale
@@ -134,13 +155,14 @@ export function useArtistFeedback(opts?: UseArtistFeedbackOptions): UseArtistFee
   railKeyRef.current = railKey
 
   const setSignal = useCallback(
-    (artistId: string, signal: string): Promise<void> => {
+    (artistId: string, signal: string, callOpts?: FeedbackCallOptions): Promise<void> => {
       return queueRef.current(artistId, async () => {
         const currentSignal = signalsRef.current.get(artistId)
         const op = classifyFeedbackOp(signal, currentSignal, localOnlySignalsRef.current)
 
         if (op === "local") {
           setSignalsState((prev) => new Map(prev).set(artistId, signal))
+          callOpts?.onSettled?.(true)
           return
         }
 
@@ -154,10 +176,12 @@ export function useArtistFeedback(opts?: UseArtistFeedbackOptions): UseArtistFee
           try {
             const res = await fetch(buildFeedbackDeleteUrl(artistId), { method: "DELETE" })
             if (!res.ok && res.status !== 204) throw new Error("Server error")
+            callOpts?.onSettled?.(true)
           } catch {
             // Rollback
             setSignalsState((prev) => new Map(prev).set(artistId, "thumbs_up"))
             toast.error(undoFailed)
+            callOpts?.onSettled?.(false)
           }
           return
         }
@@ -174,6 +198,7 @@ export function useArtistFeedback(opts?: UseArtistFeedbackOptions): UseArtistFee
             body: JSON.stringify(buildFeedbackPostBody(artistId, signal, railKeyRef.current)),
           })
           if (!res.ok) throw new Error("Server error")
+          callOpts?.onSettled?.(true)
         } catch {
           // Rollback to prior state
           setSignalsState((prev) => {
@@ -183,6 +208,7 @@ export function useArtistFeedback(opts?: UseArtistFeedbackOptions): UseArtistFee
             return next
           })
           toast.error(saveFailed)
+          callOpts?.onSettled?.(false)
         }
       })
     },
@@ -190,6 +216,35 @@ export function useArtistFeedback(opts?: UseArtistFeedbackOptions): UseArtistFee
     // at dispatch time, so setSignal identity stays stable across rail
     // switches (preserves memo on consumer rows).
     [undoFailed, saveFailed],
+  )
+
+  // Unconditional undo — DELETE regardless of current signal. Shares queueRef
+  // with setSignal so an undo serializes with a concurrent signal change on
+  // the same artistId.
+  const removeSignal = useCallback(
+    (artistId: string, callOpts?: FeedbackCallOptions): Promise<void> => {
+      return queueRef.current(artistId, async () => {
+        const prevSignal = signalsRef.current.get(artistId)
+        setSignalsState((prev) => {
+          const next = new Map(prev)
+          next.delete(artistId)
+          return next
+        })
+        try {
+          const res = await fetch(buildFeedbackDeleteUrl(artistId), { method: "DELETE" })
+          if (!res.ok && res.status !== 204) throw new Error("Server error")
+          callOpts?.onSettled?.(true)
+        } catch {
+          // Rollback
+          if (prevSignal !== undefined) {
+            setSignalsState((prev) => new Map(prev).set(artistId, prevSignal))
+          }
+          toast.error(undoFailed)
+          callOpts?.onSettled?.(false)
+        }
+      })
+    },
+    [undoFailed],
   )
 
   const setSignals = useCallback(
@@ -203,5 +258,5 @@ export function useArtistFeedback(opts?: UseArtistFeedbackOptions): UseArtistFee
     [],
   )
 
-  return { signals, setSignal, setSignals }
+  return { signals, setSignal, removeSignal, setSignals }
 }

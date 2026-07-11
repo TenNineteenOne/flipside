@@ -1,12 +1,11 @@
 "use client"
 
-import { useState } from "react"
 import Image from "next/image"
-import { useRouter } from "next/navigation"
 import { X, Bookmark, Share2 } from "lucide-react"
 import { toast } from "sonner"
 import { hexToRgba } from "@/lib/color-utils"
 import { resolveArtistColor } from "@/lib/hooks/use-artist-color"
+import { useArtistSaves } from "@/lib/hooks/use-artist-saves"
 import {
   PLATFORM_META,
   getArtistLink,
@@ -33,10 +32,13 @@ interface SavedClientProps {
 
 
 export function SavedClient({ artists, hasLastfm, musicPlatform }: SavedClientProps) {
-  const router = useRouter()
-  const [removedIds, setRemovedIds] = useState<Set<string>>(new Set())
+  // Everything rendered on this page starts saved — the hook's optimistic
+  // toggle + rollback + per-artist queue replaces the old removedIds state.
+  const { savedIds, toggleSave } = useArtistSaves({
+    initialSavedIds: artists.map((a) => a.artistId),
+  })
 
-  const visible = artists.filter((a) => !removedIds.has(a.artistId))
+  const visible = artists.filter((a) => savedIds.has(a.artistId))
 
   const accent = "#8b5cf6"
   const c1 = visible[0] ? resolveArtistColor(visible[0].artistColor, visible[0].name) : accent
@@ -46,26 +48,6 @@ export function SavedClient({ artists, hasLastfm, musicPlatform }: SavedClientPr
     radial-gradient(55% 45% at 82% 30%, ${hexToRgba(c2, 0.18)} 0%, transparent 70%),
     radial-gradient(70% 55% at 50% 90%, ${hexToRgba(accent, 0.14)} 0%, transparent 70%)
   `
-
-  async function handleUnsave(artistId: string) {
-    setRemovedIds((prev) => new Set(prev).add(artistId))
-    try {
-      const res = await fetch("/api/saves", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ artistId }),
-      })
-      if (!res.ok) throw new Error("Server error")
-      router.refresh()
-    } catch {
-      setRemovedIds((prev) => {
-        const next = new Set(prev)
-        next.delete(artistId)
-        return next
-      })
-      toast.error("Couldn't unsave — try again")
-    }
-  }
 
   return (
     <div>
@@ -156,7 +138,7 @@ export function SavedClient({ artists, hasLastfm, musicPlatform }: SavedClientPr
                     />
                   )}
                   <button
-                    onClick={() => handleUnsave(artist.artistId)}
+                    onClick={() => toggleSave(artist.artistId)}
                     aria-label={`Remove ${artist.name}`}
                     style={{
                       position: "absolute",

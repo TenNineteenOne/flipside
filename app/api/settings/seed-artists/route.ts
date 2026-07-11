@@ -1,23 +1,18 @@
-import { type NextRequest } from "next/server"
-import { auth } from "@/lib/auth"
-import { apiError, apiUnauthorized, dbError } from "@/lib/errors"
-import { enforceSameOrigin } from "@/lib/csrf"
+import { apiError, dbError } from "@/lib/errors"
 import { createServiceClient } from "@/lib/supabase/server"
 import { isValidArtistId } from "@/lib/spotify-ids"
 import { validateSeedArtists } from "@/lib/seed-artist-validation"
 import { invalidateExploreCache } from "@/lib/recommendation/explore-engine"
+import { withAuthedRoute, withAuthedCsrfRoute } from "@/lib/api/with-authed-route"
 
 const MAX_SEED_ARTISTS = 200
 
-export async function GET() {
-  const session = await auth()
-  if (!session?.user?.id) return apiUnauthorized()
-
+export const GET = withAuthedRoute(async ({ userId }) => {
   const supabase = createServiceClient()
   const { data, error } = await supabase
     .from("seed_artists")
     .select("artist_id, name, image_url, added_at")
-    .eq("user_id", session.user.id)
+    .eq("user_id", userId)
     .order("added_at", { ascending: true })
 
   if (error) return dbError(error, "settings/seed-artists/list")
@@ -28,19 +23,15 @@ export async function GET() {
     imageUrl: r.image_url,
   }))
   return Response.json({ artists })
-}
+})
 
-export async function POST(req: NextRequest) {
-  const blocked = enforceSameOrigin(req)
-  if (blocked) return blocked
-  const session = await auth()
-  if (!session?.user?.id) return apiUnauthorized()
-
-  const userId = session.user.id
-
+// POST keeps body-parsing local (not withAuthedJsonRoute) so the invalid-body
+// error message stays "Invalid JSON body", matching this route's prior
+// behavior exactly — the wrapper's built-in body parser says "Invalid JSON".
+export const POST = withAuthedCsrfRoute(async ({ userId, request }) => {
   let body: { artists?: unknown }
   try {
-    body = await req.json()
+    body = await request.json()
   } catch {
     return apiError("Invalid JSON body", 400)
   }
@@ -81,15 +72,10 @@ export async function POST(req: NextRequest) {
   })
 
   return Response.json({ success: true })
-}
+})
 
-export async function DELETE(req: NextRequest) {
-  const blocked = enforceSameOrigin(req)
-  if (blocked) return blocked
-  const session = await auth()
-  if (!session?.user?.id) return apiUnauthorized()
-
-  const id = req.nextUrl.searchParams.get("id")
+export const DELETE = withAuthedCsrfRoute(async ({ userId, request }) => {
+  const id = new URL(request.url).searchParams.get("id")
   if (!id || !isValidArtistId(id)) {
     return apiError("Valid artist id (uuid) required", 400)
   }
@@ -98,14 +84,14 @@ export async function DELETE(req: NextRequest) {
   const { error } = await supabase
     .from("seed_artists")
     .delete()
-    .eq("user_id", session.user.id)
+    .eq("user_id", userId)
     .eq("artist_id", id)
 
   if (error) return dbError(error, "settings/seed-artists/delete")
 
-  await invalidateExploreCache(session.user.id).catch((err) => {
+  await invalidateExploreCache(userId).catch((err) => {
     console.error("[seed-artists] explore-invalidate failed", err)
   })
 
   return Response.json({ success: true })
-}
+})

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation"
-import { auth } from "@/lib/auth"
+import { safeAuth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { getCachedUser } from "@/lib/user-cache"
 import { SettingsForm } from "@/components/settings/settings-form"
@@ -7,7 +7,7 @@ import { DEFAULT_MUSIC_PLATFORM, isMusicPlatform } from "@/lib/music-links"
 import { decryptUsername } from "@/lib/crypto/username"
 
 export default async function SettingsPage() {
-  const session = await auth()
+  const session = await safeAuth()
   if (!session?.user?.id) {
     redirect("/sign-in")
   }

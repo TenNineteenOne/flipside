@@ -1,6 +1,6 @@
 ---
 title: Genre System
-updated: 2026-06-06
+updated: 2026-07-11
 related: [[generation-engine]], [[explore-engine]], [[settings-and-discovery]], [[infra-and-ops]]
 ---
 
@@ -36,9 +36,9 @@ stored `lastfmTag`. Raw values are never mutated.
 Builds five in-memory indexes at module load (`leafByKey`, `tagToAnchors`, `tagToClusters`,
 `clusterToLeafKeys`, `anchorToClusters`).
 
-- **`adjacencyScore(a,b)`** ∈ [0,1]: 1.0 same tag; continuous
-  `1 − euclideanDistance/diagonal` when both have coords; tiered fallback otherwise
-  (0.7 same cluster, 0.4 same anchor, 0.1 known, 0 unknown).
+- `adjacencyScore(a,b)` was deleted 2026-07-11 — it had no production callers. The
+  pairwise-scoring implementation (continuous distance + tiered fallback) lives in git
+  history if ever needed again.
 - **`adjacentGenres(tag, 'close'|'medium')`** k-NN: `close` = 15 nearest in the **same**
   anchor; `medium` = 25 nearest in **other** anchors. Coord-less tags fall back to
   cluster/anchor siblings.

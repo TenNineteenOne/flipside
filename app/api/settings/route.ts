@@ -1,21 +1,13 @@
 import { revalidatePath } from "next/cache"
-import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
-import { apiError, apiUnauthorized, dbError } from "@/lib/errors"
-import { enforceSameOrigin } from "@/lib/csrf"
+import { apiError, dbError } from "@/lib/errors"
 import { isMusicPlatform } from "@/lib/music-links"
 import { invalidateExploreCache } from "@/lib/recommendation/explore-engine"
 import { encryptUsername } from "@/lib/crypto/username"
+import { withAuthedJsonRoute } from "@/lib/api/with-authed-route"
 
-export async function PATCH(request: Request) {
-  const blocked = enforceSameOrigin(request)
-  if (blocked) return blocked
-  const session = await auth()
-  if (!session?.user?.id) return apiUnauthorized()
-
-  const userId = session.user.id
-
-  let body: {
+export const PATCH = withAuthedJsonRoute(async ({ userId, body: rawBody }) => {
+  const body = rawBody as {
     playThreshold?: number
     popularityCurve?: number
     lastfmUsername?: string
@@ -26,11 +18,6 @@ export async function PATCH(request: Request) {
     adventurous?: boolean
     preferredMusicPlatform?: string
     onboardingCompleted?: boolean
-  }
-  try {
-    body = await request.json()
-  } catch {
-    return apiError("Invalid JSON", 400)
   }
 
   const update: Record<string, unknown> = {}
@@ -138,4 +125,4 @@ export async function PATCH(request: Request) {
   }
 
   return Response.json({ success: true })
-}
+})

@@ -1,5 +1,7 @@
-import { describe, it, expect } from "vitest"
-import { isPlayable, selectNewPlayable, type FeedRec } from "./use-feed-fill"
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+import { isPlayable, selectNewPlayable, createFeedFillController, type FeedRec } from "./use-feed-fill"
+
+const POLL_INTERVAL_MS = 2500
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -121,5 +123,120 @@ describe("selectNewPlayable", () => {
     const fetched = [playableRec("x"), playableRec("y"), playableRec("z")]
     // Simulates a poll where server returned same 3 recs — idle, nothing new.
     expect(selectNewPlayable(seen, fetched)).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// createFeedFillController — restart()
+// ---------------------------------------------------------------------------
+
+// Queue-based fetch mock: each call to fetchImpl pops the next queued batch of
+// recs (or an empty batch once the queue is drained, simulating an idle poll).
+function makeQueuedFetch(batches: FeedRec[][]) {
+  const queue = [...batches]
+  const fetchImpl = vi.fn(async () => {
+    const recommendations = queue.length > 0 ? queue.shift()! : []
+    return {
+      ok: true,
+      json: async () => ({ recommendations }),
+    } as unknown as Response
+  })
+  return fetchImpl
+}
+
+describe("createFeedFillController", () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it("restart after idle-stop resumes appending", async () => {
+    // targetCount=10, initialIds empty → auto-starts. First 3 polls return
+    // nothing new, tripping the idle-stop (MAX_IDLE_POLLS=3).
+    const fetchImpl = makeQueuedFetch([[], [], []])
+    const onAppend = vi.fn()
+    const controller = createFeedFillController<FeedRec>({
+      initialIds: [],
+      targetCount: 10,
+      onAppend,
+      fetchImpl,
+    })
+
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 3)
+    expect(onAppend).not.toHaveBeenCalled()
+    expect(fetchImpl).toHaveBeenCalledTimes(3) // idle-stopped
+
+    // Confirms the idle-stop actually cleared the interval: no further polls
+    // until restart() is called.
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 2)
+    expect(fetchImpl).toHaveBeenCalledTimes(3)
+
+    fetchImpl.mockImplementationOnce(async () => ({
+      ok: true,
+      json: async () => ({ recommendations: [playableRec("a")] }),
+    }) as unknown as Promise<Response>)
+
+    controller.restart()
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS)
+
+    expect(onAppend).toHaveBeenCalledTimes(1)
+    expect(onAppend.mock.calls[0][0].map((r: FeedRec) => r.artist_id)).toEqual(["a"])
+  })
+
+  it("restart begins polling when the controller never auto-started", async () => {
+    // initialIds.length (2) >= targetCount (2) → never auto-starts.
+    const fetchImpl = makeQueuedFetch([[playableRec("c")]])
+    const onAppend = vi.fn()
+    const controller = createFeedFillController<FeedRec>({
+      initialIds: ["a", "b"],
+      targetCount: 2,
+      onAppend,
+      fetchImpl,
+    })
+
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 2)
+    expect(fetchImpl).not.toHaveBeenCalled()
+    expect(onAppend).not.toHaveBeenCalled()
+
+    controller.restart()
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS)
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    expect(onAppend).toHaveBeenCalledTimes(1)
+    expect(onAppend.mock.calls[0][0].map((r: FeedRec) => r.artist_id)).toEqual(["c"])
+  })
+
+  it("restart extends the target past the original targetCount", async () => {
+    // targetCount=2: reaches target after two 1-rec appends and stops.
+    const fetchImpl = makeQueuedFetch([[playableRec("a")], [playableRec("b")]])
+    const onAppend = vi.fn()
+    const controller = createFeedFillController<FeedRec>({
+      initialIds: [],
+      targetCount: 2,
+      onAppend,
+      fetchImpl,
+    })
+
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 2)
+    expect(onAppend).toHaveBeenCalledTimes(2) // shownCount now 2, target reached — stopped
+
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 2)
+    expect(fetchImpl).toHaveBeenCalledTimes(2) // confirms it stayed stopped at the old target
+
+    // Restart sets target = shownCount(2) + 20 = 22, so polling past the
+    // original targetCount=2 must continue appending instead of stopping.
+    fetchImpl.mockImplementationOnce(async () => ({
+      ok: true,
+      json: async () => ({ recommendations: [playableRec("c")] }),
+    }) as unknown as Promise<Response>)
+
+    controller.restart()
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS)
+
+    expect(onAppend).toHaveBeenCalledTimes(3)
+    expect(onAppend.mock.calls[2][0].map((r: FeedRec) => r.artist_id)).toEqual(["c"])
   })
 })

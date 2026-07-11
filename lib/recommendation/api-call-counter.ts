@@ -23,6 +23,7 @@ let lastfmSimilarCount = 0
 let lastfmGetInfoCount = 0
 let lastfmTagCount = 0
 let lastfmSearchCount = 0
+let lastfmUserCount = 0
 
 /** Increment the iTunes outbound-request counter by 1. */
 export function incItunes(): void {
@@ -54,6 +55,11 @@ export function incLastfmSearch(): void {
   lastfmSearchCount++
 }
 
+/** Increment the Last.fm user.* (history sync) live-call counter by 1. */
+export function incLastfmUser(): void {
+  lastfmUserCount++
+}
+
 export interface CallSnapshot {
   itunes: number
   spotify: number
@@ -62,6 +68,7 @@ export interface CallSnapshot {
     getInfo: number
     tag: number
     search: number
+    user: number
     total: number
   }
 }
@@ -76,7 +83,8 @@ export function snapshotCalls(): CallSnapshot {
       getInfo: lastfmGetInfoCount,
       tag: lastfmTagCount,
       search: lastfmSearchCount,
-      total: lastfmSimilarCount + lastfmGetInfoCount + lastfmTagCount + lastfmSearchCount,
+      user: lastfmUserCount,
+      total: lastfmSimilarCount + lastfmGetInfoCount + lastfmTagCount + lastfmSearchCount + lastfmUserCount,
     },
   }
 }
@@ -89,4 +97,5 @@ export function resetCalls(): void {
   lastfmGetInfoCount = 0
   lastfmTagCount = 0
   lastfmSearchCount = 0
+  lastfmUserCount = 0
 }

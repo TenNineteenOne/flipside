@@ -19,6 +19,8 @@ export interface GenTiming {
     getInfo: number
     tag: number
     search: number
+    /** Last.fm user.* (history sync) live calls. Included in `total`. */
+    user: number
     total: number
   }
 }
@@ -45,7 +47,7 @@ export function formatGenTiming(t: GenTiming): string {
     const l = t.lastfmCalls
     parts.push(
       `lastfmCalls=${l.total}`,
-      `lastfm(similar=${l.similar},getInfo=${l.getInfo},tag=${l.tag},search=${l.search})`,
+      `lastfm(similar=${l.similar},getInfo=${l.getInfo},tag=${l.tag},search=${l.search},user=${l.user})`,
     )
   }
   return parts.join(" ")

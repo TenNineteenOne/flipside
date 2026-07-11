@@ -13,7 +13,7 @@
  * The client compares this against the pre-regen snapshot; when it advances,
  * the regen is done.
  */
-import { auth } from "@/lib/auth"
+import { safeAuth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiUnauthorized, apiError } from "@/lib/errors"
 import { getAccessToken } from "@/lib/get-access-token"
@@ -23,7 +23,7 @@ import { assembleRailPayloads } from "@/lib/recommendation/explore-rail-payloads
 import type { NextRequest } from "next/server"
 
 export async function GET(req: NextRequest): Promise<Response> {
-  const session = await auth()
+  const session = await safeAuth()
   if (!session?.user?.id) return apiUnauthorized()
 
   const userId = session.user.id

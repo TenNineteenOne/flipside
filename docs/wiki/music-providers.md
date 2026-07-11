@@ -1,6 +1,6 @@
 ---
 title: Music Providers & Resilience
-updated: 2026-06-06
+updated: 2026-07-11
 related: [[external-apis]], [[generation-engine]], [[spotify-dependency]], [[api-routes]]
 ---
 
@@ -72,4 +72,4 @@ shorter retry-after can never shorten an open window.
 
 ## Dead / unused
 `getArtists` (batch), `createPlaylist`, `addTracksToPlaylist` are on the interface but have
-zero call sites in the app. `chain-walker` multi-hop is unused (see [[generation-engine]]).
+zero call sites in the app. `chain-walker` was deleted 2026-07-11 (zero callers — see [[generation-engine]]).

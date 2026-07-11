@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { normalizeGenre, normalizedEquals, normalizedIncludes } from "./normalize"
+import { normalizeGenre, normalizedIncludes } from "./normalize"
 
 describe("normalizeGenre", () => {
   it("lowercases", () => {
@@ -32,23 +32,6 @@ describe("normalizeGenre", () => {
     expect(normalizeGenre("hip-hop")).toBe("hip hop")
     expect(normalizeGenre("HipHop")).toBe("hiphop")
     expect(normalizeGenre("Hip Hop")).toBe("hip hop")
-  })
-})
-
-describe("normalizedEquals", () => {
-  it("returns true for format-only differences", () => {
-    expect(normalizedEquals("Hip-Hop", "hip hop")).toBe(true)
-    expect(normalizedEquals("hip-hop", "hip_hop")).toBe(true)
-  })
-
-  it("returns false for different genres", () => {
-    expect(normalizedEquals("rock", "pop")).toBe(false)
-  })
-
-  it("distinguishes squashed-together tokens", () => {
-    // "HipHop" has no separator, so it normalizes to "hiphop" — distinct from "hip hop".
-    // This is intentional: we don't strip word boundaries, only normalize them.
-    expect(normalizedEquals("HipHop", "hip-hop")).toBe(false)
   })
 })
 

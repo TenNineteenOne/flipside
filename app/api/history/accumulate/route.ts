@@ -1,7 +1,6 @@
-import { auth } from "@/lib/auth"
-import { apiError, apiUnauthorized } from "@/lib/errors"
+import { apiError } from "@/lib/errors"
 import { createServiceClient } from "@/lib/supabase/server"
-import { enforceSameOrigin } from "@/lib/csrf"
+import { withAuthedCsrfRoute } from "@/lib/api/with-authed-route"
 import { accumulateLastFmHistory } from "@/lib/listened-artists"
 import { accumulateStatsFmHistory } from "@/lib/statsfm-listened-artists"
 import { decryptUsername } from "@/lib/crypto/username"
@@ -9,14 +8,11 @@ import { decryptUsername } from "@/lib/crypto/username"
 const COOLDOWN_MS = 15 * 60_000
 type Source = "lastfm" | "statsfm"
 
-export async function POST(request: Request): Promise<Response> {
-  const blocked = enforceSameOrigin(request)
-  if (blocked) return blocked
-  const session = await auth()
-  if (!session?.user?.id) return apiUnauthorized()
-
-  const userId = session.user.id
-
+// withAuthedCsrfRoute (not withAuthedJsonRoute): an invalid/missing body here
+// falls through to the "source must be..." validation error rather than the
+// wrapper's generic "Invalid JSON" — body-parsing stays local to preserve
+// that exact message.
+export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Response> => {
   let source: Source
   try {
     const body = (await request.json().catch(() => ({}))) as { source?: unknown }
@@ -90,4 +86,4 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   return Response.json({ success: true })
-}
+})

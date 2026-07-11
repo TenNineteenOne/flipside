@@ -67,10 +67,10 @@ describe("formatGenTiming", () => {
       totalMs: 1500,
       itunesCalls: 10,
       spotifyCalls: 0,
-      lastfmCalls: { similar: 8, getInfo: 12, tag: 3, search: 0, total: 23 },
+      lastfmCalls: { similar: 8, getInfo: 12, tag: 3, search: 0, user: 0, total: 23 },
     })
     expect(line).toBe(
-      "[gen-timing] user=u6 primary=1000 total=1500 misses=0 retries=0 rl=false itunesCalls=10 spotifyCalls=0 lastfmCalls=23 lastfm(similar=8,getInfo=12,tag=3,search=0)"
+      "[gen-timing] user=u6 primary=1000 total=1500 misses=0 retries=0 rl=false itunesCalls=10 spotifyCalls=0 lastfmCalls=23 lastfm(similar=8,getInfo=12,tag=3,search=0,user=0)"
     )
   })
 

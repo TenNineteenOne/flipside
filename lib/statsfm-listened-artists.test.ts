@@ -105,6 +105,16 @@ function makeSupabase(listened: ListenedRow[], artists: ArtistRow[]) {
       if (table === "listened_artists") return listenedTable()
       throw new Error(`unexpected table ${table}`)
     },
+    // Atomic play_count bump (0041 rpc_bump_listened_play_counts).
+    async rpc(_name: string, params: { p_user_id: string; p_ids: string[]; p_now: string }) {
+      for (const row of listened) {
+        if (row.user_id === params.p_user_id && params.p_ids.includes(row.id)) {
+          row.play_count += 1
+          row.last_seen_at = params.p_now
+        }
+      }
+      return { error: null }
+    },
   }
 }
 

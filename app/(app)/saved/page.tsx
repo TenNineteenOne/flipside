@@ -1,12 +1,12 @@
 import { redirect } from "next/navigation"
-import { auth } from "@/lib/auth"
+import { safeAuth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { getCachedUser } from "@/lib/user-cache"
 import { SavedClient, type SavedArtistRow } from "@/components/saved/saved-client"
 import { DEFAULT_MUSIC_PLATFORM, isMusicPlatform, type MusicPlatform } from "@/lib/music-links"
 
 export default async function SavedPage() {
-  const session = await auth()
+  const session = await safeAuth()
   if (!session?.user?.id) {
     redirect("/sign-in")
   }

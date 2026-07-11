@@ -14,7 +14,7 @@ import { resolveArtistsByName } from './resolve-candidates'
 import { ensureArtist, type ArtistsSupabaseClient } from '@/lib/artists'
 import { confirmPlayableTracks, confirmToTarget } from './confirm-previews'
 import { searchTracksByArtist } from '@/lib/music-provider/itunes'
-import { fetchArtistEnrichment } from './enrich-artist'
+import { fetchArtistEnrichment, buildEnrichArtist } from './enrich-artist'
 import { normalizeArtistName } from '@/lib/listened-artists'
 import { normalizedIncludes, normalizeGenre } from '@/lib/genre/normalize'
 import { adjacentGenres } from '@/lib/genre/adjacency'
@@ -117,18 +117,6 @@ export async function fetchTagArtistNames(tag: string, limit: number): Promise<s
  */
 export async function getTagArtistNames(tag: string, limit = 20): Promise<string[]> {
   return cachedTagArtistNames(tag, limit, fetchTagArtistNames)
-}
-
-/**
- * Build a live enrichArtist dep for resolve-candidates. Closes over the
- * Last.fm API key so Spotify `/search` misses (which return empty genres /
- * zero popularity) get filled before the cache write. Returns undefined
- * when the key is missing — callers should feature-detect rather than noop.
- */
-function buildEnrichArtist() {
-  const apiKey = process.env.LASTFM_API_KEY
-  if (!apiKey) return undefined
-  return (name: string) => fetchArtistEnrichment(name, apiKey)
 }
 
 /**
