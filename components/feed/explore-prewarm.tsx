@@ -43,7 +43,13 @@ export function ExplorePrewarm() {
       requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number
     }).requestIdleCallback
     if (typeof idle === "function") {
-      idle(warm, { timeout: 1500 })
+      const id = idle(warm, { timeout: 1500 })
+      return () => {
+        const cancel = (window as unknown as {
+          cancelIdleCallback?: (handle: number) => void
+        }).cancelIdleCallback
+        if (typeof cancel === "function") cancel(id)
+      }
     } else {
       const t = setTimeout(warm, 600)
       return () => clearTimeout(t)
