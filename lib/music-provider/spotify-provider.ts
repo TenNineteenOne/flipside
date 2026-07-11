@@ -366,22 +366,26 @@ export class SpotifyProvider implements MusicProvider {
   }
 
   // -------------------------------------------------------------------------
-  // createPlaylist
+  // createPlaylist — throws typed errors: 'auth_expired' | 'scope_missing' | 'rate_limited' | 'http_N'
   // -------------------------------------------------------------------------
   async createPlaylist(
     accessToken: string,
     userId: string,
-    name: string
+    name: string,
+    description?: string
   ): Promise<string> {
     const res = await spotifyFetch(
       `${SPOTIFY_BASE}/users/${userId}/playlists`,
       accessToken,
       {
         method: "POST",
-        body: JSON.stringify({ name, public: false }),
+        body: JSON.stringify({ name, public: false, ...(description ? { description } : {}) }),
       }
     )
-    if (!res || !res.ok) throw new Error("Failed to create playlist")
+    if (!res) throw new Error('auth_expired')
+    if (res.status === 403) throw new Error('scope_missing')
+    if (res.status === 429) throw new Error('rate_limited')
+    if (!res.ok) throw new Error(`http_${res.status}`)
 
     const data = (await res.json()) as { id: string }
     return data.id
@@ -401,7 +405,7 @@ export class SpotifyProvider implements MusicProvider {
   }
 
   // -------------------------------------------------------------------------
-  // addTracksToPlaylist
+  // addTracksToPlaylist — throws typed errors: 'auth_expired' | 'scope_missing' | 'rate_limited' | 'http_N'
   // -------------------------------------------------------------------------
   async addTracksToPlaylist(
     accessToken: string,
@@ -418,6 +422,9 @@ export class SpotifyProvider implements MusicProvider {
         body: JSON.stringify({ uris }),
       }
     )
-    if (!res || !res.ok) throw new Error("Failed to add tracks to playlist")
+    if (!res) throw new Error('auth_expired')
+    if (res.status === 403) throw new Error('scope_missing')
+    if (res.status === 429) throw new Error('rate_limited')
+    if (!res.ok) throw new Error(`http_${res.status}`)
   }
 }

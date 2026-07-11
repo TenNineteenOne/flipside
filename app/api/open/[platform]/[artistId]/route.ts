@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { auth } from "@/lib/auth"
+import { safeAuth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, apiUnauthorized } from "@/lib/errors"
 import { isValidArtistId } from "@/lib/spotify-ids"
@@ -92,7 +92,7 @@ export async function GET(
   // proxy.ts already gates /api/* behind auth, but this route uses the
   // service role to touch a shared cache and redirect; require an explicit
   // session here so a future proxy config change can't silently expose it.
-  const session = await auth()
+  const session = await safeAuth()
   if (!session?.user?.id) return apiUnauthorized()
 
   const { platform, artistId } = await params

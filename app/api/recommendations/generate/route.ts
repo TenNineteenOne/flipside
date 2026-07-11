@@ -1,7 +1,6 @@
-import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
-import { apiError, apiUnauthorized } from "@/lib/errors"
-import { enforceSameOrigin } from "@/lib/csrf"
+import { apiError } from "@/lib/errors"
+import { withAuthedCsrfRoute } from "@/lib/api/with-authed-route"
 import { getAccessToken } from "@/lib/get-access-token"
 import { getSpotifyClientToken } from "@/lib/spotify-client-token"
 import { buildRecommendations } from "@/lib/recommendation/engine"
@@ -10,6 +9,11 @@ import { resetCalls, snapshotCalls } from "@/lib/recommendation/api-call-counter
 import { extractArtistColor } from "@/lib/colour-extraction"
 import { after, type NextRequest } from "next/server"
 import type { Artist } from "@/lib/music-provider/types"
+
+// The blocking buildRecommendations() call plus after()'s background
+// runSecondary()/color-extraction work can run long; give it the full
+// Hobby/Fluid function budget (F-hardening).
+export const maxDuration = 300
 
 /** Run an array of async tasks with a maximum concurrency of `limit`. */
 async function pLimit<T>(
@@ -92,13 +96,8 @@ async function runColorExtraction(
   )
 }
 
-export async function POST(req: NextRequest): Promise<Response> {
-  const blocked = enforceSameOrigin(req)
-  if (blocked) return blocked
-  const session = await auth()
-  if (!session?.user?.id) return apiUnauthorized()
-
-  const userId = session.user.id
+export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Response> => {
+  const req = request as NextRequest
 
   // User-level Spotify token (only available for spotify_authorized users)
   const userAccessToken = await getAccessToken(req)
@@ -256,4 +255,4 @@ export async function POST(req: NextRequest): Promise<Response> {
     console.error(`[generate] fail err=${err instanceof Error ? err.message : err}`)
     return apiError("Recommendation generation failed", 500)
   }
-}
+})

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation"
-import { auth } from "@/lib/auth"
+import { safeAuth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { getCachedUser } from "@/lib/user-cache"
 import { FeedClient } from "@/components/feed/feed-client"
@@ -7,6 +7,7 @@ import { ExplorePrewarm } from "@/components/feed/explore-prewarm"
 import { RecommendationsLoader } from "@/components/feed/recommendations-loader"
 import { DEFAULT_MUSIC_PLATFORM, isMusicPlatform, type MusicPlatform } from "@/lib/music-links"
 import { hasPlayablePreview } from "@/lib/recommendation/confirm-previews"
+import { getUnseenRecommendations } from "@/lib/recommendation/feed-query"
 
 interface Rec {
   artist_id: string
@@ -53,7 +54,7 @@ function interleave(recs: Rec[]): Rec[] {
 }
 
 export default async function FeedPage() {
-  const session = await auth()
+  const session = await safeAuth()
   if (!session?.user?.id) {
     redirect("/sign-in")
   }
@@ -67,19 +68,19 @@ export default async function FeedPage() {
     redirect("/sign-in")
   }
 
-  // Fetch cached recommendations
-  const { data: recs, error: recsError } = await supabase
-    .from("recommendation_cache")
-    .select("artist_id, artist_data, score, why")
-    .eq("user_id", user.id)
-    .is("seen_at", null)
-    .gt("expires_at", new Date().toISOString())
-    .order("score", { ascending: false })
-    .limit(20)
-
-  if (recsError) {
-    console.error(`[feed-page] recs err="${recsError.message}" userId=${user.id}`)
-    throw new Error(`Failed to load recommendations: ${recsError.message}`)
+  // Fetch cached recommendations, re-filtered by the user's current
+  // underground_mode so a just-toggled setting is honored on first paint
+  // instead of waiting for the client poll to replace the list.
+  let recs: Rec[]
+  try {
+    recs = (await getUnseenRecommendations(supabase, user.id, {
+      limit: 20,
+      undergroundMode: !!user.underground_mode,
+    })) as Rec[]
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error(`[feed-page] recs err="${message}" userId=${user.id}`)
+    throw new Error(`Failed to load recommendations: ${message}`)
   }
 
   // Filter out entries missing essential artist data

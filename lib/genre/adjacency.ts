@@ -2,10 +2,9 @@
  * Genre adjacency graph built from data/genres.json v2.
  *
  * v2 changes: each leaf carries everynoise.com 2D sonic-map coordinates
- * (x ≈ mechanical↔organic, y ≈ dense↔spiky). adjacencyScore is now a
- * continuous function of normalized Euclidean distance between coordinates.
- * adjacentGenres returns the K nearest leaves in the same anchor (close)
- * or the K nearest in OTHER anchors (medium).
+ * (x ≈ mechanical↔organic, y ≈ dense↔spiky). adjacentGenres returns the K
+ * nearest leaves in the same anchor (close) or the K nearest in OTHER
+ * anchors (medium).
  *
  * Fallback: tags that lack coords (anchor/cluster tags, or leaves from the
  * pre-v2 Wikidata tree that didn't get everynoise matches) use the old
@@ -108,20 +107,6 @@ for (const anchor of data.nodes) {
   }
 }
 
-// Precompute bounding-box diagonal for distance normalization.
-let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity
-for (const rec of leafByKey.values()) {
-  if (typeof rec.x !== 'number' || typeof rec.y !== 'number') continue
-  if (rec.x < xMin) xMin = rec.x
-  if (rec.x > xMax) xMax = rec.x
-  if (rec.y < yMin) yMin = rec.y
-  if (rec.y > yMax) yMax = rec.y
-}
-const DIAGONAL =
-  Number.isFinite(xMin) && Number.isFinite(xMax) && Number.isFinite(yMin) && Number.isFinite(yMax)
-    ? Math.hypot(xMax - xMin, yMax - yMin)
-    : 1
-
 // Flat list of leaves with coordinates, for k-NN scans.
 const coordLeaves: LeafRecord[] = []
 for (const rec of leafByKey.values()) {
@@ -136,11 +121,6 @@ function anchorsOf(tag: string): Set<string> | null {
 function clustersOf(tag: string): Set<string> | null {
   const set = tagToClusters.get(normalizeGenre(tag))
   return set && set.size > 0 ? set : null
-}
-
-function setsOverlap<T>(a: Set<T>, b: Set<T>): boolean {
-  for (const x of a) if (b.has(x)) return true
-  return false
 }
 
 function euclid(ax: number, ay: number, bx: number, by: number): number {
@@ -197,45 +177,6 @@ export function allLeavesWithAnchor(): Array<{ lastfmTag: string; anchorId: stri
   return out
 }
 
-/**
- * Pairwise adjacency score in [0, 1]:
- *   1.0  same tag (after normalization)
- *   continuous  when both tags have everynoise x/y coords:
- *               1 − (euclideanDistance / boundingBoxDiagonal)
- *   tiered fallback  when one or both lack coords:
- *               0.7 shared cluster · 0.4 shared anchor · 0.1 known-but-unrelated
- *   0  one or both unknown
- */
-export function adjacencyScore(a: string, b: string): number {
-  const na = normalizeGenre(a)
-  const nb = normalizeGenre(b)
-  if (!na || !nb) return 0
-  if (na === nb) return 1.0
-
-  const recA = leafByKey.get(na)
-  const recB = leafByKey.get(nb)
-
-  if (
-    recA && recB &&
-    typeof recA.x === 'number' && typeof recA.y === 'number' &&
-    typeof recB.x === 'number' && typeof recB.y === 'number'
-  ) {
-    const d = euclid(recA.x, recA.y, recB.x, recB.y)
-    const raw = 1 - d / DIAGONAL
-    return raw < 0 ? 0 : raw > 1 ? 1 : raw
-  }
-
-  // Fallback to cluster/anchor tiers for coord-less tags.
-  const anchorsA = anchorsOf(a)
-  const anchorsB = anchorsOf(b)
-  if (!anchorsA || !anchorsB) return 0
-
-  const clustersA = clustersOf(a)
-  const clustersB = clustersOf(b)
-  if (clustersA && clustersB && setsOverlap(clustersA, clustersB)) return 0.7
-  if (setsOverlap(anchorsA, anchorsB)) return 0.4
-  return 0.1
-}
 
 // K-nearest-neighbor sizes. "close" = same-anchor K nearest, "medium" =
 // other-anchor K nearest. Tuned to roughly match pre-v2 list sizes.

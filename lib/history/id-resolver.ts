@@ -1,6 +1,7 @@
 import { createServiceClient } from "@/lib/supabase/server"
 import { fetchArtistEnrichment } from "@/lib/recommendation/enrich-artist"
 import { ensureArtist, type ArtistsSupabaseClient } from "@/lib/artists"
+import { ArtistNameCache, type CacheSupabaseClient } from "@/lib/recommendation/artist-name-cache"
 
 // ── Name → artist_id (uuid) resolution ───────────────────────────────────────
 
@@ -138,45 +139,21 @@ async function resolveLastFmBatch(params: {
   const now = new Date().toISOString()
   const lastfmApiKey = process.env.LASTFM_API_KEY ?? ""
 
-  // 2a. Batch-read the canonical `artists` table for all names in this batch.
-  //     name_lower is NON-unique → a name may map to several artist rows.
-  const nameLowers = batch.map((r) => r.lastfm_artist_name.toLowerCase())
-  const { data: cacheRows, error: cacheErr } = await supabase
-    .from("artists")
-    .select("id, spotify_id, name, name_lower")
-    .in("name_lower", nameLowers)
-
-  if (cacheErr) {
-    console.error(
-      "[resolveLastFmArtistIds] artists read error:",
-      cacheErr.message
-    )
-    // Proceed without the table hit — will fall back to mint-by-name
-  }
-
-  type ArtistRow = {
-    id: string
-    spotify_id: string | null
-    name: string
-    name_lower: string
-  }
-  // name_lower is non-unique → bucket rows per name and disambiguate below.
-  const artistsByLower = new Map<string, ArtistRow[]>()
-  for (const row of (cacheRows ?? []) as ArtistRow[]) {
-    const bucket = artistsByLower.get(row.name_lower)
-    if (bucket) bucket.push(row)
-    else artistsByLower.set(row.name_lower, [row])
-  }
+  // 2a. Batch-read the canonical `artists` table through the ONE doorway
+  //     lookup (ArtistNameCache.batchRead): ambiguous name_lower (>1 row) is
+  //     treated as a miss — never guessed — per the Option B doorway rule,
+  //     and read errors degrade to an empty map so we fall back to
+  //     mint-by-name exactly as before.
+  const cache = new ArtistNameCache(supabase as unknown as CacheSupabaseClient)
+  const cacheHits = await cache.batchRead(batch.map((r) => r.lastfm_artist_name))
 
   for (const row of batch) {
     const nameLower = row.lastfm_artist_name.toLowerCase()
-    const candidates = artistsByLower.get(nameLower) ?? []
 
-    // Exactly one row → unambiguous table hit; use its uuid directly.
-    // More than one → ambiguous; skip the hit and fall through to mint-by-name
-    // (Option B). Zero → cache miss, also falls through.
-    if (candidates.length === 1) {
-      const hit = candidates[0]
+    // Unambiguous table hit → use its uuid directly. Ambiguous or missing
+    // names are absent from the map and fall through to mint-by-name.
+    const hit = cacheHits.get(nameLower)
+    if (hit) {
       const res = await resolveOrMergeRow({
         supabase,
         userId,
@@ -191,16 +168,10 @@ async function resolveLastFmBatch(params: {
         )
       } else {
         console.log(
-          `[resolveLastFmArtistIds] table-hit name="${row.lastfm_artist_name}" artist_id=${hit.id} spotifyId=${hit.spotify_id ?? "-"}${res.merged ? " (merged)" : ""}`
+          `[resolveLastFmArtistIds] table-hit name="${row.lastfm_artist_name}" artist_id=${hit.id} spotifyId=${hit.spotifyId ?? "-"}${res.merged ? " (merged)" : ""}`
         )
       }
       continue
-    }
-
-    if (candidates.length > 1) {
-      console.log(
-        `[resolveLastFmArtistIds] ambiguous name="${row.lastfm_artist_name}" matches=${candidates.length} → mint-by-name`
-      )
     }
 
     // Cache miss (or ambiguous) — the NAME is already known, so confirm the

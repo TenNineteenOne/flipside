@@ -9,6 +9,7 @@ import {
   rankByCurve,
   computeTopAnchors,
   EXPLORE_CACHE_TTL_MS,
+  midListStart,
 } from "./explore-engine"
 import type { Artist } from "@/lib/music-provider/types"
 import { confirmToTarget } from "./confirm-previews"
@@ -169,6 +170,38 @@ describe("computeTopAnchors", () => {
     ]
     // genreToAnchor returns null for unknown genres → no anchor accumulations
     expect(computeTopAnchors(listened)).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// midListStart (A1 regression — leftfieldRail's seeded mid-list offset)
+// ---------------------------------------------------------------------------
+
+describe("midListStart", () => {
+  it("stays non-negative even when the raw seed^hash XOR would be a negative Int32", () => {
+    // seed=0, tag="" reproduces the pre-fix bug: hashString("") is the FNV
+    // offset basis 2166136261, which is > 2^31 and so becomes a negative
+    // Int32 (-2128831035) under JS's `^` operator. Without the `>>> 0` fix,
+    // `offset % len` inherits that negative sign and indexes off the front
+    // of the slice array (undefined picks).
+    const start = midListStart(0, "", 7)
+    expect(start).toBeGreaterThanOrEqual(0)
+    expect(start).toBeLessThan(7)
+  })
+
+  it("always returns an in-range index across a spread of seeds/tags/lengths", () => {
+    const tags = ["", "a", "shoegaze", "dungeon synth", "x".repeat(50)]
+    const seeds = [0, 1, 2 ** 31 - 1, 2 ** 31, 2 ** 32 - 1, 123456789]
+    const lens = [1, 3, 7, 20, 30]
+    for (const tag of tags) {
+      for (const seed of seeds) {
+        for (const len of lens) {
+          const start = midListStart(seed, tag, len)
+          expect(start).toBeGreaterThanOrEqual(0)
+          expect(start).toBeLessThan(len)
+        }
+      }
+    }
   })
 })
 

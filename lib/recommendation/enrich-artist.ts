@@ -127,3 +127,15 @@ export function mergeEnrichment(artist: Artist, enrichment: ArtistEnrichment | n
     popularity: artist.popularity > 0 ? artist.popularity : enrichment.popularity,
   }
 }
+
+/**
+ * Build a live enrichArtist dep for resolve-candidates. Closes over the
+ * Last.fm API key so Spotify `/search` misses (which return empty genres /
+ * zero popularity) get filled before the cache write. Returns undefined
+ * when the key is missing — callers should feature-detect rather than noop.
+ */
+export function buildEnrichArtist() {
+  const apiKey = process.env.LASTFM_API_KEY
+  if (!apiKey) return undefined
+  return (name: string) => fetchArtistEnrichment(name, apiKey)
+}

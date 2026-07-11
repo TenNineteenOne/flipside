@@ -18,10 +18,6 @@ export function normalizeGenre(raw: string): string {
     .trim()
 }
 
-export function normalizedEquals(a: string, b: string): boolean {
-  return normalizeGenre(a) === normalizeGenre(b)
-}
-
 /**
  * Substring check over normalized forms. Preserves the intentional
  * semantics of the genre-filter chip: filtering "rock" matches

@@ -1,21 +1,15 @@
-import { type NextRequest } from "next/server"
-import { auth } from "@/lib/auth"
-import { apiError, apiUnauthorized } from "@/lib/errors"
+import { apiError } from "@/lib/errors"
 import { createServiceClient } from "@/lib/supabase/server"
-import { enforceSameOrigin } from "@/lib/csrf"
 import { validateSeedArtists } from "@/lib/seed-artist-validation"
+import { withAuthedCsrfRoute } from "@/lib/api/with-authed-route"
 
-export async function POST(req: NextRequest) {
-  const blocked = enforceSameOrigin(req)
-  if (blocked) return blocked
-  const session = await auth()
-  if (!session?.user?.id) return apiUnauthorized()
-
-  const userId = session.user.id
-
+// withAuthedCsrfRoute (not withAuthedJsonRoute): the invalid-body error here
+// is "Invalid JSON body", matching /api/settings/seed-artists — not the
+// wrapper's generic "Invalid JSON" — so body-parsing stays local.
+export const POST = withAuthedCsrfRoute(async ({ userId, request }) => {
   let body: { artists?: unknown }
   try {
-    body = await req.json()
+    body = await request.json()
   } catch {
     return apiError("Invalid JSON body", 400)
   }
@@ -41,4 +35,4 @@ export async function POST(req: NextRequest) {
   }
 
   return Response.json({ success: true })
-}
+})

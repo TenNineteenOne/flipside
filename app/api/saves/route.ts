@@ -1,39 +1,14 @@
-import { auth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
-import { apiError, apiUnauthorized, dbError } from "@/lib/errors"
-import { enforceSameOrigin } from "@/lib/csrf"
+import { apiError, dbError } from "@/lib/errors"
 import { getAccessToken } from "@/lib/get-access-token"
 import { isValidArtistId, isValidSpotifyId } from "@/lib/spotify-ids"
 import { invalidateExploreCache } from "@/lib/recommendation/explore-engine"
+import { musicProvider } from "@/lib/music-provider/provider"
 import { type NextRequest } from "next/server"
+import { withAuthedJsonRoute } from "@/lib/api/with-authed-route"
 
-async function spotifyFetch(url: string, accessToken: string, options: RequestInit = {}) {
-  const res = await fetch(url, {
-    ...options,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
-  })
-  return res
-}
-
-export async function POST(request: NextRequest) {
-  const blocked = enforceSameOrigin(request)
-  if (blocked) return blocked
-  const session = await auth()
-  if (!session?.user?.id) return apiUnauthorized()
-
-  const userId = session.user.id
-
-  let body: { artistId?: string; spotifyTrackId?: string; addToPlaylist?: boolean }
-  try {
-    body = await request.json()
-  } catch {
-    return apiError("Invalid JSON", 400)
-  }
-
+export const POST = withAuthedJsonRoute(async ({ userId, request, body: rawBody }) => {
+  const body = rawBody as { artistId?: string; spotifyTrackId?: string; addToPlaylist?: boolean }
   const { artistId, spotifyTrackId, addToPlaylist = false } = body
 
   if (!artistId || !isValidArtistId(artistId)) {
@@ -92,7 +67,7 @@ export async function POST(request: NextRequest) {
   // Only add to Spotify playlist when explicitly requested and user has Spotify access
   let playlistId: string | null = null
   if (spotifyTrackId && addToPlaylist) {
-    const accessToken = await getAccessToken(request)
+    const accessToken = await getAccessToken(request as NextRequest)
     if (accessToken) {
       const { data: user } = await supabase
         .from("users")
@@ -104,28 +79,31 @@ export async function POST(request: NextRequest) {
         playlistId = user.flipside_playlist_id ?? null
 
         if (!playlistId) {
-          const createRes = await spotifyFetch(
-            `https://api.spotify.com/v1/users/${user.spotify_id}/playlists`,
-            accessToken,
-            {
-              method: "POST",
-              body: JSON.stringify({
-                name: "Flipside Discoveries",
-                public: false,
-                description: "Tracks saved via Flipside",
-              }),
+          // Only the provider call itself is guarded — matching the original route,
+          // where a DB-update failure after a successful create was left unhandled
+          // (propagates as an uncaught error) rather than swallowed here.
+          let created: string | null = null
+          try {
+            created = await musicProvider.createPlaylist(
+              accessToken,
+              user.spotify_id,
+              "Flipside Discoveries",
+              "Tracks saved via Flipside"
+            )
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : "unknown"
+            if (msg === "scope_missing") {
+              console.warn("[saves] Spotify 403 on playlist create — scope missing or app not approved")
+              return apiError("Spotify permission denied for playlist", 403)
             }
-          )
-
-          if (createRes.status === 403) {
-            console.warn("[saves] Spotify 403 on playlist create — scope missing or app not approved")
-            return apiError("Spotify permission denied for playlist", 403)
+            if (msg === "rate_limited") {
+              console.warn("[saves] Spotify rate limit hit when creating playlist — skipping")
+            }
+            // Other failures (auth_expired, http_N): silently continue with playlistId unset,
+            // matching the original route's behavior of only branching on 403/429.
           }
-          if (createRes.status === 429) {
-            console.warn("[saves] Spotify rate limit hit when creating playlist — skipping")
-          } else if (createRes.ok) {
-            const playlist = await createRes.json()
-            playlistId = playlist.id
+          if (created) {
+            playlistId = created
             await supabase
               .from("users")
               .update({ flipside_playlist_id: playlistId })
@@ -134,26 +112,23 @@ export async function POST(request: NextRequest) {
         }
 
         if (playlistId) {
-          const addRes = await spotifyFetch(
-            `https://api.spotify.com/v1/playlists/${playlistId}/tracks`,
-            accessToken,
-            {
-              method: "POST",
-              body: JSON.stringify({ uris: [`spotify:track:${spotifyTrackId}`] }),
+          try {
+            await musicProvider.addTracksToPlaylist(accessToken, playlistId, [spotifyTrackId])
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : "unknown"
+            if (msg === "auth_expired") {
+              console.warn("[saves] Spotify 401 on track add — token expired")
+              return Response.json({ success: true, saved: true, playlistError: "Spotify token expired" })
             }
-          )
-
-          if (addRes.status === 401) {
-            console.warn("[saves] Spotify 401 on track add — token expired")
-            return Response.json({ success: true, saved: true, playlistError: "Spotify token expired" })
-          }
-          if (addRes.status === 403) {
-            console.warn("[saves] Spotify 403 on track add — scope missing or app not approved")
-            return Response.json({ success: true, saved: true, playlistError: "Spotify permission denied for playlist" })
-          }
-          if (addRes.status === 429) {
-            console.warn("[saves] Spotify rate limit hit when adding track — skipping")
-            return Response.json({ success: true, saved: true, playlistError: "Spotify rate limit — try again later" })
+            if (msg === "scope_missing") {
+              console.warn("[saves] Spotify 403 on track add — scope missing or app not approved")
+              return Response.json({ success: true, saved: true, playlistError: "Spotify permission denied for playlist" })
+            }
+            if (msg === "rate_limited") {
+              console.warn("[saves] Spotify rate limit hit when adding track — skipping")
+              return Response.json({ success: true, saved: true, playlistError: "Spotify rate limit — try again later" })
+            }
+            // Other failures (http_N): silently continue, matching original fallthrough behavior.
           }
         }
       }
@@ -161,24 +136,10 @@ export async function POST(request: NextRequest) {
   }
 
   return Response.json({ success: true, saved: true, playlistId: playlistId ?? null })
-}
+})
 
-export async function DELETE(request: NextRequest) {
-  const blocked = enforceSameOrigin(request)
-  if (blocked) return blocked
-  const session = await auth()
-  if (!session?.user?.id) return apiUnauthorized()
-
-  const userId = session.user.id
-
-  let body: { artistId?: string }
-  try {
-    body = await request.json()
-  } catch {
-    return apiError("Invalid JSON", 400)
-  }
-
-  const { artistId } = body
+export const DELETE = withAuthedJsonRoute(async ({ userId, body: rawBody }) => {
+  const { artistId } = rawBody as { artistId?: string }
   if (!artistId || !isValidArtistId(artistId)) {
     return apiError("Valid artistId (uuid) is required", 400)
   }
@@ -197,4 +158,4 @@ export async function DELETE(request: NextRequest) {
   })
 
   return Response.json({ success: true })
-}
+})

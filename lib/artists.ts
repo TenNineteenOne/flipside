@@ -55,12 +55,15 @@ export interface ArtistsSupabaseClient {
         data: Array<{ id: string; spotify_id: string | null }> | null
         error: { message: string } | null
       }>
-      // Mint-by-name path: look up existing rows for a name_lower.
+      // Mint-by-name path: look up existing rows for a name_lower, in a
+      // stable order so the limited window is the same set every run.
       eq(column: string, value: string): {
-        limit(n: number): Promise<{
-          data: Array<{ id: string; spotify_id: string | null; popularity: number | null }> | null
-          error: { message: string } | null
-        }>
+        order(column: string, opts: { ascending: boolean }): {
+          limit(n: number): Promise<{
+            data: Array<{ id: string; spotify_id: string | null; popularity: number | null }> | null
+            error: { message: string } | null
+          }>
+        }
       }
     }
     // Mint-by-name path: insert a name-only row and read the new id back.
@@ -184,24 +187,36 @@ async function ensureArtistByName(
 ): Promise<string | null> {
   const nameLower = seed.name.toLowerCase()
 
-  // 1. Look up existing rows for this name.
+  // 1. Look up existing rows for this name. The window is wide enough to cover
+  // the duplicate pile-ups minted before the #161 write fix (worst observed:
+  // 16 rows for one name), so the deterministic pick below sees the full set.
   try {
     const { data, error } = await client
       .from(TABLE)
       .select("id, spotify_id, popularity")
       .eq("name_lower", nameLower)
-      .limit(5)
+      // Without ORDER BY, LIMIT returns an arbitrary page — a >20-row dup pile
+      // could yield a different subset per run, silently defeating the
+      // deterministic tiebreak below.
+      .order("id", { ascending: true })
+      .limit(20)
     if (error) {
       console.log(`[artists-mint] by-name read-fail name="${nameLower}" err="${error.message}"`)
       return null
     }
     if (data && data.length > 0) {
-      // Reuse the best existing row: spotify_id NOT NULL first, then popularity desc.
+      // Reuse the best existing row: spotify_id NOT NULL first, then popularity
+      // desc, then id asc. The id tiebreak makes the pick DETERMINISTIC across
+      // runs — without it, duplicate rows with equal metadata made the minted
+      // identity flap between generations, bypassing thumbs-down/cooldown
+      // filters keyed on artist_id (#161).
       const best = [...data].sort((a, b) => {
         const aHas = a.spotify_id ? 1 : 0
         const bHas = b.spotify_id ? 1 : 0
         if (aHas !== bHas) return bHas - aHas
-        return (b.popularity ?? 0) - (a.popularity ?? 0)
+        const popDiff = (b.popularity ?? 0) - (a.popularity ?? 0)
+        if (popDiff !== 0) return popDiff
+        return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
       })[0]
       return best.id
     }

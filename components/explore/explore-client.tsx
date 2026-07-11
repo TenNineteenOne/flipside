@@ -231,6 +231,10 @@ export function ExploreClient({
   // stale closure issues. Declared here (before regenAndPoll) so the closure
   // sees it during regen calls.
   const orderedRailsRef = useRef(orderedRails)
+  // Ref to the latest activeKey so regenAndPoll's dropThumbsUp path reads the
+  // rail the user is actually looking at, even if they switch tabs while the
+  // regen request is in flight (B4).
+  const activeKeyRef = useRef(activeKey)
 
   function stopPolling() {
     if (pollTimerRef.current !== null) {
@@ -334,7 +338,9 @@ export function ExploreClient({
 
     if (opts.dropThumbsUp) {
       setSignals((prev) => {
-        const active = orderedRailsRef.current?.[0]
+        // Active rail, not orderedRails[0] — this used to hardcode the first
+        // rail regardless of which tab the user was viewing (B4).
+        const active = orderedRailsRef.current.find((r) => r.railKey === activeKeyRef.current)
         if (!active) return prev
         let changed = false
         const n = new Map(prev)
@@ -396,6 +402,22 @@ export function ExploreClient({
 
   // Keep orderedRailsRef current on every render.
   useEffect(() => { orderedRailsRef.current = orderedRails }, [orderedRails])
+  // Keep activeKeyRef current on every render (B4).
+  useEffect(() => { activeKeyRef.current = activeKey }, [activeKey])
+
+  // B5: activeKey is only seeded once from orderedRails[0] at mount. When
+  // Adventurous flips post-mount, orderedRails reorders/refilters and the
+  // stale activeKey can point at a rail that's no longer visible — no tab
+  // renders as active even though activeRail silently falls back to
+  // orderedRails[0]. Re-point activeKey whenever it drops out of the visible
+  // set; this never fires from a normal tab click since clicks always set
+  // activeKey to a key that's currently in orderedRails.
+  useEffect(() => {
+    if (orderedRails.length === 0) return
+    if (!orderedRails.some((r) => r.railKey === activeKey)) {
+      setActiveKey(orderedRails[0].railKey)
+    }
+  }, [orderedRails, activeKey])
 
   async function handleApplyAdventurous() {
     if (!isAdvDirty || isApplyingAdv) return

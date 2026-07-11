@@ -1,6 +1,6 @@
 import { Suspense } from "react"
 import { redirect } from "next/navigation"
-import { auth } from "@/lib/auth"
+import { safeAuth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { getCachedUser } from "@/lib/user-cache"
 import { getSpotifyClientToken } from "@/lib/spotify-client-token"
@@ -22,7 +22,7 @@ import { assembleRailPayloads } from "@/lib/recommendation/explore-rail-payloads
 import ExploreLoading from "./loading"
 
 export default async function ExplorePage() {
-  const session = await auth()
+  const session = await safeAuth()
   if (!session?.user?.id) redirect("/sign-in")
 
   const userId = session.user.id

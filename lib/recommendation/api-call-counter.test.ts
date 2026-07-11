@@ -6,12 +6,13 @@ import {
   incLastfmGetInfo,
   incLastfmTag,
   incLastfmSearch,
+  incLastfmUser,
   snapshotCalls,
   resetCalls,
 } from "./api-call-counter"
 
 /** The all-zero Last.fm sub-snapshot, for concise expectations. */
-const ZERO_LASTFM = { similar: 0, getInfo: 0, tag: 0, search: 0, total: 0 }
+const ZERO_LASTFM = { similar: 0, getInfo: 0, tag: 0, search: 0, user: 0, total: 0 }
 
 describe("api-call-counter", () => {
   beforeEach(() => {
@@ -29,6 +30,7 @@ describe("api-call-counter", () => {
     incLastfmGetInfo()
     incLastfmTag()
     incLastfmSearch()
+    incLastfmUser()
     resetCalls()
     expect(snapshotCalls()).toEqual({ itunes: 0, spotify: 0, lastfm: ZERO_LASTFM })
   })
@@ -57,19 +59,23 @@ describe("api-call-counter", () => {
 
   it("each Last.fm endpoint increments only its own counter", () => {
     incLastfmSimilar()
-    expect(snapshotCalls().lastfm).toEqual({ similar: 1, getInfo: 0, tag: 0, search: 0, total: 1 })
+    expect(snapshotCalls().lastfm).toEqual({ similar: 1, getInfo: 0, tag: 0, search: 0, user: 0, total: 1 })
 
     resetCalls()
     incLastfmGetInfo()
-    expect(snapshotCalls().lastfm).toEqual({ similar: 0, getInfo: 1, tag: 0, search: 0, total: 1 })
+    expect(snapshotCalls().lastfm).toEqual({ similar: 0, getInfo: 1, tag: 0, search: 0, user: 0, total: 1 })
 
     resetCalls()
     incLastfmTag()
-    expect(snapshotCalls().lastfm).toEqual({ similar: 0, getInfo: 0, tag: 1, search: 0, total: 1 })
+    expect(snapshotCalls().lastfm).toEqual({ similar: 0, getInfo: 0, tag: 1, search: 0, user: 0, total: 1 })
 
     resetCalls()
     incLastfmSearch()
-    expect(snapshotCalls().lastfm).toEqual({ similar: 0, getInfo: 0, tag: 0, search: 1, total: 1 })
+    expect(snapshotCalls().lastfm).toEqual({ similar: 0, getInfo: 0, tag: 0, search: 1, user: 0, total: 1 })
+
+    resetCalls()
+    incLastfmUser()
+    expect(snapshotCalls().lastfm).toEqual({ similar: 0, getInfo: 0, tag: 0, search: 0, user: 1, total: 1 })
   })
 
   it("lastfm.total is the sum across all four endpoints", () => {
@@ -80,7 +86,7 @@ describe("api-call-counter", () => {
     incLastfmTag()
     incLastfmTag()
     incLastfmSearch()
-    expect(snapshotCalls().lastfm).toEqual({ similar: 2, getInfo: 1, tag: 3, search: 1, total: 7 })
+    expect(snapshotCalls().lastfm).toEqual({ similar: 2, getInfo: 1, tag: 3, search: 1, user: 0, total: 7 })
   })
 
   it("Last.fm counters are independent of iTunes / Spotify", () => {
@@ -90,7 +96,7 @@ describe("api-call-counter", () => {
     expect(snapshotCalls()).toEqual({
       itunes: 1,
       spotify: 1,
-      lastfm: { similar: 1, getInfo: 0, tag: 0, search: 0, total: 1 },
+      lastfm: { similar: 1, getInfo: 0, tag: 0, search: 0, user: 0, total: 1 },
     })
   })
 
@@ -103,7 +109,7 @@ describe("api-call-counter", () => {
     expect(snap2).toEqual({
       itunes: 1,
       spotify: 0,
-      lastfm: { similar: 0, getInfo: 0, tag: 1, search: 0, total: 1 },
+      lastfm: { similar: 0, getInfo: 0, tag: 1, search: 0, user: 0, total: 1 },
     })
   })
 })

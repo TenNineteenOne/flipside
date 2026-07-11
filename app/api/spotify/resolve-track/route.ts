@@ -1,9 +1,8 @@
 import { type NextRequest } from "next/server"
-import { auth } from "@/lib/auth"
 import { getAccessToken } from "@/lib/get-access-token"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, apiUnauthorized } from "@/lib/errors"
-import { enforceSameOrigin } from "@/lib/csrf"
+import { withAuthedCsrfRoute } from "@/lib/api/with-authed-route"
 import { isValidArtistId, isValidSpotifyId } from "@/lib/spotify-ids"
 import type { Track } from "@/lib/music-provider/types"
 
@@ -30,12 +29,11 @@ interface SpotifyTrackSearch {
  *   - artistId / localTrackId are used to update the cached track row
  * Returns: { spotifyTrackId: string } or 404 if not found on Spotify
  */
-export async function POST(req: NextRequest): Promise<Response> {
-  const blocked = enforceSameOrigin(req)
-  if (blocked) return blocked
-  const session = await auth()
-  if (!session?.user?.id) return apiUnauthorized()
-
+// withAuthedCsrfRoute (not withAuthedJsonRoute): checks the Spotify access
+// token BEFORE parsing the body, so a missing/expired token 401s ahead of a
+// body-parse failure — that check order requires local body-parsing.
+export const POST = withAuthedCsrfRoute(async ({ request }): Promise<Response> => {
+  const req = request as NextRequest
   const accessToken = await getAccessToken(req)
   if (!accessToken) return apiUnauthorized()
 
@@ -170,4 +168,4 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   return Response.json({ spotifyTrackId })
-}
+})

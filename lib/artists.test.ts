@@ -36,12 +36,22 @@ function makeClient(
             },
             eq(column, value) {
               return {
-                async limit(_n: number) {
-                  if (opts.failByNameSelect) return { data: null, error: { message: "by-name boom" } }
-                  const data = rows
-                    .filter((x) => (x as unknown as Record<string, unknown>)[column] === value)
-                    .map((x) => ({ id: x.id, spotify_id: x.spotify_id, popularity: x.popularity ?? null }))
-                  return { data, error: null }
+                order(orderCol: string, o: { ascending: boolean }) {
+                  return {
+                    async limit(_n: number) {
+                      if (opts.failByNameSelect) return { data: null, error: { message: "by-name boom" } }
+                      const data = rows
+                        .filter((x) => (x as unknown as Record<string, unknown>)[column] === value)
+                        .map((x) => ({ id: x.id, spotify_id: x.spotify_id, popularity: x.popularity ?? null }))
+                        .sort((a, b) => {
+                          const av = (a as unknown as Record<string, unknown>)[orderCol] as string
+                          const bv = (b as unknown as Record<string, unknown>)[orderCol] as string
+                          const cmp = av < bv ? -1 : av > bv ? 1 : 0
+                          return o.ascending ? cmp : -cmp
+                        })
+                      return { data, error: null }
+                    },
+                  }
                 },
               }
             },
@@ -173,6 +183,17 @@ describe("ensureArtist — mint-by-name (no spotifyId)", () => {
     ])
     const id = await ensureArtist(client, { name: "Dup" })
     expect(id).toBe("high")
+  })
+
+  it("breaks metadata ties deterministically (lowest id) regardless of row order (#161)", async () => {
+    // Duplicate rows minted by the pre-#161 write bug carry identical
+    // metadata; the pick must not flap between generations or thumbs-down /
+    // cooldown filters keyed on artist_id stop matching.
+    const dup = (id: string) => ({ id, spotify_id: null, name: "Teethe", name_lower: "teethe", popularity: 12 })
+    const idA = await ensureArtist(makeClient([dup("uuid-b"), dup("uuid-a"), dup("uuid-c")]).client, { name: "Teethe" })
+    const idB = await ensureArtist(makeClient([dup("uuid-c"), dup("uuid-b"), dup("uuid-a")]).client, { name: "Teethe" })
+    expect(idA).toBe("uuid-a")
+    expect(idB).toBe("uuid-a")
   })
 
   it("returns null (never throws) on a by-name read failure", async () => {

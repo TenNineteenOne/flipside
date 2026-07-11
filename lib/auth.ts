@@ -76,7 +76,19 @@ export async function safeAuth() {
   try {
     return await auth()
   } catch (err) {
-    console.warn("[auth] session decryption failed, clearing stale cookie:", (err as Error)?.message)
+    // Next.js control-flow errors must propagate untouched: DYNAMIC_SERVER_USAGE
+    // is how a prerender marks the route dynamic (auth() reads headers), and
+    // NEXT_* digests are redirects/notFound. Swallowing them here would let a
+    // build statically render a page with a null session.
+    const digest = (err as { digest?: string })?.digest
+    const message = (err as Error)?.message ?? ""
+    if (
+      (typeof digest === "string" && (digest === "DYNAMIC_SERVER_USAGE" || digest.startsWith("NEXT_"))) ||
+      message.startsWith("Dynamic server usage")
+    ) {
+      throw err
+    }
+    console.warn("[auth] session decryption failed, clearing stale cookie:", message)
     try {
       const store = await cookies()
       store.delete("authjs.session-token")

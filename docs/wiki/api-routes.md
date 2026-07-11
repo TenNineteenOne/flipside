@@ -1,14 +1,33 @@
 ---
 title: API Routes
-updated: 2026-06-06
+updated: 2026-07-11
 related: [[generation-engine]], [[explore-engine]], [[music-providers]], [[auth-and-session]], [[data-model]]
 ---
 
 # API Routes
 
-The HTTP surface under `app/api/`. Auth = NextAuth session cookie via `safeAuth()`/`auth()`;
-mutations enforce CSRF (`enforceSameOrigin`) either through the wrappers in
-`lib/api/with-authed-route.ts` or inline. See [[auth-and-session]].
+The HTTP surface under `app/api/`. Auth = NextAuth session cookie via `safeAuth()` (every route
+now goes through `safeAuth`, not raw `auth()` — a corrupted session cookie is treated as
+signed-out instead of a 500). Mutations enforce CSRF (`enforceSameOrigin`) either through the
+wrappers in `lib/api/with-authed-route.ts` or inline. See [[auth-and-session]].
+
+Mutating routes go through `withAuthedCsrfRoute`/`withAuthedJsonRoute` (CSRF → `safeAuth` →
+optional JSON body-parse, in that order) as the house pattern. Exceptions that stayed on an
+inline preamble because a wrapper would have changed observable behavior (check order or
+error-message text):
+- `/api/spotify/like`, `/api/spotify/resolve-track` — check the Spotify access token *before*
+  parsing the body (a missing token 401s ahead of a body-parse failure); adopted
+  `withAuthedCsrfRoute` for CSRF+auth but keep body-parsing local.
+- `/api/onboarding/resolve` — rate-limits before parsing the body, and its invalid-body error
+  is `"Invalid JSON body"`, not the wrapper's generic `"Invalid JSON"`.
+- `/api/onboarding/seeds`, `/api/settings/seed-artists` (POST) — invalid-body error is
+  `"Invalid JSON body"`, not `"Invalid JSON"`.
+- `/api/history/accumulate` — a missing/invalid body falls through to the
+  `"source must be 'lastfm' or 'statsfm'"` validation error, not a generic JSON-parse error.
+
+All of the above still adopted `withAuthedCsrfRoute` for the shared CSRF+auth preamble; only
+the body-parse step stayed local. GET-only routes (`/api/history`, `/api/onboarding/check`,
+`/api/explore/rails`, etc.) stay on plain `safeAuth()` — no CSRF needed.
 
 ## Generation & discovery
 
@@ -37,6 +56,7 @@ mutations enforce CSRF (`enforceSameOrigin`) either through the wrappers in
 | Route | Method | Does |
 |---|---|---|
 | `/api/onboarding/search` | GET | **Spotify search** (client-creds), 120/min per user; **falls back to `artist_search_cache` ILIKE on 429** (`degraded:true`) |
+| `/api/onboarding/resolve` | POST | resolves a Last.fm-sourced onboarding suggestion to the internal artist uuid: `artists`-table exact-name doorway lookup first, MusicBrainz mbid url-rels fallback → mint; 404 when unresolvable; 30/min per-user in-memory rate limit |
 | `/api/onboarding/seeds` | POST | upsert `seed_artists` (3–200) |
 | `/api/onboarding/check` | GET | `{needsOnboarding}` |
 | `/api/settings` | PATCH | validate + encrypt usernames + update `users`; genre/mode change → invalidate caches |
@@ -61,9 +81,14 @@ search URL. The `open/[platform]` route 400s on anything but `apple_music`. See
 [[pages-and-components]] and [[spotify-dependency]].
 
 ## Known issues (verify before relying)
-- `history/route.ts` returns `seenArtistIds.length === limit` instead of the correctly-
-  computed `hasMore` — last-page `hasMore` can be wrong.
-- `onboarding/search` rate limiter is **per serverless instance** (not global).
+- ~~`history/route.ts` returns `seenArtistIds.length === limit` instead of the correctly-
+  computed `hasMore`~~ **FIXED**: `hasMore` is now computed from a `limit + 1` overfetch in
+  `lib/history/query.ts` (`getHistoryPage`), shared by `/api/history` and the `/history` page —
+  exact at the boundary, no more spurious empty last page.
+- `onboarding/search` and `onboarding/resolve` rate limiters are **per serverless instance**
+  (not global) — both now go through the shared `createWindowLimiter` factory in
+  `lib/rate-limiter.ts` (fixed-window, in-memory `Map` per instance). See that file's JSDoc for
+  why this is deliberate and what the upgrade path is if it ever needs to be a hard cap.
 - `history/accumulate` passes `""` as the Spotify token when client-creds is null → silent
   401s during a throttle.
 - `after()` background work (secondary pool + color extraction) is bounded by the function's

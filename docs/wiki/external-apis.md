@@ -1,6 +1,6 @@
 ---
 title: External APIs
-updated: 2026-06-06
+updated: 2026-07-11
 related: [[music-providers]], [[spotify-dependency]], [[generation-engine]], [[api-routes]]
 ---
 
@@ -15,7 +15,7 @@ Supabase-cached (`lastfm_cache`).
 
 | Endpoint | Used for | Where |
 |---|---|---|
-| `artist.getSimilar` | **similar artists** (the discovery graph) | `spotify-provider.getSimilarArtistNames`, `chain-walker` |
+| `artist.getSimilar` | **similar artists** (the discovery graph) | `spotify-provider.getSimilarArtistNames` |
 | `tag.gettopartists` | top artists per genre tag (rails, seeds) | `engine.ts`, `explore-engine.ts` |
 | `artist.getInfo` | **genres + listener-count→popularity** enrichment | `enrich-artist.ts` |
 | `user.getTopArtists`, `user.getRecentTracks` | listening history (opt-in) | `history/lastfm-syncer.ts` |
