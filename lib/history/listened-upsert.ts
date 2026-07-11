@@ -49,11 +49,11 @@ export async function upsertListenedArtists(params: UpsertListenedArtistsParams)
   const selectChunk = (chunk: string[]) =>
     supabase
       .from("listened_artists")
-      .select(`id, ${keyColumn}, play_count`)
+      .select(`id, ${keyColumn}`)
       .eq("user_id", userId)
       .in(keyColumn, chunk)
 
-  const existingRows: Array<{ id: string; key: string | null; play_count: number }> = []
+  const existingRows: Array<{ id: string; key: string | null }> = []
 
   const chunks = chunkSize
     ? Array.from({ length: Math.ceil(keys.length / chunkSize) }, (_, i) =>
@@ -72,15 +72,14 @@ export async function upsertListenedArtists(params: UpsertListenedArtistsParams)
         existingRows.push({
           id: row.id as string,
           key: (row[keyColumn] as string | null) ?? null,
-          play_count: row.play_count as number,
         })
       }
     }
   }
 
-  const existingMap = new Map<string, { id: string; play_count: number }>()
+  const existingMap = new Map<string, string>()
   for (const row of existingRows) {
-    if (row.key) existingMap.set(row.key, { id: row.id, play_count: row.play_count })
+    if (row.key) existingMap.set(row.key, row.id)
   }
 
   const toInsert: Array<{
@@ -91,12 +90,12 @@ export async function upsertListenedArtists(params: UpsertListenedArtistsParams)
     play_count: number
     last_seen_at: string
   }> = []
-  const toUpdate: Array<{ id: string; play_count: number; last_seen_at: string }> = []
+  const bumpIds: string[] = []
 
   for (const key of keys) {
-    const existing = existingMap.get(key)
-    if (existing) {
-      toUpdate.push({ id: existing.id, play_count: existing.play_count + 1, last_seen_at: now })
+    const existingId = existingMap.get(key)
+    if (existingId) {
+      bumpIds.push(existingId)
     } else {
       toInsert.push({
         user_id: userId,
@@ -113,8 +112,11 @@ export async function upsertListenedArtists(params: UpsertListenedArtistsParams)
     const { error: insertError } = await supabase.from("listened_artists").insert(toInsert)
     if (insertError) {
       if (conflictFallback && insertError.code === "23505") {
-        // Concurrent sync from another source inserted a name-only row first.
-        // Fall back to per-row insert so one conflict doesn't drop the batch.
+        // Concurrent sync from another source already inserted a row for one of
+        // these keys (name-only via the unresolved-name unique, or artist_id via
+        // the (user_id, artist_id) unique). Fall back to per-row insert so one
+        // conflict doesn't drop the whole batch — key-agnostic, works for either
+        // unique. A per-row 23505 just means the row already exists → skip it.
         for (const row of toInsert) {
           const { error: rowErr } = await supabase.from("listened_artists").insert(row)
           if (rowErr && rowErr.code !== "23505") {
@@ -127,14 +129,18 @@ export async function upsertListenedArtists(params: UpsertListenedArtistsParams)
     }
   }
 
-  if (toUpdate.length > 0) {
-    const { error: updateError } = await supabase
-      .from("listened_artists")
-      .upsert(toUpdate, { onConflict: "id" })
-    if (updateError) {
-      console.error(`${logPrefix} Batch update${errorSuffix} error:`, updateError.message)
+  if (bumpIds.length > 0) {
+    // Atomic play_count + 1 in the DB (0041 RPC) — a read-modify-write here would
+    // lose increments from a concurrent sync bumping the same row.
+    const { error: bumpError } = await supabase.rpc("rpc_bump_listened_play_counts", {
+      p_user_id: userId,
+      p_ids: bumpIds,
+      p_now: now,
+    })
+    if (bumpError) {
+      console.error(`${logPrefix} Batch update${errorSuffix} error:`, bumpError.message)
     }
   }
 
-  console.log(`${logPrefix} ${logLabel} insert=${toInsert.length} update=${toUpdate.length}`)
+  console.log(`${logPrefix} ${logLabel} insert=${toInsert.length} update=${bumpIds.length}`)
 }
