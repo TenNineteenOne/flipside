@@ -16,7 +16,7 @@ import type { Artist, Track } from '@/lib/music-provider/types'
 import { createServiceClient } from '@/lib/supabase/server'
 import { ArtistNameCache } from './artist-name-cache'
 import { resolveArtistsByName } from './resolve-candidates'
-import { fetchArtistEnrichment } from './enrich-artist'
+import { buildEnrichArtist } from './enrich-artist'
 import { getTagArtistNames, buildConfirmPreview, buildMintArtist, lastfmResolve } from './engine'
 import { confirmToTarget } from './confirm-previews'
 import {
@@ -87,13 +87,6 @@ export interface BuildRailsInput {
 type SupabaseClient = ReturnType<typeof createServiceClient>
 
 // ── Shared helpers ──────────────────────────────────────────────────────────
-
-function buildEnrichArtist() {
-  const apiKey = process.env.LASTFM_API_KEY
-  if (!apiKey) return undefined
-  return (name: string) => fetchArtistEnrichment(name, apiKey)
-}
-
 
 /**
  * Re-rank a candidate-name list by k^popularity so lower-popularity picks
