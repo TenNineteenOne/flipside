@@ -1,6 +1,6 @@
 ---
 title: Generation Engine (Feed)
-updated: 2026-07-03
+updated: 2026-07-11
 related: [[explore-engine]], [[music-providers]], [[external-apis]], [[genre-system]], [[data-model]]
 ---
 
@@ -58,14 +58,14 @@ core — see [[explore-engine]].
 | Module | Purpose |
 |---|---|
 | `engine.ts` | the orchestrator above; also `getTagArtistNames`, `buildConfirmPreview` |
-| `resolve-candidates.ts` | name → Artist resolver (cache → Spotify search), 429 backoff |
+| `resolve-candidates.ts` | name → Artist resolver (cache → Last.fm `getInfo` resolve; Spotify-free since #157), 429 backoff |
 | `resolve-pools.ts` | blocking (36) / secondary (54) split; latency knobs |
 | `confirm-previews.ts` | iTunes-first / Spotify-fallback playability confirm |
 | `enrich-artist.ts` | Last.fm `artist.getInfo` → fills genres + popularity (see below) |
 | `cluster-cap.ts` | 25% per-genre diversity cap (single-list + cross-rail) |
 | `scoring` (in engine) | `k^popularity` tier multiplier + relevance |
 | `chain-walker.ts` | BFS similarity-chain finder (used 1-hop for Explore provenance) |
-| `artist-name-cache.ts` | read-through name cache over the canonical `artists` table (Stage-2 fold; chunked at 500). Ambiguous names (>1 row per `name_lower`) read as misses. **Write path (#161): spotifyId → upsert on `spotify_id`; spotifyId-null → fill-only metadata UPDATE keyed on the minted uuid — never an insert** (a bare insert duplicated the just-minted row and made the name permanently ambiguous) |
+| `artist-name-cache.ts` | read-through name cache over the canonical `artists` table (Stage-2 fold; chunked at 500). Ambiguous names (>1 row per `name_lower`) read as misses — `batchRead` is THE doorway lookup, also consumed by `lib/history/id-resolver.ts` and `POST /api/onboarding/resolve`. **Write path (#161, hardened 2026-07-11): ONE fill-only policy shared with `ensureArtists` — minted uuid → fill-only metadata UPDATE keyed on the uuid (never an insert; a bare insert duplicated the just-minted row and made the name permanently ambiguous); no uuid but a spotifyId (legacy/test callers only) → insert-if-absent (`ignoreDuplicates`) + fill-only refresh. `name`/`name_lower` are never overwritten, and empty genres / zero popularity / null image never clobber richer values** |
 | `window.ts` | weekly-stable seeds: `cacheWindowSeed`, `seededShuffle`, `sampleLikes` |
 | `freshness.ts` | "has ≥5 unseen unexpired recs?" for splash redirect |
 | `user-market.ts` | DB-cached Spotify market, falls back to "US" |
