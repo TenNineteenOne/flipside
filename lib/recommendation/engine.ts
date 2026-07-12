@@ -1213,7 +1213,21 @@ export async function runWithSoftening(
   baseOpts: RunPipelineOpts,
   deps: SoftenDeps
 ): Promise<BuildResult> {
-  const primary = await deps.run(baseOpts)
+  // Each deps.run() is a full runPipeline with its OWN confirm collector.
+  // Only the returned result's flushConfirms would ever be called, so a
+  // softened retry would silently discard the earlier runs' confirmed
+  // previews (#162 — e.g. tier-1 positives suppressed by cooldown still cost
+  // live iTunes calls worth persisting). Chain every run's flush onto the
+  // returned result so the route's single after() flush covers them all.
+  const flushes: Array<() => Promise<void>> = []
+  const withChainedFlush = (result: BuildResult): BuildResult => {
+    if (result.flushConfirms) flushes.push(result.flushConfirms)
+    if (flushes.length <= 1) return result
+    const all = [...flushes]
+    return { ...result, flushConfirms: async () => { await Promise.all(all.map((f) => f())) } }
+  }
+
+  const primary = withChainedFlush(await deps.run(baseOpts))
   if (primary.count > 0) return primary
 
   const softened: SoftenedFilters = { playThreshold: false, coldStart: false }
@@ -1222,11 +1236,11 @@ export async function runWithSoftening(
   // Soften 1: bump play threshold.
   console.log(`[engine] soften_play_threshold userId=${baseOpts.userId} from=${originalPlayThreshold} to=${originalPlayThreshold + 5}`)
   softened.playThreshold = true
-  const r1 = await deps.run({
+  const r1 = withChainedFlush(await deps.run({
     ...baseOpts,
     playThreshold: originalPlayThreshold + 5,
     source: 'soften_play_threshold',
-  })
+  }))
   if (r1.count > 0) return { ...r1, softenedFilters: softened }
 
   // Soften 2: cold-start fallback. undergroundMode is intentionally off here —
@@ -1234,14 +1248,14 @@ export async function runWithSoftening(
   // curated starter picks are treated as an exception to the cap promise.
   console.log(`[engine] soften_cold_start userId=${baseOpts.userId}`)
   softened.coldStart = true
-  const r3 = await deps.run({
+  const r3 = withChainedFlush(await deps.run({
     ...baseOpts,
     seedNames: deps.coldStartSeeds(),
     playThreshold: originalPlayThreshold + 5,
     undergroundMode: false,
     source: 'soften_cold_start',
     userGenres: [],
-  })
+  }))
   return { ...r3, softenedFilters: softened }
 }
 
