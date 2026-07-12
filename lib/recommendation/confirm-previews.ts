@@ -18,6 +18,23 @@ export function hasPlayablePreview(
   return !!tracks && tracks.some((t) => t.previewUrl != null && t.previewUrl !== "")
 }
 
+/**
+ * Emitted by `confirmPlayableTracks` ONCE per LIVE confirm so callers can
+ * persist the result to `artist_tracks_cache` (#162). NOT emitted on cache
+ * reuse or the `knownEmpty` short-circuit (nothing new was learned). See the
+ * firing matrix in `confirmPlayableTracks`.
+ */
+export interface ConfirmOutcome {
+  /** The minted uuid identity (artists.id) — the artist_tracks_cache key. */
+  artistId: string
+  /** Playable tracks found ([] when definitiveEmpty). */
+  tracks: Track[]
+  /** True only for the confirmed-no-preview negative case (iTunes real-[] + no spotifyId). */
+  definitiveEmpty: boolean
+  /** Which source produced the tracks. Negative rows persist as source 'none'. */
+  source: 'itunes' | 'spotify'
+}
+
 export interface ConfirmPreviewDeps {
   /** iTunes search by artist name. Returns tracks, [] for no match, or null on failure. */
   searchItunes: (name: string) => Promise<Track[] | null>
@@ -28,6 +45,12 @@ export interface ConfirmPreviewDeps {
    * internal uuid identity, which would 404 and trip the breaker.
    */
   getSpotifyTopTracks: (spotifyId: string | null) => Promise<Track[]>
+  /**
+   * Optional persistence hook (#162). Called ONCE per live confirm — see the
+   * firing matrix in `confirmPlayableTracks`. Never called on cache reuse or
+   * the `knownEmpty` short-circuit.
+   */
+  onConfirmOutcome?: (o: ConfirmOutcome) => void
 }
 
 export interface ConfirmInput {
@@ -50,6 +73,14 @@ export interface ConfirmInput {
    *  - [..]       → confirmed: reuse (filtered to playable), no network
    */
   topTracks?: Track[]
+  /**
+   * Fresh negative-cache flag (#162), set by `rehydrateTopTracks` when
+   * `artist_tracks_cache` holds a confirmed-empty row within the negative TTL.
+   * When true (and there's no positive `topTracks` to reuse), skip the network
+   * and return [] — the artist was recently confirmed to have no preview. A
+   * positive `topTracks` ALWAYS beats this flag (checked first).
+   */
+  knownEmpty?: boolean
 }
 
 /**
@@ -128,16 +159,35 @@ export async function confirmPlayableTracks(
     return playableTracks(artist.topTracks)
   }
 
-  // 2. iTunes-first
+  // 2. Fresh negative-cache short-circuit (#162). A positive cache above always
+  //    wins; only here do we honor a known-empty. No network, no callback (the
+  //    negative was already persisted — nothing new to learn).
+  if (artist.knownEmpty) return []
+
+  // 3. iTunes-first
   const it = await deps.searchItunes(artist.name).catch(() => null)
   const p = playableTracks(it ?? [])
-  if (p.length > 0) return p
+  if (p.length > 0) {
+    deps.onConfirmOutcome?.({ artistId: artist.id, tracks: p, definitiveEmpty: false, source: 'itunes' })
+    return p
+  }
 
-  // 3. Spotify fallback — keyed on the SPOTIFY id, never the uuid identity.
+  // 4. Spotify fallback — keyed on the SPOTIFY id, never the uuid identity.
   const sp = await deps.getSpotifyTopTracks(artist.spotifyId ?? null).catch(() => [])
   const p2 = playableTracks(sp)
-  if (p2.length > 0) return p2
+  if (p2.length > 0) {
+    deps.onConfirmOutcome?.({ artistId: artist.id, tracks: p2, definitiveEmpty: false, source: 'spotify' })
+    return p2
+  }
 
-  // 4. Nothing found
+  // 5. Nothing playable. Emit a negative ONLY when iTunes gave a DEFINITIVE
+  //    answer (it !== null — not a failure/breaker/timeout) AND there's no
+  //    Spotify id, so the empty isn't Spotify-ambiguous. iTunes null → no
+  //    callback (artist stays unconfirmed). iTunes real-[] but a spotifyId is
+  //    present and Spotify also came back empty → Spotify [] is failure-
+  //    ambiguous, so still no negative.
+  if (it !== null && artist.spotifyId == null) {
+    deps.onConfirmOutcome?.({ artistId: artist.id, tracks: [], definitiveEmpty: true, source: 'itunes' })
+  }
   return []
 }
