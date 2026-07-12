@@ -60,12 +60,18 @@ export function hydrateRailArtists(
   artistById: Map<string, HydratedRailArtist>,
 ): RailArtist[] {
   const out: RailArtist[] = []
+  // Diagnostic (#162): distinguish drops with NO hydration row (id not in the
+  // map — the artist_tracks_cache / artists read missed) from drops of a
+  // confirmed-negative row (topTracks present but unplayable). The guard
+  // decisions below are unchanged — this only counts them.
+  let droppedNoRow = 0
+  let droppedNegative = 0
   for (const id of ids) {
     const a = artistById.get(id)
-    if (!a) continue
+    if (!a) { droppedNoRow++; continue }
     // Defensive: drop only when topTracks is present AND confirmed unplayable.
     // Legacy cached rows have topTracks=undefined — keep those.
-    if (a.topTracks !== undefined && !hasPlayablePreview(a.topTracks)) continue
+    if (a.topTracks !== undefined && !hasPlayablePreview(a.topTracks)) { droppedNegative++; continue }
     out.push({
       id: a.id,
       name: a.name,
@@ -83,6 +89,12 @@ export function hydrateRailArtists(
           }
         : undefined,
     })
+  }
+  if (droppedNoRow > 0 || droppedNegative > 0) {
+    console.log(
+      `[explore-hydrate] kept=${out.length} droppedNoRow=${droppedNoRow} ` +
+      `droppedNegative=${droppedNegative} total=${ids.length}`,
+    )
   }
   return out
 }
