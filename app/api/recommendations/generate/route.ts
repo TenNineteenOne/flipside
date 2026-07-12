@@ -191,7 +191,7 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
     // work runs after logging and is intentionally excluded.
     resetCalls()
     const genStart = Date.now()
-    const { count: recCount, runSecondary, softenedFilters, metrics } = await buildRecommendations({
+    const { count: recCount, runSecondary, flushConfirms, softenedFilters, metrics } = await buildRecommendations({
       userId: user.id,
       accessToken,
       playThreshold,
@@ -232,6 +232,22 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
           console.error(`[generate] background-fail err=${err instanceof Error ? err.message : err}`)
         }
       }
+
+      // Persist every confirmed preview (tier-1 + tier-2 + secondary) to
+      // artist_tracks_cache in one batch, AFTER runSecondary so the collector
+      // has accumulated all phases. Runs even when runSecondary is null.
+      // flushConfirms never throws, but guard defensively. (#162)
+      try {
+        await flushConfirms?.()
+      } catch (err) {
+        console.error(`[generate] flush-confirms-fail err=${err instanceof Error ? err.message : err}`)
+      }
+
+      // Full-generation call counts (blocking + background). The [gen-timing]
+      // log above snapshots only the blocking window; this exposes the true
+      // per-gen iTunes/Spotify totals for the #162 measurement gate.
+      const bgCalls = snapshotCalls()
+      console.log(`[gen-timing-bg] itunesCalls=${bgCalls.itunes} spotifyCalls=${bgCalls.spotify} lastfmCalls=${bgCalls.lastfm.total}`)
 
       const { data: cachedRecs } = await supabase
         .from("recommendation_cache")

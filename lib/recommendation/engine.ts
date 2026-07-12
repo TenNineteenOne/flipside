@@ -12,7 +12,8 @@ import {
 import { ArtistNameCache } from './artist-name-cache'
 import { resolveArtistsByName } from './resolve-candidates'
 import { ensureArtist, type ArtistsSupabaseClient } from '@/lib/artists'
-import { confirmPlayableTracks, confirmToTarget } from './confirm-previews'
+import { confirmPlayableTracks, confirmToTarget, type ConfirmOutcome } from './confirm-previews'
+import { createConfirmCollector, NEGATIVE_TTL_MS } from './persist-confirms'
 import { searchTracksByArtist } from '@/lib/music-provider/itunes'
 import { fetchArtistEnrichment, buildEnrichArtist } from './enrich-artist'
 import { normalizeArtistName } from '@/lib/listened-artists'
@@ -156,11 +157,21 @@ export function lastfmResolve(name: string): Promise<Artist[]> {
  * Shared by the primary, secondary, and adjacent-bleed resolves so the
  * playability guarantee holds across the whole For You pipeline.
  */
-export function buildConfirmPreview(accessToken: string) {
+export function buildConfirmPreview(
+  accessToken: string,
+  onConfirmOutcome?: (o: ConfirmOutcome) => void,
+) {
   return (artist: Artist) =>
     confirmPlayableTracks(
-      { id: artist.id, name: artist.name, spotifyId: artist.spotifyId, topTracks: artist.topTracks },
       {
+        id: artist.id,
+        name: artist.name,
+        spotifyId: artist.spotifyId,
+        topTracks: artist.topTracks,
+        knownEmpty: artist.knownEmpty,
+      },
+      {
+        onConfirmOutcome,
         searchItunes: (name) => searchTracksByArtist(name, 'US', 5),
         // Spotify top-tracks keyed on the SPOTIFY id (not the uuid identity).
         // No id (Last.fm-only artist) or no token → no-op to [].
@@ -224,11 +235,16 @@ export async function rehydrateTopTracks(
   if (ids.length === 0) return
 
   const tracksById = new Map<string, Track[]>()
+  // Fresh confirmed-empty rows (#162): within NEGATIVE_TTL_MS → short-circuit
+  // the confirm step (knownEmpty) instead of re-hitting iTunes. Expired
+  // negatives are ignored (artist stays unconfirmed → re-confirms).
+  const knownEmptyIds = new Set<string>()
+  const now = Date.now()
   for (let i = 0; i < ids.length; i += TRACKS_REHYDRATE_CHUNK_SIZE) {
     const chunk = ids.slice(i, i + TRACKS_REHYDRATE_CHUNK_SIZE)
     const { data, error } = await supabase
       .from('artist_tracks_cache')
-      .select('artist_id, tracks')
+      .select('artist_id, tracks, fetched_at')
       .in('artist_id', chunk)
     if (error) {
       console.log(`[engine] rehydrate read-fail err="${error.message}" chunk=${i}-${i + chunk.length} total=${ids.length}`)
@@ -238,14 +254,22 @@ export async function rehydrateTopTracks(
       const id = row.artist_id as string | null
       if (!id) continue
       const tracks = (row.tracks as Track[] | null) ?? []
-      if (tracks.length > 0) tracksById.set(id, tracks)
+      if (tracks.length > 0) {
+        tracksById.set(id, tracks)
+      } else if (row.fetched_at && now - new Date(row.fetched_at as string).getTime() < NEGATIVE_TTL_MS) {
+        knownEmptyIds.add(id)
+      }
     }
   }
 
-  if (tracksById.size === 0) return
+  if (tracksById.size === 0 && knownEmptyIds.size === 0) return
   for (const { artist } of candidates) {
     const cached = tracksById.get(artist.id)
-    if (cached) artist.topTracks = cached
+    if (cached) {
+      artist.topTracks = cached // positive always wins
+    } else if (knownEmptyIds.has(artist.id)) {
+      artist.knownEmpty = true
+    }
   }
 }
 
@@ -650,6 +674,12 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     source, genre, undergroundMode, deepDiscovery, adventurous, userGenres = [],
   } = o
 
+  // ONE collector per run (#162). Every confirm tier (tier-1 blocking, tier-2
+  // deferred, secondary) records outcomes here; the route flushes it once in
+  // after() so a single batch-upsert covers all three phases.
+  const confirmCollector = createConfirmCollector()
+  const flushConfirms = () => confirmCollector.flush(supabase)
+
   const widenSeedCap = userGenres.length >= ADAPTIVE_BROADEN_THRESHOLD
   const seedCap = widenSeedCap ? 15 : 10
   const capSeedNames = seedNames.slice(0, seedCap)
@@ -691,7 +721,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
 
   if (uniqueNames.length === 0) {
     console.error(`[engine] FAIL no_unique seeds=${capSeedNames.length} lfm=${lfmTotal} source=${source}`)
-    return { count: 0, runSecondary: null, metrics: { primaryMs: 0, previewMs: 0, firstBatchMs: 0, misses: 0, retries: 0, rateLimited: false } }
+    return { count: 0, runSecondary: null, flushConfirms, metrics: { primaryMs: 0, previewMs: 0, firstBatchMs: 0, misses: 0, retries: 0, rateLimited: false } }
   }
 
   const candidateMap = new Map<string, { artist: Artist; seedArtists: string[] }>()
@@ -855,7 +885,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
       `uniq=${uniqueNames.length} ok=${resolved.searchOk} fail=${resolved.searchFail} ` +
       `filtListened=${filtListened} cands=${candidateMap.size} source=${source}`
     )
-    return { count: 0, runSecondary: null, metrics: { primaryMs: Date.now() - primaryStart, previewMs, firstBatchMs: 0, misses: resolved.cacheMisses, retries: resolved.searchRetries, rateLimited: resolved.rateLimited } }
+    return { count: 0, runSecondary: null, flushConfirms, metrics: { primaryMs: Date.now() - primaryStart, previewMs, firstBatchMs: 0, misses: resolved.cacheMisses, retries: resolved.searchRetries, rateLimited: resolved.rateLimited } }
   }
 
   // Post-pipeline adjacent-genre bleed. Skipped when the user has filtered
@@ -916,7 +946,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
   //   Tier 2 (deferred): finish primary to TARGET, then secondary pool — all in after().
   // Every artist written in ANY phase is confirmed-playable (comes through confirmToTarget).
 
-  const confirmFn = buildConfirmPreview(accessToken)
+  const confirmFn = buildConfirmPreview(accessToken, confirmCollector.onConfirmOutcome)
   const inTop = new Set(top.map((t) => t.artist.id))
   const tail = pool.filter((s) => !inTop.has(s.artist.id)) // already score-sorted
   const ordered = [...top, ...tail]
@@ -1117,7 +1147,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     const { kept: secConfirmed } = await confirmToTarget(
       secondaryScored,
       TARGET,
-      buildConfirmPreview(accessToken),
+      buildConfirmPreview(accessToken, confirmCollector.onConfirmOutcome),
     )
 
     if (secConfirmed.length > 0) {
@@ -1144,6 +1174,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
   return {
     count: tier1Written,
     runSecondary,
+    flushConfirms,
     metrics: {
       primaryMs,
       previewMs,
