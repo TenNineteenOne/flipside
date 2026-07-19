@@ -19,7 +19,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { createFakeSupabase, type Tables, type Row } from "./__fixtures__/fake-supabase"
 import { isValidArtistId } from "@/lib/spotify-ids"
-import type { Track } from "@/lib/music-provider/types"
+import type { Artist, Track } from "@/lib/music-provider/types"
 import type { SimilarArtistRef } from "@/lib/music-provider"
 
 // ── Hoisted mock control surface ──────────────────────────────────────────────
@@ -68,7 +68,7 @@ vi.mock("@/lib/music-provider/itunes", () => ({
 }))
 
 // Imported AFTER mocks are registered.
-import { buildRecommendations } from "./engine"
+import { buildRecommendations, rehydrateTopTracks } from "./engine"
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 function track(seed: string): Track {
@@ -141,6 +141,10 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllEnvs()
+  // Restore any vi.spyOn (e.g. the cold-start test's getSimilarArtistNames spy,
+  // the run-2 test's Math.random spy) so it can't leak into a later test's
+  // module mocks. Mirrors the explore integration suite's afterEach.
+  vi.restoreAllMocks()
 })
 
 // ── 1. Happy path: seeds → fan-out → resolve(miss→mint) → confirm → write ────
@@ -318,5 +322,114 @@ describe("buildRecommendations — cold start", () => {
     for (const row of cacheRows()) {
       expect(isValidArtistId(row.artist_id)).toBe(true)
     }
+  })
+})
+
+// ── 7. #162: persist confirmed previews to artist_tracks_cache ────────────────
+function tracksCacheRows(): Row[] {
+  return h.fake.tables.artist_tracks_cache ?? []
+}
+
+describe("buildRecommendations — persist confirms (#162)", () => {
+  it("flushConfirms writes positive rows with source + fetched_at", async () => {
+    seed({ seed_artists: [{ user_id: "u1", name: "SeedA" }] })
+    h.similars.set("SeedA", similarRefs(Array.from({ length: 6 }, (_, i) => `Pos${i}`)))
+
+    const result = await buildRecommendations(baseInput())
+    await result.runSecondary?.()
+    await result.flushConfirms?.()
+
+    const rows = tracksCacheRows()
+    expect(rows.length).toBeGreaterThan(0)
+    for (const row of rows) {
+      expect(isValidArtistId(row.artist_id)).toBe(true)
+      expect(row.source).toBe("itunes")
+      expect(row.tracks.length).toBeGreaterThan(0)
+      expect(typeof row.fetched_at).toBe("string")
+    }
+  })
+
+  it("writes a confirmed-empty negative row; iTunes failure (null) writes NOTHING", async () => {
+    const negId = "1a2b3c4d-0000-4000-8000-000000000001"
+    const failId = "5e6f7a8b-0000-4000-8000-000000000002"
+    seed({
+      seed_artists: [{ user_id: "u1", name: "SeedA" }],
+      artists: [artistsRow(negId, "NegArtist"), artistsRow(failId, "FailArtist")],
+    })
+    h.similars.set("SeedA", similarRefs(["Good0", "Good1", "Good2", "NegArtist", "FailArtist"]))
+    h.itunes.set("NegArtist", []) // real [] + no spotifyId → confirmed-empty negative
+    h.itunes.set("FailArtist", null) // failure → no callback → no row
+
+    const result = await buildRecommendations(baseInput())
+    await result.runSecondary?.()
+    await result.flushConfirms?.()
+
+    const rows = tracksCacheRows()
+    const neg = rows.find((r) => r.artist_id === negId)
+    expect(neg).toBeTruthy()
+    expect(neg!.tracks).toEqual([])
+    expect(neg!.source).toBe("none")
+    // The failure artist was never definitively confirmed → no negative row.
+    expect(rows.find((r) => r.artist_id === failId)).toBeUndefined()
+  })
+
+  it("run 2 makes ZERO iTunes calls for artists confirmed + persisted in run 1", async () => {
+    // Pin shuffle nondeterminism so both runs resolve the same candidate set.
+    const rand = vi.spyOn(Math, "random").mockReturnValue(0.42)
+    const names = Array.from({ length: 10 }, (_, i) => `Warm${i}`)
+    seed({ seed_artists: [{ user_id: "u1", name: "SeedA" }] })
+    h.similars.set("SeedA", similarRefs(names))
+
+    // Run 1 (cold): confirms via iTunes, persists positives to artist_tracks_cache.
+    const r1 = await buildRecommendations(baseInput())
+    await r1.runSecondary?.()
+    await r1.flushConfirms?.()
+    expect(h.calls.itunes.length).toBeGreaterThan(0)
+    expect(tracksCacheRows().length).toBeGreaterThan(0)
+
+    // Run 2 (warm): rehydrate short-circuits every confirm — no iTunes at all.
+    h.calls.itunes = []
+    const r2 = await buildRecommendations(baseInput())
+    await r2.runSecondary?.()
+    expect(h.calls.itunes).toEqual([])
+
+    rand.mockRestore()
+  })
+})
+
+// ── 8. #162: rehydrateTopTracks negative-row TTL handling ─────────────────────
+function bareArtist(id: string, name: string): { artist: Artist } {
+  return { artist: { id, name, genres: [], imageUrl: null, popularity: 0 } }
+}
+
+describe("rehydrateTopTracks — negative TTL (#162)", () => {
+  it("positive row → topTracks; fresh negative row → knownEmpty", async () => {
+    const posId = "aaaaaaaa-0000-4000-8000-000000000001"
+    const negId = "bbbbbbbb-0000-4000-8000-000000000002"
+    const fake = createFakeSupabase({
+      artist_tracks_cache: [
+        { artist_id: posId, tracks: [track("pos")], source: "itunes", fetched_at: new Date().toISOString() },
+        { artist_id: negId, tracks: [], source: "none", fetched_at: new Date().toISOString() },
+      ],
+    })
+    const cands = [bareArtist(posId, "Pos"), bareArtist(negId, "Neg")]
+    await rehydrateTopTracks(fake.client, cands)
+
+    expect(cands[0].artist.topTracks).toHaveLength(1)
+    expect(cands[0].artist.knownEmpty).toBeUndefined()
+    expect(cands[1].artist.topTracks).toBeUndefined()
+    expect(cands[1].artist.knownEmpty).toBe(true)
+  })
+
+  it("expired negative row → ignored (no knownEmpty, artist re-confirms)", async () => {
+    const negId = "bbbbbbbb-0000-4000-8000-000000000002"
+    const expired = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString() // 25h > 24h TTL
+    const fake = createFakeSupabase({
+      artist_tracks_cache: [{ artist_id: negId, tracks: [], source: "none", fetched_at: expired }],
+    })
+    const cands = [bareArtist(negId, "Neg")]
+    await rehydrateTopTracks(fake.client, cands)
+    expect(cands[0].artist.knownEmpty).toBeUndefined()
+    expect(cands[0].artist.topTracks).toBeUndefined()
   })
 })

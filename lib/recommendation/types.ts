@@ -44,6 +44,13 @@ export interface BuildResult {
    */
   runSecondary: (() => Promise<number>) | null
   /**
+   * Flush confirmed-preview outcomes to `artist_tracks_cache` (#162). The route
+   * calls this inside `after()` AFTER `runSecondary` completes, so one batch
+   * upsert covers tier-1 + tier-2 + secondary confirms. Optional so pipeline
+   * mocks/early-fail shapes stay valid; a run with no confirms flushes a no-op.
+   */
+  flushConfirms?: () => Promise<void>
+  /**
    * Set when the pipeline auto-softened filters to avoid an empty pool.
    * `undefined` on normal (non-softened) runs.
    */

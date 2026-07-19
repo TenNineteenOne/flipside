@@ -638,6 +638,27 @@ describe("runWithSoftening cascade order", () => {
     expect(result.softenedFilters).toBeUndefined()
   })
 
+  it("chains every run's flushConfirms so softening doesn't discard earlier runs' confirms (#162)", async () => {
+    const flushed: string[] = []
+    let idx = 0
+    const counts = [0, 5]
+    const run = async (opts: RunPipelineOpts): Promise<BuildResult> => {
+      const label = opts.source
+      const count = counts[idx++] ?? 0
+      return {
+        count,
+        runSecondary: null,
+        flushConfirms: async () => { flushed.push(label) },
+        metrics: { primaryMs: 0, previewMs: 0, firstBatchMs: 0, misses: 0, retries: 0, rateLimited: false },
+      }
+    }
+    const result = await runWithSoftening(baseOpts, { run, coldStartSeeds: coldSeeds })
+    expect(result.count).toBe(5)
+    await result.flushConfirms?.()
+    // BOTH the failed primary's and the successful soften run's collectors flush.
+    expect(flushed.sort()).toEqual(["multi_source", "soften_play_threshold"])
+  })
+
   it("applies playThreshold+5 first; stops when it succeeds", async () => {
     const { run, calls } = makeRunner([0, 5])
     const result = await runWithSoftening(baseOpts, { run, coldStartSeeds: coldSeeds })
