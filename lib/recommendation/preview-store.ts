@@ -201,7 +201,8 @@ export class PreviewStore {
    * The tracks route's read/refresh/write path. Fresh row → its tracks. Missing
    * or older than PREVIEW_TTL_MS (positive OR negative) → a live iTunes search
    * by `name` (when given); a non-empty result is returned AND written back
-   * (guarded). Otherwise `cacheMiss`. Returns null on a DB read error.
+   * (guarded). Otherwise a stale positive's stored tracks (not rewritten), else
+   * `cacheMiss`. Returns null on a DB read error.
    * The route never writes negatives: an empty live result writes nothing.
    */
   async serveTracks(
@@ -238,6 +239,10 @@ export class PreviewStore {
         console.error(`[tracks] API fallback failed:`, err)
       }
     }
+    // A stale positive still plays (#175 F-H): serve it (unchanged, so the next
+    // request retries the refresh) rather than an empty cache miss.
+    const stale = (cached?.tracks ?? []) as Track[]
+    if (stale.length > 0) return { tracks: stale }
     return { tracks: [], cacheMiss: true }
   }
 

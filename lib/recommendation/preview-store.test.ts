@@ -235,6 +235,20 @@ describe("PreviewStore.serveTracks", () => {
     expect(fake.tables.artist_tracks_cache[0].source).toBe("itunes")
   })
 
+  it("#175 F-H: stale positive + iTunes failure / empty → the stored tracks, row not rewritten", async () => {
+    const fetched = iso(PREVIEW_TTL_MS + HOUR)
+    const fake = createFakeSupabase({ artist_tracks_cache: [cacheRow(UUID_A, [track("old")], fetched)] })
+    vi.spyOn(console, "error").mockImplementation(() => {})
+    const store = new PreviewStore(fake.client)
+    expect(await store.serveTracks(UUID_A, "X", async () => null)).toEqual({ tracks: [track("old")] })
+    expect(await store.serveTracks(UUID_A, "X", async () => { throw new Error("down") })).toEqual({ tracks: [track("old")] })
+    expect(await store.serveTracks(UUID_A, "X", async () => [])).toEqual({ tracks: [track("old")] })
+    expect(fake.tables.artist_tracks_cache[0].fetched_at).toBe(fetched)
+    // A stale NEGATIVE is still a cache miss.
+    const neg = createFakeSupabase({ artist_tracks_cache: [cacheRow(UUID_A, [], fetched)] })
+    expect(await new PreviewStore(neg.client).serveTracks(UUID_A, "X", async () => null)).toEqual({ tracks: [], cacheMiss: true })
+  })
+
   it("no row + live result → written; no row + empty live → cache miss, nothing written", async () => {
     const fake = createFakeSupabase()
     expect(await new PreviewStore(fake.client).serveTracks(UUID_A, "X", async () => live)).toEqual({ tracks: live })
