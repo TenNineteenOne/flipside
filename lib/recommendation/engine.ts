@@ -96,9 +96,9 @@ async function gatherSeedContext(
     // Genre seed names from Last.fm tags (each cached).
     topGenres.length === 0
       ? Promise.resolve([] as string[])
-      : // ponytail: `.map` passes the INDEX as the limit (0..4) — pre-#175
-      // behavior kept byte-identical; flagged on #175 for an owner decision.
-      Promise.all(topGenres.map((tag, i) => lastfm.tagTopArtists(tag, i))).then((batches) => batches.flat()),
+      : // Default limit (20). Pre-#175 F15 a bare `.map(fn)` passed the array
+      // INDEX as the limit, so genre seeds asked Last.fm for 0..4 artists.
+      Promise.all(topGenres.map((tag) => lastfm.tagTopArtists(tag))).then((batches) => batches.flat()),
   ])
 
   names.push(...thumbsUpNames)

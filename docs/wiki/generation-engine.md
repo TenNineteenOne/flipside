@@ -17,8 +17,8 @@ The Feed ("For You") pipeline. Entry point: `buildRecommendations(input)` in
    `seed_artists`, a stable weekly sample of thumbs-up artists (`sampleLikes`, via
    `recommendation_cache`), and Last.fm `tag.gettopartists` (`lastfm.tagTopArtists`) for the
    user's top ~5 `selected_genres`. Shuffled + deduped → `seedNames[]` (capped 10–15).
-   ⚠️ The genre fetch passes the **array index as the limit** (0..4) — a long-standing
-   `.map(getTagArtistNames)` quirk kept byte-identical in #175 E1 pending an owner call.
+   Each genre requests the default 20 artists (before #175 F15 a `.map(getTagArtistNames)`
+   quirk passed the array index, 0..4, as the limit).
 2. **Soften gate** (`runWithSoftening`) — if the run returns `count=0`, retry with
    `playThreshold+5`, then fall back to `sampleColdStartSeeds()` from
    `data/cold-start-seeds.json`.

@@ -408,3 +408,20 @@ describe("buildRecommendations — adjacent bleed is rehydrated (#175 D2)", () =
     expect(h.calls.itunes).not.toContain("BleedArtist")
   })
 })
+
+// ── #175 F15: genre seeds request the default tag limit ─────────────────────
+describe("buildRecommendations — genre seed tag limit (#175 F15)", () => {
+  it("asks Last.fm for the default 20 artists per selected genre (not the array index)", async () => {
+    const genres = ["g-a", "g-b", "g-c", "g-d", "g-e"]
+    seed({ users: [{ id: "u1", selected_genres: genres }] })
+    const limits = new Map<string, number[]>()
+    lf.tags = (tag, limit) => {
+      limits.set(tag, [...(limits.get(tag) ?? []), limit])
+      return []
+    }
+
+    await buildRecommendations(baseInput())
+
+    for (const g of genres) expect(limits.get(g)).toEqual([20])
+  })
+})
