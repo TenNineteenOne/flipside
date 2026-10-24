@@ -94,7 +94,7 @@ describe("pickBestMatch (similarity guard)", () => {
   })
 
   it("treats exact match as case- and punctuation-insensitive", () => {
-    // normalizeArtistName lowercases + strips punctuation, so "ACDC" == "AC/DC".
+    // artistNameKey lowercases + strips punctuation, so "ACDC" == "AC/DC".
     const m = pickBestMatch("acdc", [cand("AC/DC")])
     expect(m?.name).toBe("AC/DC")
     expect(m?.similarity).toBe(1)

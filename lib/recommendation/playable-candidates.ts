@@ -25,7 +25,7 @@ import { confirmPlayableTracks, confirmToTarget, type ConfirmPreviewDeps } from 
 import { PreviewStore, type ConfirmCollector } from "./preview-store"
 import { buildEnrichArtist, lastfmResolve } from "@/lib/artist-identity/lastfm-lookup"
 import { searchTracksByArtist } from "@/lib/music-provider/itunes"
-import { musicProvider } from "@/lib/music-provider/provider"
+import { getSpotifyTopTracks } from "@/lib/music-provider/spotify"
 
 /** The outbound ports: Last.fm name lookup/enrichment, iTunes, Spotify top-tracks. */
 export interface PlayablePorts {
@@ -48,7 +48,7 @@ export function livePlayablePorts(accessToken: string): PlayablePorts {
     searchItunes: (name) => searchTracksByArtist(name, "US", 5),
     getSpotifyTopTracks: (spotifyId) =>
       accessToken && spotifyId
-        ? musicProvider.getArtistTopTracks(accessToken, spotifyId, 5, "US").catch(() => [])
+        ? getSpotifyTopTracks(accessToken, spotifyId, 5, "US").catch(() => [])
         : Promise.resolve([]),
   }
 }

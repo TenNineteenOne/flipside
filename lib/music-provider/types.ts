@@ -43,9 +43,3 @@ export interface Track {
 export interface ArtistWithTracks extends Artist {
   topTracks: Track[]
 }
-
-export interface PlayHistory {
-  artistId: string
-  artistName: string
-  playedAt: string  // ISO timestamp
-}

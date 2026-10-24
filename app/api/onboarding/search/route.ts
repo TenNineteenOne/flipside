@@ -4,7 +4,7 @@ import { apiError, apiUnauthorized } from "@/lib/errors"
 import { createServiceClient } from "@/lib/supabase/server"
 import { createWindowLimiter } from "@/lib/rate-limiter"
 import { lastfm } from "@/lib/lastfm"
-import { normalizeArtistName } from "@/lib/history/name-utils"
+import { artistNameKey } from "@/lib/artist-identity"
 import type { Artist } from "@/lib/music-provider/types"
 
 // Per-user in-memory rate limit. A debounced UI already throttles typing; this
@@ -120,11 +120,11 @@ export async function GET(req: NextRequest) {
   // 2. Supplement with Last.fm only when the cache is thin — keeps live Last.fm
   //    volume low and prefers our enriched cache rows.
   if (suggestions.length < CACHE_SUFFICIENT) {
-    const seen = new Set(suggestions.map((s) => normalizeArtistName(s.name)))
+    const seen = new Set(suggestions.map((s) => artistNameKey(s.name)))
     const candidates = await lastfm.searchArtists(trimmed)
     for (const c of candidates) {
       if (suggestions.length >= RESULT_CAP) break
-      const norm = normalizeArtistName(c.name)
+      const norm = artistNameKey(c.name)
       if (seen.has(norm)) continue
       seen.add(norm)
       suggestions.push({

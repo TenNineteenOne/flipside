@@ -27,7 +27,7 @@ import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { join } from 'path'
 import { config as loadEnv } from 'dotenv'
 import { createClient } from '@supabase/supabase-js'
-import { SpotifyProvider } from '../lib/music-provider/spotify-provider'
+import { searchSpotifyArtists } from '../lib/music-provider/spotify'
 import { getSpotifyClientToken } from '../lib/spotify-client-token'
 import { resolveArtistsByName } from '../lib/recommendation/resolve-candidates'
 import { ArtistIdentity } from '../lib/artist-identity'
@@ -258,16 +258,15 @@ async function phase1CollectNames(
 async function phase2ResolveNames(
   names: string[],
   identity: ArtistIdentity,
-  provider: SpotifyProvider
 ): Promise<void> {
   console.log(`[seed] phase2 start totalNames=${names.length}`)
 
-  // Spotify-search lookup adapter: the provider puts the Spotify id in `.id`;
+  // Spotify-search lookup adapter: the search puts the Spotify id in `.id`;
   // the doorway wants it as the `spotifyId` attribute (the uuid is minted).
   const searchArtists = async (name: string): Promise<Artist[] | RateLimited> => {
     const token = await getSpotifyClientToken()
     if (!token) return []
-    const res = await provider.searchArtists(token, name)
+    const res = await searchSpotifyArtists(token, name)
     return Array.isArray(res) ? res.map((a) => ({ ...a, id: '', spotifyId: a.id })) : res
   }
 
@@ -351,9 +350,8 @@ async function main() {
     { auth: { persistSession: false } }
   )
   const identity = new ArtistIdentity(supabase)
-  const provider = new SpotifyProvider()
 
-  await phase2ResolveNames(cp.collectedNames, identity, provider)
+  await phase2ResolveNames(cp.collectedNames, identity)
   console.log(`[seed] all phases complete.`)
 }
 
