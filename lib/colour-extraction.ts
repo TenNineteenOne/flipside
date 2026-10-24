@@ -117,6 +117,18 @@ const ALLOWED_IMAGE_HOSTS = new Set([
   "is5-ssl.mzstatic.com",
 ])
 
+/**
+ * True only for JPEG, PNG or WebP magic bytes. Anything else never reaches
+ * node-vibrant: its file-type sniffer can spin forever on a crafted ASF header
+ * (GHSA-5v7r-6r5c-r473), a synchronous loop no timeout race can interrupt.
+ */
+function isSupportedImage(buf: Buffer): boolean {
+  const jpeg = buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff
+  const png = buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+  const webp = buf.subarray(0, 4).toString("latin1") === "RIFF" && buf.subarray(8, 12).toString("latin1") === "WEBP"
+  return jpeg || png || webp
+}
+
 export async function extractArtistColor(imageUrl: string): Promise<string> {
   try {
     const parsed = new URL(imageUrl)
@@ -147,6 +159,10 @@ export async function extractArtistColor(imageUrl: string): Promise<string> {
       return FALLBACK
     }
     const buffer = Buffer.from(arrayBuffer)
+    if (!isSupportedImage(buffer)) {
+      console.warn("[colour] not a JPEG/PNG/WebP — skipping")
+      return FALLBACK
+    }
 
     // Dynamic import keeps node-vibrant out of the client bundle.
     // Must use the /node subpath — the default export throws on import.
