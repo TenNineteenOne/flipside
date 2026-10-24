@@ -19,7 +19,7 @@ import type { FakeLastfm } from "./__fixtures__/fake-lastfm"
 
 const h = vi.hoisted(() => ({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  fake: { client: null as any, tables: {} as Tables },
+  fake: { client: null as any, tables: {} as Tables, queries: [] as Array<{ table: string; op: string }> },
 }))
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -190,7 +190,7 @@ describe("buildExploreRails — listened + feedback exclusion", () => {
     expect(ids.has(goodRow!.id)).toBe(true)
     // #175 E4b: listened_artists + feedback are read once each per side —
     // listened once (shared), feedback twice (thumbs-up + the shared thumbs-down).
-    const selects = (t: string) => h.fake.queries.filter((q: { table: string; op: string }) => q.table === t && q.op === "select").length
+    const selects = (t: string) => h.fake.queries.filter((q) => q.table === t && q.op === "select").length
     expect(selects("listened_artists")).toBe(1)
     expect(selects("feedback")).toBe(2)
   }, 20000)
