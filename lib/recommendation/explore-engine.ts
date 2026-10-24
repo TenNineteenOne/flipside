@@ -28,6 +28,7 @@ import {
   listAnchors,
 } from '@/lib/genre/adjacency'
 import { UNDERGROUND_MAX_POPULARITY } from './types'
+import { loadExclusions, type Exclusions } from './exclusions'
 import { cacheWindowSeed, seededShuffle, sampleLikes } from './window'
 import { applyCrossRailClusterCap, primaryGenreOf } from './cluster-cap'
 
@@ -80,8 +81,9 @@ export interface BuildRailsInput {
    */
   popularityCurve?: number
   /**
-   * users.play_threshold. Threaded through for future use; Explore today
-   * excludes all listened artists regardless, so it's a no-op in rails.
+   * users.play_threshold. Threaded through for future use; Explore's exclusion
+   * policy is `playThreshold: 'any'` (any listened play hides — owner decision
+   * #3), so it's a no-op in rails.
    */
   playThreshold?: number
 }
@@ -161,7 +163,6 @@ async function loadUserContext(supabase: SupabaseClient, userId: string) {
     selectedGenres: ((user?.selected_genres ?? []) as string[]),
     seedArtists: (seedArtists ?? []) as Array<{ artist_id: string; name: string }>,
     listened,
-    listenedIds: new Set(listenedIds),
     thumbsUpIds: new Set(sampleLikes(allThumbsUp, userId)),
     thumbsDownIds: new Set((thumbsDown ?? []).map((r) => r.artist_id as string)),
   }
@@ -205,9 +206,7 @@ async function resolveAndFilter(
   accessToken: string,
   supabase: SupabaseClient,
   filters: {
-    listenedIds: Set<string>
-    thumbsDownIds: Set<string>
-    excludedIds: Set<string>
+    exclusions: Exclusions
     undergroundMode?: boolean
   },
   confirmTarget: number,
@@ -227,9 +226,7 @@ async function resolveAndFilter(
   // This avoids confirming artists that will be filtered out anyway.
   const candidates: Array<{ artist: Artist; name: string }> = []
   for (const [name, artist] of resolved.resolved) {
-    if (filters.listenedIds.has(artist.id)) continue
-    if (filters.thumbsDownIds.has(artist.id)) continue
-    if (filters.excludedIds.has(artist.id)) continue
+    if (filters.exclusions.reason(artist)) continue
     if (filters.undergroundMode && (artist.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) continue
     candidates.push({ artist, name })
   }
@@ -259,33 +256,6 @@ async function resolveAndFilter(
 
 /** Headroom added to each rail's display target when computing confirmTarget. */
 const CONFIRM_HEADROOM = 10
-
-/**
- * IDs the explore engine should never resurface this generation:
- *   - seen_at within the 7-day passive cooldown
- *   - skip_at set (permanent dismiss via the Dismiss button; undo lives on
- *     the History page and clears skip_at via rpc_clear_dismiss)
- */
-async function loadExcludedIds(supabase: SupabaseClient, userId: string): Promise<Set<string>> {
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-  const [seenRes, skipRes] = await Promise.all([
-    supabase
-      .from('recommendation_cache')
-      .select('artist_id')
-      .eq('user_id', userId)
-      .not('seen_at', 'is', null)
-      .gte('seen_at', sevenDaysAgo),
-    supabase
-      .from('recommendation_cache')
-      .select('artist_id')
-      .eq('user_id', userId)
-      .not('skip_at', 'is', null),
-  ])
-  const ids = new Set<string>()
-  for (const r of seenRes.data ?? []) ids.add(r.artist_id as string)
-  for (const r of skipRes.data ?? []) ids.add(r.artist_id as string)
-  return ids
-}
 
 // ── Rail implementations ────────────────────────────────────────────────────
 //
@@ -330,7 +300,7 @@ export async function adjacentRail(
   input: BuildRailsInput,
   ctx: Awaited<ReturnType<typeof loadUserContext>>,
   supabase: SupabaseClient,
-  excludedIds: Set<string>,
+  exclusions: Exclusions,
 ): Promise<RailResult> {
   const target = input.adventurous ? AFTERHOURS_TARGET_ADVENTUROUS : AFTERHOURS_TARGET
   const perTag = AFTERHOURS_PER_TAG
@@ -376,9 +346,7 @@ export async function adjacentRail(
   }
 
   const resolved = await resolveAndFilter(namesRoundRobin, input.accessToken, supabase, {
-    listenedIds: ctx.listenedIds,
-    thumbsDownIds: ctx.thumbsDownIds,
-    excludedIds,
+    exclusions,
     undergroundMode: input.undergroundMode,
   }, Math.max(target, Math.min(target + CONFIRM_HEADROOM, 30)))
 
@@ -434,7 +402,7 @@ export async function outsideRail(
   input: BuildRailsInput,
   ctx: Awaited<ReturnType<typeof loadUserContext>>,
   supabase: SupabaseClient,
-  excludedIds: Set<string>,
+  exclusions: Exclusions,
 ): Promise<RailResult> {
   void supabase
   const target = input.adventurous ? OUTSIDE_TARGET_ADVENTUROUS : OUTSIDE_TARGET
@@ -512,9 +480,7 @@ export async function outsideRail(
   }
 
   const resolved = await resolveAndFilter(namesRoundRobin, input.accessToken, supabase, {
-    listenedIds: ctx.listenedIds,
-    thumbsDownIds: ctx.thumbsDownIds,
-    excludedIds,
+    exclusions,
     undergroundMode: input.undergroundMode,
   }, Math.max(target, Math.min(target + CONFIRM_HEADROOM, 30)))
 
@@ -569,7 +535,7 @@ export async function wildcardsRail(
   input: BuildRailsInput,
   ctx: Awaited<ReturnType<typeof loadUserContext>>,
   supabase: SupabaseClient,
-  excludedIds: Set<string>,
+  exclusions: Exclusions,
 ): Promise<RailResult> {
   const target = input.adventurous ? WILDCARDS_TARGET_ADVENTUROUS : WILDCARDS_TARGET
   const seedCount = input.adventurous ? WILDCARDS_SEED_COUNT_ADVENTUROUS : WILDCARDS_SEED_COUNT
@@ -652,9 +618,7 @@ export async function wildcardsRail(
   }
 
   const resolved = await resolveAndFilter(namesRoundRobin, input.accessToken, supabase, {
-    listenedIds: ctx.listenedIds,
-    thumbsDownIds: ctx.thumbsDownIds,
-    excludedIds,
+    exclusions,
     undergroundMode: input.undergroundMode,
   }, Math.max(target, Math.min(target + CONFIRM_HEADROOM, 30)))
   const artistByName = new Map<string, Artist>()
@@ -747,7 +711,7 @@ export async function leftfieldRail(
   input: BuildRailsInput,
   ctx: Awaited<ReturnType<typeof loadUserContext>>,
   supabase: SupabaseClient,
-  excludedIds: Set<string>,
+  exclusions: Exclusions,
   opts: { seedKey?: string; excludeIds?: Set<string> } = {},
 ): Promise<RailResult> {
   try {
@@ -813,9 +777,7 @@ export async function leftfieldRail(
     const namesToResolve = namesRoundRobin.slice(0, resolveCap)
 
     const resolved = await resolveAndFilter(namesToResolve, input.accessToken, supabase, {
-      listenedIds: ctx.listenedIds,
-      thumbsDownIds: ctx.thumbsDownIds,
-      excludedIds,
+      exclusions,
       undergroundMode: input.undergroundMode,
     }, Math.max(target, Math.min(target + CONFIRM_HEADROOM, 30)))
 
@@ -829,9 +791,7 @@ export async function leftfieldRail(
     const namesDeferred = namesRoundRobin.slice(resolveCap, resolveCap + LEFTFIELD_BG_WARM_CAP)
     if (seedKey === 'leftfield' && namesDeferred.length > 0) {
       void resolveAndFilter(namesDeferred, input.accessToken, supabase, {
-        listenedIds: ctx.listenedIds,
-        thumbsDownIds: ctx.thumbsDownIds,
-        excludedIds,
+        exclusions,
         undergroundMode: input.undergroundMode,
       }, Math.max(target, Math.min(target + CONFIRM_HEADROOM, 30))).catch(() => {})
     }
@@ -1042,19 +1002,22 @@ export async function buildExploreRails(
     }
   }
 
-  const [ctx, excludedIds] = await Promise.all([
+  // Explore's exclusion policy (#175 D3): any listened play hides (owner
+  // decision #3 — explicit, not an accident), ids only; plus thumbs-down and
+  // the 7-day seen / dismissed cooldown — all applied before confirm.
+  const [ctx, exclusions] = await Promise.all([
     loadUserContext(supabase, input.userId),
-    loadExcludedIds(supabase, input.userId),
+    loadExclusions(supabase, input.userId, { playThreshold: 'any', nameFallback: false }),
   ])
 
   // allSettled so one rail throwing doesn't nuke the whole explore generation.
   // Each rail already has its own internal try/catch for Last.fm calls; this is
   // belt-and-braces against unexpected DB / null-deref errors.
   const railFns: Array<{ key: RailKey; run: () => Promise<RailResult> }> = [
-    { key: "adjacent", run: () => adjacentRail(input, ctx, supabase, excludedIds) },
-    { key: "outside", run: () => outsideRail(input, ctx, supabase, excludedIds) },
-    { key: "wildcards", run: () => wildcardsRail(input, ctx, supabase, excludedIds) },
-    { key: "leftfield", run: () => leftfieldRail(input, ctx, supabase, excludedIds) },
+    { key: "adjacent", run: () => adjacentRail(input, ctx, supabase, exclusions) },
+    { key: "outside", run: () => outsideRail(input, ctx, supabase, exclusions) },
+    { key: "wildcards", run: () => wildcardsRail(input, ctx, supabase, exclusions) },
+    { key: "leftfield", run: () => leftfieldRail(input, ctx, supabase, exclusions) },
   ]
   const settled = await Promise.allSettled(railFns.map((r) => r.run()))
   const rails: RailResult[] = settled.map((s, i) => {
@@ -1070,7 +1033,7 @@ export async function buildExploreRails(
   if (ctx.thumbsUpIds.size === 0) {
     const primaryLeftfield = rails.find((r) => r.railKey === 'leftfield')
     const excludeIds = new Set(primaryLeftfield?.artistIds ?? [])
-    const fallback = await leftfieldRail(input, ctx, supabase, excludedIds, {
+    const fallback = await leftfieldRail(input, ctx, supabase, exclusions, {
       seedKey: 'wildcards-fallback',
       excludeIds,
     })
@@ -1136,7 +1099,7 @@ export async function buildExploreRails(
     for (const r of shortRails) {
       const need = MIN_PICKS_FLOOR - r.artistIds.length
       if (need <= 0) continue
-      const topup = await leftfieldRail(input, ctx, supabase, excludedIds, {
+      const topup = await leftfieldRail(input, ctx, supabase, exclusions, {
         seedKey: `${r.railKey}-topup`,
         excludeIds: existingIds,
       })

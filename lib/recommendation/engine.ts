@@ -10,7 +10,8 @@ import {
   type SoftenedFilters,
 } from './types'
 import { resolveArtistsByName } from './resolve-candidates'
-import { ArtistIdentity, artistNameKey } from '@/lib/artist-identity'
+import { ArtistIdentity } from '@/lib/artist-identity'
+import { isEligibleForCooldown, loadExclusions, type Exclusions } from './exclusions'
 import { confirmPlayableTracks, confirmToTarget, type ConfirmOutcome } from './confirm-previews'
 import { PreviewStore } from './preview-store'
 import { searchTracksByArtist } from '@/lib/music-provider/itunes'
@@ -424,24 +425,6 @@ export function backfillToTarget(
 }
 
 /**
- * Cooldown gate: a `skip_at` timestamp is a permanent hide ("Dismiss" button).
- * Undo is available from the History page, which clears skip_at via the
- * dismiss RPC. A passive `seen_at` is a 7-day soft cooldown.
- */
-export function isEligibleForCooldown(
-  seenAt: string | null | undefined,
-  skipAt: string | null | undefined,
-  now: Date = new Date()
-): boolean {
-  if (skipAt) return false
-  if (seenAt) {
-    const days = (now.getTime() - new Date(seenAt).getTime()) / (1000 * 60 * 60 * 24)
-    if (days < 7) return false
-  }
-  return true
-}
-
-/**
  * Post-pipeline merge that injects a small number of adjacent-genre picks at
  * positions where they can't displace the top relevance picks. Treats
  * `userGenres` as the root set and samples close (and optionally medium)
@@ -456,10 +439,8 @@ export interface AugmentAdjacentOpts {
   adaptiveBroadening?: boolean
   popularityCurve: number
   undergroundMode?: boolean
-  thumbsDownIds: Set<string>
-  overThresholdIds: Set<string>
-  overThresholdNames: Set<string>
   fetchTagArtists: (tag: string) => Promise<string[]>
+  /** Resolve names → artists, keyed by input name, with the user's exclusions already applied. */
   resolveArtists: (names: string[]) => Promise<Map<string, Artist>>
 }
 
@@ -528,9 +509,6 @@ export async function augmentWithAdjacent(
   const scored: ScoredArtist[] = []
   for (const [name, artist] of resolved.entries()) {
     if (baseIds.has(artist.id)) continue
-    if (opts.thumbsDownIds.has(artist.id)) continue
-    if (opts.overThresholdIds.has(artist.id)) continue
-    if (opts.overThresholdNames.has(artistNameKey(artist.name))) continue
     if (opts.undergroundMode && (artist.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) continue
 
     const tag = nameToTag.get(name.toLowerCase()) ?? ''
@@ -697,43 +675,25 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     }
   }
 
-  const [{ data: listenedData }, { data: thumbsDownData }] = await Promise.all([
-    supabase
-      .from('listened_artists')
-      .select('artist_id, lastfm_artist_name, play_count')
-      .eq('user_id', userId),
-    supabase
-      .from('feedback')
-      .select('artist_id')
-      .eq('user_id', userId)
-      .eq('signal', 'thumbs_down')
-      .is('deleted_at', null),
-  ])
-
-  const overThresholdIds = new Set<string>()
-  const overThresholdNames = new Set<string>()
-  for (const row of listenedData ?? []) {
-    if (row.play_count == null || row.play_count <= playThreshold) continue
-    if (row.artist_id) {
-      overThresholdIds.add(row.artist_id)
-    } else if (row.lastfm_artist_name) {
-      overThresholdNames.add(artistNameKey(row.lastfm_artist_name))
+  // The one exclusion policy (#175 D3): thumbs-down, listened over the play
+  // threshold (by id, or by name for id-less history rows), and the 7-day
+  // seen / dismissed cooldown — applied BEFORE confirm so no iTunes call is
+  // spent on an artist writeScored would discard.
+  const exclusions = await loadExclusions(supabase, userId, { playThreshold, nameFallback: true })
+  let filtListened = 0
+  /** Every feed candidate gate: exclusions + underground cap + genre filter. */
+  const feedKeeps = (artist: Artist, countListened = false): boolean => {
+    const why = exclusions.reason(artist)
+    if (why) {
+      if (countListened && why === 'listened') filtListened++
+      return false
     }
+    if (undergroundMode && (artist.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) return false
+    if (genre && !artist.genres.some((g) => normalizedIncludes(g, genre))) return false
+    return true
   }
 
-  const thumbsDownIds = new Set((thumbsDownData ?? []).map((r) => r.artist_id))
-  let filtListened = 0
-
-  const filteredCandidates = [...candidateMap.entries()]
-    .filter(([id, val]) => {
-      if (thumbsDownIds.has(id)) return false
-      if (overThresholdIds.has(id)) { filtListened++; return false }
-      if (overThresholdNames.has(artistNameKey(val.artist.name))) { filtListened++; return false }
-      if (undergroundMode && (val.artist.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) return false
-      if (genre && !val.artist.genres.some((g) => normalizedIncludes(g, genre))) return false
-      return true
-    })
-    .map(([, val]) => val)
+  const filteredCandidates = [...candidateMap.values()].filter((val) => feedKeeps(val.artist, true))
 
   // Rehydrate baked previews from artist_tracks_cache so warm artists arrive at
   // preview-confirmation already confirmed (no re-confirm / no iTunes call).
@@ -819,9 +779,6 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
       adaptiveBroadening: widenSeedCap,
       popularityCurve,
       undergroundMode,
-      thumbsDownIds,
-      overThresholdIds,
-      overThresholdNames,
       fetchTagArtists: getTagArtistNames,
       resolveArtists: async (names) => {
         const r = await resolveArtistsByName(names, {
@@ -830,7 +787,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
           enrichArtist: buildEnrichArtist(),
           mintArtist,
         })
-        return r.resolved
+        return new Map([...r.resolved].filter(([, a]) => !exclusions.reason(a)))
       },
     })
   }
@@ -848,11 +805,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     const reserve: ScoredArtist[] = []
     for (const [name, art] of sec.resolved) {
       if (pickedIds.has(art.id)) continue
-      if (thumbsDownIds.has(art.id)) continue
-      if (overThresholdIds.has(art.id)) continue
-      if (overThresholdNames.has(artistNameKey(art.name))) continue
-      if (undergroundMode && (art.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) continue
-      if (genre && !art.genres.some((g) => normalizedIncludes(g, genre))) continue
+      if (!feedKeeps(art)) continue
       reserve.push(scoreCandidate(art, nameToSeeds.get(name) ?? [], `${source}_backfill`))
     }
     const before = top.length
@@ -1000,11 +953,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     const secondaryCandidates: Array<{ artist: Artist; seedArtists: string[] }> = []
     for (const [name, artist] of secondaryResolved.resolved) {
       if (writtenIds.has(artist.id)) continue
-      if (thumbsDownIds.has(artist.id)) continue
-      if (overThresholdIds.has(artist.id)) continue
-      if (overThresholdNames.has(artistNameKey(artist.name))) continue
-      if (undergroundMode && (artist.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) continue
-      if (genre && !artist.genres.some((g) => normalizedIncludes(g, genre))) continue
+      if (!feedKeeps(artist)) continue
       const seedArtists = nameToSeeds.get(name) ?? []
       secondaryCandidates.push({ artist, seedArtists })
     }

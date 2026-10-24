@@ -4,7 +4,6 @@ import {
   greedyPickTop,
   backfillToTarget,
   runDeepHop,
-  isEligibleForCooldown,
   augmentWithAdjacent,
   runWithSoftening,
   type RunPipelineOpts,
@@ -349,41 +348,6 @@ describe("runDeepHop", () => {
   })
 })
 
-describe("isEligibleForCooldown", () => {
-  const now = new Date("2026-04-20T00:00:00Z")
-
-  it("allows candidates with no history", () => {
-    expect(isEligibleForCooldown(null, null, now)).toBe(true)
-    expect(isEligibleForCooldown(undefined, undefined, now)).toBe(true)
-  })
-
-  it("blocks when seen_at is within 7 days", () => {
-    const sixDays = new Date(now.getTime() - 6 * 86400_000).toISOString()
-    expect(isEligibleForCooldown(sixDays, null, now)).toBe(false)
-  })
-
-  it("allows when seen_at is past 7 days", () => {
-    const eightDays = new Date(now.getTime() - 8 * 86400_000).toISOString()
-    expect(isEligibleForCooldown(eightDays, null, now)).toBe(true)
-  })
-
-  it("blocks when skip_at is set recently (permanent dismiss)", () => {
-    const fifteenDays = new Date(now.getTime() - 15 * 86400_000).toISOString()
-    expect(isEligibleForCooldown(null, fifteenDays, now)).toBe(false)
-  })
-
-  it("blocks when skip_at is set long ago (permanent dismiss, no expiry)", () => {
-    const hundredDays = new Date(now.getTime() - 100 * 86400_000).toISOString()
-    expect(isEligibleForCooldown(null, hundredDays, now)).toBe(false)
-  })
-
-  it("skip cooldown outranks seen cooldown (any skip_at blocks regardless of age)", () => {
-    const seen = new Date(now.getTime() - 1 * 86400_000).toISOString()
-    const skip = new Date(now.getTime() - 28 * 86400_000).toISOString()
-    expect(isEligibleForCooldown(seen, skip, now)).toBe(false)
-  })
-})
-
 describe("greedyPickTop diversity strength", () => {
   it("homogeneous 40-rock pool produces ≤10 rocks in top 20 at 0.10 penalty", () => {
     // 40 candidates, 30 rock (score 0.5 descending) + 10 other genres (score 0.4 descending).
@@ -410,17 +374,12 @@ describe("augmentWithAdjacent", () => {
     )
   }
 
-  const emptySet = new Set<string>()
-
   it("non-adventurous: injects ≤4 adjacent picks at positions ≥5", async () => {
     const base = makeBase(20)
     const result = await augmentWithAdjacent(base, {
       userGenres: ["indie-rock"],
       adventurous: false,
       popularityCurve: 0.95,
-      thumbsDownIds: emptySet,
-      overThresholdIds: emptySet,
-      overThresholdNames: emptySet,
       fetchTagArtists: async () => ["adj1", "adj2", "adj3", "adj4", "adj5"],
       resolveArtists: async (names) => {
         const m = new Map<string, Artist>()
@@ -445,9 +404,6 @@ describe("augmentWithAdjacent", () => {
       userGenres: ["indie-rock"],
       adventurous: true,
       popularityCurve: 0.95,
-      thumbsDownIds: emptySet,
-      overThresholdIds: emptySet,
-      overThresholdNames: emptySet,
       fetchTagArtists: async () => adjNames,
       resolveArtists: async (names) => {
         const m = new Map<string, Artist>()
@@ -472,9 +428,6 @@ describe("augmentWithAdjacent", () => {
     const result = await augmentWithAdjacent(base, {
       userGenres: [],
       popularityCurve: 0.95,
-      thumbsDownIds: emptySet,
-      overThresholdIds: emptySet,
-      overThresholdNames: emptySet,
       fetchTagArtists,
       resolveArtists,
     })
@@ -495,9 +448,6 @@ describe("augmentWithAdjacent", () => {
     await augmentWithAdjacent(base, {
       userGenres: ["indie-rock", "indie-pop"],
       popularityCurve: 0.95,
-      thumbsDownIds: emptySet,
-      overThresholdIds: emptySet,
-      overThresholdNames: emptySet,
       fetchTagArtists,
       resolveArtists: async () => new Map<string, Artist>(),
     })
@@ -510,34 +460,11 @@ describe("augmentWithAdjacent", () => {
     const result = await augmentWithAdjacent(base, {
       userGenres: ["indie-rock"],
       popularityCurve: 0.95,
-      thumbsDownIds: emptySet,
-      overThresholdIds: emptySet,
-      overThresholdNames: emptySet,
       fetchTagArtists: async () => ["base5", "base10"],  // names collide with base[5], base[10]
       resolveArtists: async () => new Map<string, Artist>(),
     })
     // Name-level dedup happens before resolution, so nothing is resolved/injected.
     expect(result.every((r) => r.source === "test")).toBe(true)
-  })
-
-  it("filters thumbs-down candidates", async () => {
-    const base = makeBase(20)
-    const result = await augmentWithAdjacent(base, {
-      userGenres: ["indie-rock"],
-      popularityCurve: 0.95,
-      thumbsDownIds: new Set(["id_adj1"]),
-      overThresholdIds: emptySet,
-      overThresholdNames: emptySet,
-      fetchTagArtists: async () => ["adj1", "adj2"],
-      resolveArtists: async (names) => {
-        const m = new Map<string, Artist>()
-        for (const n of names) m.set(n, mkArtist(`id_${n}`, 30, "indie-pop"))
-        return m
-      },
-    })
-    const injected = result.filter((r) => r.source === "adjacent_bleed")
-    // id_adj1 was thumbs-down; only id_adj2 can be injected.
-    expect(injected.every((r) => r.artist.id !== "id_adj1")).toBe(true)
   })
 
   it("adventurous mainstream penalty orders low-pop injections ahead of high-pop", async () => {
@@ -548,9 +475,6 @@ describe("augmentWithAdjacent", () => {
       userGenres: ["indie-rock"],
       adventurous: true,
       popularityCurve: 0.95,
-      thumbsDownIds: emptySet,
-      overThresholdIds: emptySet,
-      overThresholdNames: emptySet,
       fetchTagArtists: async () => [...lowNames, ...highNames],
       resolveArtists: async (names) => {
         const m = new Map<string, Artist>()
@@ -571,9 +495,6 @@ describe("augmentWithAdjacent", () => {
     const result = await augmentWithAdjacent(tinyBase, {
       userGenres: ["indie-rock"],
       popularityCurve: 0.95,
-      thumbsDownIds: emptySet,
-      overThresholdIds: emptySet,
-      overThresholdNames: emptySet,
       fetchTagArtists: async () => ["x"],
       resolveArtists: async () => new Map([["x", mkArtist("id_x")]]),
     })

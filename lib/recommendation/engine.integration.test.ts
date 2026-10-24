@@ -277,6 +277,31 @@ describe("buildRecommendations — listened + feedback filtering", () => {
   })
 })
 
+// ── 4b. Cooldown / dismissed applied BEFORE confirm (#175 D3) ────────────────
+describe("buildRecommendations — cooldown excluded before confirm", () => {
+  it("never spends an iTunes call on a seen-in-7-days or dismissed artist", async () => {
+    const seenId = "f0000000-0000-4000-8000-000000000001"
+    const skipId = "f0000000-0000-4000-8000-000000000002"
+    seed({
+      seed_artists: [{ user_id: "u1", name: "SeedA" }],
+      artists: [artistsRow(seenId, "SeenRecently"), artistsRow(skipId, "Dismissed")],
+      recommendation_cache: [
+        { user_id: "u1", artist_id: seenId, seen_at: new Date().toISOString(), skip_at: null },
+        { user_id: "u1", artist_id: skipId, seen_at: null, skip_at: new Date().toISOString() },
+      ],
+    })
+    h.similars.set("SeedA", similarRefs(["SeenRecently", "Dismissed", "Fresh0", "Fresh1"]))
+
+    const result = await buildRecommendations(baseInput())
+    await result.runSecondary?.()
+
+    expect(h.calls.itunes).not.toContain("SeenRecently")
+    expect(h.calls.itunes).not.toContain("Dismissed")
+    const written = cacheRows().filter((r) => r.artist_data).map((r) => r.artist_data.name)
+    expect(written.sort()).toEqual(["Fresh0", "Fresh1"])
+  })
+})
+
 // ── 5. Degraded resolver: unresolved names drop out without throwing ──────────
 describe("buildRecommendations — degraded resolver", () => {
   it("degrades to fewer artists when names fail to resolve (no throw)", async () => {
