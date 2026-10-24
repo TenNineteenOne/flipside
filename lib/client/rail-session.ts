@@ -1,4 +1,4 @@
-import type { RailKey, RailPayload } from "@/lib/recommendation/explore-rail-payloads"
+import type { RailKey, RailPayload } from "@/lib/cards/explore-rail-payloads"
 
 // ---------------------------------------------------------------------------
 // Poll-swap helpers — pure functions, exported for unit tests

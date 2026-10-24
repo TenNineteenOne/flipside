@@ -41,7 +41,7 @@ import { config as loadEnv } from 'dotenv'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { Artist } from '../lib/music-provider'
 import { artistNameKey } from '../lib/artist-identity/name-key'
-import { createMbLimiter } from '../lib/music-provider/musicbrainz'
+import { createMbLimiter } from '../lib/artist-identity/musicbrainz'
 
 // ── Config ───────────────────────────────────────────────────────────────
 
@@ -205,7 +205,7 @@ async function readAllRows<T>(
 
 // ── MusicBrainz ──────────────────────────────────────────────────────────
 
-// The shared MusicBrainz 1 req/s limiter (lib/music-provider/musicbrainz.ts).
+// The shared MusicBrainz 1 req/s limiter (lib/artist-identity/musicbrainz.ts).
 const mbLimiter = createMbLimiter()
 
 async function mbFetch(pathAndQuery: string): Promise<unknown | null> {

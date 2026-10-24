@@ -3,7 +3,7 @@ import type { ArtistWithTracks } from "@/lib/music-provider/types"
 /**
  * The one shape every artist card renders from (Feed, Explore). Built
  * server-side by the assemblers (`lib/cards/feed-cards.ts` for Feed,
- * `lib/recommendation/explore-rail-payloads.ts` for Explore) and passed
+ * `lib/cards/explore-rail-payloads.ts` for Explore) and passed
  * straight to `ArtistCard` — no client-side adapters.
  *
  * `id` is the internal artist UUID (= recommendation_cache.artist_id /

@@ -9,7 +9,7 @@ import {
   incLastfmUser,
   snapshotCalls,
   resetCalls,
-} from "./api-call-counter"
+} from "@/lib/metrics/api-call-counter"
 
 /** The all-zero Last.fm sub-snapshot, for concise expectations. */
 const ZERO_LASTFM = { similar: 0, getInfo: 0, tag: 0, search: 0, user: 0, total: 0 }

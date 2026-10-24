@@ -3,7 +3,7 @@ import { createServiceClient } from "@/lib/supabase/server"
 import { createWindowLimiter } from "@/lib/rate-limiter"
 import { isValidSpotifyId } from "@/lib/spotify-ids"
 import { ArtistIdentity } from "@/lib/artist-identity"
-import { resolveArtistExternalIds } from "@/lib/music-provider/musicbrainz"
+import { resolveArtistExternalIds } from "@/lib/artist-identity/musicbrainz"
 import { withAuthedCsrfRoute } from "@/lib/api/with-authed-route"
 
 // Resolution is low-volume (only when a user SELECTS a Last.fm-only suggestion,

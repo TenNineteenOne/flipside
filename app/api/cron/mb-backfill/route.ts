@@ -20,7 +20,7 @@
  * 🔴 AUTH: /api/cron/* is excluded from middleware auth, so the CRON_SECRET
  * check in withCronRoute (lib/api/with-authed-route.ts) is the ONLY gate.
  */
-import { resolveArtistExternalIds, searchArtistMbid } from "@/lib/music-provider/musicbrainz"
+import { resolveArtistExternalIds, searchArtistMbid } from "@/lib/artist-identity/musicbrainz"
 import { apiError } from "@/lib/errors"
 import { withCronRoute } from "@/lib/api/with-authed-route"
 

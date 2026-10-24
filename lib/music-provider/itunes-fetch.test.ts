@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest"
 import { itunesFetch } from "./itunes"
-import { resetCalls, snapshotCalls } from "@/lib/recommendation/api-call-counter"
+import { resetCalls, snapshotCalls } from "@/lib/metrics/api-call-counter"
 
 const URL_ = "https://itunes.apple.com/search?term=x"
 

@@ -17,7 +17,7 @@ import { apiError } from "@/lib/errors"
 import { withAuthedRoute } from "@/lib/api/with-authed-route"
 import { loadExploreInput } from "@/lib/explore-input"
 import { buildExploreRails } from "@/lib/recommendation/explore-engine"
-import { assembleRailPayloads } from "@/lib/recommendation/explore-rail-payloads"
+import { assembleRailPayloads } from "@/lib/cards/explore-rail-payloads"
 
 export const GET = withAuthedRoute(async ({ userId, supabase }): Promise<Response> => {
   const input = await loadExploreInput(supabase, userId)

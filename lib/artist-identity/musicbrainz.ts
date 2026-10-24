@@ -14,7 +14,7 @@
  * This module is pure parsing + the limiter + a thin fetch; the worker that
  * drives it over many artists is a separate slice (#159).
  */
-import { artistNameKey } from "@/lib/artist-identity/name-key"
+import { artistNameKey } from "./name-key"
 
 const MB_BASE = "https://musicbrainz.org/ws/2"
 const USER_AGENT = "Flipside/0.1.0 ( fluxuate27@gmail.com )"

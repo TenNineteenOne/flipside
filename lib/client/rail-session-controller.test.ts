@@ -8,7 +8,7 @@ import {
   POLL_INTERVAL_MS,
   type RailSessionDeps,
 } from "./rail-session"
-import type { RailKey, RailPayload } from "@/lib/recommendation/explore-rail-payloads"
+import type { RailKey, RailPayload } from "@/lib/cards/explore-rail-payloads"
 import type { CardArtist } from "@/lib/cards/card-artist"
 
 function artist(id: string): CardArtist {

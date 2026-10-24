@@ -16,7 +16,7 @@ import type { Artist, Track } from '@/lib/music-provider/types'
 import { createServiceClient } from '@/lib/supabase/server'
 import { PlayableCandidates, livePlayablePorts } from './playable-candidates'
 import { PreviewStore, resetPersisted, snapshotPersisted } from './preview-store'
-import { resetCalls, snapshotCalls } from './api-call-counter'
+import { resetCalls, snapshotCalls } from '@/lib/metrics/api-call-counter'
 import {
   allLeavesWithAnchor,
   genreToAnchor,

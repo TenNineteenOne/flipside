@@ -19,7 +19,7 @@ import {
   incLastfmSimilar,
   incLastfmTag,
   incLastfmUser,
-} from "@/lib/recommendation/api-call-counter"
+} from "@/lib/metrics/api-call-counter"
 import {
   cachedArtistEnrichment,
   cachedArtistSearch,

@@ -18,7 +18,7 @@ import {
   buildApplicabilityCtx,
   ensureWeeklyChallenge,
 } from "@/lib/challenges/engine"
-import { assembleRailPayloads } from "@/lib/recommendation/explore-rail-payloads"
+import { assembleRailPayloads } from "@/lib/cards/explore-rail-payloads"
 import ExploreLoading from "./loading"
 
 export default async function ExplorePage() {

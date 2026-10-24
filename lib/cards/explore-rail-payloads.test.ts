@@ -9,8 +9,8 @@ import {
   RAIL_TITLES,
   WILDCARDS_FALLBACK_META,
 } from "./explore-rail-payloads"
-import type { RailResult } from "./explore-engine"
-import type { HydratedRailArtist } from "./explore-engine"
+import type { RailResult } from "@/lib/recommendation/explore-engine"
+import type { HydratedRailArtist } from "@/lib/recommendation/explore-engine"
 import type { Track } from "@/lib/music-provider/types"
 
 // ---------------------------------------------------------------------------

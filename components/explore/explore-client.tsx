@@ -5,7 +5,7 @@ import { RefreshCw, Sparkles, Moon, Mountain, Flame, Dices, type LucideIcon } fr
 import { AnimatePresence } from "framer-motion"
 import { ChallengeCard } from "@/components/explore/challenge-card"
 import { ExploreArtistRow } from "@/components/explore/explore-artist-row"
-import type { RailKey, RailPayload } from "@/lib/recommendation/explore-rail-payloads"
+import type { RailKey, RailPayload } from "@/lib/cards/explore-rail-payloads"
 import type { MusicPlatform } from "@/lib/music-links"
 import { Ambient } from "@/components/visual/ambient"
 import { useArtistFeedback } from "@/lib/hooks/use-artist-feedback"

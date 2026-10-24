@@ -11,7 +11,7 @@
  */
 import type { RateLimited } from "./index"
 import type { Artist, Track } from "./types"
-import { incSpotify } from "@/lib/recommendation/api-call-counter"
+import { incSpotify } from "@/lib/metrics/api-call-counter"
 import { PreviewSourceBreaker } from "@/lib/preview-source-breaker"
 
 /**

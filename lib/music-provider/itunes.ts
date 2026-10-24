@@ -1,6 +1,6 @@
 import type { Track } from "./types"
 import { runItunes } from "@/lib/itunes-limit"
-import { incItunes } from "@/lib/recommendation/api-call-counter"
+import { incItunes } from "@/lib/metrics/api-call-counter"
 import { PreviewSourceBreaker } from "@/lib/preview-source-breaker"
 
 const ITUNES_BASE = "https://itunes.apple.com/search"

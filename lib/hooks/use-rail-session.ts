@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } fr
 import { toast } from "sonner"
 import { createRailSession, type RailSession, type RailSessionState } from "@/lib/client/rail-session"
 import { useAdventurousMode } from "@/lib/hooks/use-adventurous-mode"
-import type { RailPayload } from "@/lib/recommendation/explore-rail-payloads"
+import type { RailPayload } from "@/lib/cards/explore-rail-payloads"
 
 export interface UseRailSessionOpts {
   initialRails: RailPayload[]

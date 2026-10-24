@@ -11,7 +11,7 @@ import {
   type CacheStore,
   type LastfmDeps,
 } from "./index"
-import { resetCalls, snapshotCalls } from "@/lib/recommendation/api-call-counter"
+import { resetCalls, snapshotCalls } from "@/lib/metrics/api-call-counter"
 
 function memStore(): CacheStore & { rows: Map<string, { payload: unknown; fetched_at: string }> } {
   const rows = new Map<string, { payload: unknown; fetched_at: string }>()
