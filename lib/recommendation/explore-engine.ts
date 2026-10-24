@@ -24,7 +24,7 @@ import {
   listAnchors,
 } from '@/lib/genre/adjacency'
 import { UNDERGROUND_MAX_POPULARITY } from './types'
-import { loadExclusions, type Exclusions } from './exclusions'
+import { loadExclusions, readAllRows, readFeedbackIds, type Exclusions } from './exclusions'
 import { cacheWindowSeed, seededShuffle, sampleLikes } from './window'
 import { applyCrossRailClusterCap, primaryGenreOf } from './cluster-cap'
 
@@ -112,19 +112,24 @@ export function rankByCurve(
 /**
  * The listened (with an artist_id) and thumbs-down reads, issued ONCE and
  * shared by `loadUserContext` (genre anchors, wildcard seeds) and
- * `loadExclusions` (#175 E4b). `Promise.resolve` settles each query builder
- * once, so awaiting it twice never re-sends the request. Explore's exclusion
+ * `loadExclusions` (#175 E4b). Each is a single promise (the paged read starts
+ * once), so awaiting it twice never re-sends the requests. Explore's exclusion
  * policy (any play, ids only) needs no null-id rows, so the not-null filter
  * changes nothing there.
  */
 function loadSharedRows(supabase: SupabaseClient, userId: string) {
   return {
-    listened: Promise.resolve(
-      supabase.from('listened_artists').select('artist_id, play_count').eq('user_id', userId).not('artist_id', 'is', null),
+    // Paged past the 1000-row cap (#175 F16); each is one promise, awaited twice.
+    listened: readAllRows((from, to) =>
+      supabase
+        .from('listened_artists')
+        .select('artist_id, play_count')
+        .eq('user_id', userId)
+        .not('artist_id', 'is', null)
+        .order('id', { ascending: true })
+        .range(from, to),
     ),
-    thumbsDown: Promise.resolve(
-      supabase.from('feedback').select('artist_id').eq('user_id', userId).eq('signal', 'thumbs_down').is('deleted_at', null),
-    ),
+    thumbsDown: readFeedbackIds(supabase, userId, 'thumbs_down'),
   }
 }
 
@@ -133,7 +138,7 @@ async function loadUserContext(supabase: SupabaseClient, userId: string, shared:
     supabase.from('users').select('id, selected_genres, adventurous').eq('id', userId).maybeSingle(),
     supabase.from('seed_artists').select('artist_id, name').eq('user_id', userId),
     shared.listened,
-    supabase.from('feedback').select('artist_id').eq('user_id', userId).eq('signal', 'thumbs_up').is('deleted_at', null),
+    readFeedbackIds(supabase, userId, 'thumbs_up'),
     shared.thumbsDown,
   ])
 

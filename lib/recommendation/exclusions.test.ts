@@ -74,6 +74,24 @@ describe("loadExclusions — feedback + cooldown", () => {
   })
 })
 
+describe("loadExclusions — reads past the 1000-row cap (#175 F16)", () => {
+  it("pages listened, thumbs-down and cooldown reads until a short page", async () => {
+    const many = (n: number, mk: (i: number) => Record<string, unknown>) =>
+      Array.from({ length: n }, (_, i) => ({ id: `r${String(i).padStart(5, "0")}`, user_id: "u1", ...mk(i) }))
+    const fake = createFakeSupabase({
+      listened_artists: many(2500, (i) => ({ artist_id: `l${i}`, play_count: 99 })),
+      feedback: many(1200, (i) => ({ artist_id: `d${i}`, signal: "thumbs_down", deleted_at: null })),
+      recommendation_cache: many(1001, (i) => ({ artist_id: `s${i}`, seen_at: null, skip_at: daysAgo(30) })),
+    })
+    const ex = await loadExclusions(fake.client, "u1", FEED, NOW)
+    expect(ex.reason(a("l2499"))).toBe("listened")
+    expect(ex.reason(a("d1199"))).toBe("thumbs_down")
+    expect(ex.reason(a("s1000"))).toBe("cooldown")
+    // 2500 rows -> pages of 1000, 1000, 500.
+    expect(fake.queries.filter((q) => q.table === "listened_artists")).toHaveLength(3)
+  })
+})
+
 describe("isEligibleForCooldown", () => {
   const now = new Date("2026-04-20T00:00:00Z")
 

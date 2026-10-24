@@ -194,6 +194,32 @@ describe("buildExploreRails — listened + feedback exclusion", () => {
     expect(selects("listened_artists")).toBe(1)
     expect(selects("feedback")).toBe(2)
   }, 20000)
+
+  it("#175 F16: excludes a listened artist past row 1000, still reading the shared rows once (paged)", async () => {
+    const badId = "22222222-0000-4000-8000-000000000002"
+    const filler = Array.from({ length: 1100 }, (_, i) => ({
+      id: `r${String(i).padStart(5, "0")}`,
+      user_id: "u1",
+      artist_id: `44444444-0000-4000-8000-${String(i).padStart(12, "0")}`,
+      play_count: 1,
+    }))
+    seed(
+      withLikedSeed({
+        artists: [artistsRow(badId, "BadArtist")],
+        listened_artists: [...filler, { id: "r99999", user_id: "u1", artist_id: badId, play_count: 1 }],
+      }),
+    )
+    lf.similars.set("LikedArtist", [
+      { name: "BadArtist", match: 0.2 },
+      { name: "GoodArtist", match: 0.1 },
+    ])
+
+    const { rails } = await buildExploreRails(baseInput())
+    expect(new Set(allRailIds(rails)).has(badId)).toBe(false)
+    // 1101 rows → two pages, issued once and shared by user-context + exclusions.
+    const selects = (t: string) => h.fake.queries.filter((q) => q.table === t && q.op === "select").length
+    expect(selects("listened_artists")).toBe(2)
+  }, 20000)
 })
 
 // ── 6c. Per-rail failure isolation ────────────────────────────────────────────

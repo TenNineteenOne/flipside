@@ -8,7 +8,7 @@ import {
   type ScoredArtist,
   type SoftenedFilters,
 } from './types'
-import { isEligibleForCooldown, loadExclusions } from './exclusions'
+import { isEligibleForCooldown, loadExclusions, readFeedbackIds } from './exclusions'
 import { PlayableCandidates, livePlayablePorts } from './playable-candidates'
 import { normalizedIncludes, normalizeGenre } from '@/lib/genre/normalize'
 import { adjacentGenres } from '@/lib/genre/adjacency'
@@ -61,13 +61,9 @@ async function gatherSeedContext(
     // Fetch the full thumbs-up set; sampling is applied below via
     // sampleLikes() so the Feed draws the same 10 random likes Explore uses
     // within a cache window. See docs/prd-diversity-overhaul.md (M1).
-    supabase
-      .from('feedback')
-      .select('artist_id')
-      .eq('user_id', userId)
-      .eq('signal', 'thumbs_up')
-      .is('deleted_at', null)
-      .then(({ data }) => (data ?? []).map((r) => r.artist_id as string).filter(Boolean)),
+    readFeedbackIds(supabase, userId, 'thumbs_up').then(({ data }) =>
+      data.map((r) => r.artist_id).filter(Boolean)
+    ),
 
     supabase
       .from('users')
