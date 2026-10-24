@@ -3,6 +3,10 @@ import {
   normalizeUsername,
   parseSignInMode,
   resolveSignIn,
+  signInErrorMessage,
+  SIGN_IN_CODES,
+  SIGN_IN_GENERIC_ERROR,
+  USERNAME_RULE,
   type UserStore,
 } from "../auth-sign-in"
 
@@ -74,5 +78,28 @@ describe("normalizeUsername", () => {
     expect(normalizeUsername("emoji🙂")).toBeNull()
     expect(normalizeUsername(undefined)).toBeNull()
     expect(normalizeUsername(42)).toBeNull()
+  })
+})
+
+describe("#175 Y3 sign-in copy + mode", () => {
+  it("existing-mode failure hints at New account without revealing whether the name exists", () => {
+    expect(signInErrorMessage("existing", SIGN_IN_CODES.failed)).toBe("Couldn’t sign in with that username. New here? Choose New account.")
+    expect(signInErrorMessage("new", SIGN_IN_CODES.failed)).toBe(SIGN_IN_GENERIC_ERROR)
+    expect(signInErrorMessage("new", SIGN_IN_CODES.taken)).toMatch(/taken/)
+    expect(signInErrorMessage("existing", SIGN_IN_CODES.rateLimited)).toMatch(/Too many attempts/)
+    expect(signInErrorMessage("existing", undefined)).toBe(SIGN_IN_GENERIC_ERROR)
+  })
+
+  it("the ?mode= query parses with the same never-create default", () => {
+    expect(parseSignInMode("new")).toBe("new")
+    expect(parseSignInMode(["new"])).toBe("existing")
+    expect(parseSignInMode(undefined)).toBe("existing")
+  })
+
+  it("the rule copy matches what normalizeUsername accepts", () => {
+    expect(USERNAME_RULE).toBe("2–30 characters: letters, numbers, dot, underscore, hyphen")
+    expect(normalizeUsername("a")).toBeNull()
+    expect(normalizeUsername("a.b_c-1")).toBe("a.b_c-1")
+    expect(normalizeUsername("x".repeat(31))).toBeNull()
   })
 })

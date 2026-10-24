@@ -34,7 +34,7 @@ export default async function ExplorePage() {
     exploreAccessToken(),
   ])
 
-  if (!user) redirect("/sign-in")
+  if (!user) redirect("/sign-in?reauth=1") // stale JWT, row gone: the proxy lets this through
 
   const musicPlatform: MusicPlatform = isMusicPlatform(user.preferred_music_platform)
     ? user.preferred_music_platform

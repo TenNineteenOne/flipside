@@ -20,6 +20,23 @@ export function parseSignInMode(raw: unknown): SignInMode {
   return raw === "new" ? "new" : "existing"
 }
 
+/** The username rule, shown before submit in New mode (mirrors normalizeUsername). */
+export const USERNAME_RULE = "2–30 characters: letters, numbers, dot, underscore, hyphen"
+
+export const SIGN_IN_GENERIC_ERROR = "Something went wrong. Please try again."
+
+/**
+ * Client copy for a failed sign-in. "Existing" failures never reveal whether
+ * the username exists (same text either way) but point at New account. "New"
+ * must say a name is taken; that's the accepted trade-off (#175 D3).
+ */
+export function signInErrorMessage(mode: SignInMode, code: string | undefined): string {
+  if (code === SIGN_IN_CODES.rateLimited) return "Too many attempts. Wait a minute and try again."
+  if (code === SIGN_IN_CODES.taken) return "That username is taken. Pick another, or choose Existing account if it’s yours."
+  if (code === SIGN_IN_CODES.failed && mode === "existing") return "Couldn’t sign in with that username. New here? Choose New account."
+  return SIGN_IN_GENERIC_ERROR
+}
+
 /** Trim + lowercase; null unless 2–30 chars of `[a-z0-9._-]`. */
 export function normalizeUsername(raw: unknown): string | null {
   if (typeof raw !== "string") return null

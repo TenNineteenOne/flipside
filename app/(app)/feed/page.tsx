@@ -21,7 +21,7 @@ export default async function FeedPage() {
   // Look up user row (request-scoped cache — layout.tsx already fetched this)
   const user = await getCachedUser(userId)
   if (!user) {
-    redirect("/sign-in")
+    redirect("/sign-in?reauth=1") // stale JWT, row gone: the proxy lets this through
   }
 
   // Fetch cached recommendations, re-filtered by the user's current

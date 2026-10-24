@@ -17,7 +17,7 @@ export default async function SavedPage() {
 
   const user = await getCachedUser(userId)
 
-  if (!user) redirect("/sign-in")
+  if (!user) redirect("/sign-in?reauth=1") // stale JWT, row gone: the proxy lets this through
 
   const hasLastfm = Boolean(user.lastfm_username)
   const musicPlatform: MusicPlatform = isMusicPlatform(user.preferred_music_platform)
