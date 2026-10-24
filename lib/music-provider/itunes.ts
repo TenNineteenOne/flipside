@@ -44,27 +44,37 @@ export type ItunesFetchResult<T> =
  *
  * Breaker bookkeeping: 2xx records success; 403/429 and network/parse failures
  * record failure; other HTTP errors (e.g. 404/500) are neutral.
+ *
+ * `gateOnly: true` (the /api/open link resolver) keeps the concurrency gate but
+ * bypasses the preview breaker and the call counter — user link clicks must
+ * not trip the breaker that blanks previews, nor inflate `[gen-timing]`
+ * counters, and an open breaker must not stop a link lookup (baseline parity).
  */
-export async function itunesFetch<T>(url: string, timeoutMs = 8000): Promise<ItunesFetchResult<T>> {
-  if (!itunesBreaker.canRequest()) return { ok: false, reason: "breaker" }
+export async function itunesFetch<T>(
+  url: string,
+  timeoutMs = 8000,
+  { gateOnly = false }: { gateOnly?: boolean } = {},
+): Promise<ItunesFetchResult<T>> {
+  const breaker = gateOnly ? null : itunesBreaker
+  if (breaker && !breaker.canRequest()) return { ok: false, reason: "breaker" }
   return runItunes(async (): Promise<ItunesFetchResult<T>> => {
-    incItunes()
+    if (!gateOnly) incItunes()
     let res: Response
     try {
       res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) })
     } catch (error) {
-      itunesBreaker.recordFailure()
+      breaker?.recordFailure()
       return { ok: false, reason: "network", error }
     }
     if (!res.ok) {
-      if (res.status === 403 || res.status === 429) itunesBreaker.recordFailure()
+      if (res.status === 403 || res.status === 429) breaker?.recordFailure()
       return { ok: false, reason: "http", status: res.status }
     }
-    itunesBreaker.recordSuccess()
+    breaker?.recordSuccess()
     try {
       return { ok: true, data: (await res.json()) as T }
     } catch (error) {
-      itunesBreaker.recordFailure()
+      breaker?.recordFailure()
       return { ok: false, reason: "parse", error }
     }
   })
