@@ -9,6 +9,7 @@ import { GenrePicker } from "@/components/onboarding/genre-picker"
 import { ArtistSearch, type SpotifyArtist } from "@/components/onboarding/artist-search"
 import { PlatformPicker } from "@/components/settings/platform-picker"
 import { DEFAULT_MUSIC_PLATFORM, type MusicPlatform } from "@/lib/music-links"
+import { postGenerate } from "@/lib/client/feed-generation"
 
 const ARTIST_CAP = 200
 const GENRE_CAP = 200
@@ -112,10 +113,11 @@ export default function OnboardingPage() {
       // Kick off recommendation generation now (non-awaited) so it overlaps with
       // navigation and is underway/done by the time the feed mounts. Cooldown-
       // safe: if the feed's loader also fires, it gets a 429 and polls (see
-      // classifyGenerateResponse / RecommendationsLoader). If seeds were saved
-      // above (non-skip path) the engine sees them on this run; on skip it
+      // loaderAction / RecommendationsLoader). If seeds were saved above
+      // (non-skip path) the engine sees them on this run; on skip it
       // cold-starts, which is the intended "show something" behavior.
-      void fetch("/api/recommendations/generate", { method: "POST" }).catch(() => {})
+      // postGenerate never throws; the result is deliberately ignored.
+      void postGenerate()
 
       router.push("/feed")
     } catch {

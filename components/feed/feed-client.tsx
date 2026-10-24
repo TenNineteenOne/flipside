@@ -1,8 +1,7 @@
 "use client"
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { memo, useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-import { toast } from "sonner"
 import { ArtistCard } from "@/components/feed/artist-card"
 import { ColdStartBanner } from "@/components/feed/cold-start-banner"
 import { Ambient } from "@/components/visual/ambient"
@@ -10,6 +9,7 @@ import type { MusicPlatform } from "@/lib/music-links"
 import { useArtistFeedback } from "@/lib/hooks/use-artist-feedback"
 import { useArtistSaves } from "@/lib/hooks/use-artist-saves"
 import { useFeedFill } from "@/lib/hooks/use-feed-fill"
+import { useFeedGeneration } from "@/lib/hooks/use-feed-generation"
 import type { CardArtist } from "@/lib/cards/card-artist"
 
 interface FeedClientProps {
@@ -45,11 +45,10 @@ const TOPUP_THRESHOLD = 8
 // ---------------------------------------------------------------------------
 
 export function FeedClient({ recommendations, musicPlatform, signalCount }: FeedClientProps) {
-  const [isGenerating, setIsGenerating] = useState(false)
-  // Synchronous guard: React state updates are batched, so a hair-trigger
-  // double-click can slip past `disabled={isGenerating}` and fire two requests
-  // before the first render commits. The ref blocks the second call instantly.
-  const isGeneratingRef = useRef(false)
+  // Generate requests (mount top-up + Load more) share one re-entry guard, so
+  // a user's own "Load more" can't collide with the background top-up.
+  const generation = useFeedGeneration()
+  const isGenerating = generation.generating
   const router = useRouter()
 
   // Stateful rec list: seeded from the prop on mount. The append-poller below
@@ -75,36 +74,25 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
   })
 
   // Background top-up: when the unseen queue is low, generate more on mount and
-  // surface the results via router.refresh() once done. We reflect the in-flight
-  // run on the button (shared isGeneratingRef + isGenerating state) so a user's
-  // own "Load more" can't silently collide with it or trip the 30s-cooldown
-  // error path — and the refresh means their implicit "I want more" intent is
-  // fulfilled. Cooldown-safe: a 429 just no-ops, then refresh shows whatever's
-  // available. router.refresh() is a soft refresh (preserves scroll/state), and
-  // it doesn't remount this client component, so the mount-only effect won't loop.
+  // surface the results via router.refresh() once done. The in-flight run is
+  // reflected on the button (shared generation guard). Silent: a 429 / failure
+  // just no-ops, then refresh shows whatever's available. router.refresh() is a
+  // soft refresh (preserves scroll/state), and it doesn't remount this client
+  // component, so the mount-only effect won't loop.
   useEffect(() => {
     if (recommendations.length >= TOPUP_THRESHOLD) return
-    if (isGeneratingRef.current) return
-    isGeneratingRef.current = true
-    setIsGenerating(true)
     let cancelled = false
-    fetch("/api/recommendations/generate", { method: "POST" })
-      .then((res) => {
-        // New cards land server-side; restart the poller so they surface
-        // without waiting for a hard navigation (router.refresh() alone
-        // doesn't re-arm an already-stopped/never-started poller).
-        if (!cancelled && res.ok) restartFeedFill()
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (cancelled) return
-        isGeneratingRef.current = false
-        setIsGenerating(false)
-        router.refresh()
-      })
+    void generation.requestMore({ silent: true }).then((r) => {
+      if (r === null || cancelled) return
+      // New cards land server-side; restart the poller so they surface
+      // without waiting for a hard navigation (router.refresh() alone
+      // doesn't re-arm an already-stopped/never-started poller).
+      if (r.ok) restartFeedFill()
+      router.refresh()
+    })
     return () => {
       cancelled = true
-      isGeneratingRef.current = false
+      generation.release()
     }
     // Mount-only: deliberately not re-firing on recommendations identity change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -135,41 +123,17 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
   )
 
   async function handleGenerateMore() {
-    if (isGeneratingRef.current) return
-    isGeneratingRef.current = true
-    setIsGenerating(true)
-    try {
-      const res = await fetch("/api/recommendations/generate", { method: "POST" })
-      if (res.status === 401) {
-        window.location.href = "/sign-in"
-        return
-      }
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error((data as { error?: string }).error ?? "Generation failed")
-      }
-      const data = (await res.json().catch(() => ({}))) as {
-        softenedFilters?: { playThreshold?: boolean; coldStart?: boolean }
-      }
-      if (data.softenedFilters) {
-        const s = data.softenedFilters
-        const bits: string[] = []
-        if (s.coldStart) bits.push("falling back to starter picks")
-        else if (s.playThreshold) bits.push("loosening the familiarity cap")
-        if (bits.length > 0) {
-          toast(`Widened the search for this batch — ${bits.join(" and ")}.`)
-        }
-      }
+    const r = await generation.requestMore()
+    if (r === null) return
+    if (r.kind === "unauthorized") {
+      window.location.href = "/sign-in"
+      return
+    }
+    if (r.ok) {
       // New cards land server-side; restart the poller so they surface
-      // without waiting for a hard navigation (router.refresh() alone
-      // doesn't re-arm an already-stopped/never-started poller).
+      // without waiting for a hard navigation.
       restartFeedFill()
       router.refresh()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Generation failed")
-    } finally {
-      isGeneratingRef.current = false
-      setIsGenerating(false)
     }
   }
 
