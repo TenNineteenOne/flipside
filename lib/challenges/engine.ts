@@ -96,13 +96,20 @@ export function getISOWeekStart(now: Date = new Date()): string {
   return d.toISOString().slice(0, 10)
 }
 
+const ANY_THUMB_TEMPLATES = new Set(["thumbs_up_any", "thumbs_up_deep"])
+
 /**
  * This week's template: one of the applicable templates, picked by a hash of
  * the week start (#175). Varies week to week, stable within a week (reloads,
  * and the feedback route's pre-RPC ensure, pick the same one).
  */
 export function pickWeeklyTemplate(ctx: ChallengeApplicabilityCtx, weekStart: string): ChallengeTemplate {
-  const applicable = CHALLENGE_TEMPLATES.filter((t) => t.applicableFor(ctx))
+  // ponytail: rotate only templates the RPC credits honestly. rpc_increment_challenge_progress
+  // matches the `thumbs_up_` prefix, so rail-specific templates would count ANY thumbs-up.
+  // Re-enable them once the RPC receives rail context (needs a migration).
+  const applicable = CHALLENGE_TEMPLATES.filter(
+    (t) => ANY_THUMB_TEMPLATES.has(t.key) && t.applicableFor(ctx),
+  )
   if (applicable.length === 0) return CHALLENGE_TEMPLATES[0]
   let h = 0
   for (const ch of weekStart) h = (Math.imul(h, 31) + ch.charCodeAt(0)) >>> 0

@@ -171,6 +171,7 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
       .delete()
       .eq("user_id", user.id)
       .is("seen_at", null)
+      .is("skip_at", null) // never wipe a dismissal
     if (wipeErr) {
       console.error("[generate] replace wipe failed", wipeErr.message)
     }

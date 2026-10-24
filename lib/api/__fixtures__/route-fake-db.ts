@@ -28,6 +28,7 @@ export function createRouteFakeDb(initial: Record<string, Row[]> = {}, fail: Rec
     let one: "single" | "maybe" | null = null
     let limitN: number | null = null
     let rangeFT: [number, number] | null = null
+    let orderBy: { col: string; asc: boolean } | null = null
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const cmp = (c: string, a: any, b: any) =>
       c === "eq" ? String(a) === String(b) : a == null ? false : c === "lt" ? a < b : c === "lte" ? a <= b : c === "gt" ? a > b : c === "gte" ? a >= b : false
@@ -37,6 +38,10 @@ export function createRouteFakeDb(initial: Record<string, Row[]> = {}, fail: Rec
       if (fail[table] === op || fail[table] === "*") return { data: null, error: { message: `fake ${table} ${op} failed` }, count: null }
       const t = (tables[table] ??= [])
       let rows = t.filter((r) => filters.every((f) => f(r)))
+      if (orderBy) {
+        const { col, asc } = orderBy
+        rows = [...rows].sort((a, b) => (a[col] === b[col] ? 0 : (a[col] < b[col]) === asc ? -1 : 1))
+      }
       if (limitN != null) rows = rows.slice(0, limitN)
       if (rangeFT) rows = rows.slice(rangeFT[0], rangeFT[1] + 1)
       let out: Row[] = rows
@@ -84,7 +89,7 @@ export function createRouteFakeDb(initial: Record<string, Row[]> = {}, fail: Rec
         filters.push((r) => terms.some((f) => f(r)))
         return q
       },
-      order() { return q },
+      order(col: string, o?: { ascending?: boolean }) { orderBy = { col, asc: o?.ascending !== false }; return q },
       limit(n: number) { limitN = n; return q },
       maybeSingle() { one = "maybe"; return q },
       single() { one = "single"; return q },

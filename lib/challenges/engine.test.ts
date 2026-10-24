@@ -16,7 +16,8 @@ describe("pickWeeklyTemplate (#175 rotation)", () => {
     const week = weekOf(0)
     expect(pickWeeklyTemplate(ctx, week)).toBe(pickWeeklyTemplate(ctx, week))
     const keys = new Set(Array.from({ length: 12 }, (_, i) => pickWeeklyTemplate(ctx, weekOf(i)).key))
-    expect(keys.size).toBeGreaterThan(2)
+    // Only the any-thumb templates rotate until the RPC gets rail context.
+    expect(keys).toEqual(new Set(["thumbs_up_any", "thumbs_up_deep"]))
   })
 
   it("only picks applicable templates", () => {

@@ -29,10 +29,10 @@ export interface StatsData {
  */
 export async function loadStats(supabase: SupabaseClient, userId: string): Promise<StatsData> {
   const ids = (table: "recommendation_cache" | "feedback" | "saves", seenOnly = false) =>
-    readAllRows<{ artist_id: string }>((from, to) => {
-      let q = supabase.from(table).select("artist_id").eq("user_id", userId)
+    readAllRows<{ id: string; artist_id: string }>(() => {
+      let q = supabase.from(table).select("id, artist_id").eq("user_id", userId)
       if (seenOnly) q = q.not("seen_at", "is", null)
-      return q.order("id", { ascending: true }).range(from, to)
+      return q
     })
 
   const [seenRows, feedbackRows, likesResult, dislikesResult, likedRows, savedRows] = await Promise.all([
@@ -50,15 +50,13 @@ export async function loadStats(supabase: SupabaseClient, userId: string): Promi
       .eq("user_id", userId)
       .eq("signal", "thumbs_down")
       .is("deleted_at", null),
-    readAllRows<{ artist_id: string }>((from, to) =>
+    readAllRows<{ id: string; artist_id: string }>(() =>
       supabase
         .from("feedback")
-        .select("artist_id")
+        .select("id, artist_id")
         .eq("user_id", userId)
         .eq("signal", "thumbs_up")
-        .is("deleted_at", null)
-        .order("id", { ascending: true })
-        .range(from, to),
+        .is("deleted_at", null),
     ),
     ids("saves"),
   ])
