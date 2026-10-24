@@ -1,19 +1,7 @@
-import { describe, it, expect } from "vitest"
-import {
-  fetchArtistEnrichment,
-  fetchEnrichmentRaw,
-  mergeEnrichment,
-  scaleListeners,
-  filterGenreTags,
-} from "./lastfm-lookup"
+import { describe, it, expect, vi, afterEach } from "vitest"
+import { buildEnrichArtist, lastfmResolve, mergeEnrichment, pickBestMatch } from "./lastfm-lookup"
 import type { Artist } from "@/lib/music-provider/types"
-
-function makeFetch(response: unknown, ok = true): typeof fetch {
-  return (async () => ({
-    ok,
-    json: async () => response,
-  })) as unknown as typeof fetch
-}
+import type { ArtistEnrichment, Lastfm, LastfmArtistCandidate } from "@/lib/lastfm"
 
 function artist(overrides: Partial<Artist> = {}): Artist {
   return {
@@ -26,49 +14,38 @@ function artist(overrides: Partial<Artist> = {}): Artist {
   }
 }
 
-describe("scaleListeners", () => {
-  it("returns 0 for zero or negative listener counts", () => {
-    expect(scaleListeners(0)).toBe(0)
-    expect(scaleListeners(-100)).toBe(0)
+/** Fake Last.fm adapter: only getInfo matters here. */
+function fakeLastfm(info: ArtistEnrichment | null, hasKey = true) {
+  const artistInfo = vi.fn(async () => info)
+  const lf = { hasKey: () => hasKey, artistInfo } as unknown as Lastfm
+  return { lf, artistInfo }
+}
+
+describe("lastfmResolve (Spotify-free name resolver)", () => {
+  it("returns [] when getInfo is null (genuine artist-not-found)", async () => {
+    expect(await lastfmResolve("No Such Artist", fakeLastfm(null).lf)).toEqual([])
   })
 
-  it("calibrates 10K ≈ 30, 1M ≈ 60, 100M ≈ 90", () => {
-    expect(scaleListeners(10_000)).toBeGreaterThanOrEqual(28)
-    expect(scaleListeners(10_000)).toBeLessThanOrEqual(32)
-    expect(scaleListeners(1_000_000)).toBeGreaterThanOrEqual(58)
-    expect(scaleListeners(1_000_000)).toBeLessThanOrEqual(62)
-    expect(scaleListeners(100_000_000)).toBeGreaterThanOrEqual(88)
-    expect(scaleListeners(100_000_000)).toBeLessThanOrEqual(92)
-  })
-
-  it("clamps to 0-100 range", () => {
-    expect(scaleListeners(1e15)).toBeLessThanOrEqual(100)
-    expect(scaleListeners(1)).toBeGreaterThanOrEqual(0)
-  })
-})
-
-describe("filterGenreTags", () => {
-  it("drops non-genre noise tags", () => {
-    expect(filterGenreTags(["seen live", "rock", "favorite"])).toEqual(["rock"])
-  })
-
-  it("drops era-style tags like 90s, 2000s, pre-1970s", () => {
-    expect(filterGenreTags(["90s", "2000s", "pre-1970s", "indie rock"])).toEqual([
-      "indie rock",
+  it("returns a single enriched Artist with spotifyId=null, empty id, null imageUrl", async () => {
+    const out = await lastfmResolve("Beach House", fakeLastfm({ genres: ["indie rock", "dream pop"], popularity: 55 }).lf)
+    expect(out).toEqual([
+      { id: "", spotifyId: null, name: "Beach House", genres: ["indie rock", "dream pop"], popularity: 55, imageUrl: null },
     ])
   })
 
-  it("lowercases, trims, and de-spaces consistently", () => {
-    expect(filterGenreTags(["  Rock  ", "Indie Pop"])).toEqual(["rock", "indie pop"])
+  it("returns [] when the Last.fm key is missing (no lookup)", async () => {
+    const { lf, artistInfo } = fakeLastfm({ genres: [], popularity: 1 }, false)
+    expect(await lastfmResolve("Anything", lf)).toEqual([])
+    expect(artistInfo).not.toHaveBeenCalled()
   })
+})
 
-  it("caps at 5 tags", () => {
-    const tags = ["a", "b", "c", "d", "e", "f", "g"]
-    expect(filterGenreTags(tags)).toHaveLength(5)
-  })
-
-  it("drops empty strings", () => {
-    expect(filterGenreTags(["", "  ", "rock"])).toEqual(["rock"])
+describe("buildEnrichArtist", () => {
+  it("is undefined without a key (callers feature-detect) and getInfo otherwise", async () => {
+    expect(buildEnrichArtist(fakeLastfm(null, false).lf)).toBeUndefined()
+    const { lf, artistInfo } = fakeLastfm({ genres: ["jazz"], popularity: 4 })
+    expect(await buildEnrichArtist(lf)!("X")).toEqual({ genres: ["jazz"], popularity: 4 })
+    expect(artistInfo).toHaveBeenCalledWith("X")
   })
 })
 
@@ -100,77 +77,57 @@ describe("mergeEnrichment", () => {
   })
 })
 
-describe("fetchArtistEnrichment", () => {
-  it("returns null when API key is missing", async () => {
-    // Tests the public contract (returns null before touching the cache).
-    const result = await fetchArtistEnrichment("Khruangbin", "", makeFetch({}))
-    expect(result).toBeNull()
-  })
-})
+describe("pickBestMatch (similarity guard)", () => {
+  const cand = (name: string): LastfmArtistCandidate => ({ name, mbid: null, listeners: 0, imageUrl: null })
 
-describe("fetchEnrichmentRaw", () => {
-  it("throws when HTTP response is non-OK", async () => {
-    await expect(fetchEnrichmentRaw("X", "key", makeFetch({}, false))).rejects.toThrow()
+  afterEach(() => vi.restoreAllMocks())
+
+  it("returns null for no candidates", () => {
+    expect(pickBestMatch("anything", [])).toBeNull()
   })
 
-  it("returns null on Last.fm error 6 (artist not found)", async () => {
-    const result = await fetchEnrichmentRaw(
-      "X",
-      "key",
-      makeFetch({ error: 6, message: "Artist not found" })
-    )
-    expect(result).toBeNull()
+  it("prefers an exact normalized match even when it is not ranked first", () => {
+    const m = pickBestMatch("M", [cand("Madonna"), cand("M")])
+    expect(m).not.toBeNull()
+    expect(m!.name).toBe("M")
+    expect(m!.similarity).toBe(1)
   })
 
-  it("throws on non-6 Last.fm error codes (transient/service errors)", async () => {
-    await expect(
-      fetchEnrichmentRaw("X", "key", makeFetch({ error: 29 }))
-    ).rejects.toThrow()
+  it("treats exact match as case- and punctuation-insensitive", () => {
+    // normalizeArtistName lowercases + strips punctuation, so "ACDC" == "AC/DC".
+    const m = pickBestMatch("acdc", [cand("AC/DC")])
+    expect(m?.name).toBe("AC/DC")
+    expect(m?.similarity).toBe(1)
   })
 
-  it("parses listeners and tags into enrichment", async () => {
-    const result = await fetchEnrichmentRaw(
-      "Khruangbin",
-      "key",
-      makeFetch({
-        artist: {
-          stats: { listeners: "500000" },
-          tags: {
-            tag: [
-              { name: "Psychedelic Rock" },
-              { name: "Indie Rock" },
-              { name: "seen live" },
-            ],
-          },
-        },
-      })
-    )
-    expect(result).not.toBeNull()
-    expect(result!.genres).toEqual(["psychedelic rock", "indie rock"])
-    expect(result!.popularity).toBeGreaterThan(40)
-    expect(result!.popularity).toBeLessThan(70)
+  it("handles short names via the exact path (similarity scores 0 for len < 2)", () => {
+    expect(pickBestMatch("U2", [cand("U2")])?.name).toBe("U2")
+    expect(pickBestMatch("M", [cand("M")])?.name).toBe("M")
   })
 
-  it("throws on fetch throw (timeout, network — transient)", async () => {
-    const brokenFetch = (async () => {
-      throw new Error("timeout")
-    }) as unknown as typeof fetch
-    await expect(fetchEnrichmentRaw("X", "key", brokenFetch)).rejects.toThrow()
+  it("accepts the best fuzzy candidate when it clears the threshold", () => {
+    // One-char deletion → very high Dice similarity, no exact match.
+    const m = pickBestMatch("Boards of Canada", [cand("Boards of Canda"), cand("Aphex Twin")])
+    expect(m).not.toBeNull()
+    expect(m!.name).toBe("Boards of Canda")
+    expect(m!.similarity).toBeGreaterThanOrEqual(0.8)
+    expect(m!.similarity).toBeLessThan(1)
   })
 
-  it("handles missing stats/tags gracefully", async () => {
-    const result = await fetchEnrichmentRaw(
-      "X",
-      "key",
-      makeFetch({ artist: {} })
-    )
-    expect(result).not.toBeNull()
-    expect(result!.genres).toEqual([])
-    expect(result!.popularity).toBe(0)
+  it("rejects (and logs) when nothing clears the threshold, so the cache isn't poisoned", () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {})
+    const m = pickBestMatch("Boards of Canada", [cand("Aphex Twin"), cand("Autechre")])
+    expect(m).toBeNull()
+    expect(spy).toHaveBeenCalledOnce()
+    expect(spy.mock.calls[0][0]).toContain("no confident match")
   })
 
-  it("returns null when API key is missing", async () => {
-    const result = await fetchEnrichmentRaw("X", "", makeFetch({}))
-    expect(result).toBeNull()
+  it("picks the highest-similarity candidate among several above threshold", () => {
+    const m = pickBestMatch("Radiohead", [cand("Radiohed"), cand("Radioheadd")])
+    expect(m).not.toBeNull()
+    // Both are close; the guard must return whichever scores highest, not just the first.
+    const sims = ["Radiohed", "Radioheadd"].map((n) => m!.name === n)
+    expect(sims.some(Boolean)).toBe(true)
+    expect(m!.similarity).toBeGreaterThanOrEqual(0.8)
   })
 })

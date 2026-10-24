@@ -1,7 +1,7 @@
 /**
  * Generic outbound-call limiter: optional token bucket (sustained rate),
  * optional minimum interval between dispatches, and a concurrency cap.
- * Process-wide instances are built per upstream (`lib/lastfm-limit.ts`,
+ * Process-wide instances are built per upstream (`lib/lastfm/limit.ts`,
  * `lib/itunes-limit.ts`). Wrap ONLY the network fetch so cache hits pay nothing.
  */
 

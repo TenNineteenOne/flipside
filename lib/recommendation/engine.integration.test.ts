@@ -13,31 +13,25 @@
  *
  * Seams used (no production file is modified):
  *   - vi.mock('@/lib/supabase/server')      → in-memory FakeSupabase
- *   - vi.mock('@/lib/music-provider/provider') → getSimilarArtistNames stub
- *   - vi.mock('@/lib/lastfm-cache')         → enrichment + tag stubs (bypasses
- *                                             the network AND the lastfm_cache
- *                                             table in one seam)
+ *   - vi.mock('@/lib/lastfm')               → the in-memory fake Last.fm adapter
+ *                                             (similar / getInfo / tags; no
+ *                                             network, no lastfm_cache table)
  *   - vi.mock('@/lib/music-provider/itunes') → searchTracksByArtist stub
- *   - vi.stubEnv('LASTFM_API_KEY', …)        → unlocks lastfmResolve/enrich
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { createFakeSupabase, type Tables, type Row } from "./__fixtures__/fake-supabase"
 import { isValidArtistId } from "@/lib/spotify-ids"
 import type { Track } from "@/lib/music-provider/types"
-import type { SimilarArtistRef } from "@/lib/music-provider"
+import { lastfm, type SimilarArtistRef } from "@/lib/lastfm"
+import type { FakeLastfm } from "./__fixtures__/fake-lastfm"
 
 // ── Hoisted mock control surface ──────────────────────────────────────────────
 const h = vi.hoisted(() => ({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   fake: { client: null as any, tables: {} as Tables },
-  similars: new Map<string, SimilarArtistRef[]>(),
-  /** name_lower → enrichment (or null for genuine "not found"). Default: enriched. */
-  enrichment: new Map<string, { genres: string[]; popularity: number } | null>(),
   /** artist name → iTunes tracks (or null). Default: one playable track. */
   itunes: new Map<string, Track[] | null>(),
-  calls: { enrich: [] as string[], similar: [] as string[], itunes: [] as string[] },
-  /** tag → Last.fm tag.gettopartists names (default: none). */
-  tagArtists: new Map<string, string[]>(),
+  calls: { itunes: [] as string[] },
 }))
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -45,25 +39,8 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient: () => h.fake.client,
 }))
 
-vi.mock("@/lib/music-provider/provider", () => ({
-  musicProvider: {
-    getSimilarArtistNames: async (name: string): Promise<SimilarArtistRef[]> => {
-      h.calls.similar.push(name)
-      return h.similars.get(name) ?? []
-    },
-    getArtistTopTracks: async (): Promise<Track[]> => [],
-  },
-}))
-
-vi.mock("@/lib/lastfm-cache", () => ({
-  cachedArtistEnrichment: async (name: string) => {
-    h.calls.enrich.push(name)
-    const key = name.toLowerCase()
-    return h.enrichment.has(key) ? h.enrichment.get(key)! : { genres: ["indie"], popularity: 30 }
-  },
-  cachedTagArtistNames: async (tag: string) => h.tagArtists.get(tag) ?? [],
-  cachedSimilarArtistNames: async () => [],
-  cachedArtistSearch: async () => [],
+vi.mock("@/lib/lastfm", async () => ({
+  lastfm: (await import("./__fixtures__/fake-lastfm")).createFakeLastfm(),
 }))
 
 vi.mock("@/lib/music-provider/itunes", () => ({
@@ -72,6 +49,10 @@ vi.mock("@/lib/music-provider/itunes", () => ({
     return h.itunes.has(name) ? h.itunes.get(name)! : [track(name)]
   },
 }))
+
+const lf = lastfm as FakeLastfm
+/** tag → Last.fm tag.gettopartists names (default: none). */
+const tagArtists = new Map<string, string[]>()
 
 // Imported AFTER mocks are registered.
 import { buildRecommendations } from "./engine"
@@ -136,19 +117,16 @@ function cacheRows(): Row[] {
 }
 
 beforeEach(() => {
-  vi.stubEnv("LASTFM_API_KEY", "test-key")
-  h.similars.clear()
-  h.enrichment.clear()
+  lf.reset()
+  lf.tags = (tag) => tagArtists.get(tag) ?? []
+  tagArtists.clear()
   h.itunes.clear()
-  h.tagArtists.clear()
-  h.calls.enrich = []
-  h.calls.similar = []
   h.calls.itunes = []
 })
 
 afterEach(() => {
   vi.unstubAllEnvs()
-  // Restore any vi.spyOn (e.g. the cold-start test's getSimilarArtistNames spy,
+  // Restore any vi.spyOn (e.g. the cold-start test's similarArtists spy,
   // the run-2 test's Math.random spy) so it can't leak into a later test's
   // module mocks. Mirrors the explore integration suite's afterEach.
   vi.restoreAllMocks()
@@ -166,7 +144,7 @@ describe("buildRecommendations — happy path", () => {
       ],
     })
     for (const s of ["SeedA", "SeedB", "SeedC"]) {
-      h.similars.set(s, similarRefs(similarNames.map((n) => `${s}-${n}`)))
+      lf.similars.set(s, similarRefs(similarNames.map((n) => `${s}-${n}`)))
     }
 
     const result = await buildRecommendations(baseInput())
@@ -211,13 +189,13 @@ describe("buildRecommendations — warm name cache", () => {
       }),
     )
     seed({ seed_artists: [{ user_id: "u1", name: "SeedA" }], artists: warmRows })
-    h.similars.set("SeedA", similarRefs(warmNames))
+    lf.similars.set("SeedA", similarRefs(warmNames))
 
     await buildRecommendations(baseInput())
 
     // No live enrichment (== searchArtists) fired for any warm/cached name.
     for (const n of warmNames) {
-      expect(h.calls.enrich).not.toContain(n)
+      expect(lf.calls.enrich).not.toContain(n)
     }
 
     // Fill-only write policy: the pre-seeded rich metadata survived the run —
@@ -240,13 +218,13 @@ describe("buildRecommendations — ambiguous cached name (doorway rule)", () => 
         artistsRow("bbbbbbbb-0000-4000-8000-000000000002", "Ambig"),
       ],
     })
-    h.similars.set("SeedA", similarRefs(["Ambig"]))
+    lf.similars.set("SeedA", similarRefs(["Ambig"]))
 
     await buildRecommendations(baseInput())
 
     // Doorway rule: the ambiguous name was resolved fresh (enrichment fired for
     // it) rather than silently served from one of the two duplicate rows.
-    expect(h.calls.enrich).toContain("Ambig")
+    expect(lf.calls.enrich).toContain("Ambig")
   })
 })
 
@@ -271,7 +249,7 @@ describe("buildRecommendations — listened + feedback filtering", () => {
         { user_id: "u1", artist_id: downId, signal: "thumbs_down", deleted_at: null },
       ],
     })
-    h.similars.set("SeedA", similarRefs(["ListenedHeavy", "Disliked", "Keeper"]))
+    lf.similars.set("SeedA", similarRefs(["ListenedHeavy", "Disliked", "Keeper"]))
 
     const result = await buildRecommendations(baseInput())
     await result.finish()
@@ -297,7 +275,7 @@ describe("buildRecommendations — cooldown excluded before confirm", () => {
         { user_id: "u1", artist_id: skipId, seen_at: null, skip_at: new Date().toISOString() },
       ],
     })
-    h.similars.set("SeedA", similarRefs(["SeenRecently", "Dismissed", "Fresh0", "Fresh1"]))
+    lf.similars.set("SeedA", similarRefs(["SeenRecently", "Dismissed", "Fresh0", "Fresh1"]))
 
     const result = await buildRecommendations(baseInput())
     await result.finish()
@@ -314,12 +292,12 @@ describe("buildRecommendations — degraded resolver", () => {
   it("degrades to fewer artists when names fail to resolve (no throw)", async () => {
     const names = Array.from({ length: 6 }, (_, i) => `Cand${i}`)
     seed({ seed_artists: [{ user_id: "u1", name: "SeedA" }] })
-    h.similars.set("SeedA", similarRefs(names))
+    lf.similars.set("SeedA", similarRefs(names))
     // Half the names come back as genuine "not found" (null enrichment) — the
     // resolve layer skips them and the pipeline continues rather than throwing.
-    h.enrichment.set("cand0", null)
-    h.enrichment.set("cand1", null)
-    h.enrichment.set("cand2", null)
+    lf.enrichment.set("cand0", null)
+    lf.enrichment.set("cand1", null)
+    lf.enrichment.set("cand2", null)
 
     const result = await buildRecommendations(baseInput())
     await result.finish()
@@ -340,16 +318,15 @@ describe("buildRecommendations — cold start", () => {
     seed({}) // no seed_artists, no genres, no likes
     // Whatever cold-start seeds are chosen, give them all similars so the
     // fallback path produces a non-empty pool.
-    const { musicProvider } = await import("@/lib/music-provider/provider")
-    vi.spyOn(musicProvider, "getSimilarArtistNames").mockImplementation(async (seedName: string) => {
-      h.calls.similar.push(seedName)
+    vi.spyOn(lf, "similarArtists").mockImplementation(async (seedName: string) => {
+      lf.calls.similar.push(seedName)
       return similarRefs([`${seedName}-x`, `${seedName}-y`, `${seedName}-z`])
     })
 
     const result = await buildRecommendations(baseInput())
     await result.finish()
 
-    expect(h.calls.similar.length).toBeGreaterThan(0) // cold-start seeds fanned out
+    expect(lf.calls.similar.length).toBeGreaterThan(0) // cold-start seeds fanned out
     expect(cacheRows().length).toBeGreaterThan(0)
     for (const row of cacheRows()) {
       expect(isValidArtistId(row.artist_id)).toBe(true)
@@ -365,7 +342,7 @@ function tracksCacheRows(): Row[] {
 describe("buildRecommendations — persist confirms (#162)", () => {
   it("finish() writes positive rows with source + fetched_at", async () => {
     seed({ seed_artists: [{ user_id: "u1", name: "SeedA" }] })
-    h.similars.set("SeedA", similarRefs(Array.from({ length: 6 }, (_, i) => `Pos${i}`)))
+    lf.similars.set("SeedA", similarRefs(Array.from({ length: 6 }, (_, i) => `Pos${i}`)))
 
     const result = await buildRecommendations(baseInput())
     await result.finish()
@@ -385,7 +362,7 @@ describe("buildRecommendations — persist confirms (#162)", () => {
     const rand = vi.spyOn(Math, "random").mockReturnValue(0.42)
     const names = Array.from({ length: 10 }, (_, i) => `Warm${i}`)
     seed({ seed_artists: [{ user_id: "u1", name: "SeedA" }] })
-    h.similars.set("SeedA", similarRefs(names))
+    lf.similars.set("SeedA", similarRefs(names))
 
     // Run 1 (cold): confirms via iTunes, persists positives to artist_tracks_cache.
     const r1 = await buildRecommendations(baseInput())
@@ -415,11 +392,11 @@ describe("buildRecommendations — adjacent bleed is rehydrated (#175 D2)", () =
         { artist_id: bleedId, tracks: [track("cached-bleed")], source: "itunes", fetched_at: new Date().toISOString() },
       ],
     })
-    h.similars.set("SeedA", similarRefs(Array.from({ length: 10 }, (_, i) => `Base${i}`)))
+    lf.similars.set("SeedA", similarRefs(Array.from({ length: 10 }, (_, i) => `Base${i}`)))
     // Every adjacent tag of indie-rock yields the bleed artist; the user's own
     // genre (used for genre seeds) yields nothing.
     const { adjacentGenres } = await import("@/lib/genre/adjacency")
-    for (const tag of adjacentGenres("indie-rock", "close")) h.tagArtists.set(tag, ["BleedArtist"])
+    for (const tag of adjacentGenres("indie-rock", "close")) tagArtists.set(tag, ["BleedArtist"])
 
     const result = await buildRecommendations(baseInput())
     await result.finish()

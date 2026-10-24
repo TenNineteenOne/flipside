@@ -1,6 +1,5 @@
-import { musicProvider } from '@/lib/music-provider/provider'
 import type { Artist } from '@/lib/music-provider/types'
-import type { SimilarArtistRef } from '@/lib/music-provider'
+import { lastfm, type SimilarArtistRef } from '@/lib/lastfm'
 import { createServiceClient } from '@/lib/supabase/server'
 import {
   UNDERGROUND_MAX_POPULARITY,
@@ -10,20 +9,13 @@ import {
   type SoftenedFilters,
 } from './types'
 import { isEligibleForCooldown, loadExclusions } from './exclusions'
-import { PlayableCandidates, type PlayablePorts } from './playable-candidates'
-import { searchTracksByArtist } from '@/lib/music-provider/itunes'
-import { fetchArtistEnrichment, buildEnrichArtist } from './enrich-artist'
+import { PlayableCandidates, livePlayablePorts } from './playable-candidates'
 import { normalizedIncludes, normalizeGenre } from '@/lib/genre/normalize'
 import { adjacentGenres } from '@/lib/genre/adjacency'
-import { cachedTagArtistNames } from '@/lib/lastfm-cache'
-import { runLastfm } from '@/lib/lastfm-limit'
-import { incLastfmTag } from '@/lib/recommendation/api-call-counter'
 import coldStartData from '@/data/cold-start-seeds.json'
 import { sampleLikes, LIKE_SAMPLE_SIZE } from './window'
 import { applyClusterCap } from './cluster-cap'
 import { splitResolvePools } from './resolve-pools'
-
-const LASTFM_BASE = "https://ws.audioscrobbler.com/2.0"
 
 /** Adventurous soft penalty applied to candidates whose Spotify popularity > 50. */
 const ADVENTUROUS_MAINSTREAM_PENALTY = 0.08
@@ -49,120 +41,6 @@ const RESOLVE_DELAY_MS = 125
  */
 export function tierMultiplier(popularity: number, curveK = 0.95): number {
   return Math.pow(curveK, popularity)
-}
-
-// Lower than the 8s used elsewhere: fetchTagArtistNames may fire TWO sequential
-// calls (as-is, then a spaced retry on empty), so a high per-call ceiling stacks
-// into a ~16s worst case. Valid tag.gettopartists responses return in <1s; 5s is
-// ample headroom while bounding the retry path's cold-start cost.
-const LASTFM_TIMEOUT_MS = 5000
-
-/**
- * Single live `tag.gettopartists` call. Returns the names ([] when the tag
- * genuinely has no top artists), and THROWS on a transient failure (non-2xx,
- * timeout, network error) so the cache layer can tell "genuinely empty"
- * (negative-cacheable) from "fetch failed" (must not be cached). Gated by the
- * shared Last.fm concurrency cap.
- */
-async function fetchTagArtistNamesRaw(tag: string, limit: number, apiKey: string): Promise<string[]> {
-  return runLastfm(async () => {
-    const url =
-      `${LASTFM_BASE}/?method=tag.gettopartists` +
-      `&tag=${encodeURIComponent(tag)}&api_key=${apiKey}&format=json&limit=${limit}`
-    incLastfmTag()
-    const res = await fetch(url, { signal: AbortSignal.timeout(LASTFM_TIMEOUT_MS) })
-    if (!res.ok) throw new Error(`lastfm tag.gettopartists ${res.status}`)
-    const data = await res.json()
-    const artists = data?.topartists?.artist
-    if (!Array.isArray(artists)) return []
-    return (artists as Array<{ name: string }>).map((a) => a.name).filter(Boolean)
-  })
-}
-
-/**
- * Fetch top-artist names for a Last.fm tag, tolerating the two tag spellings
- * we deal in. Genre-tree leaf tags are hyphenated slugs (e.g.
- * "dutch-black-metal") but Last.fm indexes most multi-word tags space-
- * separated ("dutch black metal" → 267 artists vs 0 for the hyphenated form).
- * We try the tag as-is FIRST so canonical hyphenated tags (trip-hop, post-punk)
- * keep their better-curated results, and only retry empties with spaces.
- *
- * Throws on transient failure of the primary spelling (so it isn't cached); a
- * genuinely-empty primary result is returned as [] when the spaced retry also
- * comes back empty or fails.
- */
-export async function fetchTagArtistNames(tag: string, limit: number): Promise<string[]> {
-  const apiKey = process.env.LASTFM_API_KEY
-  if (!apiKey) return []
-  const names = await fetchTagArtistNamesRaw(tag, limit, apiKey)
-  if (names.length > 0 || !tag.includes('-')) return names
-  try {
-    return await fetchTagArtistNamesRaw(tag.replace(/-/g, ' '), limit, apiKey)
-  } catch {
-    return names // primary spelling was genuinely empty; don't let a retry blip mask that
-  }
-}
-
-/**
- * Fetch artist names for a Last.fm genre tag. `limit` controls how many top
- * artists to request; default 20 matches the engine's main-pool seeding. The
- * Explore "Left-field" rail passes `limit=30` so it can sample from positions
- * 10-30 (deeper cuts). Return order matches Last.fm's rank order.
- *
- * Results pass through a shared 7-day Supabase cache (lastfm_cache) so cold
- * Explore loads don't redo the same tag.gettopartists call every time.
- */
-export async function getTagArtistNames(tag: string, limit = 20): Promise<string[]> {
-  return cachedTagArtistNames(tag, limit, fetchTagArtistNames)
-}
-
-/**
- * Spotify-free name resolver (Stage 2, #157). The `searchArtists` dep for
- * resolve-candidates, wired to Last.fm artist.getInfo instead of Spotify
- * /search so generation no longer dies when the shared Spotify key is
- * 429-throttled.
- *
- * getInfo is the SAME cached call `buildEnrichArtist` uses (7-day, negative-
- * cached via cachedArtistEnrichment), so this adds ~0 extra network: on a hit
- * it's free; on a miss the enrich dep would have fired it anyway. Returns a
- * single Artist carrying the genres/popularity from getInfo, or [] for a
- * genuine "artist not found" (null enrichment).
- *
- *  - `id: ""` — the canonical uuid is minted downstream (resolve-candidates
- *    calls mintArtist → ArtistIdentity.ensure by name, then re-keys `.id`).
- *  - `spotifyId: null` — Last.fm has no Spotify id; the #159 worker backfills it.
- *  - `imageUrl: null` — getInfo's image is a placeholder; Stage 3 fills real art.
- *
- * Never rate-limits (the shared Last.fm limiter handles pacing), so it returns
- * Artist[] and never a RateLimited sentinel.
- */
-export function lastfmResolve(name: string): Promise<Artist[]> {
-  const apiKey = process.env.LASTFM_API_KEY
-  if (!apiKey) return Promise.resolve([])
-  return fetchArtistEnrichment(name, apiKey).then((e) =>
-    e
-      ? [{ id: "", spotifyId: null, name, genres: e.genres, popularity: e.popularity, imageUrl: null }]
-      : [],
-  )
-}
-
-/**
- * The live outbound ports for the PlayableCandidates pipeline, shared by Feed
- * and Explore: Last.fm getInfo as the doorway lookup + enrichment, iTunes-first
- * previews (free, no auth, near-universal 30s clips), Spotify top-tracks as the
- * fallback — keyed on the SPOTIFY id, never the uuid identity; no id (Last.fm-
- * only artist) or no token → no-op to [].
- */
-export function livePlayablePorts(accessToken: string): PlayablePorts {
-  return {
-    searchArtists: (name) => lastfmResolve(name),
-    enrichArtist: buildEnrichArtist(),
-    searchItunes: (name) => searchTracksByArtist(name, 'US', 5),
-    getSpotifyTopTracks: (spotifyId) =>
-      accessToken && spotifyId
-        ? musicProvider.getArtistTopTracks(accessToken, spotifyId, 5, 'US').catch(() => [])
-        : Promise.resolve([]),
-  }
 }
 
 // ── Seed gathering ──────────────────────────────────────────────────────────
@@ -222,7 +100,9 @@ async function gatherSeedContext(
     // Genre seed names from Last.fm tags (each cached).
     topGenres.length === 0
       ? Promise.resolve([] as string[])
-      : Promise.all(topGenres.map(getTagArtistNames)).then((batches) => batches.flat()),
+      : // ponytail: `.map` passes the INDEX as the limit (0..4) — pre-#175
+      // behavior kept byte-identical; flagged on #175 for an owner decision.
+      Promise.all(topGenres.map((tag, i) => lastfm.tagTopArtists(tag, i))).then((batches) => batches.flat()),
   ])
 
   names.push(...thumbsUpNames)
@@ -580,12 +460,12 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
   const firstHop = await Promise.all(
     capSeedNames.map(async (name) => ({
       seed: name,
-      items: await musicProvider.getSimilarArtistNames(name),
+      items: await lastfm.similarArtists(name),
     }))
   )
 
   const lfmRefResults = deepDiscovery
-    ? await runDeepHop(firstHop, (n) => musicProvider.getSimilarArtistNames(n))
+    ? await runDeepHop(firstHop, (n) => lastfm.similarArtists(n))
     : firstHop
 
   const lfmResults = lfmRefResults.map(({ seed, items }) => ({
@@ -749,7 +629,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
       adaptiveBroadening: widenSeedCap,
       popularityCurve,
       undergroundMode,
-      fetchTagArtists: getTagArtistNames,
+      fetchTagArtists: (tag) => lastfm.tagTopArtists(tag),
       // Same pipeline: gated by the exclusions AND rehydrated, so a bleed
       // pick with a cached preview (or a fresh negative) never re-hits iTunes.
       resolveArtists: async (names) =>

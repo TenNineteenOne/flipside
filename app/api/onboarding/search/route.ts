@@ -3,7 +3,7 @@ import { safeAuth } from "@/lib/auth"
 import { apiError, apiUnauthorized } from "@/lib/errors"
 import { createServiceClient } from "@/lib/supabase/server"
 import { createWindowLimiter } from "@/lib/rate-limiter"
-import { searchArtistCandidates } from "@/lib/music-provider/lastfm-search"
+import { lastfm } from "@/lib/lastfm"
 import { normalizeArtistName } from "@/lib/history/name-utils"
 import type { Artist } from "@/lib/music-provider/types"
 
@@ -121,7 +121,7 @@ export async function GET(req: NextRequest) {
   //    volume low and prefers our enriched cache rows.
   if (suggestions.length < CACHE_SUFFICIENT) {
     const seen = new Set(suggestions.map((s) => normalizeArtistName(s.name)))
-    const candidates = await searchArtistCandidates(trimmed)
+    const candidates = await lastfm.searchArtists(trimmed)
     for (const c of candidates) {
       if (suggestions.length >= RESULT_CAP) break
       const norm = normalizeArtistName(c.name)

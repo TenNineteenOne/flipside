@@ -11,11 +11,10 @@
  * `seen_at` cooldown applies globally across both tabs.
  */
 
-import { musicProvider } from '@/lib/music-provider/provider'
+import { lastfm } from '@/lib/lastfm'
 import type { Artist, Track } from '@/lib/music-provider/types'
 import { createServiceClient } from '@/lib/supabase/server'
-import { getTagArtistNames, livePlayablePorts } from './engine'
-import { PlayableCandidates } from './playable-candidates'
+import { PlayableCandidates, livePlayablePorts } from './playable-candidates'
 import { PreviewStore, resetPersisted, snapshotPersisted } from './preview-store'
 import { resetCalls, snapshotCalls } from './api-call-counter'
 import {
@@ -283,7 +282,7 @@ export async function adjacentRail(
   }
 
   const perTagResults = await Promise.all(
-    chosenTags.map((tag) => getTagArtistNames(tag, perTag + 2)),
+    chosenTags.map((tag) => lastfm.tagTopArtists(tag, perTag + 2)),
   )
   const tagToNames = new Map<string, string[]>()
   for (let i = 0; i < chosenTags.length; i++) {
@@ -420,7 +419,7 @@ export async function outsideRail(
   const tagList = [...anchorToTag.entries()]
   const perAnchor = await Promise.all(
     tagList.map(async ([, tag]) => {
-      const names = await getTagArtistNames(tag, OUTSIDE_MID_END)
+      const names = await lastfm.tagTopArtists(tag, OUTSIDE_MID_END)
       return names.slice(OUTSIDE_MID_START, OUTSIDE_MID_END)
     }),
   )
@@ -555,7 +554,7 @@ export async function wildcardsRail(
   // Fetch similars per seed in parallel. Tail-bias = sort ascending by match.
   const perSeed = await Promise.all(
     seedPairs.map(async (seed) => {
-      const similars = await musicProvider.getSimilarArtistNames(seed.name)
+      const similars = await lastfm.similarArtists(seed.name)
       const tailFirst = [...similars].sort((a, b) => a.match - b.match).slice(0, perSeedCount)
       return { seed, tailFirst }
     }),
@@ -704,7 +703,7 @@ export async function leftfieldRail(
     // top-N list so the rail still produces picks.
     const perTag = await Promise.all(
       sampled.map(async (leaf) => {
-        const names = await getTagArtistNames(leaf.lastfmTag, LEFTFIELD_MID_END)
+        const names = await lastfm.tagTopArtists(leaf.lastfmTag, LEFTFIELD_MID_END)
         if (names.length === 0) return null
         const mid = names.slice(LEFTFIELD_MID_START, LEFTFIELD_MID_END)
         const slice = mid.length > 0 ? mid : names

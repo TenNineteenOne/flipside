@@ -11,7 +11,7 @@ import {
 } from "./engine"
 import type { ScoredArtist } from "./types"
 import type { Artist, ArtistWithTracks } from "@/lib/music-provider/types"
-import type { SimilarArtistRef } from "@/lib/music-provider"
+import type { SimilarArtistRef } from "@/lib/lastfm"
 
 function artist(id: string, name: string, popularity = 50, genre = "rock"): ArtistWithTracks {
   return { id, name, genres: [genre], imageUrl: null, popularity, topTracks: [] }

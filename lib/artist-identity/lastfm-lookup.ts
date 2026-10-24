@@ -1,129 +1,15 @@
 /**
- * Last.fm artist.getInfo — the doorway's default lookup adapter (confirms a
- * name exists + supplies genres/popularity). Lives with the identity module so
- * lib/history and lib/recommendation both depend on it rather than on each
- * other. `lib/recommendation/enrich-artist.ts` re-exports it.
+ * The doorway's Last.fm lookup adapters, built on the Last.fm adapter
+ * (`@/lib/lastfm`, which owns the HTTP, key, cache, gate and counters):
+ * getInfo as the name resolver / enrichment, and the artist.search match guard.
  */
 import type { Artist } from "@/lib/music-provider/types"
-import { incLastfmGetInfo } from "@/lib/recommendation/api-call-counter"
-import { cachedArtistEnrichment } from "@/lib/lastfm-cache"
-import { runLastfm } from "@/lib/lastfm-limit"
-
-export interface ArtistEnrichment {
-  genres: string[]
-  popularity: number
-}
-
-const LASTFM_BASE = "https://ws.audioscrobbler.com/2.0"
-const TIMEOUT_MS = 6000
-const MAX_GENRES = 5
-
-// Tags Last.fm returns that are not genres. Conservative — only obvious noise.
-export const LASTFM_TAG_BLOCKLIST = new Set<string>([
-  "seen live", "favorite", "favourite", "favorites", "favourites",
-  "favorite artists", "favourite artists", "love at first listen",
-  "awesome", "amazing", "beautiful", "check out", "albums i own",
-  "female vocalists", "male vocalists", "female vocalist", "male vocalist",
-  "spotify", "mp3", "bandcamp", "youtube",
-  "my music", "my favorites", "good", "great", "best",
-])
-export const LASTFM_TAG_ERA_RE = /^(pre-)?\d{2,4}s$/
+import { lastfm as defaultLastfm, type ArtistEnrichment, type Lastfm, type LastfmArtistCandidate } from "@/lib/lastfm"
+import { artistNameKey, stringSimilarity, SIMILARITY_THRESHOLD } from "./name-key"
 
 /**
- * Log-scale Last.fm listener counts into Spotify's 0-100 popularity range.
- * Calibration: 10K listeners ≈ 30, 1M ≈ 60, 100M ≈ 90.
- */
-export function scaleListeners(listeners: number): number {
-  if (listeners <= 0) return 0
-  const scaled = Math.round((Math.log10(listeners + 1) - 2) * 15)
-  return Math.min(100, Math.max(0, scaled))
-}
-
-export function filterGenreTags(raw: string[]): string[] {
-  return raw
-    .map((t) => t.toLowerCase().trim())
-    .filter((t) => t.length > 0)
-    .filter((t) => !LASTFM_TAG_BLOCKLIST.has(t))
-    .filter((t) => !LASTFM_TAG_ERA_RE.test(t))
-    .slice(0, MAX_GENRES)
-}
-
-/**
- * Raw Last.fm artist.getInfo fetch+parse. THROWS on transient failures
- * (non-2xx HTTP, network error, non-6 Last.fm error codes) so the caller
- * (cachedArtistEnrichment) can distinguish transient-not-cacheable from
- * genuine-not-found-cacheable. Returns null ONLY for a genuine "artist not
- * found" (Last.fm error 6 or missing artist field) — that null IS safe to
- * negative-cache.
- *
- * incLastfmGetInfo() fires here (live-call only) — cache hits never reach
- * this function.
- */
-export async function fetchEnrichmentRaw(
-  name: string,
-  apiKey: string,
-  fetchImpl: typeof fetch = fetch,
-): Promise<ArtistEnrichment | null> {
-  if (!apiKey) return null
-  const url = new URL(LASTFM_BASE)
-  url.searchParams.set("method", "artist.getInfo")
-  url.searchParams.set("artist", name)
-  url.searchParams.set("autocorrect", "1")
-  url.searchParams.set("api_key", apiKey)
-  url.searchParams.set("format", "json")
-
-  incLastfmGetInfo()
-  // Route through the shared Last.fm limiter so getInfo — the dominant live
-  // endpoint — shares the same rate + concurrency ceiling as tag/similar
-  // (#150). Counted above: a live call is being made regardless of when the
-  // limiter admits it.
-  const res = await runLastfm(() =>
-    fetchImpl(url.toString(), { signal: AbortSignal.timeout(TIMEOUT_MS) }),
-  )
-  if (!res.ok) throw new Error(`lastfm getInfo ${res.status}`)
-
-  const data = (await res.json()) as {
-    artist?: {
-      stats?: { listeners?: string }
-      tags?: { tag?: Array<{ name?: string }> }
-    }
-    error?: number
-  }
-
-  if (data.error) {
-    if (data.error === 6) return null  // Genuine "artist not found" — negative-cacheable.
-    throw new Error(`lastfm getInfo error ${data.error}`)  // Transient/service error — do not cache.
-  }
-  if (!data.artist) return null  // Treat as not-found (negative-cacheable).
-
-  const listeners = parseInt(data.artist.stats?.listeners ?? "0", 10) || 0
-  const rawTags = (data.artist.tags?.tag ?? []).map((t) => t.name ?? "")
-  return {
-    genres: filterGenreTags(rawTags),
-    popularity: scaleListeners(listeners),
-  }
-}
-
-/**
- * Fetch genre + popularity for an artist via Last.fm artist.getInfo.
- * Cache-backed (read-through via cachedArtistEnrichment). The raw fetch
- * is injected so tests can stub it. Returns null on any failure — the
- * resolve pipeline treats this as "unenriched" and continues.
- */
-export async function fetchArtistEnrichment(
-  name: string,
-  apiKey: string,
-  fetchImpl: typeof fetch = fetch,
-): Promise<ArtistEnrichment | null> {
-  if (!apiKey) return null
-  return cachedArtistEnrichment(name, () => fetchEnrichmentRaw(name, apiKey, fetchImpl))
-}
-
-/**
- * Merge enrichment data into a Spotify artist record. Non-destructive:
- * only fills fields that Spotify left empty. Preserves Spotify's values
- * if they're already populated (forward-compatible if Spotify ever starts
- * returning real genres on /search).
+ * Merge enrichment data into an artist record. Non-destructive: only fills
+ * fields left empty (forward-compatible if a source ever returns real genres).
  */
 export function mergeEnrichment(artist: Artist, enrichment: ArtistEnrichment | null): Artist {
   if (!enrichment) return artist
@@ -135,13 +21,86 @@ export function mergeEnrichment(artist: Artist, enrichment: ArtistEnrichment | n
 }
 
 /**
- * Build a live enrichArtist dep for resolve-candidates. Closes over the
- * Last.fm API key so Spotify `/search` misses (which return empty genres /
- * zero popularity) get filled before the cache write. Returns undefined
- * when the key is missing — callers should feature-detect rather than noop.
+ * The live `enrichArtist` dep for resolve-candidates (Last.fm getInfo, cached).
+ * Returns undefined when the key is missing — callers feature-detect rather
+ * than noop.
  */
-export function buildEnrichArtist() {
-  const apiKey = process.env.LASTFM_API_KEY
-  if (!apiKey) return undefined
-  return (name: string) => fetchArtistEnrichment(name, apiKey)
+export function buildEnrichArtist(lf: Lastfm = defaultLastfm) {
+  if (!lf.hasKey()) return undefined
+  return (name: string) => lf.artistInfo(name)
+}
+
+/**
+ * Spotify-free name resolver (Stage 2, #157): the `searchArtists` dep for
+ * resolve-candidates, wired to Last.fm artist.getInfo — the SAME cached call
+ * `buildEnrichArtist` uses, so it adds ~0 extra network. Returns one Artist
+ * carrying getInfo's genres/popularity, or [] for a genuine not-found.
+ *
+ *  - `id: ""` — the canonical uuid is minted downstream (ArtistIdentity.ensure).
+ *  - `spotifyId: null` — Last.fm has no Spotify id; the #159 worker backfills it.
+ *  - `imageUrl: null` — getInfo's image is a placeholder.
+ *
+ * Never rate-limits (the Last.fm gate paces it), so never a RateLimited sentinel.
+ */
+export function lastfmResolve(name: string, lf: Lastfm = defaultLastfm): Promise<Artist[]> {
+  if (!lf.hasKey()) return Promise.resolve([])
+  return lf.artistInfo(name).then((e) =>
+    e
+      ? [{ id: "", spotifyId: null, name, genres: e.genres, popularity: e.popularity, imageUrl: null }]
+      : [],
+  )
+}
+
+export interface ArtistSearchMatch {
+  /** Canonical artist name as Last.fm spells it. */
+  name: string
+  mbid: string | null
+  imageUrl: string | null
+  listeners: number
+  /** Name-similarity to the query; 1 for an exact normalized match. */
+  similarity: number
+}
+
+function toMatch(c: LastfmArtistCandidate, similarity: number): ArtistSearchMatch {
+  return { name: c.name, mbid: c.mbid, imageUrl: c.imageUrl, listeners: c.listeners, similarity }
+}
+
+/**
+ * Choose the confident match for `query` among Last.fm search `candidates`, or null.
+ *
+ * 1. Exact normalized-name match wins (scanned across ALL candidates, since
+ *    Last.fm may rank a more-popular fuzzy hit above the exact one). This also
+ *    covers short names, which `stringSimilarity` scores 0 for length < 2.
+ * 2. Otherwise the highest name-similarity candidate, accepted only if it
+ *    clears SIMILARITY_THRESHOLD. Below threshold → null (logged, never cached
+ *    as a resolution) so a disambiguation error can't poison the shared cache.
+ */
+export function pickBestMatch(query: string, candidates: LastfmArtistCandidate[]): ArtistSearchMatch | null {
+  if (candidates.length === 0) return null
+  const nq = artistNameKey(query)
+
+  const exact = candidates.find((c) => artistNameKey(c.name) === nq)
+  if (exact) return toMatch(exact, 1)
+
+  let best: LastfmArtistCandidate | null = null
+  let bestSim = 0
+  for (const c of candidates) {
+    const sim = stringSimilarity(query, c.name)
+    if (sim > bestSim) {
+      bestSim = sim
+      best = c
+    }
+  }
+  if (best && bestSim >= SIMILARITY_THRESHOLD) return toMatch(best, bestSim)
+
+  console.log(
+    `[lfm-search] no confident match for "${query}" ` +
+      `(best="${best?.name ?? "-"}" sim=${bestSim.toFixed(2)} < ${SIMILARITY_THRESHOLD})`,
+  )
+  return null
+}
+
+/** Search + similarity guard: the confidently-matched artist, or null. */
+export async function searchAndMatchArtist(query: string, lf: Lastfm = defaultLastfm): Promise<ArtistSearchMatch | null> {
+  return pickBestMatch(query, await lf.searchArtists(query))
 }

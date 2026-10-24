@@ -1,6 +1,5 @@
 import { createServiceClient } from '@/lib/supabase/server'
-import type { SimilarArtistRef } from '@/lib/music-provider'
-import type { ArtistEnrichment } from '@/lib/recommendation/enrich-artist'
+import type { ArtistEnrichment, SimilarArtistRef } from './types'
 
 const TTL_MS = 7 * 24 * 60 * 60 * 1000
 // Negative-cache TTL for genuinely-empty tag results. Short, so a tag that gains

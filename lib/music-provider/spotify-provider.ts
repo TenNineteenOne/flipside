@@ -1,8 +1,6 @@
-import type { MusicProvider, RateLimited, SimilarArtistRef } from "./index"
+import type { MusicProvider, RateLimited } from "./index"
 import type { Artist, PlayHistory, Track } from "./types"
-import { cachedSimilarArtistNames } from "@/lib/lastfm-cache"
-import { runLastfm } from "@/lib/lastfm-limit"
-import { incSpotify, incLastfmSimilar } from "@/lib/recommendation/api-call-counter"
+import { incSpotify } from "@/lib/recommendation/api-call-counter"
 import { PreviewSourceBreaker } from "@/lib/preview-source-breaker"
 
 /**
@@ -21,7 +19,6 @@ const spotifyBreaker = new PreviewSourceBreaker({
 })
 
 const SPOTIFY_BASE = "https://api.spotify.com/v1"
-const LASTFM_BASE = "https://ws.audioscrobbler.com/2.0"
 
 // ---------------------------------------------------------------------------
 // Internal Spotify API response shapes
@@ -65,14 +62,6 @@ interface SpotifyRecentlyPlayedResponse {
     }
     played_at: string
   }>
-}
-
-interface LastFmSimilarArtistsResponse {
-  similarartists?: {
-    artist: Array<{ name: string; match?: string | number }>
-  }
-  error?: number
-  message?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -148,8 +137,6 @@ async function spotifyFetch(
 // ---------------------------------------------------------------------------
 
 export class SpotifyProvider implements MusicProvider {
-  private static _lastFmKeyMissing = false
-
   // -------------------------------------------------------------------------
   // getTopArtists
   // -------------------------------------------------------------------------
@@ -166,56 +153,6 @@ export class SpotifyProvider implements MusicProvider {
 
     const data = (await res.json()) as { items: SpotifyArtistObject[] }
     return (data.items ?? []).map(mapArtist)
-  }
-
-  // -------------------------------------------------------------------------
-  // getSimilarArtistNames — Last.fm only, no Spotify call, no access token
-  // Results pass through a shared 7-day Supabase cache (lastfm_cache).
-  // -------------------------------------------------------------------------
-  async getSimilarArtistNames(artistName: string): Promise<SimilarArtistRef[]> {
-    return cachedSimilarArtistNames(artistName, (name) => this._fetchSimilarArtistNames(name))
-  }
-
-  private async _fetchSimilarArtistNames(artistName: string): Promise<SimilarArtistRef[]> {
-    const apiKey = process.env.LASTFM_API_KEY
-    if (!apiKey) {
-      if (!SpotifyProvider._lastFmKeyMissing) {
-        console.warn("[spotify] LASTFM_API_KEY not set")
-        SpotifyProvider._lastFmKeyMissing = true
-      }
-      return []
-    }
-
-    try {
-      const url =
-        `${LASTFM_BASE}/?method=artist.getSimilar` +
-        `&artist=${encodeURIComponent(artistName)}` +
-        `&api_key=${apiKey}` +
-        `&format=json` +
-        `&limit=50`
-
-      incLastfmSimilar()
-      const res = await runLastfm(() => fetch(url, { signal: AbortSignal.timeout(8000) }))
-      if (!res.ok) { console.log(`[lfm] ${res.status} artist="${artistName}"`); return [] }
-
-      const data = (await res.json()) as LastFmSimilarArtistsResponse
-      if (data.error || !data.similarartists?.artist?.length) return []
-
-      return data.similarartists.artist
-        .map((a) => {
-          const rawMatch = typeof a.match === "string" ? parseFloat(a.match) : a.match
-          const match = typeof rawMatch === "number" && Number.isFinite(rawMatch) ? rawMatch : 0
-          return { name: a.name, match }
-        })
-        .filter((a) => a.name)
-    } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') {
-        console.error(`[lfm] getSimilarArtistNames timed out after 8s artist="${artistName}"`)
-      } else {
-        console.log(`[lfm] fail artist="${artistName}" err=${err instanceof Error ? err.message : err}`)
-      }
-      return []
-    }
   }
 
   // -------------------------------------------------------------------------

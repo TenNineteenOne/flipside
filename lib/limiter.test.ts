@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { createLimiter } from "./limiter"
 
 // Concurrency/token-bucket behavior is covered via itunes-limit.test.ts and
-// lastfm-limit.test.ts, which exercise the instances built on this factory.
+// lastfm/limit.test.ts, which exercise the instances built on this factory.
 
 /** Fake clock whose sleep advances time instantly and records each wait. */
 function fakeTime(start = 1_000) {

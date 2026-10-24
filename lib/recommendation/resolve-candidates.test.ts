@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import { resolveArtistsByName, type ResolveDeps } from "./resolve-candidates"
 import type { Artist } from "@/lib/music-provider/types"
 import type { RateLimited } from "@/lib/music-provider"
-import type { ArtistEnrichment } from "@/lib/artist-identity/lastfm-lookup"
+import type { ArtistEnrichment } from "@/lib/lastfm"
 
 function artist(id: string, name: string, popularity = 50): Artist {
   return { id, name, genres: [], imageUrl: null, popularity }

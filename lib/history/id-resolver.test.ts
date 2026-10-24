@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
 
 // ── Mock the Last.fm enrichment (getInfo) ────────────────────────────────────
-// resolveUnresolvedArtistIds confirms an artist exists via fetchArtistEnrichment
+// resolveUnresolvedArtistIds confirms an artist exists via lastfm.artistInfo
 // (cached Last.fm getInfo). Mock it to drive the cache-miss / ambiguous branch:
 //   found ({genres, popularity}) → mints by name → artist_id
 //   null                         → genuine not-found → unresolved
-const fetchArtistEnrichment = vi.fn()
-vi.mock("@/lib/artist-identity/lastfm-lookup", () => ({
-  fetchArtistEnrichment: (...args: unknown[]) => fetchArtistEnrichment(...args),
+const artistInfo = vi.fn()
+vi.mock("@/lib/lastfm", () => ({
+  lastfm: { artistInfo: (...args: unknown[]) => artistInfo(...args) },
 }))
 
 import { resolveUnresolvedArtistIds } from "./id-resolver"
@@ -220,7 +220,7 @@ const baseRow = (over: Partial<ListenedRow>): ListenedRow => ({
 })
 
 beforeEach(() => {
-  fetchArtistEnrichment.mockReset()
+  artistInfo.mockReset()
 })
 
 describe("resolveUnresolvedArtistIds — tight unresolved filter", () => {
@@ -228,7 +228,7 @@ describe("resolveUnresolvedArtistIds — tight unresolved filter", () => {
     const listened = [baseRow({ spotify_artist_id: "sp-legacy" })]
     const supabase = makeSupabase(listened, [])
     await resolveUnresolvedArtistIds({ supabase, userId: "user-1" })
-    expect(fetchArtistEnrichment).not.toHaveBeenCalled()
+    expect(artistInfo).not.toHaveBeenCalled()
     expect(listened[0].artist_id).toBeNull()
   })
 
@@ -236,7 +236,7 @@ describe("resolveUnresolvedArtistIds — tight unresolved filter", () => {
     const listened = [baseRow({ artist_id: "artist-uuid-existing" })]
     const supabase = makeSupabase(listened, [])
     await resolveUnresolvedArtistIds({ supabase, userId: "user-1" })
-    expect(fetchArtistEnrichment).not.toHaveBeenCalled()
+    expect(artistInfo).not.toHaveBeenCalled()
   })
 })
 
@@ -248,7 +248,7 @@ describe("resolveUnresolvedArtistIds — artists table hit", () => {
     ]
     const supabase = makeSupabase(listened, artists)
     await resolveUnresolvedArtistIds({ supabase, userId: "user-1" })
-    expect(fetchArtistEnrichment).not.toHaveBeenCalled()
+    expect(artistInfo).not.toHaveBeenCalled()
     expect(listened[0].artist_id).toBe("artist-uuid-7")
     expect(listened[0].id_resolution_attempted_at).not.toBeNull()
   })
@@ -261,10 +261,10 @@ describe("resolveUnresolvedArtistIds — artists table hit", () => {
     ]
     // getInfo confirms the artist exists → the doorway lands on the stable by-name row
     // existing row (spotify_id NOT NULL first) rather than minting a duplicate.
-    fetchArtistEnrichment.mockResolvedValue({ genres: ["rock"], popularity: 80 })
+    artistInfo.mockResolvedValue({ genres: ["rock"], popularity: 80 })
     const supabase = makeSupabase(listened, artists)
     await resolveUnresolvedArtistIds({ supabase, userId: "user-1" })
-    expect(fetchArtistEnrichment).toHaveBeenCalledOnce()
+    expect(artistInfo).toHaveBeenCalledOnce()
     // reused an existing same-name row; no fresh mint
     expect(["artist-uuid-a", "artist-uuid-b"]).toContain(listened[0].artist_id)
   })
@@ -273,7 +273,7 @@ describe("resolveUnresolvedArtistIds — artists table hit", () => {
 describe("resolveUnresolvedArtistIds — getInfo confirm + mint-by-name", () => {
   it("mints a uuid via the doorway when getInfo confirms the artist", async () => {
     const listened = [baseRow({})]
-    fetchArtistEnrichment.mockResolvedValue({ genres: ["rock"], popularity: 90 })
+    artistInfo.mockResolvedValue({ genres: ["rock"], popularity: 90 })
     const artists: ArtistRow[] = []
     const supabase = makeSupabase(listened, artists)
     await resolveUnresolvedArtistIds({ supabase, userId: "user-1" })
@@ -286,7 +286,7 @@ describe("resolveUnresolvedArtistIds — getInfo confirm + mint-by-name", () => 
 
   it("leaves artist_id null + only bumps timestamp when getInfo returns null (not found)", async () => {
     const listened = [baseRow({ lastfm_artist_name: "Radiohead" })]
-    fetchArtistEnrichment.mockResolvedValue(null)
+    artistInfo.mockResolvedValue(null)
     const supabase = makeSupabase(listened, [])
     await resolveUnresolvedArtistIds({ supabase, userId: "user-1" })
     expect(listened[0].artist_id).toBeNull()
@@ -296,7 +296,7 @@ describe("resolveUnresolvedArtistIds — getInfo confirm + mint-by-name", () => 
 
   it("never throws: getInfo rejecting only bumps timestamp, leaves artist_id null", async () => {
     const listened = [baseRow({})]
-    fetchArtistEnrichment.mockRejectedValue(new Error("lastfm getInfo 500"))
+    artistInfo.mockRejectedValue(new Error("lastfm getInfo 500"))
     const supabase = makeSupabase(listened, [])
     await resolveUnresolvedArtistIds({ supabase, userId: "user-1" })
     expect(listened[0].artist_id).toBeNull()

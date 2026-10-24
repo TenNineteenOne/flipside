@@ -3,8 +3,8 @@ import {
   cachedArtistEnrichment,
   cachedArtistSearch,
   type CacheStore,
-} from "./lastfm-cache"
-import type { ArtistEnrichment } from "@/lib/recommendation/enrich-artist"
+} from "./cache"
+import type { ArtistEnrichment } from "./types"
 
 function memStore(): CacheStore & { rows: Map<string, { payload: unknown; fetched_at: string }> } {
   const rows = new Map<string, { payload: unknown; fetched_at: string }>()

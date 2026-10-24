@@ -1,6 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/server"
 import { ArtistIdentity } from "@/lib/artist-identity"
-import { fetchArtistEnrichment } from "@/lib/artist-identity/lastfm-lookup"
+import { lastfm } from "@/lib/lastfm"
 
 // ── Name → artist_id (uuid) resolution ───────────────────────────────────────
 
@@ -134,7 +134,6 @@ async function resolveLastFmBatch(params: {
 }): Promise<void> {
   const { supabase, userId, batch } = params
   const now = new Date().toISOString()
-  const lastfmApiKey = process.env.LASTFM_API_KEY ?? ""
 
   // 2a. Resolve the batch through the artist-identity doorway. An unambiguous
   //     `artists` name hit is used directly; otherwise — since the NAME is
@@ -145,7 +144,7 @@ async function resolveLastFmBatch(params: {
   const resolved = await identity.resolve(
     batch.map((r) => r.lastfm_artist_name),
     async (name) => {
-      const enrichment = await fetchArtistEnrichment(name, lastfmApiKey)
+      const enrichment = await lastfm.artistInfo(name)
       if (!enrichment) {
         // Genuine "artist not found" (or no apiKey / transient swallowed to null).
         console.log(`[resolveLastFmArtistIds] no-getInfo name="${name}" → unresolved`)

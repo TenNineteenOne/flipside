@@ -23,6 +23,9 @@ import { ArtistIdentity } from "@/lib/artist-identity"
 import { resolveArtistsByName, type ResolveDeps, type ResolveResult } from "./resolve-candidates"
 import { confirmPlayableTracks, confirmToTarget, type ConfirmPreviewDeps } from "./confirm-previews"
 import { PreviewStore, type ConfirmCollector } from "./preview-store"
+import { buildEnrichArtist, lastfmResolve } from "@/lib/artist-identity/lastfm-lookup"
+import { searchTracksByArtist } from "@/lib/music-provider/itunes"
+import { musicProvider } from "@/lib/music-provider/provider"
 
 /** The outbound ports: Last.fm name lookup/enrichment, iTunes, Spotify top-tracks. */
 export interface PlayablePorts {
@@ -30,6 +33,24 @@ export interface PlayablePorts {
   enrichArtist?: ResolveDeps["enrichArtist"]
   searchItunes: ConfirmPreviewDeps["searchItunes"]
   getSpotifyTopTracks: ConfirmPreviewDeps["getSpotifyTopTracks"]
+}
+
+/**
+ * The live ports, shared by Feed and Explore: Last.fm getInfo as the doorway
+ * lookup + enrichment, iTunes-first previews (free, no auth, near-universal 30s
+ * clips), Spotify top-tracks as the fallback — keyed on the SPOTIFY id, never
+ * the uuid identity; no id (Last.fm-only artist) or no token → no-op to [].
+ */
+export function livePlayablePorts(accessToken: string): PlayablePorts {
+  return {
+    searchArtists: (name) => lastfmResolve(name),
+    enrichArtist: buildEnrichArtist(),
+    searchItunes: (name) => searchTracksByArtist(name, "US", 5),
+    getSpotifyTopTracks: (spotifyId) =>
+      accessToken && spotifyId
+        ? musicProvider.getArtistTopTracks(accessToken, spotifyId, 5, "US").catch(() => [])
+        : Promise.resolve([]),
+  }
 }
 
 export interface ResolveOpts {

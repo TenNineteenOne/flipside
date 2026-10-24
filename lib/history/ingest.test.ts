@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
 
 // The resolve pass confirms names via cached Last.fm getInfo — drive it here.
-const fetchArtistEnrichment = vi.fn()
-vi.mock("@/lib/artist-identity/lastfm-lookup", () => ({
-  fetchArtistEnrichment: (...args: unknown[]) => fetchArtistEnrichment(...args),
+const artistInfo = vi.fn()
+vi.mock("@/lib/lastfm", () => ({
+  lastfm: { artistInfo: (...args: unknown[]) => artistInfo(...args) },
 }))
 
 import { ingestListens } from "./ingest"
@@ -41,8 +41,8 @@ const shape = (r: Row) => ({
 })
 
 beforeEach(() => {
-  fetchArtistEnrichment.mockReset()
-  fetchArtistEnrichment.mockResolvedValue(null) // names stay unresolved unless a test says otherwise
+  artistInfo.mockReset()
+  artistInfo.mockResolvedValue(null) // names stay unresolved unless a test says otherwise
   vi.spyOn(console, "log").mockImplementation(() => {})
 })
 

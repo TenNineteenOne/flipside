@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { TokenBucket, createLastfmLimiter, runLastfm } from "./lastfm-limit"
+import { TokenBucket, createLastfmLimiter, runLastfm } from "./limit"
 
 const tick = () => new Promise((r) => setTimeout(r, 0))
 

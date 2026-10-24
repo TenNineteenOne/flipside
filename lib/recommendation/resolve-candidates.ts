@@ -2,7 +2,8 @@ import type { Artist } from "@/lib/music-provider/types"
 import type { RateLimited } from "@/lib/music-provider"
 import { isRateLimited } from "@/lib/music-provider"
 import { artistNameDbKey, artistNameKey, stringSimilarity, type ArtistIdentity } from "@/lib/artist-identity"
-import { mergeEnrichment, type ArtistEnrichment } from "@/lib/artist-identity/lastfm-lookup"
+import { mergeEnrichment } from "@/lib/artist-identity/lastfm-lookup"
+import type { ArtistEnrichment } from "@/lib/lastfm"
 
 /** Min Dice-coefficient name similarity to accept a fuzzy (non-exact) Spotify result. */
 const FUZZY_ACCEPT_THRESHOLD = 0.8
