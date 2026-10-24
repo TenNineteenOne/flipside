@@ -34,7 +34,7 @@ server component that queries Supabase, then hands data to a `"use client"` shel
   context; play/pause/stop + progress.
 - **`CardArtist`** (`lib/cards/card-artist.ts`) — the one card view model (`ArtistWithTracks`
   + raw `artistColor` + `why {sourceArtists, genres}`). Assembled server-side by
-  `lib/cards/feed-cards.ts` (Feed) and `lib/recommendation/explore-rail-payloads.ts` (Explore);
+  `lib/cards/feed-cards.ts` (Feed) and `lib/cards/explore-rail-payloads.ts` (Explore);
   `ArtistCard` takes it directly. Display colour always goes through
   `resolveArtistColor` (`lib/color-utils.ts`: sanitize; `#8b5cf6` sentinel/null → name hash).
 - **`ExploreArtistRow`** — motion wrapper binding a `CardArtist` to `ArtistCard`.

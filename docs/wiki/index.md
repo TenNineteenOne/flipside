@@ -1,13 +1,13 @@
 ---
 title: flipside — Codebase Wiki
-updated: 2026-06-06
+updated: 2026-10-24
 kind: hub
 ---
 
 # flipside — Codebase Wiki
 
 A cross-linked map of how flipside actually works, verified by reading the code on
-2026-06-06. Pages link with Obsidian-style `[[wikilinks]]`. Start here, then follow
+2026-06-06 (module map refreshed 2026-10-24, #175). Pages link with Obsidian-style `[[wikilinks]]`. Start here, then follow
 links into the subsystem you care about.
 
 > **For agents/LLMs:** read this hub first, then the specific page for the area you're
@@ -55,15 +55,17 @@ graph TD
   end
 
   subgraph Engine[generation-engine · explore-engine]
-    RESOLVE[resolve-candidates]
-    CONFIRM[confirm-previews]
+    PC[PlayableCandidates]
+    CONFIRM[confirm-previews · PreviewStore]
     SCORE[scoring + cluster-cap]
-    ENRICH[enrich-artist]
   end
 
+  DOOR[artist-identity · the doorway]
+
   subgraph Providers[music-providers]
-    MP[musicProvider · SpotifyProvider]
-    ITUNES[iTunes search]
+    LFMA[lib/lastfm adapter]
+    SPA[spotify.ts · client-creds]
+    ITUNES[itunes.ts]
   end
 
   subgraph Ext[external-apis]
@@ -79,14 +81,15 @@ graph TD
 
   Client --> API
   API --> Engine
-  Engine --> RESOLVE --> MP
-  Engine --> CONFIRM --> ITUNES
-  Engine --> ENRICH --> LFM
-  MP --> SPOT
-  MP --> LFM
+  Engine --> PC --> DOOR --> LFMA
+  Engine --> LFMA
+  PC --> CONFIRM --> ITUNES
+  CONFIRM --> SPA
+  LFMA --> LFM
+  SPA --> SPOT
   ITUNES --> APPLE
   R_HIST --> SFM
-  R_HIST --> LFM
+  R_HIST --> LFMA
   Engine --> DB
   API --> DB
   AUTH[auth-and-session] --> DB
@@ -103,7 +106,7 @@ graph TD
 | [[data-model]] | Every Supabase table, columns, RLS, RPCs |
 | [[generation-engine]] | The Feed pipeline: seeds → similarity → score → diversity → confirm → cache |
 | [[explore-engine]] | The four Explore rails and how each is built |
-| [[music-providers]] | The `musicProvider` abstraction and the breakers/limiters around external calls |
+| [[music-providers]] | The Last.fm / Spotify / iTunes adapters, module layering, and the breakers/limiters around external calls |
 | [[external-apis]] | Catalog of every external service: Spotify, Last.fm, iTunes, stats.fm — what each provides |
 | [[api-routes]] | The HTTP surface: every route, auth, inputs, what it calls |
 | [[pages-and-components]] | Screens, shared components, client hooks, playback + "open in platform" UX |
@@ -111,6 +114,32 @@ graph TD
 | [[settings-and-discovery]] | Discovery settings model (obscurity, curve, adventurous, deep discovery) |
 | [[infra-and-ops]] | next.config/CSP, middleware, cron, color extraction, scripts |
 | [[spotify-dependency]] | **The analysis**: exactly what Spotify is used for and how replaceable it is |
+
+## Module map (`lib/`)
+
+| Module | What it owns |
+|---|---|
+| `recommendation/engine.ts`, `explore-engine.ts` | Feed and Explore orchestration ([[generation-engine]], [[explore-engine]]) |
+| `recommendation/playable-candidates.ts` | name → confirmed-playable pipeline shared by both engines; `livePlayablePorts` |
+| `recommendation/preview-store.ts` | `PreviewStore`, sole owner of `artist_tracks_cache` |
+| `recommendation/exclusions.ts` | the one "never show this artist" policy |
+| `lastfm/` | the one Last.fm adapter: key, timeouts, gate (`limit.ts`), `lastfm_cache` (`cache.ts`), counters |
+| `music-provider/` | `itunes.ts` (previews, `itunesFetch`), `spotify.ts` (client-creds top-tracks + script search), shared types |
+| `artist-identity/` | the doorway (`ArtistIdentity`), `artistNameKey`, Last.fm lookup (`lastfm-lookup.ts`), MusicBrainz (`musicbrainz.ts`) — ADR-0001 |
+| `cards/` | server-side card assembly (`CardArtist`, `feed-cards.ts`, `explore-rail-payloads.ts`) |
+| `client/` | framework-free UI controllers (feed generation, rail session, artist signals) under thin hooks in `hooks/` |
+| `history/` | Last.fm / stats.fm listening history → `ingestListens` |
+| `metrics/api-call-counter.ts` | per-upstream live-call counters for `[gen-timing]` |
+| `limiter.ts` | generic gate (`createLimiter`) behind the Last.fm and iTunes limiters |
+| `cooldown.ts` | atomic per-user generation cooldown claim |
+| `taste-change.ts` | taste-change invalidation policy (feedback / saves → cache invalidation) |
+| `explore-input.ts` | Explore user-row mapping + client-credentials token |
+| `external-links.ts` | `linkFor`: "Open in Apple Music" link resolution |
+
+**Removed in #175:** the Spotify user-token surface (`/api/spotify/*`, history syncer,
+like / save→playlist; tag `archive/spotify-user-token`), the `MusicProvider` interface,
+`provider.ts` / `spotify-provider.ts`, `lastfm-search.ts`, `enrich-artist.ts`,
+`history/name-utils.ts`, top-level `lastfm-cache.ts` / `lastfm-limit.ts` (now `lib/lastfm/`).
 
 ## Sources
 

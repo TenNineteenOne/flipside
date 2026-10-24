@@ -11,7 +11,9 @@ The `/explore` screen's four themed rails. Entry point: `buildExploreRails(input
 pipeline from [[generation-engine]] (`resolveAndFilter` → `playable()`: resolve + exclusions
 + rehydrate + confirm + an awaited flush, results keyed by the Last.fm input name).
 Exclusions use Explore's policy: any listened play hides (owner decision #3), thumbs-down,
-and the 7-day seen / dismissed cooldown. Caches per-rail in
+and the 7-day seen / dismissed cooldown. The `listened_artists` and thumbs-down reads are
+issued once (`loadSharedRows`) and shared by `loadUserContext` and `loadExclusions` (#175
+E4b). Caches per-rail in
 `explore_cache` (24h TTL — see [[data-model]]).
 
 ## Cache behavior
@@ -27,7 +29,7 @@ and the 7-day seen / dismissed cooldown. Caches per-rail in
 |---|---|---|
 | `adjacentRail` | **After Hours** | stable 6-tag rotation from `AFTERHOURS_TAGS` (mood tags) via `cacheWindowSeed`; `tag.gettopartists` per tag |
 | `outsideRail` | **Uncharted Territory** | genre anchors the user *hasn't* touched; Last.fm top-40 per anchor, sliced positions 10–40 (skip mainstream) |
-| `wildcardsRail` | **Rabbit Holes** | 3–4 thumbs-up seeds → `getSimilarArtistNames`, tail-biased (low match-score first); falls back to most-played; empty when cold |
+| `wildcardsRail` | **Rabbit Holes** | 3–4 thumbs-up seeds → `lastfm.similarArtists`, tail-biased (low match-score first); falls back to most-played; empty when cold |
 | `leftfieldRail` | **Curveballs** | `allLeavesWithAnchor()` across the whole [[genre-system]] tree, excluding the user's top-2 anchors; seeded-shuffle, sample 34–60 tags, mid-list per tag |
 
 `leftfieldRail` resolves the first 48–80 names on the critical path and fires a
@@ -50,7 +52,7 @@ When the user has zero thumbs-ups, the wildcards rail is replaced by a second le
 
 ## Payload assembly
 
-`explore-rail-payloads.ts` is the single source of truth for rail titles/subtitles/empty
+`lib/cards/explore-rail-payloads.ts` is the single source of truth for rail titles/subtitles/empty
 captions and wildcards-fallback detection. `assembleRailPayloads(rails, artistById)` →
 `RailPayload[]` for the client. Nothing without a playable preview renders: an artist with
 no `artist_tracks_cache` row (`topTracks=undefined`, logged `droppedNoRow`) or a negative /

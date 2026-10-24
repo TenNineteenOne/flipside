@@ -15,13 +15,15 @@ The Feed ("For You") pipeline. Entry point: `buildRecommendations(input)` in
 
 1. **Gather seeds** (`gatherSeedContext`) — three parallel Supabase sources:
    `seed_artists`, a stable weekly sample of thumbs-up artists (`sampleLikes`, via
-   `recommendation_cache`), and Last.fm `tag.gettopartists` for the user's top ~5
-   `selected_genres`. Shuffled + deduped → `seedNames[]` (capped 10–15).
+   `recommendation_cache`), and Last.fm `tag.gettopartists` (`lastfm.tagTopArtists`) for the
+   user's top ~5 `selected_genres`. Shuffled + deduped → `seedNames[]` (capped 10–15).
+   ⚠️ The genre fetch passes the **array index as the limit** (0..4) — a long-standing
+   `.map(getTagArtistNames)` quirk kept byte-identical in #175 E1 pending an owner call.
 2. **Soften gate** (`runWithSoftening`) — if the run returns `count=0`, retry with
    `playThreshold+5`, then fall back to `sampleColdStartSeeds()` from
    `data/cold-start-seeds.json`.
 3. **First-hop similarity** (`runPipeline`) — each seed →
-   `musicProvider.getSimilarArtistNames` → **Last.fm `artist.getSimilar`** (7-day cached).
+   `lastfm.similarArtists` → **Last.fm `artist.getSimilar`** (7-day cached).
    Optional 2nd hop (`runDeepHop`) when `deep_discovery` is on.
 4. **Round-robin ordering** (`buildRoundRobinNames`, `tailFirst=true`) — interleave
    candidates across seeds, lowest-match-first, so no mainstream seed floods the blocking
@@ -61,28 +63,32 @@ The Feed ("For You") pipeline. Entry point: `buildRecommendations(input)` in
 
 | Module | Purpose |
 |---|---|
-| `engine.ts` | the orchestrator above; also `getTagArtistNames`, `buildConfirmPreview` |
-| `playable-candidates.ts` | the shared name → confirmed-playable pipeline (resolve, `keep` gate, rehydrate, confirm, flush) used by Feed tiers/backfill/bleed and every Explore rail |
-| `exclusions.ts` | the one "never show this artist" policy (`loadExclusions(supabase, userId, { playThreshold \| 'any', nameFallback })`) |
-| `preview-store.ts` | `PreviewStore`: the ONLY code touching `artist_tracks_cache` — confirm read (`rehydrate`), display read, outcome collector, tracks-route read/refresh/write; one 24h TTL; poisoning guard on every write |
+| `engine.ts` | the orchestrator above (seeds, fan-out, scoring, bleed, tiers, `finish()`) |
+| `playable-candidates.ts` | the shared name → confirmed-playable pipeline (resolve, `keep` gate, rehydrate, confirm, flush) used by Feed tiers/backfill/bleed and every Explore rail; `livePlayablePorts(token)` wires Last.fm getInfo, iTunes, Spotify top-tracks |
+| `exclusions.ts` | the one "never show this artist" policy (`loadExclusions(supabase, userId, { playThreshold \| 'any', nameFallback }, now?, preloaded?)`; Explore passes its already-in-flight listened / thumbs-down reads) |
+| `preview-store.ts` | `PreviewStore`: the ONLY code touching `artist_tracks_cache` — confirm read (`rehydrate`), display read, outcome collector, tracks-route read/refresh/write; one 24h TTL; poisoning guard on tracks-route writes (collector writes satisfy it by construction, #175 E4a) |
 | `resolve-candidates.ts` | name → Artist resolver (cache → Last.fm `getInfo` resolve; Spotify-free since #157), 429 backoff |
 | `resolve-pools.ts` | blocking (36) / secondary (54) split; latency knobs |
 | `confirm-previews.ts` | iTunes-first / Spotify-fallback playability confirm |
-| `enrich-artist.ts` | Last.fm `artist.getInfo` → fills genres + popularity (see below) |
 | `cluster-cap.ts` | 25% per-genre diversity cap (single-list + cross-rail) |
 | `scoring` (in engine) | `k^popularity` tier multiplier + relevance |
 | `window.ts` | weekly-stable seeds: `cacheWindowSeed`, `seededShuffle`, `sampleLikes` |
 | `freshness.ts` | "has ≥5 unseen unexpired recs?" for splash redirect |
-| `api-call-counter.ts` / `gen-timing.ts` | instrumentation (`[gen-timing]` logs) |
+| `gen-timing.ts` (+ `lib/metrics/api-call-counter.ts`) | instrumentation (`[gen-timing]` logs) |
+
+Outside this folder: Last.fm calls go through `lib/lastfm` (one adapter), name → uuid
+through `lib/artist-identity` (with `lastfm-lookup.ts` = `lastfmResolve`, `buildEnrichArtist`,
+`mergeEnrichment`), previews through `lib/music-provider/{itunes,spotify}.ts`. See
+[[music-providers]].
 
 ## Important truths
 
-- **Last.fm is the graph engine.** `getSimilarArtistNames` lives on `SpotifyProvider` but
-  makes **only Last.fm calls** ([[music-providers]]).
+- **Last.fm is the graph engine.** Similarity, tags, getInfo and search all go through the
+  one adapter `lib/lastfm` ([[music-providers]]).
 - **Genres + popularity come from Last.fm enrichment**, because Spotify's search response
   returns empty genres / zero popularity (and as of Feb 2026 Spotify *removed* popularity
-  and deprecated genres — [[spotify-dependency]]). `enrich-artist.ts` is effectively
-  required for scoring to work.
+  and deprecated genres — [[spotify-dependency]]). getInfo enrichment
+  (`buildEnrichArtist`) is effectively required for scoring to work.
 - **iTunes is the primary preview source.** The Spotify top-tracks fallback may already be
   dead for client-credentials (Feb 2026 removal) — verify in logs.
 - **Preview cache tri-state** (`artist_tracks_cache`, owned by `PreviewStore`): no row =
@@ -99,5 +105,5 @@ The Feed ("For You") pipeline. Entry point: `buildRecommendations(input)` in
 - Explore artists only land in `recommendation_cache` (and the 7-day cooldown) once the
   user *acts* on them — a behavioral gap vs the Feed.
 - Last.fm tags hyphenated in flipside's tree (e.g. `dutch-black-metal`) may return 0 from
-  Last.fm; `fetchTagArtistNames` retries with spaces (a second sequential call) — this was
+  Last.fm; `lastfm.tagTopArtists` retries with spaces (a second sequential call) — this was
   the Explore leftfield-rail latency cause.

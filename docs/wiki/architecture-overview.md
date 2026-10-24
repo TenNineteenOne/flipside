@@ -59,13 +59,27 @@ Key design properties:
 - **Resilience** comes from per-provider circuit breakers + concurrency limiters so one
   generation can't self-DDoS the shared keys. See [[music-providers]].
 
+## Module layering
+
+Dependencies point one way (no import cycles, #175 E3):
+
+```
+app/ ─▶ lib/cards (card assembly) · lib/client (framework-free UI controllers)
+     ─▶ lib/recommendation (engines, PlayableCandidates, PreviewStore, Exclusions)
+     ─▶ lib/lastfm (one Last.fm adapter) · lib/music-provider (iTunes, Spotify)
+        · lib/artist-identity (the doorway)
+     ─▶ lib/limiter · lib/metrics · lib/supabase
+```
+
+See [[index]] for the full module map.
+
 ## External dependencies
 
 | Service | Role | Page |
 |---|---|---|
 | Last.fm | similar artists, genre tags, enrichment (genres/popularity), history | [[external-apis]] |
 | iTunes / Apple | 30s preview audio (primary), Apple Music links | [[external-apis]] |
-| Spotify Web API | top-tracks preview fallback, Spotify-library actions, "open in Spotify" — no longer resolves artist names (#157) | [[external-apis]], [[spotify-dependency]] |
+| Spotify Web API | client-credentials top-tracks preview fallback only (`lib/music-provider/spotify.ts`); no user token, no library actions, no name resolution (#157, #175). "Open in Spotify" is a URL, not an API call | [[external-apis]], [[spotify-dependency]] |
 | stats.fm | optional listening-history source | [[external-apis]] |
 | Supabase | all persistence | [[data-model]] |
 
