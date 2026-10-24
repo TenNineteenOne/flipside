@@ -4,6 +4,7 @@ import { withAuthedCsrfRoute } from "@/lib/api/with-authed-route"
 import { accumulateLastFmHistory } from "@/lib/history/lastfm-syncer"
 import { accumulateStatsFmHistory } from "@/lib/history/statsfm-syncer"
 import { decryptUsername } from "@/lib/crypto/username"
+import { claimCooldown } from "@/lib/cooldown"
 
 const COOLDOWN_MS = 15 * 60_000
 type Source = "lastfm" | "statsfm"
@@ -57,11 +58,11 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
     return apiError(`No ${source === "lastfm" ? "Last.fm" : "stats.fm"} account connected`, 400)
   }
 
-  if (lastAt) {
-    const elapsed = Date.now() - new Date(lastAt).getTime()
-    if (elapsed < COOLDOWN_MS) {
-      return apiError("Please wait before syncing again", 429)
-    }
+  // Atomic claim BEFORE the sync, so a double-click can't run two syncs (and
+  // double-bump play_count). A failed sync restores the previous stamp, so it
+  // doesn't consume the cooldown (same semantics as the old stamp-on-success).
+  if ((await claimCooldown(supabase, userId, cooldownField, COOLDOWN_MS)) === "cooling") {
+    return apiError("Please wait before syncing again", 429)
   }
 
   try {
@@ -73,6 +74,11 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
   } catch (err) {
     const message = err instanceof Error ? err.message : "Accumulation failed"
     console.error(`[history/accumulate] ${source} error:`, message)
+    const { error: restoreError } = await supabase
+      .from("users")
+      .update({ [cooldownField]: lastAt ?? null })
+      .eq("id", userId)
+    if (restoreError) console.error("[history/accumulate] Cooldown restore error:", restoreError.message)
     return apiError(`${source === "lastfm" ? "Last.fm" : "stats.fm"} sync failed`, 500)
   }
 
