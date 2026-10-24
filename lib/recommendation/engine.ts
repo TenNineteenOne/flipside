@@ -50,7 +50,7 @@ type SupabaseClient = ReturnType<typeof createServiceClient>
 async function gatherSeedContext(
   userId: string,
   supabase: SupabaseClient
-): Promise<{ seedNames: string[]; userGenres: string[] }> {
+): Promise<{ seedNames: string[]; pinnedSeeds: string[]; userGenres: string[] }> {
   const [dbSeeds, thumbsUpRows, userRow] = await Promise.all([
     supabase
       .from('seed_artists')
@@ -111,12 +111,21 @@ async function gatherSeedContext(
     `totalPooled=${names.length}`
   )
 
-  const deduped = [...new Set(names)]
-  for (let i = deduped.length - 1; i > 0; i--) {
+  // The user's own picks lead (#175 F-A): after F15 genres add ~20 names each,
+  // so one shuffled pool dropped every picked seed from about half of first
+  // feeds. Picks are shuffled among themselves, then the like/genre fill.
+  const pinnedKeys = new Set(dbSeeds.map((n) => n.toLowerCase()))
+  const fill = [...new Set(names.slice(dbSeeds.length))].filter((n) => !pinnedKeys.has(n.toLowerCase()))
+  const seedNames = [...shuffle([...new Set(dbSeeds)]), ...shuffle(fill)]
+  return { seedNames, pinnedSeeds: dbSeeds, userGenres }
+}
+
+function shuffle<T>(arr: T[]): T[] {
+  for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1))
-    ;[deduped[i], deduped[j]] = [deduped[j], deduped[i]]
+    ;[arr[i], arr[j]] = [arr[j], arr[i]]
   }
-  return { seedNames: deduped, userGenres }
+  return arr
 }
 
 // ── Core pipeline ───────────────────────────────────────────────────────────
@@ -404,6 +413,8 @@ export async function augmentWithAdjacent(
 
 export interface RunPipelineOpts {
   seedNames: string[]
+  /** The user's onboarding seed artists: never recommended back, even past the seed cap. */
+  pinnedSeeds?: string[]
   accessToken: string
   userId: string
   playThreshold: number
@@ -433,7 +444,7 @@ export interface PipelineRun {
 
 async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
   const {
-    seedNames, accessToken, userId, playThreshold, popularityCurve, supabase,
+    seedNames, pinnedSeeds = [], accessToken, userId, playThreshold, popularityCurve, supabase,
     source, genre, undergroundMode, deepDiscovery, adventurous, userGenres = [],
   } = o
 
@@ -469,7 +480,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
     names: items.map((i) => i.name),
   }))
 
-  const knownNames = new Set(capSeedNames.map((n) => n.toLowerCase()))
+  const knownNames = new Set([...capSeedNames, ...pinnedSeeds].map((n) => n.toLowerCase()))
   // Provenance keyed by the SAME lowercase key buildRoundRobinNames dedupes on
   // (#175 F20): "Boards of Canada" (seed A) and "Boards Of Canada" (seed B)
   // are one candidate, so both seeds must be credited. Read via seedsOf().
@@ -962,10 +973,11 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
   const { userId, accessToken, playThreshold, popularityCurve, genre, undergroundMode, deepDiscovery, adventurous } = input
   const supabase = createServiceClient()
 
-  const { seedNames, userGenres } = await gatherSeedContext(userId, supabase)
+  const { seedNames, pinnedSeeds, userGenres } = await gatherSeedContext(userId, supabase)
 
   const makeBaseOpts = (overrides: Partial<RunPipelineOpts>): RunPipelineOpts => ({
     seedNames,
+    pinnedSeeds,
     accessToken,
     userId,
     playThreshold,
@@ -998,10 +1010,5 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
 }
 
 function sampleColdStartSeeds(): string[] {
-  const pool = [...coldStartData.seeds]
-  for (let i = pool.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[pool[i], pool[j]] = [pool[j], pool[i]]
-  }
-  return pool.slice(0, 5).map((s) => s.name)
+  return shuffle([...coldStartData.seeds]).slice(0, 5).map((s) => s.name)
 }

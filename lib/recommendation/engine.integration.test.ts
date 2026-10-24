@@ -563,3 +563,32 @@ describe("buildRecommendations — genre seed tag limit (#175 F15)", () => {
     for (const g of genres) expect(limits.get(g)).toEqual([20])
   })
 })
+
+// ── #175 F-A: onboarding seed artists always shape the feed ─────────────────
+describe("buildRecommendations — picked seeds always used (#175 F-A)", () => {
+  it("every picked seed is fanned out even when genre tags add 40 names; picks are never recommended back", async () => {
+    const picks = ["PickA", "PickB", "PickC"]
+    for (let run = 0; run < 5; run++) {
+      seed({
+        users: [{ id: "u1", selected_genres: ["g-a", "g-b"] }],
+        seed_artists: picks.map((name) => ({ user_id: "u1", name })),
+      })
+      lf.reset()
+      lf.tags = (tag) => Array.from({ length: 20 }, (_, i) => `${tag}-artist${i}`)
+      // Every genre seed's similars include a picked seed: it must never come back as a rec.
+      for (const g of ["g-a", "g-b"]) {
+        for (let i = 0; i < 20; i++) lf.similars.set(`${g}-artist${i}`, similarRefs(["pickc", `${g}-${i}-sim`]))
+      }
+      for (const p of picks) lf.similars.set(p, similarRefs([`${p}-sim`]))
+
+      const result = await buildRecommendations(baseInput())
+      await result.finish()
+
+      for (const p of picks) expect(lf.calls.similar).toContain(p)
+      expect(lf.calls.similar.length).toBe(10) // the seed cap still holds
+      const names = cacheRows().map((r) => r.artist_data?.name.toLowerCase())
+      expect(names.length).toBeGreaterThan(0)
+      expect(names).not.toContain("pickc")
+    }
+  })
+})
