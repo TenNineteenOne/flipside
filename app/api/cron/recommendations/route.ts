@@ -13,6 +13,9 @@ export const GET = withCronRoute("cron", async ({ supabase }) => {
     .update({ expires_at: now.toISOString() })
     .is("seen_at", null)
     .lt("created_at", threeDaysAgo.toISOString())
+    // Only rows not already expired: re-stamping expires_at=now every day kept
+    // them forever younger than step 2's 30-day delete cutoff.
+    .gt("expires_at", now.toISOString())
     .select("id")
 
   if (expireErr) {
