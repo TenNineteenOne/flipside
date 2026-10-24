@@ -138,10 +138,11 @@ export interface RailSession {
   applyAdventurous(): Promise<void>
   /**
    * Mount: cold start → regen + poll; otherwise, if Settings fired a regen
-   * recently (storage flag) → poll only. Runs at most once per session.
+   * recently (storage flag) → poll only. Runs once per session; a call after
+   * dispose() (StrictMode / Activity remount) revives the paused poll instead.
    */
   start(opts: { coldStart: boolean }): void
-  /** Stop any live poll (unmount). */
+  /** Stop any live poll (unmount); in-flight work bails instead of arming a poller. */
   dispose(): void
 }
 
@@ -162,8 +163,15 @@ export function createRailSession(deps: RailSessionDeps): RailSession {
 
   let generatedAt = deps.initialGeneratedAt
   let pollTimer: unknown = null
-  let pollDeadline = 0
+  /** The live poll. A newer poll absorbs the older one's settles (stuck-spinner fix). */
+  let poll: { captured: string | null; deadline: number; settles: Array<() => void>; inFlight: boolean } | null = null
+  /** Bumped per armed timer; ticks from an older generation are ignored. */
+  let pollGen = 0
   let started = false
+  /** Unmounted: async continuations bail. start() after dispose() revives (StrictMode / Activity). */
+  let disposed = false
+  /** The adventurous value the current rails were built with (isAdvDirty compares against it). */
+  let appliedAdventurous = deps.initialAdventurous
 
   const initialOrdered = orderRails(deps.initialRails, deps.initialAdventurous)
   let state: RailSessionState = derive({
@@ -193,7 +201,7 @@ export function createRailSession(deps: RailSessionDeps): RailSession {
     for (const l of listeners) l()
   }
 
-  function stopPolling() {
+  function stopTimer() {
     if (pollTimer !== null) {
       timers.clearInterval(pollTimer)
       pollTimer = null
@@ -209,11 +217,12 @@ export function createRailSession(deps: RailSessionDeps): RailSession {
    * advanced past `captured`. Returns true if the swap landed. Never throws —
    * network/parse errors skip the tick so the poller stays alive.
    */
-  async function pollOnce(captured: string | null): Promise<boolean> {
+  async function pollOnce(captured: string | null, gen: number): Promise<boolean> {
     try {
       const res = await fetchImpl("/api/explore/rails")
       if (!res.ok) return false
       const json = (await res.json()) as { rails: RailPayload[]; generatedAt: string | null }
+      if (disposed || gen !== pollGen) return false // stale tick: never swap over a newer poll
       if (!hasRegenCompleted(captured, json.generatedAt)) return false
       generatedAt = json.generatedAt
       set({ rails: json.rails }) // activeKey re-validated by derive()
@@ -223,28 +232,47 @@ export function createRailSession(deps: RailSessionDeps): RailSession {
     }
   }
 
+  function armTimer() {
+    stopTimer()
+    const gen = ++pollGen
+    pollTimer = timers.setInterval(() => { void tick(gen) }, POLL_INTERVAL_MS)
+  }
+
+  /**
+   * One poll tick. Skipped while a GET is in flight; results from an older
+   * generation are dropped. Past the ceiling it still does one final GET (a
+   * frozen background tab resumes past the deadline) and only toasts when
+   * that GET isn't fresh either.
+   */
+  async function tick(gen: number) {
+    const p = poll
+    if (disposed || gen !== pollGen || !p || p.inFlight) return
+    p.inFlight = true
+    const finalCheck = now() >= p.deadline
+    const fresh = await pollOnce(p.captured, gen)
+    p.inFlight = false
+    if (disposed || gen !== pollGen) return
+    if (!fresh && !finalCheck) return
+    stopTimer()
+    poll = null
+    for (const settle of p.settles) settle()
+    if (!fresh) deps.toast("Still building — refresh in a moment", { duration: 4000 })
+  }
+
   /**
    * Poll every POLL_INTERVAL_MS until generatedAt advances past `captured`, or
    * the ceiling hits (soft toast). Poll-only: never POSTs. Shares one timer —
-   * starting a new poll stops the previous one.
+   * a new poll replaces the previous one and inherits its pending settles, so
+   * every started rebuild clears its own flag when the latest one lands.
    */
-  function pollUntilFresh(opts: { captured: string | null; onSettle: () => void; clearRegenFlag?: boolean }) {
-    stopPolling()
-    pollDeadline = now() + POLL_CEILING_MS
-    pollTimer = timers.setInterval(async () => {
-      if (now() >= pollDeadline) {
-        stopPolling()
-        if (opts.clearRegenFlag) clearRegenFlag()
-        opts.onSettle()
-        deps.toast("Still building — refresh in a moment", { duration: 4000 })
-        return
-      }
-      if (await pollOnce(opts.captured)) {
-        stopPolling()
-        if (opts.clearRegenFlag) clearRegenFlag()
-        opts.onSettle()
-      }
-    }, POLL_INTERVAL_MS)
+  function pollUntilFresh(opts: { captured: string | null; onSettle: () => void }) {
+    poll = {
+      captured: opts.captured,
+      deadline: now() + POLL_CEILING_MS,
+      settles: [...(poll?.settles ?? []), opts.onSettle],
+      inFlight: false,
+    }
+    armTimer()
   }
 
   /** POST a forced Explore regen, then poll until the new rails swap in. */
@@ -253,10 +281,13 @@ export function createRailSession(deps: RailSessionDeps): RailSession {
       const res = await fetchImpl("/api/explore/generate?force=true", { method: "POST" })
       if (!res.ok) throw new Error("generate failed")
     } catch {
+      if (disposed) return
       deps.toast.error("Couldn't start rebuild — try again")
       opts.onSettle()
       return
     }
+    if (disposed) return // unmounted mid-POST: no orphan poller
+    appliedAdventurous = state.adventurous // the regen builds with the current setting
 
     // Capture AFTER the POST so a cache row written before the regen started
     // isn't accepted as fresh.
@@ -297,8 +328,9 @@ export function createRailSession(deps: RailSessionDeps): RailSession {
       if (state.isTogglingAdv) return
       set({ isTogglingAdv: true })
       try {
-        await deps.persistAdventurous(!state.adventurous)
-        set({ isAdvDirty: true })
+        const next = !state.adventurous
+        await deps.persistAdventurous(next)
+        set({ isAdvDirty: next !== appliedAdventurous })
       } catch {
         deps.toast.error("Couldn't toggle — try again")
       } finally {
@@ -319,7 +351,15 @@ export function createRailSession(deps: RailSessionDeps): RailSession {
     },
 
     start({ coldStart }) {
-      if (started) return
+      if (started) {
+        // StrictMode/Activity remount reuses this session: revive the poll
+        // dispose() paused. Production mounts never reach here.
+        if (disposed) {
+          disposed = false
+          if (poll) armTimer()
+        }
+        return
+      }
       started = true
       if (coldStart) {
         // Populate without ever having blocked the server render.
@@ -333,10 +373,24 @@ export function createRailSession(deps: RailSessionDeps): RailSession {
       let flag: string | null = null
       try { flag = deps.storage?.getItem(EXPLORE_REGEN_AT_KEY) ?? null } catch { /* private mode */ }
       if (!shouldPollOnArrival(flag, now())) return
+      if (generatedAt !== null && new Date(generatedAt).getTime() > Number(flag)) {
+        // The server already rendered the rails that regen produced.
+        clearRegenFlag()
+        return
+      }
       set({ isRegenerating: true })
-      pollUntilFresh({ captured: generatedAt, clearRegenFlag: true, onSettle: () => set({ isRegenerating: false }) })
+      pollUntilFresh({
+        captured: generatedAt,
+        onSettle: () => {
+          clearRegenFlag()
+          set({ isRegenerating: false })
+        },
+      })
     },
 
-    dispose: stopPolling,
+    dispose() {
+      disposed = true
+      stopTimer() // `poll` is kept so a revive (start after dispose) can re-arm it
+    },
   }
 }

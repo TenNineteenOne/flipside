@@ -188,3 +188,138 @@ describe("start()", () => {
     expect(session.getState().isRegenerating).toBe(false)
   })
 })
+
+describe("#175 F11 poll lifecycle", () => {
+  const STALE = { rails: ALL, generatedAt: "2026-10-01T00:00:00Z" }
+  const FRESH = { rails: [rail("adjacent", 5, "new"), ...ALL.slice(1)], generatedAt: "2026-10-02T00:00:00Z" }
+  const gets = (f: ReturnType<typeof vi.fn>) => f.mock.calls.filter((c) => c[0] === "/api/explore/rails").length
+
+  it("(a) dispose during the POST leaves no orphan poller and no toast", async () => {
+    const { session, fetchImpl, toast } = setup()
+    let resolvePost: (r: Response) => void = () => {}
+    fetchImpl.mockReturnValueOnce(new Promise<Response>((r) => { resolvePost = r }))
+    fetchImpl.mockResolvedValue(json(200, STALE))
+    const p = session.shuffle()
+    session.dispose()
+    resolvePost(json(200))
+    await p
+    await vi.advanceTimersByTimeAsync(POLL_CEILING_MS * 2)
+    expect(gets(fetchImpl)).toBe(0)
+    expect(toast).not.toHaveBeenCalled()
+  })
+
+  it("(b) resuming past the ceiling does a final GET and swaps instead of toasting", async () => {
+    let t = 0
+    const { session, fetchImpl, toast } = setup({ now: () => t })
+    fetchImpl.mockResolvedValueOnce(json(200)).mockResolvedValue(json(200, FRESH))
+    await session.shuffle()
+    t = POLL_CEILING_MS + 60_000 // tab frozen, no ticks ran
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS)
+    expect(gets(fetchImpl)).toBe(1)
+    expect(session.getState().rails[0].artists[0].id).toBe("new-0")
+    expect(session.getState().isRegenerating).toBe(false)
+    expect(toast).not.toHaveBeenCalled()
+  })
+
+  it("(b) final GET still stale → toast and stop", async () => {
+    let t = 0
+    const { session, fetchImpl, toast } = setup({ now: () => t })
+    fetchImpl.mockResolvedValueOnce(json(200)).mockResolvedValue(json(200, STALE))
+    await session.shuffle()
+    t = POLL_CEILING_MS
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS)
+    expect(gets(fetchImpl)).toBe(1)
+    expect(toast).toHaveBeenCalledWith("Still building — refresh in a moment", { duration: 4000 })
+    expect(session.getState().isRegenerating).toBe(false)
+  })
+
+  it("(c) Apply during Shuffle settles both spinners", async () => {
+    const { session, fetchImpl } = setup()
+    await session.toggleAdventurous()
+    fetchImpl.mockResolvedValueOnce(json(200)).mockResolvedValueOnce(json(200)).mockResolvedValue(json(200, FRESH))
+    await session.shuffle()
+    await session.applyAdventurous()
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS)
+    expect(session.getState()).toMatchObject({ isRegenerating: false, isApplyingAdv: false })
+  })
+
+  it("(c) Shuffle during Apply settles both spinners", async () => {
+    const { session, fetchImpl } = setup()
+    await session.toggleAdventurous()
+    fetchImpl.mockResolvedValueOnce(json(200)).mockResolvedValueOnce(json(200)).mockResolvedValue(json(200, FRESH))
+    await session.applyAdventurous()
+    await session.shuffle()
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS)
+    expect(session.getState()).toMatchObject({ isRegenerating: false, isApplyingAdv: false })
+  })
+
+  it("(d) a tick is skipped while a GET is in flight", async () => {
+    const { session, fetchImpl } = setup()
+    fetchImpl.mockResolvedValueOnce(json(200)).mockReturnValue(new Promise<Response>(() => {}))
+    await session.shuffle()
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 4)
+    expect(gets(fetchImpl)).toBe(1)
+    session.dispose()
+  })
+
+  it("(d) a stale tick resolving late does not kill the newer poll", async () => {
+    const { session, fetchImpl } = setup()
+    await session.toggleAdventurous()
+    let resolveOld: (r: Response) => void = () => {}
+    fetchImpl
+      .mockResolvedValueOnce(json(200)) // shuffle POST
+      .mockReturnValueOnce(new Promise<Response>((r) => { resolveOld = r })) // old poll's GET hangs
+      .mockResolvedValueOnce(json(200)) // apply POST
+      .mockResolvedValue(json(200, STALE))
+    await session.shuffle()
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS) // old GET in flight
+    await session.applyAdventurous() // new poll
+    resolveOld(json(200, FRESH)) // old tick lands late
+    await vi.advanceTimersByTimeAsync(0)
+    expect(session.getState().rails).toBe(ALL) // stale generation ignored
+    fetchImpl.mockResolvedValue(json(200, FRESH))
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS)
+    expect(session.getState().rails[0].artists[0].id).toBe("new-0")
+    expect(session.getState()).toMatchObject({ isRegenerating: false, isApplyingAdv: false })
+  })
+
+  it("(e) arrival with rails newer than the flag skips polling and clears the flag", () => {
+    const { session, fetchImpl, storage } = setup({ initialGeneratedAt: new Date(Date.now()).toISOString() })
+    storage.getItem.mockReturnValue(String(Date.now() - 30_000))
+    session.start({ coldStart: false })
+    expect(session.getState().isRegenerating).toBe(false)
+    expect(storage.removeItem).toHaveBeenCalledWith(EXPLORE_REGEN_AT_KEY)
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
+  it("(f) StrictMode start → dispose → start keeps the arrival poll alive", async () => {
+    const { session, fetchImpl, storage } = setup()
+    storage.getItem.mockReturnValue(String(Date.now() - 1000))
+    fetchImpl.mockResolvedValue(json(200, FRESH))
+    session.start({ coldStart: false })
+    session.dispose()
+    session.start({ coldStart: false })
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS)
+    expect(gets(fetchImpl)).toBe(1)
+    expect(session.getState().isRegenerating).toBe(false)
+  })
+
+  it("(f) StrictMode cold start POSTs once and still polls", async () => {
+    const { session, fetchImpl } = setup()
+    fetchImpl.mockResolvedValueOnce(json(200)).mockResolvedValue(json(200, FRESH))
+    session.start({ coldStart: true })
+    session.dispose()
+    session.start({ coldStart: true })
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS)
+    expect(fetchImpl.mock.calls.filter((c) => String(c[0]).includes("generate")).length).toBe(1)
+    expect(session.getState().isRegenerating).toBe(false)
+  })
+
+  it("(g) toggling on then off is not dirty", async () => {
+    const { session } = setup()
+    await session.toggleAdventurous()
+    session.setAdventurous(true) // useAdventurousMode pushes the flip back
+    await session.toggleAdventurous()
+    expect(session.getState().isAdvDirty).toBe(false)
+  })
+})

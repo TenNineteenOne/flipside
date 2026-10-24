@@ -52,7 +52,7 @@ export function useRailSession(opts: UseRailSessionOpts): RailSessionState & Omi
   useEffect(() => {
     session.start({ coldStart: opts.coldStart })
     return () => session.dispose()
-    // Mount-only; start() is itself once-only.
+    // Mount-only; start() is once-only and revives after dispose() (StrictMode).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session])
 
