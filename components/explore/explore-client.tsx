@@ -1,7 +1,6 @@
 "use client"
 
-import { Suspense, use, useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { toast } from "sonner"
+import { Suspense, use, useCallback, useMemo } from "react"
 import { RefreshCw, Sparkles, Moon, Mountain, Flame, Dices, type LucideIcon } from "lucide-react"
 import { AnimatePresence } from "framer-motion"
 import { ChallengeCard } from "@/components/explore/challenge-card"
@@ -9,16 +8,9 @@ import { ExploreArtistRow } from "@/components/explore/explore-artist-row"
 import type { RailKey, RailPayload } from "@/lib/recommendation/explore-rail-payloads"
 import type { MusicPlatform } from "@/lib/music-links"
 import { Ambient } from "@/components/visual/ambient"
-import { useAdventurousMode } from "@/lib/hooks/use-adventurous-mode"
 import { useArtistFeedback } from "@/lib/hooks/use-artist-feedback"
 import { useArtistSaves } from "@/lib/hooks/use-artist-saves"
-import {
-  EXPLORE_REGEN_AT_KEY,
-  POLL_CEILING_MS,
-  POLL_INTERVAL_MS,
-  hasRegenCompleted,
-  shouldPollOnArrival,
-} from "@/lib/client/rail-session"
+import { useRailSession } from "@/lib/hooks/use-rail-session"
 
 export interface ChallengePayload {
   title: string
@@ -81,53 +73,47 @@ export function ExploreClient({
   generatedAt: initialGeneratedAt = null,
   coldStart = false,
 }: ExploreClientProps) {
-  const [rails, setRails] = useState<RailPayload[]>(initialRails)
-  const [isRegenerating, setIsRegenerating] = useState(false)
-  const { adventurous, setAdventurous } = useAdventurousMode(initialAdventurous)
-  const [isTogglingAdv, setIsTogglingAdv] = useState(false)
-  const [isAdvDirty, setIsAdvDirty] = useState(false)
-  const [isApplyingAdv, setIsApplyingAdv] = useState(false)
-
-  async function handleAdventurousToggle() {
-    if (isTogglingAdv) return
-    setIsTogglingAdv(true)
-    try {
-      await setAdventurous(!adventurous)
-      setIsAdvDirty(true)
-    } catch {
-      toast.error("Couldn't toggle — try again")
-    } finally {
-      setIsTogglingAdv(false)
-    }
-  }
-
-  // Adventurous rail ordering — default-off order is adjacent/wildcards/outside/leftfield.
-  // When ON, flip to serendipity-first: outside/leftfield/wildcards/adjacent. The server
-  // also inflates Left-field count when Adventurous is set. Rails with fewer than
-  // MIN_PICKS artists are hidden so every visible tab has real depth to browse.
-  const orderedRails = useMemo(() => {
-    const MIN_PICKS = 5
-    const order: RailKey[] = adventurous
-      ? ["outside", "leftfield", "wildcards", "adjacent"]
-      : ["adjacent", "wildcards", "outside", "leftfield"]
-    const byKey = new Map(rails.map((r) => [r.railKey, r] as const))
-    return order
-      .map((k) => byKey.get(k))
-      .filter((r): r is RailPayload => !!r && r.artists.length >= MIN_PICKS)
-  }, [rails, adventurous])
-
-  const [activeKey, setActiveKey] = useState<RailKey>(orderedRails[0]?.railKey ?? "adjacent")
-  const activeRail = useMemo(
-    () => orderedRails.find((r) => r.railKey === activeKey) ?? orderedRails[0],
-    [orderedRails, activeKey],
-  )
+  // Rails, active rail, adventurous ordering, shuffle / apply rebuilds and the
+  // poll-swap all live in the RailSession controller (lib/client/rail-session).
+  const {
+    adventurous,
+    orderedRails,
+    activeKey,
+    activeRail,
+    isRegenerating,
+    isTogglingAdv,
+    isAdvDirty,
+    isApplyingAdv,
+    select: setActiveKey,
+    toggleAdventurous: handleAdventurousToggle,
+    shuffle: handleShuffle,
+    applyAdventurous: handleApplyAdventurous,
+  } = useRailSession({
+    initialRails,
+    initialGeneratedAt,
+    initialAdventurous,
+    coldStart,
+    // Shuffle drops stale thumbs_up on the active rail before the swap.
+    dropThumbsUp: (ids) =>
+      setSignals((prev) => {
+        let changed = false
+        const n = new Map(prev)
+        for (const id of ids) {
+          if (n.get(id) === "thumbs_up") {
+            n.delete(id)
+            changed = true
+          }
+        }
+        return changed ? n : prev
+      }),
+    // Applying an Adventurous change rebuilds every rail — drop all signals.
+    clearSignals: () => setSignals(new Map()),
+  })
 
   // Feedback signals (thumbs_up / thumbs_down / skip) per artist.
   // railKey lets the server narrow-invalidate only the owning rail; other
   // rails pick up the signal on their own TTL via the persisted feedback row.
   // "skip" is local-only — no server call, no recommendation_cache write.
-  // setSignals exposes bulk replacement so handleShuffle / handleApplyAdventurous
-  // can drop stale thumbs_up entries without triggering individual setSignal calls.
   const { signals: dismissedSignals, setSignal, setSignals } = useArtistFeedback({
     railKey: activeKey,
     // Explore treats "skip" as a session-local dismiss — no /api/feedback
@@ -159,228 +145,6 @@ export function ExploreClient({
     (artistId: string) => toggleSave(artistId),
     [toggleSave],
   )
-
-  // -------------------------------------------------------------------------
-  // Poll-swap machinery
-  // -------------------------------------------------------------------------
-
-  // Ref holding the latest generatedAt we've seen — updated whenever rails swap
-  // in. Using a ref rather than state so poll callbacks capture the latest
-  // value without needing to be recreated each render.
-  const generatedAtRef = useRef<string | null>(initialGeneratedAt)
-  // Pointer to the active interval so we can clear it from anywhere.
-  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  // Absolute deadline so we don't poll forever.
-  const pollDeadlineRef = useRef<number>(0)
-  // Ref to the latest orderedRails so poll callbacks can drop thumbs_up without
-  // stale closure issues. Declared here (before regenAndPoll) so the closure
-  // sees it during regen calls.
-  const orderedRailsRef = useRef(orderedRails)
-  // Ref to the latest activeKey so regenAndPoll's dropThumbsUp path reads the
-  // rail the user is actually looking at, even if they switch tabs while the
-  // regen request is in flight (B4).
-  const activeKeyRef = useRef(activeKey)
-
-  function stopPolling() {
-    if (pollTimerRef.current !== null) {
-      clearInterval(pollTimerRef.current)
-      pollTimerRef.current = null
-    }
-  }
-
-  /**
-   * Fetch the latest rails from GET /api/explore/rails and swap them in when
-   * the generatedAt timestamp has advanced. Returns true if the swap landed.
-   * Never throws — network/parse errors are silently skipped so the poller
-   * stays alive until the ceiling.
-   */
-  async function pollOnce(captured: string | null): Promise<boolean> {
-    try {
-      const res = await fetch("/api/explore/rails")
-      if (!res.ok) return false
-      const json = await res.json() as { rails: RailPayload[]; generatedAt: string | null }
-      if (!hasRegenCompleted(captured, json.generatedAt)) return false
-      // Regen landed — swap rails in.
-      generatedAtRef.current = json.generatedAt
-      setRails(json.rails)
-      // Preserve activeKey if the refreshed rails contain it; otherwise fall
-      // back to whatever orderedRails[0] will resolve to after state update.
-      setActiveKey((prev) => {
-        const keys = new Set(json.rails.map((r: RailPayload) => r.railKey))
-        return keys.has(prev) ? prev : (json.rails[0]?.railKey ?? "adjacent")
-      })
-      return true
-    } catch {
-      // Swallow — next tick will retry
-      return false
-    }
-  }
-
-  /**
-   * Poll GET /api/explore/rails every POLL_INTERVAL_MS until generatedAt
-   * advances past `capturedGeneratedAt` (or the ceiling is hit). Calls
-   * `onSettle()` when done — either after a successful swap or on ceiling.
-   * Reuses the shared stopPolling / pollTimerRef / pollDeadlineRef machinery.
-   *
-   * This is intentionally a poll-only path: it does NOT POST force=true.
-   * Call regenAndPoll (which wraps this) when you also need to kick off the
-   * regen; call this directly when the regen was already requested externally
-   * (e.g., by Settings).
-   */
-  function pollUntilFresh(opts: {
-    capturedGeneratedAt: string | null
-    onSettle: () => void
-    clearRegenFlag?: boolean
-  }) {
-    stopPolling()
-    pollDeadlineRef.current = Date.now() + POLL_CEILING_MS
-
-    pollTimerRef.current = setInterval(async () => {
-      const expired = Date.now() >= pollDeadlineRef.current
-      if (expired) {
-        stopPolling()
-        if (opts.clearRegenFlag) {
-          try { localStorage.removeItem(EXPLORE_REGEN_AT_KEY) } catch { /* private mode */ }
-        }
-        opts.onSettle()
-        toast("Still building — refresh in a moment", { duration: 4000 })
-        return
-      }
-      const swapped = await pollOnce(opts.capturedGeneratedAt)
-      if (swapped) {
-        stopPolling()
-        if (opts.clearRegenFlag) {
-          try { localStorage.removeItem(EXPLORE_REGEN_AT_KEY) } catch { /* private mode */ }
-        }
-        opts.onSettle()
-      }
-    }, POLL_INTERVAL_MS)
-  }
-
-  /**
-   * Kick off a background regen then poll until rails swap in (or ceiling).
-   * `onSettle` is called (no-arg) when the poller stops, regardless of reason.
-   * `dropThumbsUp` — when true, clears thumbs_up entries from the current
-   * active rail's artists before the swap (used by handleShuffle).
-   */
-  async function regenAndPoll(opts: {
-    onSettle: () => void
-    dropThumbsUp?: boolean
-    clearAdvDirty?: boolean
-  }) {
-    try {
-      const res = await fetch("/api/explore/generate?force=true", { method: "POST" })
-      if (!res.ok) throw new Error("generate failed")
-    } catch {
-      toast.error("Couldn't start rebuild — try again")
-      opts.onSettle()
-      return
-    }
-
-    // Capture the timestamp AFTER the POST so we don't prematurely accept
-    // a stale cache row that was written before the regen started.
-    const captured = generatedAtRef.current
-
-    if (opts.dropThumbsUp) {
-      setSignals((prev) => {
-        // Active rail, not orderedRails[0] — this used to hardcode the first
-        // rail regardless of which tab the user was viewing (B4).
-        const active = orderedRailsRef.current.find((r) => r.railKey === activeKeyRef.current)
-        if (!active) return prev
-        let changed = false
-        const n = new Map(prev)
-        for (const a of active.artists) {
-          if (n.get(a.id) === "thumbs_up") {
-            n.delete(a.id)
-            changed = true
-          }
-        }
-        return changed ? n : prev
-      })
-    }
-
-    if (opts.clearAdvDirty) {
-      setSignals(new Map())
-      setIsAdvDirty(false)
-    }
-
-    pollUntilFresh({ capturedGeneratedAt: captured, onSettle: opts.onSettle })
-  }
-
-  // Cleanup on unmount
-  useEffect(() => () => { stopPolling() }, [])
-
-  // Cold-start: on mount, if coldStart is true, kick off a regen+poll so the
-  // page populates without ever having blocked the server render.
-  // We use a ref to ensure this fires at most once even in StrictMode.
-  const coldStartFiredRef = useRef(false)
-  useEffect(() => {
-    if (!coldStart || coldStartFiredRef.current) return
-    coldStartFiredRef.current = true
-    setIsRegenerating(true)
-    regenAndPoll({
-      onSettle: () => setIsRegenerating(false),
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [coldStart])
-
-  // Settings-arrival: if Settings fired a background explore regen and the user
-  // navigated here before it finished, start a poll-only (no re-POST) so rails
-  // refresh automatically. The localStorage flag is the cross-navigation signal.
-  // Fires at most once (ref guard); only runs when NOT coldStart (the cold-start
-  // path already triggers a regenAndPoll above which subsumes polling).
-  const settingsArrivalFiredRef = useRef(false)
-  useEffect(() => {
-    if (coldStart || settingsArrivalFiredRef.current) return
-    let flagValue: string | null = null
-    try { flagValue = localStorage.getItem(EXPLORE_REGEN_AT_KEY) } catch { /* private mode */ }
-    if (!shouldPollOnArrival(flagValue, Date.now())) return
-    settingsArrivalFiredRef.current = true
-    setIsRegenerating(true)
-    pollUntilFresh({
-      capturedGeneratedAt: generatedAtRef.current,
-      clearRegenFlag: true,
-      onSettle: () => setIsRegenerating(false),
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // Keep orderedRailsRef current on every render.
-  useEffect(() => { orderedRailsRef.current = orderedRails }, [orderedRails])
-  // Keep activeKeyRef current on every render (B4).
-  useEffect(() => { activeKeyRef.current = activeKey }, [activeKey])
-
-  // B5: activeKey is only seeded once from orderedRails[0] at mount. When
-  // Adventurous flips post-mount, orderedRails reorders/refilters and the
-  // stale activeKey can point at a rail that's no longer visible — no tab
-  // renders as active even though activeRail silently falls back to
-  // orderedRails[0]. Re-point activeKey whenever it drops out of the visible
-  // set; this never fires from a normal tab click since clicks always set
-  // activeKey to a key that's currently in orderedRails.
-  useEffect(() => {
-    if (orderedRails.length === 0) return
-    if (!orderedRails.some((r) => r.railKey === activeKey)) {
-      setActiveKey(orderedRails[0].railKey)
-    }
-  }, [orderedRails, activeKey])
-
-  async function handleApplyAdventurous() {
-    if (!isAdvDirty || isApplyingAdv) return
-    setIsApplyingAdv(true)
-    await regenAndPoll({
-      clearAdvDirty: true,
-      onSettle: () => setIsApplyingAdv(false),
-    })
-  }
-
-  async function handleShuffle() {
-    if (isRegenerating) return
-    setIsRegenerating(true)
-    await regenAndPoll({
-      dropThumbsUp: true,
-      onSettle: () => setIsRegenerating(false),
-    })
-  }
 
   const totalDiscoveries = useMemo(
     () => orderedRails.reduce((n, r) => n + r.artists.length, 0),
