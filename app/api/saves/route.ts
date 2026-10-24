@@ -16,7 +16,9 @@ export const POST = withAuthedJsonRoute(async ({ userId, body: rawBody }) => {
 
   const supabase = createServiceClient()
 
-  // Resolve artist name from cache
+  // Resolve artist name: the user's recommendation_cache row first, then the
+  // canonical `artists` row (Explore artists aren't in recommendation_cache, so
+  // without this /saved showed the raw uuid).
   let resolvedArtistName = ""
   {
     const { data: cached } = await supabase
@@ -27,6 +29,13 @@ export const POST = withAuthedJsonRoute(async ({ userId, body: rawBody }) => {
       .maybeSingle()
     if (cached?.artist_data?.name) {
       resolvedArtistName = cached.artist_data.name
+    } else {
+      const { data: artist } = await supabase
+        .from("artists")
+        .select("name")
+        .eq("id", artistId)
+        .maybeSingle()
+      if (artist?.name) resolvedArtistName = artist.name
     }
   }
 
