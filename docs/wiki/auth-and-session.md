@@ -10,15 +10,32 @@ flipside uses **NextAuth v5 (Auth.js) with a Credentials provider** — **userna
 There is **no OAuth, no password, and Spotify is NOT the login** (a recurring
 misconception — verify against `lib/auth.ts`). See [[spotify-dependency]].
 
-## Login flow (`lib/auth.ts`)
+## Login flow (`lib/auth.ts`, decisions in `lib/auth-sign-in.ts`)
 
-1. Username accepted: 2–30 chars, `/^[a-z0-9._-]+$/`.
-2. **Rate-limit by IP** via `lib/rate-limiter.ts` → `login_attempts` table, enforced
-   atomically in DB (`rpc_register_login_attempt`, migration 0035) to avoid TOCTOU races
-   across Vercel instances (10 attempts / 60s).
+The sign-in page (`app/(marketing)/sign-in/page.tsx`) has two explicit modes, sent as the
+`mode` credential (#175 D3). Default is **Existing account**; a missing or unknown `mode`
+is treated as existing, so nothing ever creates an account by accident.
+
+1. **Rate-limit** via `lib/rate-limiter.ts` → `login_attempts` table, enforced atomically in
+   DB (`rpc_register_login_attempt`, migration 0035) to avoid TOCTOU races across Vercel
+   instances. Three fixed 60s buckets, checked in order, stopping at the first full one
+   (so an IP already blocked is not charged to the global bucket):
+   - per IP: 10 (`sha256(ip)`, same key as before D3);
+   - per network: 20 per IPv6 /64 (`sha256("net:<prefix>::/64")`). IPv4 has no separate
+     network bucket: the address is the network (a /24 would mostly hit shared NAT ranges);
+   - global: 300 across all sign-ins (key `global`). A friend group never reaches it; a
+     distributed guesser can, which blocks everyone until the window rolls over.
+   Each bucket **fails open** on a DB error. Both modes count. Exceeded → code `rate_limited`.
+2. Username accepted: 2–30 chars, `/^[a-z0-9._-]+$/` (`normalizeUsername`).
 3. **HMAC the username**: `HMAC-SHA256(username, USERNAME_HMAC_SECRET)` → `username_hash`.
    The plaintext username is **never stored**; the hash is a one-way lookup key.
-4. **Upsert** the `users` row; return `{ id: UUID }`.
+4. `resolveSignIn(mode, hash, store)`:
+   - **existing** → sign in if the hash exists; otherwise a generic `credentials` failure
+     ("Couldn't sign in with that username."), identical for unknown and invalid names.
+   - **new** → insert the `users` row if the hash is free; a taken name (including a
+     concurrent insert hitting `users_username_hash_key`) fails with code `username_taken`.
+     This reveals that a name exists; accepted trade-off.
+   Codes reach the client as `signIn(...).code` (custom `CredentialsSignin` subclasses).
 5. **JWT callback** stores the UUID as `token.sub`; **session callback** copies it to
    `session.user.id`. Strategy is `"jwt"` (signed cookie, not DB sessions).
 6. Cookie: `authjs.session-token` / `__Secure-authjs.session-token`. The JWT holds only

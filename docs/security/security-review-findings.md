@@ -62,3 +62,13 @@ Severity reflects the verifier's corrected grade, leading with **reachability**.
 5. **`error.tsx` leaks `error.message`** — no route outside `(app)/` throws dynamic messages; `(app)/error.tsx` renders a static string.
 6. **Login limiter lacks per-username limiting** — username-only auth means no brute-force surface; per-username limiting would *add* a lockout-DoS.
 7. **history/accumulate cooldown race** — self-only blast radius, double-guarded by resolution idempotency + cache.
+
+---
+
+## Update 2026-10-24 — login guessing hardening (#175 D3)
+
+Sweep 1 found that every wrong-username sign-in silently created an account, so guessing friends' usernames was free and the only signal was a hit; and the 10/min limiter keyed on the full IP, so an IPv6 /64 or a proxy pool got a fresh bucket per address.
+
+- **No more auto-create.** Sign-in now has explicit **Existing account** (default) and **New account** modes. Existing never creates; an unknown name gets the same generic error as an invalid one. New never signs into a taken name and says it's taken (an accepted enumeration signal, rate-limited like everything else). Logic: `lib/auth-sign-in.ts`.
+- **Rate limits** (same atomic RPC, migration 0035, no new migration: the RPC takes any key string and per-call limits): per IP 10/min (unchanged), per IPv6 /64 20/min, global 300/min. Checked in order, stopping at the first full bucket, so one blocked address can't fill the global cap alone.
+- **Still open:** all buckets fail open on DB error (baseline; a DB outage fails sign-in anyway at the `users` lookup). A distributed attacker can exhaust the global cap and block sign-in for everyone for about a minute after the flood. Session `maxAge` is still the NextAuth default (30 days); shortening it, or invite codes for New account, remain options.

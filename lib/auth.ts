@@ -1,28 +1,70 @@
-import NextAuth from "next-auth"
+import NextAuth, { CredentialsSignin } from "next-auth"
 import Credentials from "next-auth/providers/credentials"
 import { createHmac } from "crypto"
 import { cookies } from "next/headers"
 import { createServiceClient } from "@/lib/supabase/server"
 import { isRateLimited } from "@/lib/rate-limiter"
+import {
+  SIGN_IN_CODES,
+  normalizeUsername,
+  parseSignInMode,
+  resolveSignIn,
+  type UserStore,
+} from "@/lib/auth-sign-in"
+
+class UsernameTakenError extends CredentialsSignin {
+  code = SIGN_IN_CODES.taken
+}
+class RateLimitedError extends CredentialsSignin {
+  code = SIGN_IN_CODES.rateLimited
+}
+
+function supabaseUserStore(): UserStore {
+  const supabase = createServiceClient()
+  return {
+    async findIdByHash(hash) {
+      const { data, error } = await supabase
+        .from("users")
+        .select("id")
+        .eq("username_hash", hash)
+        .maybeSingle()
+      if (error) throw new Error(`[auth] user lookup failed: ${error.message}`)
+      return data?.id ?? null
+    },
+    async create(hash) {
+      const { data, error } = await supabase
+        .from("users")
+        .insert({ username_hash: hash })
+        .select("id")
+        .single()
+      if (error?.code === "23505") return { taken: true } // users_username_hash_key
+      if (error || !data) {
+        console.error("[auth] failed to create user:", error?.message)
+        return null
+      }
+      return { id: data.id }
+    },
+  }
+}
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   secret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET,
   session: { strategy: "jwt" },
   providers: [
     Credentials({
-      credentials: { username: { type: "text" } },
+      credentials: { username: { type: "text" }, mode: { type: "text" } },
       async authorize(credentials, request) {
-        // Rate limit by IP
-        // Prefer x-real-ip (set by Vercel, not spoofable) over x-forwarded-for (client-controllable leftmost value)
+        // Rate limit per IP, per IPv6 /64 and globally (lib/rate-limiter.ts).
+        // Both modes count. Prefer x-real-ip (set by Vercel, not spoofable)
+        // over x-forwarded-for (client-controllable leftmost value)
         const headers = request?.headers as Headers | undefined
         const ip = headers?.get?.("x-real-ip")?.trim()
           ?? headers?.get?.("x-forwarded-for")?.split(",").pop()?.trim()
           ?? "unknown"
-        if (await isRateLimited(ip)) return null
+        if (await isRateLimited(ip)) throw new RateLimitedError()
 
-        const username = (credentials?.username as string | undefined)?.trim()?.toLowerCase()
-        if (!username || username.length < 2 || username.length > 30) return null
-        if (!/^[a-z0-9._-]+$/.test(username)) return null
+        const username = normalizeUsername(credentials?.username)
+        if (!username) return null
 
         const secret = process.env.USERNAME_HMAC_SECRET
         if (!secret) {
@@ -31,30 +73,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         }
 
         const hash = createHmac("sha256", secret).update(username).digest("hex")
-        const supabase = createServiceClient()
+        const result = await resolveSignIn(parseSignInMode(credentials?.mode), hash, supabaseUserStore())
 
-        // Find existing user by hash
-        const { data: existing } = await supabase
-          .from("users")
-          .select("id")
-          .eq("username_hash", hash)
-          .maybeSingle()
-
-        if (existing) return { id: existing.id }
-
-        // New user — create account
-        const { data: created, error } = await supabase
-          .from("users")
-          .insert({ username_hash: hash })
-          .select("id")
-          .single()
-
-        if (error || !created) {
-          console.error("[auth] failed to create user:", error?.message)
-          return null
-        }
-
-        return { id: created.id }
+        if ("id" in result) return { id: result.id }
+        if (result.error === "taken") throw new UsernameTakenError()
+        return null
       },
     }),
   ],
