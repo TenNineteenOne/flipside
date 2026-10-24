@@ -1,14 +1,15 @@
 ---
 title: Generation Engine (Feed)
-updated: 2026-07-11
+updated: 2026-10-24
 related: [[explore-engine]], [[music-providers]], [[external-apis]], [[genre-system]], [[data-model]]
 ---
 
 # Generation Engine (Feed)
 
 The Feed ("For You") pipeline. Entry point: `buildRecommendations(input)` in
-`lib/recommendation/engine.ts` (~45KB, the core). Explore shares this resolver/confirm
-core — see [[explore-engine]].
+`lib/recommendation/engine.ts` (the core). Explore shares the same
+`PlayableCandidates` pipeline (resolve → exclusions → rehydrate → confirm → persist) — see
+[[explore-engine]].
 
 ## Pipeline (in order)
 
@@ -28,13 +29,13 @@ core — see [[explore-engine]].
 5. **Pool split** (`splitResolvePools`) — first **36** names = blocking pool, next **54** =
    secondary (resolved later in `after()`). These caps (`resolve-pools.ts`) are the primary
    latency knob.
-6. **Resolve** (`resolveArtistsByName`, `resolve-candidates.ts`) — cache-first against
-   `artist_search_cache`; misses → **Spotify `/search`** (token: `userAccessToken ??
-   clientToken`), with **Last.fm `artist.getInfo`** enrichment fired in parallel. Backoff
-   budget 90s total / 20s per name; concurrency 6, 125ms spacing. On breaker-open 429 it
-   **skips retry** immediately.
-7. **Filter** — drop thumbs-down, listened-over-`playThreshold`, popularity>50 under
-   underground mode, optional genre filter.
+6. **Resolve** (`PlayableCandidates.resolve`, `playable-candidates.ts`) — the doorway
+   (`ArtistIdentity`: name-cache → Last.fm `artist.getInfo` lookup → mint), keyed by the
+   input name. Concurrency 6, 125ms spacing for the blocking pool.
+7. **Filter** (the `keep` gate, before rehydrate/confirm) — `Exclusions`
+   (`exclusions.ts`: thumbs-down, listened over `playThreshold` by id or name key, 7-day
+   seen / dismissed cooldown), popularity>50 under underground mode, optional genre filter.
+   Then **rehydrate** from `artist_tracks_cache` via `PreviewStore`.
 8. **Score** (`scoreCandidate` / `tierMultiplier`) —
    `k^popularity × 0.8 + seedRelevance × 0.2 − adventurousPenalty`, where `k` =
    `popularity_curve`. See [[settings-and-discovery]].
@@ -44,31 +45,34 @@ core — see [[explore-engine]].
     20-item feed. See [[genre-system]].
 11. **Adjacent-genre bleed** (`augmentWithAdjacent`) — inject 4–10 picks from
     close/medium adjacent tags at positions 5–7+ (skipped when a `genre` filter is active).
-12. **Confirm previews — Tier 1** (`confirmToTarget` / `confirm-previews.ts`) — first 8
-    artists, in waves: cache → **iTunes** `search?entity=song` → **Spotify
-    `/artists/{id}/top-tracks`** fallback. Artists with no playable preview are **dropped**.
-13. **Write Tier 1** (`writeScored`) — upsert ≤8 rows to `recommendation_cache`; also write
-    confirmed `topTracks` back into `artist_search_cache` (warm-reuse, #145).
-14. **Return fast** — response carries `count`, a `runSecondary` closure, and `metrics`.
-15. **Background** (`runSecondary` via `after()`) — confirm the rest of the primary pool
-    (Tier 2, ≤12) then the secondary pool (≤20), writing each batch.
+12. **Confirm previews — Tier 1** (`PlayableCandidates.confirm` → `confirmToTarget` /
+    `confirm-previews.ts`) — first 8 artists, in waves: rehydrated cache → **iTunes**
+    `search?entity=song` → **Spotify `/artists/{id}/top-tracks`** fallback. Artists with no
+    playable preview are **dropped**. Every live outcome is collected for persistence.
+13. **Write Tier 1** (`writeScored`) — upsert ≤8 rows to `recommendation_cache` (re-checks
+    cooldown fresh from the DB as a safety net).
+14. **Return fast** — the result carries `count`, `pending`, one `finish()` continuation,
+    and `metrics`.
+15. **Background** (`finish()` via `after()`) — confirm the rest of the primary pool
+    (Tier 2, ≤12) then the secondary pool (≤20), writing each batch; then flush every soften
+    run's confirm outcomes to `artist_tracks_cache` (even if the secondary pass threw).
 
 ## Key modules (`lib/recommendation/`)
 
 | Module | Purpose |
 |---|---|
 | `engine.ts` | the orchestrator above; also `getTagArtistNames`, `buildConfirmPreview` |
+| `playable-candidates.ts` | the shared name → confirmed-playable pipeline (resolve, `keep` gate, rehydrate, confirm, flush) used by Feed tiers/backfill/bleed and every Explore rail |
+| `exclusions.ts` | the one "never show this artist" policy (`loadExclusions(supabase, userId, { playThreshold \| 'any', nameFallback })`) |
+| `preview-store.ts` | `PreviewStore`: the ONLY code touching `artist_tracks_cache` — confirm read (`rehydrate`), display read, outcome collector, tracks-route read/refresh/write; one 24h TTL; poisoning guard on every write |
 | `resolve-candidates.ts` | name → Artist resolver (cache → Last.fm `getInfo` resolve; Spotify-free since #157), 429 backoff |
 | `resolve-pools.ts` | blocking (36) / secondary (54) split; latency knobs |
 | `confirm-previews.ts` | iTunes-first / Spotify-fallback playability confirm |
 | `enrich-artist.ts` | Last.fm `artist.getInfo` → fills genres + popularity (see below) |
 | `cluster-cap.ts` | 25% per-genre diversity cap (single-list + cross-rail) |
 | `scoring` (in engine) | `k^popularity` tier multiplier + relevance |
-| `artist-name-cache.ts` | read-through name cache over the canonical `artists` table (Stage-2 fold; chunked at 500). Ambiguous names (>1 row per `name_lower`) read as misses — `batchRead` is THE doorway lookup, also consumed by `lib/history/id-resolver.ts` and `POST /api/onboarding/resolve`. **Write path (#161, hardened 2026-07-11): ONE fill-only policy shared with `ensureArtists` — minted uuid → fill-only metadata UPDATE keyed on the uuid (never an insert; a bare insert duplicated the just-minted row and made the name permanently ambiguous); no uuid but a spotifyId (legacy/test callers only) → insert-if-absent (`ignoreDuplicates`) + fill-only refresh. `name`/`name_lower` are never overwritten, and empty genres / zero popularity / null image never clobber richer values** |
 | `window.ts` | weekly-stable seeds: `cacheWindowSeed`, `seededShuffle`, `sampleLikes` |
 | `freshness.ts` | "has ≥5 unseen unexpired recs?" for splash redirect |
-| `user-market.ts` | DB-cached Spotify market, falls back to "US" |
-| `tracks-handler.ts` | lazy `GET /api/artists/:id/tracks` (iTunes) — see [[api-routes]] |
 | `api-call-counter.ts` / `gen-timing.ts` | instrumentation (`[gen-timing]` logs) |
 
 ## Important truths
@@ -81,10 +85,12 @@ core — see [[explore-engine]].
   required for scoring to work.
 - **iTunes is the primary preview source.** The Spotify top-tracks fallback may already be
   dead for client-credentials (Feb 2026 removal) — verify in logs.
-- **Negative cache:** `topTracks: []` means "confirmed no preview" and skips the network;
-  `undefined` means "unconfirmed". This asymmetry is intentional.
+- **Preview cache tri-state** (`artist_tracks_cache`, owned by `PreviewStore`): no row =
+  unknown; `[]` = confirmed-empty negative (honored 24h by confirm reads); `[..]` =
+  playable (no TTL for confirm/display reads; the tracks route refreshes after 24h). An
+  iTunes *failure* never writes a negative.
 - **Two-phase write:** the HTTP `count` reflects only Tier-1 (8). Callers must run
-  `runSecondary()` in `after()`.
+  `finish()` in `after()`.
 
 ## Gotchas worth knowing
 

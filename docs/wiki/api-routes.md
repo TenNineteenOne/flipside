@@ -34,7 +34,7 @@ before its 401) and the GETs owned elsewhere (`/api/history`, `/api/recommendati
 | Route | Method | Does | Calls |
 |---|---|---|---|
 | `/api/recommendations` | GET | read ≤40 unseen/unexpired `recommendation_cache`, underground re-filter, return 20 | cache only |
-| `/api/recommendations/generate` | POST | `buildRecommendations`; 30s cooldown; refuses if unseen ≥60 unless `?replace=true`; schedules `runSecondary`+color via `after()` | [[generation-engine]], Spotify, iTunes |
+| `/api/recommendations/generate` | POST | `buildRecommendations`; 30s cooldown; refuses if unseen ≥60 unless `?replace=true`; schedules `finish()` (secondary + preview flush) + color via `after()` | [[generation-engine]], Spotify, iTunes |
 | `/api/explore/generate` | POST | `buildExploreRails`; `?force=true` → background regen, returns `{regenerating}` | [[explore-engine]] |
 | `/api/explore/preload` | GET | background warm from Feed (`hydrate:true`) | [[explore-engine]] |
 | `/api/explore/rails` | GET | read-only snapshot + `generatedAt` for poll-swap | [[explore-engine]] |

@@ -43,3 +43,6 @@
   Principle: **co-locate by lifecycle, not by entity — identity is forever, caches are disposable;
   never weld a disposable cache onto a forever row.** (Why the fold absorbed `artist_search_cache`
   — a metadata *duplicate* of `artists` — but never `artist_tracks_cache`, a distinct concern.)
+  Owned by ONE module, `PreviewStore` (`lib/recommendation/preview-store.ts`): no row = unknown,
+  `[]` = confirmed-empty negative, `[..]` = playable; one 24h TTL policy; every write passes the
+  name/id poisoning guard.
