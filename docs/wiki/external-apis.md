@@ -27,7 +27,7 @@ adapter, `lib/lastfm` (`lastfm.*`): key, timeouts, the `runLastfm` gate (12 conc
 > true 2026) and its license excludes images — images come from Spotify today.
 
 ## iTunes / Apple — preview audio (primary)
-Auth: **none** (free, keyless). All HTTP via `itunesFetch`; gated by the iTunes limiter + `itunesBreaker`.
+Auth: **none** (free, keyless). All HTTP via `itunesFetch`; gated by the iTunes limiter + `itunesBreaker` (the `/api/open` link resolver passes `gateOnly`: limiter only, no breaker, no call counter).
 
 | Endpoint | Used for | Where |
 |---|---|---|

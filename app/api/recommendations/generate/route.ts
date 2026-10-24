@@ -121,15 +121,38 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
   // Default to 0.95 (legacy hardcoded value) for pre-migration rows
   const popularityCurve: number = user.popularity_curve ?? 0.95
 
+  // Replace mode: wipe unseen queue before regenerating. Powers the Settings
+  // "Generate my feed" button so newly-added anchors take immediate effect.
+  const replace = req.nextUrl.searchParams.get("replace") === "true"
+
+  if (!replace) {
+    // ── [SECURITY PATCH] Algorithmic Queue Capacity DoS limit ──
+    // Restricts bad actors from infinitely looping the background engine, but allows up to 60 unseen artists to queue.
+    // Counts only UNEXPIRED unseen rows — the same set the feed shows (feed-query,
+    // hasFreshRecs); counting expired rows left returning users stuck at an empty
+    // feed behind a "queue full" 429. Runs BEFORE the cooldown claim so a
+    // queue-full 429 doesn't burn the 30s cooldown.
+    const { count, error: countErr } = await supabase
+      .from("recommendation_cache")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .is("seen_at", null)
+      .gt("expires_at", new Date().toISOString())
+
+    if (countErr) {
+      console.error("[generate] failed to check queue limit", countErr)
+    }
+
+    if (count && count >= 60) {
+      return apiError("Your discovery queue is full. Please review some artists before generating more.", 429)
+    }
+  }
+
   // Per-user cooldown: 30 seconds between generate requests (atomic claim —
   // stamps last_generated_at in the same statement that checks it).
   if ((await claimCooldown(supabase, userId, "last_generated_at", 30_000)) === "cooling") {
     return apiError("Please wait before generating more recommendations", 429)
   }
-
-  // Replace mode: wipe unseen queue before regenerating. Powers the Settings
-  // "Generate my feed" button so newly-added anchors take immediate effect.
-  const replace = req.nextUrl.searchParams.get("replace") === "true"
 
   if (replace) {
     const { error: wipeErr } = await supabase
@@ -139,22 +162,6 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
       .is("seen_at", null)
     if (wipeErr) {
       console.error("[generate] replace wipe failed", wipeErr.message)
-    }
-  } else {
-    // ── [SECURITY PATCH] Algorithmic Queue Capacity DoS limit ──
-    // Restricts bad actors from infinitely looping the background engine, but allows up to 60 unseen artists to queue
-    const { count, error: countErr } = await supabase
-      .from("recommendation_cache")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", user.id)
-      .is("seen_at", null)
-
-    if (countErr) {
-      console.error("[generate] failed to check queue limit", countErr)
-    }
-
-    if (count && count >= 60) {
-      return apiError("Your discovery queue is full. Please review some artists before generating more.", 429)
     }
   }
 

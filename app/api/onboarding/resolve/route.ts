@@ -2,7 +2,7 @@ import { apiError } from "@/lib/errors"
 import { createServiceClient } from "@/lib/supabase/server"
 import { createWindowLimiter } from "@/lib/rate-limiter"
 import { isValidSpotifyId } from "@/lib/spotify-ids"
-import { ArtistIdentity } from "@/lib/artist-identity"
+import { ArtistIdentity, stringSimilarity, SIMILARITY_THRESHOLD } from "@/lib/artist-identity"
 import { resolveArtistExternalIds } from "@/lib/artist-identity/musicbrainz"
 import { withAuthedCsrfRoute } from "@/lib/api/with-authed-route"
 
@@ -52,15 +52,36 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }) => {
   // MusicBrainz url-rels by mbid (keyless; 1-req/s limited internally). The
   // url-rel's Spotify id is the evidence that picks/mints the right row — the
   // Last.fm mbid itself is only a hint. No mbid / no Spotify rel → 404.
+  //
+  // Catalog-poisoning guard (#175 F9): a miss can MINT a shared `artists` row,
+  // so the minted name is MusicBrainz's canonical name for the mbid, never the
+  // client's free text — and the client's name must match it (the doorway's
+  // 0.8 similarity), else 404. Legit picks come from search results, so they match.
   let viaMb = false
   const identity = new ArtistIdentity(createServiceClient())
   const resolved = (
     await identity.resolve([name], async () => {
       if (!mbid) return null
-      const { spotifyId } = await resolveArtistExternalIds(mbid)
-      if (!spotifyId || !isValidSpotifyId(spotifyId)) return null
+      // ponytail: captures the MB artist `name` from the same url-rels response
+      // via the fetchImpl seam; upgrade path: have resolveArtistExternalIds
+      // (lib/artist-identity) return the canonical name itself.
+      let mbName: string | null = null
+      const captureName: typeof fetch = async (input, init) => {
+        const res = await fetch(input, init)
+        try {
+          const body = (await res.clone().json()) as { name?: unknown }
+          if (typeof body.name === "string" && body.name.trim()) mbName = body.name.trim()
+        } catch { /* non-JSON: fetchArtistRelations reports it */ }
+        return res
+      }
+      const { spotifyId } = await resolveArtistExternalIds(mbid, { fetchImpl: captureName })
+      if (!spotifyId || !isValidSpotifyId(spotifyId) || !mbName) return null
+      if (stringSimilarity(name, mbName) < SIMILARITY_THRESHOLD) {
+        console.log(`[onboard-resolve] name-mismatch name="${name}" mb="${mbName}" mbid=${mbid}`)
+        return null
+      }
       viaMb = true
-      return { spotifyId, name }
+      return { spotifyId, name: mbName }
     })
   ).get(name)
   if (resolved) {
