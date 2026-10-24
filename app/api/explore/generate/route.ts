@@ -3,7 +3,6 @@ import { safeAuth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, apiUnauthorized } from "@/lib/errors"
 import { enforceSameOrigin } from "@/lib/csrf"
-import { getAccessToken } from "@/lib/get-access-token"
 import { getSpotifyClientToken } from "@/lib/spotify-client-token"
 import { buildExploreRails, type BuildRailsResult } from "@/lib/recommendation/explore-engine"
 import type { NextRequest } from "next/server"
@@ -22,8 +21,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const supabase = createServiceClient()
 
-  const [userAccessToken, clientToken, { data: user, error: userError }] = await Promise.all([
-    getAccessToken(req),
+  const [clientToken, { data: user, error: userError }] = await Promise.all([
     getSpotifyClientToken(),
     supabase
       .from("users")
@@ -34,7 +32,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   if (userError || !user) return apiError("User not found", 404)
 
-  const accessToken = userAccessToken ?? clientToken ?? ""
+  const accessToken = clientToken ?? ""
   const force = req.nextUrl.searchParams.get("force") === "true"
 
   const railInput = {

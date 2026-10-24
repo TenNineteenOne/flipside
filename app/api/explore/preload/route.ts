@@ -1,10 +1,8 @@
 import { safeAuth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, apiUnauthorized } from "@/lib/errors"
-import { getAccessToken } from "@/lib/get-access-token"
 import { getSpotifyClientToken } from "@/lib/spotify-client-token"
 import { buildExploreRails, RAIL_KEYS } from "@/lib/recommendation/explore-engine"
-import type { NextRequest } from "next/server"
 
 // Mirrors explore/generate's force-regen cooldown (C1 hardening): this GET
 // has no `force` flag, but on a cold cache it runs the SAME 54-74s rail
@@ -24,25 +22,24 @@ export const maxDuration = 300
  * is just `{ ok: true }`; the value is the side-effect of populating
  * `explore_cache` and `artist_search_cache`.
  */
-export async function GET(req: NextRequest): Promise<Response> {
+export async function GET(): Promise<Response> {
   const session = await safeAuth()
   if (!session?.user?.id) return apiUnauthorized()
 
   const userId = session.user.id
   const supabase = createServiceClient()
 
-  const [{ data: user, error: userError }, userAccessToken, clientToken] = await Promise.all([
+  const [{ data: user, error: userError }, clientToken] = await Promise.all([
     supabase
       .from("users")
       .select("id, adventurous, underground_mode, popularity_curve, play_threshold, last_explore_generated_at")
       .eq("id", userId)
       .maybeSingle(),
-    getAccessToken(req),
     getSpotifyClientToken(),
   ])
   if (userError || !user) return apiError("User not found", 404)
 
-  const accessToken = userAccessToken ?? clientToken ?? ""
+  const accessToken = clientToken ?? ""
 
   try {
     // Cheap warm/cold check (mirrors buildExploreRails' own cache read) so the

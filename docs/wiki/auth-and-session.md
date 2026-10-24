@@ -1,6 +1,6 @@
 ---
 title: Auth & Session
-updated: 2026-06-06
+updated: 2026-10-24
 related: [[data-model]], [[api-routes]], [[infra-and-ops]]
 ---
 
@@ -27,13 +27,15 @@ misconception — verify against `lib/auth.ts`). See [[spotify-dependency]].
 `safeAuth()` wraps `auth()` and catches stale-cookie decryption errors (deletes the bad
 cookie instead of throwing).
 
-## The Spotify user token (optional, separate from login)
+## No Spotify user token
 
-Some users connect Spotify for richer history. When present, the encrypted OAuth token
-lives in the NextAuth JWT and is read server-side by `getAccessToken(req)`
-(`lib/get-access-token.ts`); it returns `null` on `RefreshTokenError`. This token powers
-only *connected-user extras* (history sync, like-a-track) and is **preferred** over the
-shared client-credentials key during generation (`userAccessToken ?? clientToken`). See
+There is **no per-user Spotify token**. Login is Credentials-only, so nothing ever wrote an
+`accessToken` into the JWT. The dead reader (`lib/get-access-token.ts`) and the routes that
+depended on it (`/api/spotify/like`, `/api/spotify/resolve-track`, the save→playlist branch
+of `/api/saves`) were deleted in #175 (restore tag `archive/spotify-user-token`). All
+server-side Spotify calls use the shared client-credentials token
+(`lib/spotify-client-token.ts`), or `""` (Spotify-free) when it is unavailable. The
+`users.flipside_playlist_id` / `spotify_id` columns remain but are unused. See
 [[external-apis]] and [[music-providers]].
 
 ## Username encryption at rest (`lib/crypto/username.ts`)

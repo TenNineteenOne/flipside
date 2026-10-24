@@ -16,32 +16,29 @@
 import { safeAuth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiUnauthorized, apiError } from "@/lib/errors"
-import { getAccessToken } from "@/lib/get-access-token"
 import { getSpotifyClientToken } from "@/lib/spotify-client-token"
 import { buildExploreRails } from "@/lib/recommendation/explore-engine"
 import { assembleRailPayloads } from "@/lib/recommendation/explore-rail-payloads"
-import type { NextRequest } from "next/server"
 
-export async function GET(req: NextRequest): Promise<Response> {
+export async function GET(): Promise<Response> {
   const session = await safeAuth()
   if (!session?.user?.id) return apiUnauthorized()
 
   const userId = session.user.id
   const supabase = createServiceClient()
 
-  const [{ data: user, error: userError }, userAccessToken, clientToken] = await Promise.all([
+  const [{ data: user, error: userError }, clientToken] = await Promise.all([
     supabase
       .from("users")
       .select("id, adventurous, underground_mode, popularity_curve, play_threshold")
       .eq("id", userId)
       .maybeSingle(),
-    getAccessToken(req),
     getSpotifyClientToken(),
   ])
 
   if (userError || !user) return apiError("User not found", 404)
 
-  const accessToken = userAccessToken ?? clientToken ?? ""
+  const accessToken = clientToken ?? ""
 
   try {
     // Read-only: never regenerate. Returns partial/empty rails when cold.

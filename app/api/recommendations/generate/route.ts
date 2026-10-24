@@ -1,7 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError } from "@/lib/errors"
 import { withAuthedCsrfRoute } from "@/lib/api/with-authed-route"
-import { getAccessToken } from "@/lib/get-access-token"
 import { getSpotifyClientToken } from "@/lib/spotify-client-token"
 import { buildRecommendations } from "@/lib/recommendation/engine"
 import { formatGenTiming } from "@/lib/recommendation/gen-timing"
@@ -99,9 +98,6 @@ async function runColorExtraction(
 export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Response> => {
   const req = request as NextRequest
 
-  // User-level Spotify token (only available for spotify_authorized users)
-  const userAccessToken = await getAccessToken(req)
-
   const supabase = createServiceClient()
 
   // Warm the Spotify client token concurrently with the user-row read. On
@@ -177,7 +173,7 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
     // via confirm), otherwise generate without it.
     // '' = no Spotify (the established RecommendationInput convention) — generation
     // runs Spotify-free (Last.fm resolver + iTunes previews).
-    const accessToken = userAccessToken ?? (await clientTokenPromise) ?? ""
+    const accessToken = (await clientTokenPromise) ?? ""
     if (!accessToken) {
       console.log("[generate] no Spotify token — generating Spotify-free (Last.fm resolver + iTunes previews)")
     }
