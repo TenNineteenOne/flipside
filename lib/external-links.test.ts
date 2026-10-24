@@ -12,6 +12,7 @@ const FRESH = "2026-10-20T00:00:00.000Z"
 const STALE = "2026-08-01T00:00:00.000Z"
 const ITUNES_URL = "https://music.apple.com/us/artist/radiohead/657515?uo=4"
 const SEARCH = "https://music.apple.com/search?term=Radiohead"
+const ARTIST = { id: ID, name: "Radiohead", apple_id: null }
 
 const itunesHit = () => ({
   ok: true,
@@ -19,8 +20,8 @@ const itunesHit = () => ({
 })
 
 async function run(tables: Tables) {
-  const fake = createFakeSupabase(tables)
-  const url = await linkFor(fake.client, { id: ID, name: "Radiohead" }, "apple_music", NOW)
+  const fake = createFakeSupabase({ artists: [ARTIST], ...tables })
+  const url = await linkFor(fake.client, ID, "apple_music", NOW)
   return { url, tables: fake.tables }
 }
 
@@ -32,41 +33,46 @@ beforeEach(() => {
 })
 
 describe("linkFor apple_music precedence", () => {
-  it("1. a validated artists.apple_id wins over everything (no iTunes call)", async () => {
-    const { url } = await run({
-      artists: [{ id: ID, apple_id: "657515" }],
-      artist_external_links: [{ artist_id: ID, apple_music_url: "https://music.apple.com/x", updated_at: FRESH }],
-    })
-    expect(url).toBe("https://music.apple.com/us/artist/657515")
+  it("unknown artist id → null (route 404s), no iTunes call", async () => {
+    const { url } = await run({ artists: [] })
+    expect(url).toBeNull()
     expect(itunesFetch).not.toHaveBeenCalled()
   })
 
-  it("ignores a malformed apple_id and falls through", async () => {
-    const { url } = await run({ artists: [{ id: ID, apple_id: "../evil" }] })
+  it("does NOT trust artists.apple_id (MB name search can pick a homonym)", async () => {
+    const { url } = await run({ artists: [{ ...ARTIST, apple_id: "999" }] })
     expect(url).toBe(ITUNES_URL)
   })
 
-  it("2. a fresh cached URL is used without a live lookup", async () => {
+  it("looks up and checks equality with the artists row name, gate-only", async () => {
+    await run({})
+    expect(itunesFetch).toHaveBeenCalledWith(
+      expect.stringContaining("term=Radiohead&"),
+      5000,
+      { gateOnly: true },
+    )
+  })
+
+  it("1. a fresh cached URL is used without a live lookup", async () => {
     const { url } = await run({
-      artists: [{ id: ID, apple_id: null }],
       artist_external_links: [{ artist_id: ID, apple_music_url: "https://music.apple.com/us/artist/cached/1", updated_at: FRESH }],
     })
     expect(url).toBe("https://music.apple.com/us/artist/cached/1")
     expect(itunesFetch).not.toHaveBeenCalled()
   })
 
-  it("2. a fresh negative cache (NULL) → search URL, no live lookup", async () => {
+  it("1. a fresh negative cache (NULL) → search URL by row name, no live lookup", async () => {
     const { url } = await run({ artist_external_links: [{ artist_id: ID, apple_music_url: null, updated_at: FRESH }] })
     expect(url).toBe(SEARCH)
     expect(itunesFetch).not.toHaveBeenCalled()
   })
 
-  it("2. a fresh but unsafe cached URL → search URL", async () => {
+  it("1. a fresh but unsafe cached URL → search URL", async () => {
     const { url } = await run({ artist_external_links: [{ artist_id: ID, apple_music_url: "https://evil.com/x", updated_at: FRESH }] })
     expect(url).toBe(SEARCH)
   })
 
-  it("3. stale cache → live lookup, result cached", async () => {
+  it("2. stale cache → live lookup, result cached", async () => {
     const { url, tables } = await run({ artist_external_links: [{ artist_id: ID, apple_music_url: null, updated_at: STALE }] })
     expect(url).toBe(ITUNES_URL)
     expect(tables.artist_external_links).toEqual([
@@ -74,7 +80,7 @@ describe("linkFor apple_music precedence", () => {
     ])
   })
 
-  it("4. live miss (name mismatch) → search URL and negative cache", async () => {
+  it("3. live miss (name mismatch) → search URL and negative cache", async () => {
     itunesFetch.mockResolvedValue({
       ok: true,
       data: { results: [{ artistId: 1, artistName: "Radiohead Tribute", artistLinkUrl: ITUNES_URL }] },
@@ -84,14 +90,7 @@ describe("linkFor apple_music precedence", () => {
     expect(tables.artist_external_links[0].apple_music_url).toBeNull()
   })
 
-  it("4. breaker open → search URL and NOT negatively cached", async () => {
-    itunesFetch.mockResolvedValue({ ok: false, reason: "breaker" })
-    const { url, tables } = await run({})
-    expect(url).toBe(SEARCH)
-    expect(tables.artist_external_links ?? []).toEqual([])
-  })
-
-  it("4. iTunes HTTP failure → search URL (negatively cached, as before)", async () => {
+  it("3. iTunes HTTP failure → search URL (negatively cached, as baseline)", async () => {
     itunesFetch.mockResolvedValue({ ok: false, reason: "http", status: 500 })
     const { url, tables } = await run({})
     expect(url).toBe(SEARCH)

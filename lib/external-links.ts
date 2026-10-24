@@ -1,13 +1,16 @@
 /**
  * Server-side external-link resolution ("Open in Apple Music").
  *
- * `linkFor` owns the precedence for a platform deep link:
- *   1. a validated platform id on the `artists` row (written by the MusicBrainz
- *      backfill, app/api/cron/mb-backfill),
- *   2. the cached iTunes result in `artist_external_links` (30-day TTL; a fresh
+ * `linkFor` owns the precedence for a platform deep link (baseline 9d6f7ad):
+ *   1. the cached iTunes result in `artist_external_links` (30-day TTL; a fresh
  *      NULL row is a negative cache → search URL, no live call),
- *   3. a live iTunes artist lookup (cached on the way out),
- *   4. the platform's search URL.
+ *   2. a live iTunes artist lookup + name-equality check (cached on the way out),
+ *   3. the platform's search URL.
+ * The name used for the lookup, the equality check and the search URL is the
+ * `artists` row's — never client input — because the cache is keyed by artist
+ * id and shared across users. `artists.apple_id` is deliberately NOT trusted:
+ * the MusicBrainz backfill writes it from a name search with no equality check,
+ * so a homonym can land there.
  * URL formatting for client-side links stays in lib/music-links.ts (pure).
  */
 import { itunesFetch } from "@/lib/music-provider/itunes"
@@ -33,13 +36,6 @@ interface ITunesResponse {
 
 export function appleMusicSearchUrl(name: string): string {
   return `https://music.apple.com/search?term=${encodeURIComponent(name)}`
-}
-
-/** Apple artist ids are numeric (see parseAppleArtistId in musicbrainz.ts). */
-const APPLE_ID_RE = /^\d{1,20}$/
-
-function appleArtistUrl(appleId: string): string {
-  return `https://music.apple.com/us/artist/${appleId}`
 }
 
 /**
@@ -68,20 +64,15 @@ export function isSafeAppleUrl(raw: string): boolean {
 }
 
 /**
- * Live iTunes artist lookup. `null` = no trusted match (negatively cacheable);
- * `undefined` = skipped because the iTunes breaker is open (transient — do
- * NOT negatively cache it).
+ * Live iTunes artist lookup. `null` = no trusted match (negatively cached).
+ * Gate-only: bypasses the preview breaker and call counter (see itunesFetch).
  */
-async function resolveAppleMusicUrl(name: string): Promise<string | null | undefined> {
+async function resolveAppleMusicUrl(name: string): Promise<string | null> {
   const url =
     `https://itunes.apple.com/search?term=${encodeURIComponent(name)}` +
     `&entity=musicArtist&limit=1`
-  const r = await itunesFetch<ITunesResponse>(url, 5000)
+  const r = await itunesFetch<ITunesResponse>(url, 5000, { gateOnly: true })
   if (!r.ok) {
-    if (r.reason === "breaker") {
-      console.log(`[open/apple_music] itunes breaker open, skip name="${name}"`)
-      return undefined
-    }
     if (r.reason === "http") console.error(`[open/apple_music] itunes status=${r.status} name="${name}"`)
     else if (r.reason === "network") console.error(`[open/apple_music] itunes fetch failed name="${name}" err=${String(r.error)}`)
     else console.error(`[open/apple_music] itunes json parse failed name="${name}" err=${String(r.error)}`)
@@ -101,33 +92,31 @@ async function resolveAppleMusicUrl(name: string): Promise<string | null | undef
 
 /**
  * Resolve the best external URL for an artist on `platform` (see precedence in
- * the file header). Never throws on DB/iTunes failure — degrades to the next
- * source and ultimately the search URL. `artist.name` must be non-empty.
+ * the file header). Returns `null` when `artistId` is not in `artists` (the
+ * route 404s). Never throws on DB/iTunes failure — degrades to the next source
+ * and ultimately the search URL.
  */
 export async function linkFor(
   supabase: SupabaseClient,
-  artist: { id: string; name: string },
+  artistId: string,
   platform: ResolvablePlatform,
   now: number = Date.now(),
-): Promise<string> {
+): Promise<string | null> {
   // Only apple_music is resolvable today; the param keeps the seam for more.
   void platform
-  const { id: artistId, name } = artist
 
   const [{ data: row }, { data: cached }] = await Promise.all([
-    supabase.from("artists").select("apple_id").eq("id", artistId).maybeSingle(),
+    supabase.from("artists").select("name").eq("id", artistId).maybeSingle(),
     supabase
       .from("artist_external_links")
       .select("apple_music_url, updated_at")
       .eq("artist_id", artistId)
       .maybeSingle(),
   ])
+  const name = typeof row?.name === "string" ? row.name.trim() : ""
+  if (!name) return null
 
-  // 1. Validated id from the MusicBrainz backfill.
-  const appleId = row?.apple_id
-  if (typeof appleId === "string" && APPLE_ID_RE.test(appleId)) return appleArtistUrl(appleId)
-
-  // 2. Row-existence + freshness check: if we've resolved (or negatively
+  // 1. Row-existence + freshness check: if we've resolved (or negatively
   // cached) this artist within the TTL window, skip iTunes entirely.
   const cutoff = new Date(now - EXTERNAL_LINK_CACHE_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString()
   if (cached && cached.updated_at && cached.updated_at > cutoff) {
@@ -136,21 +125,19 @@ export async function linkFor(
       : appleMusicSearchUrl(name)
   }
 
-  // 3. Live lookup + cache (upsert null on miss to negatively cache until TTL
+  // 2. Live lookup + cache (upsert null on miss to negatively cache until TTL
   // expiry, so repeated clicks on an unresolvable artist don't hammer iTunes).
   const resolved = await resolveAppleMusicUrl(name)
-  if (resolved !== undefined) {
-    const { error: upsertError } = await supabase
-      .from("artist_external_links")
-      .upsert(
-        { artist_id: artistId, apple_music_url: resolved, updated_at: new Date(now).toISOString() },
-        { onConflict: "artist_id" },
-      )
-    if (upsertError) {
-      console.error(`[open/apple_music] cache upsert failed id=${artistId} err="${upsertError.message}"`)
-    }
+  const { error: upsertError } = await supabase
+    .from("artist_external_links")
+    .upsert(
+      { artist_id: artistId, apple_music_url: resolved, updated_at: new Date(now).toISOString() },
+      { onConflict: "artist_id" },
+    )
+  if (upsertError) {
+    console.error(`[open/apple_music] cache upsert failed id=${artistId} err="${upsertError.message}"`)
   }
 
-  // 4. Search fallback.
+  // 3. Search fallback.
   return resolved ?? appleMusicSearchUrl(name)
 }

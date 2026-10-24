@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { apiError } from "@/lib/errors"
+import { apiError, apiNotFound } from "@/lib/errors"
 import { withAuthedRoute } from "@/lib/api/with-authed-route"
 import { isValidArtistId } from "@/lib/spotify-ids"
 import { linkFor } from "@/lib/external-links"
@@ -22,6 +22,8 @@ export const GET = withAuthedRoute(async (
     return apiError("Invalid artist id", 400)
   }
 
+  // `?name` is validated for response parity only: the lookup uses the
+  // `artists` row's name, since the link cache is shared and keyed by id.
   const { searchParams } = new URL(request.url)
   const rawName = (searchParams.get("name") ?? "").trim()
   if (!rawName) {
@@ -30,8 +32,8 @@ export const GET = withAuthedRoute(async (
   if (rawName.length > NAME_MAX_LEN) {
     return apiError("Artist name too long", 400)
   }
-  const name = rawName
 
-  const target = await linkFor(supabase, { id: artistId, name }, "apple_music")
+  const target = await linkFor(supabase, artistId, "apple_music")
+  if (!target) return apiNotFound()
   return NextResponse.redirect(target, 302)
 })

@@ -22,7 +22,7 @@ const call = (platform: string, id: string, query = "?name=Radiohead") =>
   })
 
 beforeEach(() => {
-  fake = createFakeSupabase({ artists: [{ id: ID, apple_id: "657515" }] })
+  fake = createFakeSupabase({ artists: [{ id: ID, name: "Radiohead", apple_id: "657515" }] })
   vi.mocked(safeAuth).mockResolvedValue({ user: { id: "u1" } } as Awaited<ReturnType<typeof safeAuth>>)
   itunesFetch.mockReset()
 })
@@ -46,10 +46,21 @@ describe("GET /api/open/[platform]/[artistId]", () => {
     expect(res.headers.get("location")).toBe("https://music.apple.com/")
   })
 
-  it("302s to the artist page from artists.apple_id via the fake client", async () => {
-    const res = await call("apple_music", ID)
+  it("302s to the iTunes page resolved from the artists row name, not ?name (apple_id ignored)", async () => {
+    itunesFetch.mockResolvedValue({
+      ok: true,
+      data: { results: [{ artistId: 1, artistName: "Radiohead", artistLinkUrl: "https://music.apple.com/us/artist/radiohead/1" }] },
+    })
+    const res = await call("apple_music", ID, "?name=Evil")
     expect(res.status).toBe(302)
-    expect(res.headers.get("location")).toBe("https://music.apple.com/us/artist/657515")
+    expect(res.headers.get("location")).toBe("https://music.apple.com/us/artist/radiohead/1")
+    expect(itunesFetch.mock.calls[0][0]).toContain("term=Radiohead&")
+  })
+
+  it("404s an unknown artist id without calling iTunes", async () => {
+    const res = await call("apple_music", "22222222-2222-4222-8222-222222222222")
+    expect(res.status).toBe(404)
+    expect(await res.json()).toEqual({ error: "Not found" })
     expect(itunesFetch).not.toHaveBeenCalled()
   })
 })
