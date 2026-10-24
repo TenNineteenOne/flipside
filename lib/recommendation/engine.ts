@@ -10,12 +10,11 @@ import {
   type SoftenedFilters,
 } from './types'
 import { resolveArtistsByName } from './resolve-candidates'
-import { ArtistIdentity } from '@/lib/artist-identity'
+import { ArtistIdentity, artistNameKey } from '@/lib/artist-identity'
 import { confirmPlayableTracks, confirmToTarget, type ConfirmOutcome } from './confirm-previews'
 import { createConfirmCollector, NEGATIVE_TTL_MS } from './persist-confirms'
 import { searchTracksByArtist } from '@/lib/music-provider/itunes'
 import { fetchArtistEnrichment, buildEnrichArtist } from './enrich-artist'
-import { normalizeArtistName } from '@/lib/listened-artists'
 import { normalizedIncludes, normalizeGenre } from '@/lib/genre/normalize'
 import { adjacentGenres } from '@/lib/genre/adjacency'
 import { cachedTagArtistNames } from '@/lib/lastfm-cache'
@@ -596,7 +595,7 @@ export async function augmentWithAdjacent(
     if (baseIds.has(artist.id)) continue
     if (opts.thumbsDownIds.has(artist.id)) continue
     if (opts.overThresholdIds.has(artist.id)) continue
-    if (opts.overThresholdNames.has(normalizeArtistName(artist.name))) continue
+    if (opts.overThresholdNames.has(artistNameKey(artist.name))) continue
     if (opts.undergroundMode && (artist.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) continue
 
     const tag = nameToTag.get(name.toLowerCase()) ?? ''
@@ -787,7 +786,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     if (row.artist_id) {
       overThresholdIds.add(row.artist_id)
     } else if (row.lastfm_artist_name) {
-      overThresholdNames.add(normalizeArtistName(row.lastfm_artist_name))
+      overThresholdNames.add(artistNameKey(row.lastfm_artist_name))
     }
   }
 
@@ -798,7 +797,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     .filter(([id, val]) => {
       if (thumbsDownIds.has(id)) return false
       if (overThresholdIds.has(id)) { filtListened++; return false }
-      if (overThresholdNames.has(normalizeArtistName(val.artist.name))) { filtListened++; return false }
+      if (overThresholdNames.has(artistNameKey(val.artist.name))) { filtListened++; return false }
       if (undergroundMode && (val.artist.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) return false
       if (genre && !val.artist.genres.some((g) => normalizedIncludes(g, genre))) return false
       return true
@@ -920,7 +919,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
       if (pickedIds.has(art.id)) continue
       if (thumbsDownIds.has(art.id)) continue
       if (overThresholdIds.has(art.id)) continue
-      if (overThresholdNames.has(normalizeArtistName(art.name))) continue
+      if (overThresholdNames.has(artistNameKey(art.name))) continue
       if (undergroundMode && (art.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) continue
       if (genre && !art.genres.some((g) => normalizedIncludes(g, genre))) continue
       reserve.push(scoreCandidate(art, nameToSeeds.get(name) ?? [], `${source}_backfill`))
@@ -1094,7 +1093,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
       if (writtenIds.has(artist.id)) continue
       if (thumbsDownIds.has(artist.id)) continue
       if (overThresholdIds.has(artist.id)) continue
-      if (overThresholdNames.has(normalizeArtistName(artist.name))) continue
+      if (overThresholdNames.has(artistNameKey(artist.name))) continue
       if (undergroundMode && (artist.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) continue
       if (genre && !artist.genres.some((g) => normalizedIncludes(g, genre))) continue
       const seedArtists = nameToSeeds.get(name) ?? []

@@ -1,9 +1,8 @@
 import type { Artist } from "@/lib/music-provider/types"
 import type { RateLimited } from "@/lib/music-provider"
 import { isRateLimited } from "@/lib/music-provider"
-import { artistNameDbKey, type ArtistIdentity } from "@/lib/artist-identity"
+import { artistNameDbKey, artistNameKey, stringSimilarity, type ArtistIdentity } from "@/lib/artist-identity"
 import { mergeEnrichment, type ArtistEnrichment } from "@/lib/artist-identity/lastfm-lookup"
-import { stringSimilarity } from "@/lib/history/name-utils"
 
 /** Min Dice-coefficient name similarity to accept a fuzzy (non-exact) Spotify result. */
 const FUZZY_ACCEPT_THRESHOLD = 0.8
@@ -180,10 +179,10 @@ export async function resolveArtistsByName(
 
         if (res.length === 0) break
 
-        const lower = name.toLowerCase()
-        const exact = res.find((a) => a.name.toLowerCase() === lower)
+        const key = artistNameKey(name)
+        const exact = res.find((a) => artistNameKey(a.name) === key)
         if (exact) {
-          // Exact lowercased-name match — accept unconditionally.
+          // Exact name-key match — accept unconditionally.
           resolvedArtist = exact
         } else {
           // No exact match: only accept the top result as a fuzzy fallback when

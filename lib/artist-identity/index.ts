@@ -31,7 +31,7 @@ import type { Artist } from "@/lib/music-provider/types"
 import { isValidArtistId } from "@/lib/spotify-ids"
 import { artistNameDbKey } from "./name-key"
 
-export { artistNameDbKey } from "./name-key"
+export { artistNameKey, artistNameDbKey, stringSimilarity, SIMILARITY_THRESHOLD } from "./name-key"
 
 /** The one Supabase port the doorway needs. Fakes pass `{ from }`. */
 export type ArtistsClient = Pick<SupabaseClient, "from">
