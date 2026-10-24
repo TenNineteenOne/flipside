@@ -10,7 +10,7 @@ vi.mock("@/lib/supabase/server", () => ({
   createServiceClient: () => currentSupabase,
 }))
 
-import { accumulateStatsFmHistory } from "./statsfm-listened-artists"
+import { accumulateStatsFmHistory } from "./statsfm-syncer"
 
 interface ListenedRow {
   id: string

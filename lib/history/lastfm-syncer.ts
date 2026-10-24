@@ -1,6 +1,5 @@
 import { createServiceClient } from "@/lib/supabase/server"
-import { resolveUnresolvedArtistIds } from "@/lib/history/id-resolver"
-import { upsertListenedArtists } from "@/lib/history/listened-upsert"
+import { ingestListens } from "@/lib/history/ingest"
 import { runLastfm } from "@/lib/lastfm-limit"
 import { incLastfmUser } from "@/lib/recommendation/api-call-counter"
 
@@ -106,43 +105,10 @@ export async function accumulateLastFmHistory(params: {
     }
   }
 
-  const supabase = createServiceClient()
-
-  // Batch upsert all Last.fm artists
-  await batchUpsertLastFmArtists(supabase, userId, [...artistNames])
-
-  // ── Resolution pass ────────────────────────────────────────────────────────
-  // After upserting, attempt to resolve spotify_artist_id for any Last.fm rows
-  // that still have NULL.  Runs non-blocking (no throw) so a Spotify hiccup
-  // does not break the sync response for the user.
-  try {
-    await resolveUnresolvedArtistIds({ supabase, userId })
-  } catch (err) {
-    console.error(
-      "[accumulateLastFmHistory] Resolution pass failed:",
-      err instanceof Error ? err.message : err
-    )
-  }
-}
-
-// Chunk the existing-rows SELECT's IN-list so Last.fm lifetime imports (up to
-// ~2000 names) don't produce an oversized WHERE clause.
-const CHUNK = 500
-
-async function batchUpsertLastFmArtists(
-  supabase: ReturnType<typeof createServiceClient>,
-  userId: string,
-  artistNames: string[]
-): Promise<void> {
-  await upsertListenedArtists({
-    supabase,
+  await ingestListens(
+    createServiceClient(),
     userId,
-    keys: artistNames,
-    keyColumn: "lastfm_artist_name",
-    source: "lastfm",
-    chunkSize: CHUNK,
-    conflictFallback: true,
-    logPrefix: "[accumulateLastFmHistory]",
-    logLabel: "batch",
-  })
+    "lastfm",
+    [...artistNames].map((name) => ({ name })),
+  )
 }
