@@ -224,9 +224,7 @@ async function resolveAndFilter(
 
   // Playability guarantee (#143): confirm previews for only the artists that
   // pass all filters (listen/thumbs-down/seen) and are about to be shown.
-  // This avoids confirming artists that will be filtered out anyway. Carry the
-  // resolver's original name alongside each artist so the confirmed tracks can
-  // be written back under the SAME name-cache key (see write-back below).
+  // This avoids confirming artists that will be filtered out anyway.
   const candidates: Array<{ artist: Artist; name: string }> = []
   for (const [name, artist] of resolved.resolved) {
     if (filters.listenedIds.has(artist.id)) continue
@@ -249,18 +247,12 @@ async function resolveAndFilter(
   const collector = previews.collector()
   const { kept } = await confirmToTarget(candidates, confirmTarget, buildConfirmPreview(accessToken, collector.onConfirmOutcome))
 
-  // Write the confirmed topTracks back into artist_search_cache under the
-  // resolver's name key (#145/#143 fix) AND persist confirmed previews to
-  // artist_tracks_cache (#162). The tracks-cache write MUST land before
-  // hydrateRailArtists reads it in the same request — that read-after-write is
-  // the fix for the 76% cached-pick drop. Both flush inside this one awaited
-  // Promise.all. Explore persists only artist IDs in explore_cache and
-  // re-hydrates artist_data by id, so without these writes every freshly-
-  // resolved rail card hydrated with topTracks:[] → a dead card.
-  await Promise.all([
-    ...kept.map((k) => nameCache.write(k.name, k.artist).catch(() => {})),
-    collector.flush(),
-  ])
+  // Persist confirmed previews to artist_tracks_cache (#162). This write MUST
+  // land before hydrateRailArtists reads it in the same request — that
+  // read-after-write is the fix for the 76% cached-pick drop. Explore persists
+  // only artist IDs in explore_cache and re-hydrates by id, so without it every
+  // freshly-resolved rail card would hydrate with no previews → dropped.
+  await collector.flush()
 
   return kept.map((k) => k.artist)
 }
@@ -828,7 +820,7 @@ export async function leftfieldRail(
     }, Math.max(target, Math.min(target + CONFIRM_HEADROOM, 30)))
 
     // Best-effort background warm of a bounded slice of the deferred tail: it
-    // writes through to artist_search_cache so a later shuffle / next-window
+    // mints `artists` rows and persists previews so a later shuffle / next-window
     // generation finds those artists already resolved. Not awaited — failures
     // and rate limits never touch this render (guarded against unhandled
     // rejection). Only on the PRIMARY pass: the wildcards-fallback and the
@@ -965,8 +957,8 @@ async function hydrateRailArtists(
 
 /**
  * Belt-and-braces pop cap. Runs after hydration so it catches (a) stale
- * explore_cache rows from before filter fixes, (b) artist_search_cache
- * popularity drift from ≤50 → >50 after caching, and (c) any future filter
+ * explore_cache rows from before filter fixes, (b) `artists.popularity`
+ * drift from ≤50 → >50 after caching, and (c) any future filter
  * bypass we haven't thought of. Purely DB-local — zero Spotify/Last.fm calls.
  * No-op without hydration data or when undergroundMode is off.
  */
@@ -993,7 +985,7 @@ function enforceUndergroundCap(
  *
  * `force = true` bypasses the cache (used by the Regenerate button).
  * `hydrate = true` additionally resolves each rail's artist IDs against
- * `artist_search_cache` and returns a `hydrated` Map, in parallel with the
+ * `artists` + the preview store and returns a `hydrated` Map, in parallel with the
  * cache upsert so it doesn't add serial latency on cache misses.
  */
 export async function buildExploreRails(
@@ -1214,9 +1206,3 @@ export async function invalidateExploreCache(
   if (error) console.error('[explore-engine] invalidate failed', error.message)
 }
 
-// Internal helpers exposed for rail implementations in subsequent commits.
-export const _internal = {
-  loadUserContext,
-  resolveAndFilter,
-  buildEnrichArtist,
-}

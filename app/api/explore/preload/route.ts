@@ -20,7 +20,7 @@ export const maxDuration = 300
  * user is viewing it, so that when they tap Explore the rails + artist cache
  * are already populated. Read-only from the client's POV — the response body
  * is just `{ ok: true }`; the value is the side-effect of populating
- * `explore_cache` and `artist_search_cache`.
+ * `explore_cache`, `artists` and `artist_tracks_cache`.
  */
 export const GET = withAuthedRoute(async ({ userId, supabase }): Promise<Response> => {
   const input = await loadExploreInput(supabase, userId)
