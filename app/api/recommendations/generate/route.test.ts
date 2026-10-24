@@ -12,7 +12,10 @@ vi.mock("@/lib/auth", () => ({ safeAuth: vi.fn(async () => ({ user: { id: "u1" }
 vi.mock("@/lib/spotify-client-token", () => ({ getSpotifyClientToken: vi.fn(async () => "") }))
 const buildRecommendations = vi.fn()
 vi.mock("@/lib/recommendation/engine", () => ({ buildRecommendations: (...a: unknown[]) => buildRecommendations(...a) }))
-vi.mock("next/server", async (orig) => ({ ...(await orig<typeof import("next/server")>()), after: vi.fn() }))
+const afterFns: Array<() => Promise<void>> = []
+vi.mock("next/server", async (orig) => ({ ...(await orig<typeof import("next/server")>()), after: (fn: () => Promise<void>) => afterFns.push(fn) }))
+const extractArtistColor = vi.fn<(url: string) => Promise<string>>(async () => "#abcdef")
+vi.mock("@/lib/colour-extraction", () => ({ extractArtistColor: (url: string) => extractArtistColor(url) }))
 
 import { POST } from "./route"
 
@@ -67,5 +70,34 @@ describe("POST /api/recommendations/generate queue-full gate", () => {
     const res = await call()
     expect(res.status).toBe(429)
     expect(await res.json()).toEqual({ error: "Please wait before generating more recommendations" })
+  })
+})
+
+describe("POST /api/recommendations/generate colour pass (#175 F-G)", () => {
+  const withArt = (rows: Row[]): Row[] => rows.map((r) => ({ ...r, artist_data: { imageUrl: `https://i.scdn.co/${r.artist_id}` } }))
+
+  beforeEach(() => {
+    afterFns.length = 0
+    extractArtistColor.mockClear()
+  })
+
+  it("decorates only unexpired unseen rows, skipping the expired backlog", async () => {
+    const expired = withArt(queue(500, iso(Date.now() - HOUR)))
+    const live = withArt(queue(3, iso(Date.now() + HOUR))).map((r): Row => ({ ...r, id: `l${r.id}`, artist_id: `live${r.artist_id}` }))
+    db = createRouteFakeDb({ users: [{ id: "u1", last_generated_at: null }], recommendation_cache: [...expired, ...live], artists: [] })
+    expect((await call()).status).toBe(200)
+    for (const fn of afterFns) await fn()
+    const urls = extractArtistColor.mock.calls.map((c) => c[0]).sort()
+    expect(urls).toEqual(live.map((r) => r.artist_data.imageUrl).sort())
+  })
+
+  it("an unreadable colour map skips extraction instead of refetching every image", async () => {
+    db = createRouteFakeDb(
+      { users: [{ id: "u1", last_generated_at: null }], recommendation_cache: withArt(queue(3, iso(Date.now() + HOUR))) },
+      { artists: "select" },
+    )
+    expect((await call()).status).toBe(200)
+    for (const fn of afterFns) await fn()
+    expect(extractArtistColor).not.toHaveBeenCalled()
   })
 })
