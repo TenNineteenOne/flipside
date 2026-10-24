@@ -174,35 +174,44 @@ function escapeLucene(s: string): string {
 }
 
 /**
- * Search MusicBrainz for an artist by name and return the best-match MBID, or
- * null if there's no confident match. Runs under the shared 1-req/s limiter so
- * it competes for the same MB budget as `resolveArtistExternalIds`. Never throws
- * — returns null on any failure (mirrors `resolveArtistExternalIds`).
+ * A MusicBrainz answer, or `transient` — the call failed (non-2xx such as a
+ * 503 / rate limit, an MB error body, a timeout or network error), so "no
+ * match" can't be concluded and the caller should retry soon (#175 mb-backfill).
+ */
+export type MbResult<T> = { ok: true; value: T } | { ok: false; transient: true }
+
+const TRANSIENT = { ok: false, transient: true } as const
+
+/**
+ * Search MusicBrainz for an artist by name: the best-match MBID, `null` when
+ * MB answered but has no confident match, or `transient` on a failed call.
+ * Runs under the shared 1-req/s limiter so it competes for the same MB budget
+ * as `resolveArtistExternalIds`. Never throws.
  *
  * "Best match" = highest score among results; accepted only if it clears
  * MB_SEARCH_MIN_SCORE, with an exact (case-insensitive) name match preferred
- * when scores tie. A null return means "MB couldn't confidently identify this
- * name" — the worker stamps mbid_attempted_at and moves on.
+ * when scores tie.
  */
-export async function searchArtistMbid(
+export async function lookupArtistMbid(
   name: string,
   opts: { fetchImpl?: typeof fetch; limiter?: MbLimiter } = {},
-): Promise<string | null> {
+): Promise<MbResult<string | null>> {
   const trimmed = name?.trim()
-  if (!trimmed) return null
+  if (!trimmed) return { ok: true, value: null }
   const limiter = opts.limiter ?? defaultLimiter
   const fetchImpl = opts.fetchImpl ?? fetch
   try {
-    return await limiter.run(async () => {
+    return await limiter.run(async (): Promise<MbResult<string | null>> => {
       const query = `artist:"${escapeLucene(trimmed)}"`
       const url = `${MB_BASE}/artist/?query=${encodeURIComponent(query)}&fmt=json&limit=5`
       const res = await fetchImpl(url, {
         headers: { "User-Agent": USER_AGENT },
         signal: AbortSignal.timeout(TIMEOUT_MS),
       })
-      if (!res.ok) return null
+      if (!res.ok) return TRANSIENT
       const data = (await res.json()) as MbSearchResponse
-      if (data.error || !Array.isArray(data.artists) || data.artists.length === 0) return null
+      if (data.error) return TRANSIENT
+      if (!Array.isArray(data.artists) || data.artists.length === 0) return { ok: true, value: null }
 
       // Plain toLowerCase on purpose, NOT artistNameKey — the punctuation-
       // dropping key would tie "M.I.A." with "Mia" as exact and the backfill
@@ -222,29 +231,46 @@ export async function searchArtistMbid(
           bestExact = exact
         }
       }
-      if (!best || bestScore < MB_SEARCH_MIN_SCORE) return null
-      return best.id ?? null
+      if (!best || bestScore < MB_SEARCH_MIN_SCORE) return { ok: true, value: null }
+      return { ok: true, value: best.id ?? null }
     })
   } catch {
-    return null
+    return TRANSIENT
   }
+}
+
+/** `lookupArtistMbid` collapsed to `string | null` (a transient failure → null). */
+export async function searchArtistMbid(
+  name: string,
+  opts: { fetchImpl?: typeof fetch; limiter?: MbLimiter } = {},
+): Promise<string | null> {
+  const r = await lookupArtistMbid(name, opts)
+  return r.ok ? r.value : null
 }
 
 /**
  * Resolve an MBID to its external service ids via MusicBrainz url-rels, under
- * the 1-req/s limiter. Returns all-null on a transient failure (caller can
- * retry / fall back). A successful response with no Spotify relation yields
- * `spotifyId: null`.
+ * the 1-req/s limiter, or `transient` on a failed call. A successful response
+ * with no Spotify relation yields `spotifyId: null`.
  */
+export async function lookupArtistExternalIds(
+  mbid: string,
+  opts: { fetchImpl?: typeof fetch; limiter?: MbLimiter } = {},
+): Promise<MbResult<MbExternalIds>> {
+  const limiter = opts.limiter ?? defaultLimiter
+  try {
+    const relations = await limiter.run(() => fetchArtistRelations(mbid, opts.fetchImpl ?? fetch))
+    return { ok: true, value: extractExternalIds(relations) }
+  } catch {
+    return TRANSIENT
+  }
+}
+
+/** `lookupArtistExternalIds` with a transient failure collapsed to all-null. */
 export async function resolveArtistExternalIds(
   mbid: string,
   opts: { fetchImpl?: typeof fetch; limiter?: MbLimiter } = {},
 ): Promise<MbExternalIds> {
-  const limiter = opts.limiter ?? defaultLimiter
-  try {
-    const relations = await limiter.run(() => fetchArtistRelations(mbid, opts.fetchImpl ?? fetch))
-    return extractExternalIds(relations)
-  } catch {
-    return { spotifyId: null, appleId: null, deezerId: null }
-  }
+  const r = await lookupArtistExternalIds(mbid, opts)
+  return r.ok ? r.value : { spotifyId: null, appleId: null, deezerId: null }
 }

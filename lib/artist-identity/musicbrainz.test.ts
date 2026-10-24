@@ -6,6 +6,8 @@ import {
   extractExternalIds,
   createMbLimiter,
   searchArtistMbid,
+  lookupArtistMbid,
+  lookupArtistExternalIds,
 } from "./musicbrainz"
 
 /** Real Radiohead url-rels (subset), captured live from MusicBrainz. */
@@ -189,6 +191,20 @@ describe("searchArtistMbid", () => {
     }) as unknown as typeof fetch
     expect(await searchArtistMbid("   ", { fetchImpl, limiter: instantLimiter })).toBeNull()
     expect(called).toBe(false)
+  })
+
+  it("#175: lookups tell a transient failure apart from a genuine no-match", async () => {
+    const f = (impl: () => Promise<Response>) => impl as unknown as typeof fetch
+    const opts = (impl: () => Promise<Response>) => ({ fetchImpl: f(impl), limiter: instantLimiter })
+    const TRANSIENT = { ok: false, transient: true }
+    expect(await lookupArtistMbid("R", opts(async () => jsonResponse({}, false, 503)))).toEqual(TRANSIENT)
+    expect(await lookupArtistMbid("R", opts(async () => { throw new Error("timeout") }))).toEqual(TRANSIENT)
+    expect(await lookupArtistMbid("R", opts(async () => jsonResponse({ artists: [] })))).toEqual({ ok: true, value: null })
+    expect(await lookupArtistExternalIds("m", opts(async () => jsonResponse({}, false, 503)))).toEqual(TRANSIENT)
+    expect(await lookupArtistExternalIds("m", opts(async () => jsonResponse({ relations: RADIOHEAD_RELATIONS })))).toEqual({
+      ok: true,
+      value: { spotifyId: "4Z8W4fKeB5YxbusRsdQVPb", appleId: "657515", deezerId: "323887691" },
+    })
   })
 })
 
