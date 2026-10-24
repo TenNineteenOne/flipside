@@ -21,7 +21,7 @@ import {
   buildFeedbackDeleteUrl,
   buildFeedbackPostBody,
   DEFAULT_FEEDBACK_MESSAGES,
-} from "./use-artist-feedback"
+} from "@/lib/client/artist-signals"
 
 // ─── Sonner mock ──────────────────────────────────────────────────────────────
 

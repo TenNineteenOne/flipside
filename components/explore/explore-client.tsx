@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, use, useCallback, useMemo } from "react"
+import { Suspense, use, useMemo } from "react"
 import { RefreshCw, Sparkles, Moon, Mountain, Flame, Dices, type LucideIcon } from "lucide-react"
 import { AnimatePresence } from "framer-motion"
 import { ChallengeCard } from "@/components/explore/challenge-card"
@@ -135,16 +135,6 @@ export function ExploreClient({
       unsaveFailed: "Couldn't unsave — try again",
     },
   })
-
-  const handleFeedback = useCallback(
-    (artistId: string, signal: string) => setSignal(artistId, signal),
-    [setSignal],
-  )
-
-  const handleSave = useCallback(
-    (artistId: string) => toggleSave(artistId),
-    [toggleSave],
-  )
 
   const totalDiscoveries = useMemo(
     () => orderedRails.reduce((n, r) => n + r.artists.length, 0),
@@ -516,8 +506,8 @@ export function ExploreClient({
                     musicPlatform={musicPlatform}
                     isSaved={savedIds.has(artist.id)}
                     dismissSignal={dismissedSignals.get(artist.id) ?? null}
-                    onSave={handleSave}
-                    onFeedback={handleFeedback}
+                    onSave={toggleSave}
+                    onFeedback={setSignal}
                   />
                 ))}
               </AnimatePresence>

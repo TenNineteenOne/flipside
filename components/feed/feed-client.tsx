@@ -112,16 +112,6 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
   // Saved-artist IDs. Serialization and rollback are handled inside the hook.
   const { savedIds, toggleSave } = useArtistSaves()
 
-  const handleFeedback = useCallback(
-    (artistId: string, signal: string) => setSignal(artistId, signal),
-    [setSignal],
-  )
-
-  const handleSave = useCallback(
-    (artistId: string) => toggleSave(artistId),
-    [toggleSave],
-  )
-
   async function handleGenerateMore() {
     const r = await generation.requestMore()
     if (r === null) return
@@ -160,8 +150,8 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
               musicPlatform={musicPlatform}
               isSaved={savedIds.has(id)}
               dismissSignal={dismissedSignals.get(id) ?? null}
-              onSaveAction={handleSave}
-              onFeedbackAction={handleFeedback}
+              onSaveAction={toggleSave}
+              onFeedbackAction={setSignal}
               priority={index === 0}
             />
           )
@@ -190,8 +180,8 @@ interface FeedCardRowProps {
   musicPlatform: MusicPlatform
   isSaved: boolean
   dismissSignal: string | null
-  onSaveAction: (artistId: string) => Promise<void> | void
-  onFeedbackAction: (artistId: string, signal: string) => Promise<void> | void
+  onSaveAction: (artistId: string) => unknown
+  onFeedbackAction: (artistId: string, signal: string) => unknown
   priority?: boolean
 }
 
