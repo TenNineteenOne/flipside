@@ -23,7 +23,7 @@ function fakeUsers(rows: Row[], error: { message: string } | null = null) {
           if (error) return Promise.resolve({ data: null, error })
           const conds = orExpr.split(",").map((c) => {
             const [col, op, ...rest] = c.split(".")
-            const val = rest.join(".")
+            const val = rest.join(".").replace(/^"(.*)"$/, "$1") // PostgREST strips value quotes
             return (r: Row) =>
               op === "is" ? r[col] == null : r[col] != null && Date.parse(r[col]!) <= Date.parse(val)
           })
@@ -88,6 +88,6 @@ describe("claimCooldown", () => {
   it("builds the PostgREST or-filter from the column and cutoff", async () => {
     const { client, calls } = fakeUsers([{ id: "u1", last_generated_at: null }])
     await claimCooldown(client, "u1", "last_generated_at", 30_000, NOW)
-    expect(calls).toEqual([`last_generated_at.is.null,last_generated_at.lte.${iso(NOW - 30_000)}`])
+    expect(calls).toEqual([`last_generated_at.is.null,last_generated_at.lte."${iso(NOW - 30_000)}"`])
   })
 })

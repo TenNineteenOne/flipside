@@ -27,7 +27,8 @@ export async function claimCooldown(
     .from("users")
     .update({ [column]: new Date(now).toISOString() })
     .eq("id", userId)
-    .or(`${column}.is.null,${column}.lte.${cutoffIso}`)
+    // Quoted: PostgREST requires reserved chars (`:` `.`) in or() values to be quoted.
+    .or(`${column}.is.null,${column}.lte."${cutoffIso}"`)
     .select("id")
   if (error) {
     console.error(`[cooldown] claim err column=${column} err=${error.message}`)
