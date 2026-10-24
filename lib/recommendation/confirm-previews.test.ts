@@ -6,6 +6,7 @@ import {
   confirmToTarget,
   type ConfirmPreviewDeps,
   type ConfirmInput,
+  type ConfirmOutcome,
 } from "./confirm-previews"
 import type { Artist, Track } from "@/lib/music-provider/types"
 
@@ -61,14 +62,17 @@ function makeDeps(opts: {
   itunesCallCount: number
   spotifyCallCount: number
   spotifyCalledWith: Array<string | null>
+  outcomes: ConfirmOutcome[]
 } {
   let itunesCallCount = 0
   let spotifyCallCount = 0
   const spotifyCalledWith: Array<string | null> = []
+  const outcomes: ConfirmOutcome[] = []
   return {
     get itunesCallCount() { return itunesCallCount },
     get spotifyCallCount() { return spotifyCallCount },
     get spotifyCalledWith() { return spotifyCalledWith },
+    outcomes,
     searchItunes: async () => {
       itunesCallCount++
       if (opts.itunesRejects) throw new Error("iTunes unavailable")
@@ -80,6 +84,7 @@ function makeDeps(opts: {
       if (opts.spotifyRejects) throw new Error("Spotify unavailable")
       return opts.spotifyResult ?? []
     },
+    onConfirmOutcome: (o) => { outcomes.push(o) },
   }
 }
 
@@ -279,6 +284,87 @@ describe("confirmPlayableTracks — error resilience", () => {
   it("both deps reject → returns [], no throw", async () => {
     const deps = makeDeps({ itunesRejects: true, spotifyRejects: true })
     await expect(confirmPlayableTracks(baseArtist, deps)).resolves.toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// confirmPlayableTracks — onConfirmOutcome persistence callback (#162)
+// ---------------------------------------------------------------------------
+
+describe("confirmPlayableTracks — onConfirmOutcome firing matrix", () => {
+  it("iTunes playable → fires ONE positive outcome (source itunes), Spotify not called", async () => {
+    const deps = makeDeps({ itunesResult: [withPreview, withPreview2] })
+    await confirmPlayableTracks(baseArtist, deps)
+    expect(deps.outcomes).toHaveLength(1)
+    expect(deps.outcomes[0]).toMatchObject({ artistId: "artist-1", definitiveEmpty: false, source: "itunes" })
+    expect(deps.outcomes[0].tracks.map((t) => t.id)).toEqual(["p1", "p2"])
+    expect(deps.spotifyCallCount).toBe(0)
+  })
+
+  it("Spotify fallback playable → fires ONE positive outcome (source spotify)", async () => {
+    const deps = makeDeps({ itunesResult: [], spotifyResult: [withPreview] })
+    await confirmPlayableTracks({ ...baseArtist, spotifyId: "sp-1" }, deps)
+    expect(deps.outcomes).toHaveLength(1)
+    expect(deps.outcomes[0]).toMatchObject({ artistId: "artist-1", definitiveEmpty: false, source: "spotify" })
+  })
+
+  it("iTunes real-[] AND no spotifyId → fires ONE definitive negative", async () => {
+    const deps = makeDeps({ itunesResult: [], spotifyResult: [] })
+    await confirmPlayableTracks(baseArtist, deps) // baseArtist has no spotifyId
+    expect(deps.outcomes).toHaveLength(1)
+    expect(deps.outcomes[0]).toMatchObject({ artistId: "artist-1", definitiveEmpty: true, source: "itunes" })
+    expect(deps.outcomes[0].tracks).toHaveLength(0)
+  })
+
+  it("iTunes non-playable tracks (still it !== null) AND no spotifyId → definitive negative", async () => {
+    const deps = makeDeps({ itunesResult: [nullPreview, emptyPreview], spotifyResult: [] })
+    await confirmPlayableTracks(baseArtist, deps)
+    expect(deps.outcomes).toHaveLength(1)
+    expect(deps.outcomes[0]).toMatchObject({ definitiveEmpty: true, source: "itunes" })
+  })
+
+  it("iTunes failure (throws → null) AND no spotifyId → NO outcome (stays unconfirmed)", async () => {
+    // itunesRejects makes searchItunes throw → confirmPlayableTracks's .catch
+    // yields a genuine `it === null` (the mock's `?? []` can't produce a raw null).
+    const deps = makeDeps({ itunesRejects: true, spotifyResult: [] })
+    await confirmPlayableTracks(baseArtist, deps)
+    expect(deps.outcomes).toHaveLength(0)
+  })
+
+  it("iTunes real-[] but spotifyId present + Spotify [] → NO outcome (Spotify [] is ambiguous)", async () => {
+    const deps = makeDeps({ itunesResult: [], spotifyResult: [] })
+    await confirmPlayableTracks({ ...baseArtist, spotifyId: "sp-1" }, deps)
+    expect(deps.outcomes).toHaveLength(0)
+  })
+
+  it("positive cache reuse → NO outcome, no network", async () => {
+    const deps = makeDeps()
+    await confirmPlayableTracks({ ...baseArtist, topTracks: [withPreview] }, deps)
+    expect(deps.outcomes).toHaveLength(0)
+    expect(deps.itunesCallCount).toBe(0)
+  })
+})
+
+describe("confirmPlayableTracks — knownEmpty short-circuit (#162)", () => {
+  it("knownEmpty + no topTracks → returns [], no network, no outcome", async () => {
+    const deps = makeDeps({ itunesResult: [withPreview] })
+    const result = await confirmPlayableTracks({ ...baseArtist, knownEmpty: true }, deps)
+    expect(result).toHaveLength(0)
+    expect(deps.itunesCallCount).toBe(0)
+    expect(deps.spotifyCallCount).toBe(0)
+    expect(deps.outcomes).toHaveLength(0)
+  })
+
+  it("positive topTracks ALWAYS beats knownEmpty → returns playable, no network, no outcome", async () => {
+    const deps = makeDeps()
+    const result = await confirmPlayableTracks(
+      { ...baseArtist, knownEmpty: true, topTracks: [withPreview] },
+      deps,
+    )
+    expect(result).toHaveLength(1)
+    expect(result[0].id).toBe("p1")
+    expect(deps.itunesCallCount).toBe(0)
+    expect(deps.outcomes).toHaveLength(0)
   })
 })
 

@@ -17,8 +17,10 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { ArtistNameCache } from './artist-name-cache'
 import { resolveArtistsByName } from './resolve-candidates'
 import { buildEnrichArtist } from './enrich-artist'
-import { getTagArtistNames, buildConfirmPreview, buildMintArtist, lastfmResolve } from './engine'
+import { getTagArtistNames, buildConfirmPreview, buildMintArtist, lastfmResolve, rehydrateTopTracks } from './engine'
 import { confirmToTarget } from './confirm-previews'
+import { createConfirmCollector, resetPersisted, snapshotPersisted } from './persist-confirms'
+import { resetCalls, snapshotCalls } from './api-call-counter'
 import {
   allLeavesWithAnchor,
   genreToAnchor,
@@ -235,19 +237,30 @@ async function resolveAndFilter(
     candidates.push({ artist, name })
   }
 
+  // Pre-confirm rehydrate (#162): warm positives from artist_tracks_cache skip
+  // iTunes entirely, and fresh confirmed-empty negatives short-circuit (dropped
+  // without a re-query). The generation path has always done this; the Explore
+  // confirm slice never did.
+  await rehydrateTopTracks(supabase, candidates)
+
   // Confirm up to `confirmTarget` artists. Per-rail callers set this to
-  // displayTarget + HEADROOM so smaller rails confirm fewer candidates.
-  const { kept } = await confirmToTarget(candidates, confirmTarget, buildConfirmPreview(accessToken))
+  // displayTarget + HEADROOM so smaller rails confirm fewer candidates. The
+  // collector records each live confirm so the flush below persists them.
+  const collector = createConfirmCollector()
+  const { kept } = await confirmToTarget(candidates, confirmTarget, buildConfirmPreview(accessToken, collector.onConfirmOutcome))
 
   // Write the confirmed topTracks back into artist_search_cache under the
-  // resolver's name key (#145/#143 fix). Explore persists only artist IDs in
-  // explore_cache and re-hydrates artist_data from artist_search_cache by id —
-  // so without this write-back the baked topTracks are discarded and every
-  // freshly-resolved rail card hydrates with topTracks:[] → a dead card. This
-  // also makes the next generation's resolver a warm, network-free preview hit.
-  await Promise.all(
-    kept.map((k) => nameCache.write(k.name, k.artist).catch(() => {})),
-  )
+  // resolver's name key (#145/#143 fix) AND persist confirmed previews to
+  // artist_tracks_cache (#162). The tracks-cache write MUST land before
+  // hydrateRailArtists reads it in the same request — that read-after-write is
+  // the fix for the 76% cached-pick drop. Both flush inside this one awaited
+  // Promise.all. Explore persists only artist IDs in explore_cache and
+  // re-hydrates artist_data by id, so without these writes every freshly-
+  // resolved rail card hydrated with topTracks:[] → a dead card.
+  await Promise.all([
+    ...kept.map((k) => nameCache.write(k.name, k.artist).catch(() => {})),
+    collector.flush(supabase),
+  ])
 
   return kept.map((k) => k.artist)
 }
@@ -996,6 +1009,11 @@ export async function buildExploreRails(
 ): Promise<BuildRailsResult> {
   const supabase = createServiceClient()
   const now = new Date()
+  // Reset call/persist counters so the [explore-timing] snapshot below reflects
+  // only this build's outbound work (#162 measurement gate). Measurement-only —
+  // interleaving concurrent builds is acceptable (same caveat as generation).
+  resetCalls()
+  resetPersisted()
   // `regenerate` defaults to true to preserve existing behaviour. When false,
   // the function never triggers a 54-74s build — it returns whatever is
   // cached (possibly empty/partial rails) instead. Used by the read-only
@@ -1174,6 +1192,12 @@ export async function buildExploreRails(
   }
 
   enforceUndergroundCap(rails, hydrated, input.undergroundMode)
+
+  const calls = snapshotCalls()
+  console.log(
+    `[explore-timing] itunes=${calls.itunes} spotify=${calls.spotify} ` +
+    `lastfm=${calls.lastfm.total} persisted=${snapshotPersisted()}`,
+  )
   return { rails, cacheHit: false, hydrated }
 }
 

@@ -242,3 +242,32 @@ describe("buildExploreRails — rail failure isolation", () => {
     expect(h.fake.tables.explore_cache.length).toBe(RAIL_KEYS.length)
   }, 20000)
 })
+
+// ── 6d. #162: freshly confirmed picks are hydratable (read-after-write) ───────
+describe("buildExploreRails — freshly confirmed picks hydrate with previews (#162)", () => {
+  it("persists confirmed tracks BEFORE hydration reads them, so no rail pick is a dead card", async () => {
+    seed(withLikedSeed())
+    h.similars.set("LikedArtist", [
+      { name: "W0", match: 0.9 },
+      { name: "W1", match: 0.3 },
+      { name: "W2", match: 0.2 },
+      { name: "W3", match: 0.1 },
+    ])
+
+    const { rails, hydrated } = await buildExploreRails(baseInput(), { hydrate: true })
+    expect(hydrated).toBeDefined()
+
+    const ids = allRailIds(rails)
+    expect(ids.length).toBeGreaterThan(0)
+
+    // The tracks cache was written during THIS request (the resolveAndFilter
+    // flush) — before hydrateRailArtists read it. Every surfaced rail pick
+    // therefore hydrates WITH a playable preview instead of topTracks:[].
+    expect((h.fake.tables.artist_tracks_cache ?? []).length).toBeGreaterThan(0)
+    for (const id of ids) {
+      const rec = hydrated!.get(id)
+      expect(rec).toBeTruthy()
+      expect(rec!.topTracks?.some((t) => t.previewUrl)).toBe(true)
+    }
+  }, 20000)
+})
