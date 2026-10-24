@@ -237,4 +237,18 @@ describe("createFeedFillController", () => {
     expect(onAppend).toHaveBeenCalledTimes(3)
     expect(onAppend.mock.calls[2][0].map((r: FeedRec) => r.id)).toEqual(["c"])
   })
+
+  it("#175: resuming past the 60s ceiling polls once more, then stops", async () => {
+    const fetchImpl = makeQueuedFetch([[playableRec("a")], [playableRec("b")]])
+    const onAppend = vi.fn()
+    createFeedFillController<FeedRec>({ initialIds: [], targetCount: 10, onAppend, fetchImpl })
+
+    vi.setSystemTime(Date.now() + 70_000) // tab frozen: clock moved, no ticks ran
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS)
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    expect(onAppend.mock.calls[0][0].map((r: FeedRec) => r.id)).toEqual(["a"])
+
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 3)
+    expect(fetchImpl).toHaveBeenCalledTimes(1) // stopped after the final check
+  })
 })

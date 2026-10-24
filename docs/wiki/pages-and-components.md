@@ -46,7 +46,7 @@ server component that queries Supabase, then hands data to a `"use client"` shel
 
 | Hook | State | API |
 |---|---|---|
-| `useFeedFill` | seen ids, counts | polls `GET /api/recommendations` (2.5s, assembled `CardArtist[]`) → append playable; stops at target / 3 idle / 60s |
+| `useFeedFill` | seen ids, counts | polls `GET /api/recommendations` (2.5s, assembled `CardArtist[]`) → append playable; stops at target / 3 idle / 60s (after one final poll) |
 | `useArtistTracks` | tracks | `GET /api/artists/:id/tracks?name=` (only if no baked tracks) |
 | `useArtistColor` | — | `useMemo`: sanitized hex or deterministic name-hash fallback |
 | `useArtistFeedback` | `Map<id,signal>` | POST/DELETE `/api/feedback`, DELETE `/api/dismiss`; Explore `skip` is local-only. Controller `lib/client/artist-signals.ts`: optimistic at tap time, per-artist serialized, falls back to last confirmed value when the last queued call fails |
