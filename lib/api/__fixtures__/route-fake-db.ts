@@ -27,6 +27,7 @@ export function createRouteFakeDb(initial: Record<string, Row[]> = {}, fail: Rec
     let headMode = false
     let one: "single" | "maybe" | null = null
     let limitN: number | null = null
+    let rangeFT: [number, number] | null = null
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const cmp = (c: string, a: any, b: any) =>
       c === "eq" ? String(a) === String(b) : a == null ? false : c === "lt" ? a < b : c === "lte" ? a <= b : c === "gt" ? a > b : c === "gte" ? a >= b : false
@@ -37,6 +38,7 @@ export function createRouteFakeDb(initial: Record<string, Row[]> = {}, fail: Rec
       const t = (tables[table] ??= [])
       let rows = t.filter((r) => filters.every((f) => f(r)))
       if (limitN != null) rows = rows.slice(0, limitN)
+      if (rangeFT) rows = rows.slice(rangeFT[0], rangeFT[1] + 1)
       let out: Row[] = rows
       if (op === "update") rows.forEach((r) => Object.assign(r, payload))
       else if (op === "delete") tables[table] = t.filter((r) => !rows.includes(r))
@@ -62,6 +64,11 @@ export function createRouteFakeDb(initial: Record<string, Row[]> = {}, fail: Rec
       delete() { op = "delete"; return q },
       eq(c: string, v: unknown) { filters.push((r) => cmp("eq", r[c], v)); return q },
       neq(c: string, v: unknown) { filters.push((r) => !cmp("eq", r[c], v)); return q },
+      not(c: string, o: string, v: unknown) {
+        filters.push((r) => !(o === "is" && v === null ? r[c] == null : cmp(o, r[c], v)))
+        return q
+      },
+      range(from: number, to: number) { rangeFT = [from, to]; return q },
       is(c: string, v: unknown) { filters.push((r) => (v === null ? r[c] == null : r[c] === v)); return q },
       lt(c: string, v: unknown) { filters.push((r) => cmp("lt", r[c], v)); return q },
       lte(c: string, v: unknown) { filters.push((r) => cmp("lte", r[c], v)); return q },
