@@ -39,10 +39,13 @@ the body-parse step stayed local. GET-only routes (`/api/history`, `/api/onboard
 
 ## Feedback, saves, history
 
+Which caches each taste change invalidates is decided in one place: `lib/taste-change.ts`
+(`onTasteChanged` / `invalidationFor`). A `skip` is not a taste change.
+
 | Route | Method | Does |
 |---|---|---|
 | `/api/feedback` | POST | `rpc_record_feedback`; thumbs → `invalidateExploreCache` (narrow for explore, full for feed) |
-| `/api/feedback/[artistId]` | DELETE | `rpc_delete_feedback` (undo thumbs), 204 |
+| `/api/feedback/[artistId]` | DELETE | `rpc_delete_feedback` (undo thumbs) + full explore invalidate, 204 |
 | `/api/dismiss/[artistId]` | DELETE | `rpc_clear_dismiss` + full explore invalidate, 204 |
 | `/api/saves` | POST/DELETE | upsert/delete `saves`; response keeps `playlistId: null` (the Spotify-playlist branch was removed in #175) |
 | `/api/history` | GET | paginated seen recs + feedback/saves join |
@@ -56,7 +59,7 @@ the body-parse step stayed local. GET-only routes (`/api/history`, `/api/onboard
 | `/api/onboarding/resolve` | POST | resolves a Last.fm-sourced onboarding suggestion to the internal artist uuid: `artists`-table exact-name doorway lookup first, MusicBrainz mbid url-rels fallback → mint; 404 when unresolvable; 30/min per-user in-memory rate limit |
 | `/api/onboarding/seeds` | POST | upsert `seed_artists` (3–200) |
 | `/api/onboarding/check` | GET | `{needsOnboarding}` |
-| `/api/settings` | PATCH | validate + encrypt usernames + update `users`; genre/mode change → invalidate caches |
+| `/api/settings` | PATCH | validate + encrypt usernames + update `users`; genre/mode change → explore + unseen-feed wipe; `popularityCurve` → explore only |
 | `/api/settings/seed-artists` | GET/POST/DELETE | manage seeds + invalidate explore |
 | `/api/account` | DELETE | delete user (cascade) + sign out |
 

@@ -1,7 +1,7 @@
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, dbError } from "@/lib/errors"
 import { isValidArtistId } from "@/lib/spotify-ids"
-import { invalidateExploreCache } from "@/lib/recommendation/explore-engine"
+import { onTasteChanged } from "@/lib/taste-change"
 import { withAuthedCsrfRoute } from "@/lib/api/with-authed-route"
 
 export const DELETE = withAuthedCsrfRoute(
@@ -21,9 +21,7 @@ export const DELETE = withAuthedCsrfRoute(
 
     // Explore caches include the server-side skip_at filter, so cached rails
     // omit the artist. Wipe the cache so the next Explore load can re-include.
-    await invalidateExploreCache(userId).catch((err) => {
-      console.error("[dismiss] explore-invalidate failed", err)
-    })
+    await onTasteChanged(supabase, userId, { kind: "undismiss" })
 
     return new Response(null, { status: 204 })
   }

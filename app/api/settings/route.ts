@@ -2,7 +2,7 @@ import { revalidatePath } from "next/cache"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, dbError } from "@/lib/errors"
 import { isMusicPlatform } from "@/lib/music-links"
-import { invalidateExploreCache } from "@/lib/recommendation/explore-engine"
+import { onTasteChanged } from "@/lib/taste-change"
 import { encryptUsername } from "@/lib/crypto/username"
 import { withAuthedJsonRoute } from "@/lib/api/with-authed-route"
 
@@ -99,30 +99,12 @@ export const PATCH = withAuthedJsonRoute(async ({ userId, body: rawBody }) => {
   // re-render so navigating back doesn't resurrect stale toggle/slider values.
   revalidatePath("/settings")
 
-  // Explore rails + Feed cache derive from selected_genres, adventurous,
-  // underground_mode, and deep_discovery. Any of those changing invalidates
-  // cached rails AND wipes unseen Feed rows so the next page load regenerates
-  // from scratch under the new settings.
-  const invalidates =
-    body.selectedGenres !== undefined ||
-    body.adventurous !== undefined ||
-    body.undergroundMode !== undefined ||
-    body.deepDiscovery !== undefined
-  if (invalidates) {
-    await Promise.all([
-      invalidateExploreCache(userId).catch((err) => {
-        console.error("[settings] explore-invalidate failed", err)
-      }),
-      supabase
-        .from("recommendation_cache")
-        .delete()
-        .eq("user_id", userId)
-        .is("seen_at", null)
-        .then(({ error: delErr }) => {
-          if (delErr) console.error("[settings] feed-cache-wipe failed", delErr.message)
-        }),
-    ])
-  }
+  // Settings the Explore rails / Feed queue derive from invalidate those caches
+  // so the next page load regenerates under the new settings (lib/taste-change).
+  await onTasteChanged(supabase, userId, {
+    kind: "settings",
+    fields: Object.keys(body).filter((k) => body[k as keyof typeof body] !== undefined),
+  })
 
   return Response.json({ success: true })
 })

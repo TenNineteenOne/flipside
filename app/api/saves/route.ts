@@ -1,7 +1,7 @@
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, dbError } from "@/lib/errors"
 import { isValidArtistId, isValidSpotifyId } from "@/lib/spotify-ids"
-import { invalidateExploreCache } from "@/lib/recommendation/explore-engine"
+import { onTasteChanged } from "@/lib/taste-change"
 import { withAuthedJsonRoute } from "@/lib/api/with-authed-route"
 
 export const POST = withAuthedJsonRoute(async ({ userId, body: rawBody }) => {
@@ -49,9 +49,7 @@ export const POST = withAuthedJsonRoute(async ({ userId, body: rawBody }) => {
   // the next /explore load picks fresh candidates (the saved artist should
   // not reappear, and adjacent picks may shift). Awaited so the serverless
   // function doesn't terminate mid-delete after the response is sent.
-  await invalidateExploreCache(userId).catch((err) => {
-    console.error("[saves] explore-invalidate failed", err)
-  })
+  await onTasteChanged(supabase, userId, { kind: "save" })
 
   const { error: seenError } = await supabase
     .from("recommendation_cache")
@@ -80,9 +78,7 @@ export const DELETE = withAuthedJsonRoute(async ({ userId, body: rawBody }) => {
 
   if (error) return dbError(error, "saves/delete")
 
-  await invalidateExploreCache(userId).catch((err) => {
-    console.error("[saves] explore-invalidate failed", err)
-  })
+  await onTasteChanged(supabase, userId, { kind: "save" })
 
   return Response.json({ success: true })
 })

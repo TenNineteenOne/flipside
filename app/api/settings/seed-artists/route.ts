@@ -2,7 +2,7 @@ import { apiError, dbError } from "@/lib/errors"
 import { createServiceClient } from "@/lib/supabase/server"
 import { isValidArtistId } from "@/lib/spotify-ids"
 import { validateSeedArtists } from "@/lib/seed-artist-validation"
-import { invalidateExploreCache } from "@/lib/recommendation/explore-engine"
+import { onTasteChanged } from "@/lib/taste-change"
 import { withAuthedRoute, withAuthedCsrfRoute } from "@/lib/api/with-authed-route"
 
 const MAX_SEED_ARTISTS = 200
@@ -67,9 +67,7 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }) => {
 
   if (error) return dbError(error, "settings/seed-artists/upsert")
 
-  await invalidateExploreCache(userId).catch((err) => {
-    console.error("[seed-artists] explore-invalidate failed", err)
-  })
+  await onTasteChanged(supabase, userId, { kind: "seeds" })
 
   return Response.json({ success: true })
 })
@@ -89,9 +87,7 @@ export const DELETE = withAuthedCsrfRoute(async ({ userId, request }) => {
 
   if (error) return dbError(error, "settings/seed-artists/delete")
 
-  await invalidateExploreCache(userId).catch((err) => {
-    console.error("[seed-artists] explore-invalidate failed", err)
-  })
+  await onTasteChanged(supabase, userId, { kind: "seeds" })
 
   return Response.json({ success: true })
 })
