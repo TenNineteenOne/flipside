@@ -31,6 +31,8 @@ export interface FakeSupabase {
   client: any
   /** Live view of the in-memory tables (mutated by writes). */
   tables: Tables
+  /** Every executed query, in order: table, op, and the last `.in()` values. */
+  queries: Array<{ table: string; op: string; in?: unknown[] }>
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -38,8 +40,13 @@ export type RpcHandler = (args: any, tables: Tables) => { data?: unknown; error:
 
 export function createFakeSupabase(
   initial: Tables = {},
-  opts: { rpcs?: Record<string, RpcHandler> } = {},
+  opts: {
+    rpcs?: Record<string, RpcHandler>
+    /** Per-table failure injection: "error" → `{ error }` result, "throw" → rejected promise. */
+    fail?: Record<string, "error" | "throw">
+  } = {},
 ): FakeSupabase {
+  const queries: FakeSupabase["queries"] = []
   const tables: Tables = {}
   for (const k of Object.keys(initial)) tables[k] = initial[k].map((r) => ({ ...r }))
   const ensure = (t: string): Row[] => (tables[t] ??= [])
@@ -55,6 +62,7 @@ export function createFakeSupabase(
     let maybeSingle = false
     let orderSpec: { col: string; ascending: boolean } | null = null
     let limitN: number | null = null
+    let inVals: unknown[] | undefined
 
     function matching(): Row[] {
       let rows = ensure(table).filter((r) => filters.every((f) => f(r)))
@@ -73,6 +81,10 @@ export function createFakeSupabase(
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function run(): any {
+      queries.push({ table, op, in: inVals })
+      const failure = opts.fail?.[table]
+      if (failure === "throw") throw new Error(`fake ${table} ${op} threw`)
+      if (failure === "error") return { data: null, error: { message: `fake ${table} ${op} failed` } }
       const t = ensure(table)
       if (op === "select") {
         const rows = matching()
@@ -173,6 +185,7 @@ export function createFakeSupabase(
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       in(col: string, vals: any[]) {
+        inVals = vals
         const s = new Set(vals)
         filters.push((r) => s.has(r[col]))
         return q
@@ -223,5 +236,5 @@ export function createFakeSupabase(
     return handler ? { data: null, ...handler(args, tables) } : { data: null, error: { message: `no rpc ${name}` } }
   }
 
-  return { client: { from: (t: string) => makeQuery(t), rpc }, tables }
+  return { client: { from: (t: string) => makeQuery(t), rpc }, tables, queries }
 }

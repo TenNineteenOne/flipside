@@ -2,7 +2,7 @@
  * Unit tests for explore-rail-payloads.ts — the shared rail-payload assembly
  * helper used by both the Explore page and GET /api/explore/rails.
  */
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, vi } from "vitest"
 import {
   assembleRailPayloads,
   hydrateRailArtists,
@@ -28,7 +28,7 @@ function makeHydrated(
     imageUrl: null,
     popularity: 50,
     artist_color: null,
-    topTracks: undefined, // legacy: undefined → keep (no filtering)
+    topTracks: [playableTrack(`${id}-t`)],
     ...overrides,
   }
 }
@@ -79,10 +79,14 @@ describe("hydrateRailArtists", () => {
     expect(result[0].id).toBe("a1")
   })
 
-  it("keeps artists with topTracks=undefined (legacy rows)", () => {
+  it("drops artists with no tracks row (topTracks=undefined) and logs them as droppedNoRow", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {})
     const a = makeHydrated("a1", { topTracks: undefined })
-    const result = hydrateRailArtists(["a1"], {}, new Map([["a1", a]]))
-    expect(result).toHaveLength(1)
+    const neg = makeHydrated("a2", { topTracks: [] })
+    const result = hydrateRailArtists(["a1", "a2"], {}, new Map([["a1", a], ["a2", neg]]))
+    expect(result).toHaveLength(0)
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("droppedNoRow=1 droppedNegative=1"))
+    log.mockRestore()
   })
 
   it("keeps artists that have at least one playable track", () => {

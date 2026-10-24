@@ -3,6 +3,7 @@ import type { Track } from "@/lib/music-provider/types"
 import { hasPlayablePreview } from "@/lib/recommendation/confirm-previews"
 import type { UnseenRecommendation } from "@/lib/recommendation/feed-query"
 import { liftArtistColor, type CardArtist } from "@/lib/cards/card-artist"
+import { PreviewStore } from "@/lib/recommendation/preview-store"
 
 type ArtistDataRow = {
   id?: string
@@ -93,13 +94,6 @@ export async function loadFeedCards(
 ): Promise<CardArtist[]> {
   const renderable = rows.filter(isRenderableRow)
   if (renderable.length === 0) return []
-  const { data } = await supabase
-    .from("artist_tracks_cache")
-    .select("artist_id, tracks")
-    .in("artist_id", renderable.map((r) => r.artist_id))
-  const tracksByArtistId = new Map<string, Track[]>()
-  for (const row of data ?? []) {
-    tracksByArtistId.set(row.artist_id, (row.tracks as Track[]) ?? [])
-  }
+  const tracksByArtistId = await new PreviewStore(supabase).readForDisplay(renderable.map((r) => r.artist_id))
   return assembleFeedCards(renderable, tracksByArtistId)
 }

@@ -17,9 +17,9 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { ArtistIdentity } from '@/lib/artist-identity'
 import { resolveArtistsByName } from './resolve-candidates'
 import { buildEnrichArtist } from './enrich-artist'
-import { getTagArtistNames, buildConfirmPreview, buildMintArtist, lastfmResolve, rehydrateTopTracks } from './engine'
+import { getTagArtistNames, buildConfirmPreview, buildMintArtist, lastfmResolve } from './engine'
 import { confirmToTarget } from './confirm-previews'
-import { createConfirmCollector, resetPersisted, snapshotPersisted } from './persist-confirms'
+import { PreviewStore, resetPersisted, snapshotPersisted } from './preview-store'
 import { resetCalls, snapshotCalls } from './api-call-counter'
 import {
   allLeavesWithAnchor,
@@ -240,12 +240,13 @@ async function resolveAndFilter(
   // iTunes entirely, and fresh confirmed-empty negatives short-circuit (dropped
   // without a re-query). The generation path has always done this; the Explore
   // confirm slice never did.
-  await rehydrateTopTracks(supabase, candidates)
+  const previews = new PreviewStore(supabase)
+  await previews.rehydrate(candidates)
 
   // Confirm up to `confirmTarget` artists. Per-rail callers set this to
   // displayTarget + HEADROOM so smaller rails confirm fewer candidates. The
   // collector records each live confirm so the flush below persists them.
-  const collector = createConfirmCollector()
+  const collector = previews.collector()
   const { kept } = await confirmToTarget(candidates, confirmTarget, buildConfirmPreview(accessToken, collector.onConfirmOutcome))
 
   // Write the confirmed topTracks back into artist_search_cache under the
@@ -258,7 +259,7 @@ async function resolveAndFilter(
   // resolved rail card hydrated with topTracks:[] → a dead card.
   await Promise.all([
     ...kept.map((k) => nameCache.write(k.name, k.artist).catch(() => {})),
-    collector.flush(supabase),
+    collector.flush(),
   ])
 
   return kept.map((k) => k.artist)
@@ -907,7 +908,10 @@ export interface HydratedRailArtist {
   imageUrl?: string | null
   popularity?: number
   artist_color?: string | null
-  /** Baked playable previews from artist_data; carried through to the card. */
+  /**
+   * Stored previews from artist_tracks_cache. `undefined` = no row for this
+   * artist; `[]`/all-unplayable = confirmed negative. Either way the card drops.
+   */
   topTracks?: Track[]
 }
 
@@ -923,9 +927,8 @@ export interface BuildRailsResult {
  *
  * Metadata (name / genres / image / popularity / color) comes from the
  * canonical `artists` table. Track previews come SEPARATELY from
- * `artist_tracks_cache` (decision A1: explore previews are sourced from the
- * tracks cache now, not a folded artist_data blob) and merged in as
- * `topTracks`. Both reads key on `artist_id` (= artists.id). The returned map
+ * `artist_tracks_cache` via the PreviewStore display read (decision A1) and
+ * merged in as `topTracks`. Both reads key on `artist_id` (= artists.id). The returned map
  * is keyed by artist_id → record.
  */
 async function hydrateRailArtists(
@@ -936,23 +939,13 @@ async function hydrateRailArtists(
   const byId = new Map<string, HydratedRailArtist>()
   if (allIds.length === 0) return byId
 
-  const [metaRes, tracksRes] = await Promise.all([
+  const [metaRes, tracksById] = await Promise.all([
     supabase
       .from('artists')
       .select('id, name, genres, image_url, popularity, artist_color')
       .in('id', allIds),
-    supabase
-      .from('artist_tracks_cache')
-      .select('artist_id, tracks')
-      .in('artist_id', allIds),
+    new PreviewStore(supabase).readForDisplay(allIds),
   ])
-
-  const tracksById = new Map<string, Track[]>()
-  for (const row of tracksRes.data ?? []) {
-    const id = row.artist_id as string | null
-    if (!id) continue
-    tracksById.set(id, (row.tracks as Track[] | null) ?? [])
-  }
 
   for (const row of metaRes.data ?? []) {
     const id = row.id as string
@@ -963,7 +956,8 @@ async function hydrateRailArtists(
       imageUrl: (row.image_url as string | null) ?? null,
       popularity: (row.popularity as number | null) ?? 0,
       artist_color: (row.artist_color as string | null) ?? null,
-      topTracks: tracksById.get(id) ?? [],
+      // undefined = no tracks row (never confirmed); the payload guard drops it.
+      topTracks: tracksById.get(id),
     })
   }
   return byId

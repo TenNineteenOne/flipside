@@ -60,9 +60,9 @@ export const WILDCARDS_FALLBACK_META = {
 
 /**
  * Hydrate a list of artist IDs into card artists using the map returned by
- * `buildExploreRails({ hydrate: true })`. Applies the same hasPlayablePreview
- * guard the page uses: legacy rows (topTracks=undefined) pass through; rows
- * with topTracks present but all unplayable are dropped. A rail's provenance
+ * `buildExploreRails({ hydrate: true })`. Nothing without a playable preview
+ * renders: an artist with no tracks row (topTracks=undefined) or a negative /
+ * all-unplayable row is dropped. A rail's provenance
  * maps onto the card's why: `sourceArtist` → sourceArtists, `tag` → genres.
  */
 export function hydrateRailArtists(
@@ -71,18 +71,15 @@ export function hydrateRailArtists(
   artistById: Map<string, HydratedRailArtist>,
 ): CardArtist[] {
   const out: CardArtist[] = []
-  // Diagnostic (#162): distinguish drops with NO hydration row (id not in the
-  // map — the artist_tracks_cache / artists read missed) from drops of a
-  // confirmed-negative row (topTracks present but unplayable). The guard
-  // decisions below are unchanged — this only counts them.
+  // Diagnostic (#162): distinguish drops with NO tracks row (or no artists
+  // row — the id isn't hydratable at all) from drops of a confirmed-negative
+  // row (tracks present but none playable).
   let droppedNoRow = 0
   let droppedNegative = 0
   for (const id of ids) {
     const a = artistById.get(id)
-    if (!a) { droppedNoRow++; continue }
-    // Defensive: drop only when topTracks is present AND confirmed unplayable.
-    // Legacy cached rows have topTracks=undefined — keep those.
-    if (a.topTracks !== undefined && !hasPlayablePreview(a.topTracks)) { droppedNegative++; continue }
+    if (!a || a.topTracks === undefined) { droppedNoRow++; continue }
+    if (!hasPlayablePreview(a.topTracks)) { droppedNegative++; continue }
     const w = why[id]
     out.push({
       id: a.id,
@@ -92,7 +89,7 @@ export function hydrateRailArtists(
       imageUrl: a.imageUrl ?? null,
       popularity: a.popularity ?? 0,
       artistColor: a.artist_color ?? null,
-      topTracks: a.topTracks ?? [],
+      topTracks: a.topTracks,
       why: {
         sourceArtists: w?.sourceArtist ? [w.sourceArtist] : [],
         genres: w?.tag ? [w.tag] : [],

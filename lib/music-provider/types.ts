@@ -21,7 +21,7 @@ export interface Artist {
    */
   topTracks?: Track[]
   /**
-   * Transient generation-time flag (#162): set by `rehydrateTopTracks` when
+   * Transient generation-time flag (#162): set by `PreviewStore.rehydrate` when
    * `artist_tracks_cache` holds a confirmed-empty row within the negative TTL.
    * Signals the confirm step to skip iTunes/Spotify and drop the artist rather
    * than re-query a recently-confirmed dead end. Never persisted.

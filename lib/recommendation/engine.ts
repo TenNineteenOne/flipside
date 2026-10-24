@@ -1,5 +1,5 @@
 import { musicProvider } from '@/lib/music-provider/provider'
-import type { Artist, Track } from '@/lib/music-provider/types'
+import type { Artist } from '@/lib/music-provider/types'
 import type { SimilarArtistRef } from '@/lib/music-provider'
 import { createServiceClient } from '@/lib/supabase/server'
 import {
@@ -12,7 +12,7 @@ import {
 import { resolveArtistsByName } from './resolve-candidates'
 import { ArtistIdentity, artistNameKey } from '@/lib/artist-identity'
 import { confirmPlayableTracks, confirmToTarget, type ConfirmOutcome } from './confirm-previews'
-import { createConfirmCollector, NEGATIVE_TTL_MS } from './persist-confirms'
+import { PreviewStore } from './preview-store'
 import { searchTracksByArtist } from '@/lib/music-provider/itunes'
 import { fetchArtistEnrichment, buildEnrichArtist } from './enrich-artist'
 import { normalizedIncludes, normalizeGenre } from '@/lib/genre/normalize'
@@ -198,71 +198,6 @@ export function buildMintArtist(identity: ArtistIdentity) {
 // ── Seed gathering ──────────────────────────────────────────────────────────
 
 type SupabaseClient = ReturnType<typeof createServiceClient>
-
-/** Chunk size for batched `artist_tracks_cache` reads — mirrors the name cache's BATCH_READ_CHUNK_SIZE. */
-const TRACKS_REHYDRATE_CHUNK_SIZE = 500
-
-/**
- * Rehydrate baked track previews onto resolved candidates from
- * `artist_tracks_cache` (post-0037: keyed by `artist_id` uuid, columns
- * `artist_id, tracks`). The Stage-2 fold moved baked previews out of the
- * name cache (artist_data.topTracks) into this table, but the generation
- * path was never rehydrated from it — so warm artists arrived at preview-
- * confirmation with topTracks=undefined and were re-confirmed (or, before
- * the confirm fix, dropped). This mirrors Explore's hydrateRailArtists
- * (decision A1): warm artists arrive confirmed; cold artists keep topTracks
- * undefined and fall through to iTunes/Spotify.
- *
- * Mutates `artist.topTracks` in place for candidates that have a cached set.
- * NEVER throws — degrades to no rehydration on any read error.
- *
- * Exported for unit testing.
- */
-export async function rehydrateTopTracks(
-  supabase: SupabaseClient,
-  candidates: Array<{ artist: Artist }>,
-): Promise<void> {
-  const ids = [...new Set(candidates.map((c) => c.artist.id).filter(Boolean))]
-  if (ids.length === 0) return
-
-  const tracksById = new Map<string, Track[]>()
-  // Fresh confirmed-empty rows (#162): within NEGATIVE_TTL_MS → short-circuit
-  // the confirm step (knownEmpty) instead of re-hitting iTunes. Expired
-  // negatives are ignored (artist stays unconfirmed → re-confirms).
-  const knownEmptyIds = new Set<string>()
-  const now = Date.now()
-  for (let i = 0; i < ids.length; i += TRACKS_REHYDRATE_CHUNK_SIZE) {
-    const chunk = ids.slice(i, i + TRACKS_REHYDRATE_CHUNK_SIZE)
-    const { data, error } = await supabase
-      .from('artist_tracks_cache')
-      .select('artist_id, tracks, fetched_at')
-      .in('artist_id', chunk)
-    if (error) {
-      console.log(`[engine] rehydrate read-fail err="${error.message}" chunk=${i}-${i + chunk.length} total=${ids.length}`)
-      return // degrade to no rehydration
-    }
-    for (const row of data ?? []) {
-      const id = row.artist_id as string | null
-      if (!id) continue
-      const tracks = (row.tracks as Track[] | null) ?? []
-      if (tracks.length > 0) {
-        tracksById.set(id, tracks)
-      } else if (row.fetched_at && now - new Date(row.fetched_at as string).getTime() < NEGATIVE_TTL_MS) {
-        knownEmptyIds.add(id)
-      }
-    }
-  }
-
-  if (tracksById.size === 0 && knownEmptyIds.size === 0) return
-  for (const { artist } of candidates) {
-    const cached = tracksById.get(artist.id)
-    if (cached) {
-      artist.topTracks = cached // positive always wins
-    } else if (knownEmptyIds.has(artist.id)) {
-      artist.knownEmpty = true
-    }
-  }
-}
 
 async function gatherSeedContext(
   userId: string,
@@ -668,8 +603,9 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
   // ONE collector per run (#162). Every confirm tier (tier-1 blocking, tier-2
   // deferred, secondary) records outcomes here; the route flushes it once in
   // after() so a single batch-upsert covers all three phases.
-  const confirmCollector = createConfirmCollector()
-  const flushConfirms = () => confirmCollector.flush(supabase)
+  const previews = new PreviewStore(supabase)
+  const confirmCollector = previews.collector()
+  const flushConfirms = () => confirmCollector.flush()
 
   const widenSeedCap = userGenres.length >= ADAPTIVE_BROADEN_THRESHOLD
   const seedCap = widenSeedCap ? 15 : 10
@@ -807,7 +743,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
   // Rehydrate baked previews from artist_tracks_cache so warm artists arrive at
   // preview-confirmation already confirmed (no re-confirm / no iTunes call).
   // Cold artists keep topTracks undefined and fall through to iTunes/Spotify.
-  await rehydrateTopTracks(supabase, filteredCandidates)
+  await previews.rehydrate(filteredCandidates)
 
   // Local scorer — shared by the primary pool and the backfill reserve so the
   // two are ranked on the same scale. (The secondary `runSecondary` closure
@@ -1107,7 +1043,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
 
     // Rehydrate baked previews for the secondary pool too (mirror the primary
     // path) so tier-2/secondary warm artists also arrive confirmed.
-    await rehydrateTopTracks(supabase, secondaryCandidates)
+    await previews.rehydrate(secondaryCandidates)
 
     const secondaryScored: ScoredArtist[] = secondaryCandidates.map(({ artist, seedArtists }) => {
       const seedRelevance = Math.min(Math.sqrt(seedArtists.length) / Math.sqrt(6), 1)

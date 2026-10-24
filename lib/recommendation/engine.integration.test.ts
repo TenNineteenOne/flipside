@@ -19,7 +19,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { createFakeSupabase, type Tables, type Row } from "./__fixtures__/fake-supabase"
 import { isValidArtistId } from "@/lib/spotify-ids"
-import type { Artist, Track } from "@/lib/music-provider/types"
+import type { Track } from "@/lib/music-provider/types"
 import type { SimilarArtistRef } from "@/lib/music-provider"
 
 // ── Hoisted mock control surface ──────────────────────────────────────────────
@@ -68,7 +68,7 @@ vi.mock("@/lib/music-provider/itunes", () => ({
 }))
 
 // Imported AFTER mocks are registered.
-import { buildRecommendations, rehydrateTopTracks } from "./engine"
+import { buildRecommendations } from "./engine"
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 function track(seed: string): Track {
@@ -394,42 +394,5 @@ describe("buildRecommendations — persist confirms (#162)", () => {
     expect(h.calls.itunes).toEqual([])
 
     rand.mockRestore()
-  })
-})
-
-// ── 8. #162: rehydrateTopTracks negative-row TTL handling ─────────────────────
-function bareArtist(id: string, name: string): { artist: Artist } {
-  return { artist: { id, name, genres: [], imageUrl: null, popularity: 0 } }
-}
-
-describe("rehydrateTopTracks — negative TTL (#162)", () => {
-  it("positive row → topTracks; fresh negative row → knownEmpty", async () => {
-    const posId = "aaaaaaaa-0000-4000-8000-000000000001"
-    const negId = "bbbbbbbb-0000-4000-8000-000000000002"
-    const fake = createFakeSupabase({
-      artist_tracks_cache: [
-        { artist_id: posId, tracks: [track("pos")], source: "itunes", fetched_at: new Date().toISOString() },
-        { artist_id: negId, tracks: [], source: "none", fetched_at: new Date().toISOString() },
-      ],
-    })
-    const cands = [bareArtist(posId, "Pos"), bareArtist(negId, "Neg")]
-    await rehydrateTopTracks(fake.client, cands)
-
-    expect(cands[0].artist.topTracks).toHaveLength(1)
-    expect(cands[0].artist.knownEmpty).toBeUndefined()
-    expect(cands[1].artist.topTracks).toBeUndefined()
-    expect(cands[1].artist.knownEmpty).toBe(true)
-  })
-
-  it("expired negative row → ignored (no knownEmpty, artist re-confirms)", async () => {
-    const negId = "bbbbbbbb-0000-4000-8000-000000000002"
-    const expired = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString() // 25h > 24h TTL
-    const fake = createFakeSupabase({
-      artist_tracks_cache: [{ artist_id: negId, tracks: [], source: "none", fetched_at: expired }],
-    })
-    const cands = [bareArtist(negId, "Neg")]
-    await rehydrateTopTracks(fake.client, cands)
-    expect(cands[0].artist.knownEmpty).toBeUndefined()
-    expect(cands[0].artist.topTracks).toBeUndefined()
   })
 })
