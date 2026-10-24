@@ -102,6 +102,12 @@ function pickRow<T extends { id: string; spotify_id: string | null; popularity: 
 export class ArtistIdentity {
   /** Rows of names `batchRead()` found ambiguous — reused by `ensure()` (one read). */
   private readonly ambiguous = new Map<string, ArtistsRow[]>()
+  /**
+   * Every row `ensure()` landed on (read, picked or minted), by uuid — so
+   * `write()` needs no SELECT of its own on the generation hot path (#175 R2)
+   * and can hand back the row's own spotify_id / popularity (F-F).
+   */
+  private readonly rows = new Map<string, ArtistsRow>()
 
   constructor(private readonly client: ArtistsClient) {}
 
@@ -195,13 +201,15 @@ export class ArtistIdentity {
     for (let i = 0; i < ids.length; i += CHUNK) {
       const chunk = ids.slice(i, i + CHUNK)
       try {
-        const { data, error } = await this.client.from(TABLE).select("id, spotify_id").in("spotify_id", chunk)
+        const { data, error } = await this.client.from(TABLE).select(ROW_COLS).in("spotify_id", chunk)
         if (error) {
           console.log(`[artists-mint] read-fail err="${error.message}" chunk=${i}-${i + chunk.length}`)
           continue
         }
-        for (const row of (data ?? []) as Array<{ id: string; spotify_id: string | null }>) {
-          if (row.spotify_id) out.set(row.spotify_id, row.id)
+        for (const row of (data ?? []) as ArtistsRow[]) {
+          if (!row.spotify_id) continue
+          out.set(row.spotify_id, row.id)
+          this.rows.set(row.id, row)
         }
       } catch (err) {
         console.log(`[artists-mint] read-throw err="${errMsg(err)}"`)
@@ -230,14 +238,19 @@ export class ArtistIdentity {
     return p
   }
 
+  private keep(row: ArtistsRow): string {
+    this.rows.set(row.id, row)
+    return row.id
+  }
+
   private async readOrMintByName(seed: ArtistSeed, nameLower: string): Promise<string | null> {
     const known = this.ambiguous.get(nameLower)
-    if (known) return pickRow(known).id
+    if (known) return this.keep(pickRow(known))
 
     try {
       const { data, error } = await this.client
         .from(TABLE)
-        .select("id, spotify_id, popularity")
+        .select(ROW_COLS)
         .eq("name_lower", nameLower)
         // Without ORDER BY, LIMIT returns an arbitrary page — the pick must see
         // the same window every run.
@@ -247,8 +260,8 @@ export class ArtistIdentity {
         console.log(`[artists-mint] by-name read-fail name="${nameLower}" err="${error.message}"`)
         return null
       }
-      const rows = (data ?? []) as Array<{ id: string; spotify_id: string | null; popularity: number | null }>
-      if (rows.length > 0) return pickRow(rows).id
+      const rows = (data ?? []) as ArtistsRow[]
+      if (rows.length > 0) return this.keep(pickRow(rows))
     } catch (err) {
       console.log(`[artists-mint] by-name read-throw name="${nameLower}" err="${errMsg(err)}"`)
       return null
@@ -256,22 +269,20 @@ export class ArtistIdentity {
 
     // No row — mint a name-only row (the #159 backfill fills spotify_id later).
     try {
-      const { data, error } = await this.client
-        .from(TABLE)
-        .insert({
-          name: seed.name,
-          name_lower: nameLower,
-          genres: seed.genres ?? [],
-          popularity: seed.popularity ?? null,
-          image_url: seed.imageUrl ?? null,
-        })
-        .select("id")
-        .single()
+      const insert = {
+        name: seed.name,
+        name_lower: nameLower,
+        genres: seed.genres ?? [],
+        popularity: seed.popularity ?? null,
+        image_url: seed.imageUrl ?? null,
+      }
+      const { data, error } = await this.client.from(TABLE).insert(insert).select("id").single()
       if (error) {
         console.log(`[artists-mint] by-name insert-fail name="${nameLower}" err="${error.message}"`)
         return null
       }
-      return (data as { id: string } | null)?.id ?? null
+      const id = (data as { id: string } | null)?.id
+      return id ? this.keep({ id, spotify_id: null, ...insert }) : null
     } catch (err) {
       console.log(`[artists-mint] by-name insert-throw name="${nameLower}" err="${errMsg(err)}"`)
       return null
@@ -324,41 +335,62 @@ export class ArtistIdentity {
    * never overwritten (#175 F24 — an ambiguous name resolved via Last.fm must
    * not stomp a homonym row's Spotify metadata, shifting tiering / the
    * underground cap). `name`/`name_lower`/`spotify_id` are never touched.
+   * Popularity 0 counts as empty (#175 R2: the app reads 0 as "unknown", and a
+   * mint can store 0 from a getInfo timeout or a tiny listener count).
    * Read-then-update: two concurrent fills of the same empty field can race,
-   * but both are fills — an existing value is never replaced. Skips (logs)
-   * when the artist has no minted uuid. Never throws.
+   * but both are fills — an existing value is never replaced. The read is the
+   * row `ensure()` already landed on when this instance resolved the artist
+   * (no extra SELECT on the generation hot path); otherwise one SELECT.
+   *
+   * Returns the artist as the roster row holds it (#175 F-F): the row's
+   * `spotify_id`, and its popularity when it has one. A name that landed on a
+   * homonym's Spotify row must keep that Spotify id (the Spotify preview
+   * fallback, and no definitive negative written over it) and score on the
+   * row's popularity, not Last.fm's conflated one. Skips (logs) when the
+   * artist has no minted uuid. Never throws; on any failure returns `artist`.
    */
-  async write(name: string, artist: Artist): Promise<void> {
+  async write(name: string, artist: Artist): Promise<Artist> {
     try {
       if (!isValidArtistId(artist.id)) {
         console.log(`[cache-write] skip name="${name}" (no id)`)
-        return
+        return artist
       }
       const incoming = artist.genres.length > 0 || artist.popularity > 0 || !!artist.imageUrl
-      if (!incoming) return // nothing worth writing
-      const { data: current, error: readErr } = await this.client
-        .from(TABLE)
-        .select("genres, popularity, image_url")
-        .eq("id", artist.id)
-        .maybeSingle()
-      if (readErr || !current) {
-        console.log(`[cache-write] read-fail name="${name}" err="${readErr?.message ?? "no row"}"`)
-        return
+      let row = this.rows.get(artist.id)
+      if (!row) {
+        if (!incoming) return artist // nothing worth writing
+        const { data: current, error: readErr } = await this.client
+          .from(TABLE)
+          .select(ROW_COLS)
+          .eq("id", artist.id)
+          .maybeSingle()
+        if (readErr || !current) {
+          console.log(`[cache-write] read-fail name="${name}" err="${readErr?.message ?? "no row"}"`)
+          return artist
+        }
+        row = current as ArtistsRow
       }
-      const row = current as Pick<ArtistsRow, "genres" | "popularity" | "image_url">
+      const stored: Artist = {
+        ...artist,
+        spotifyId: row.spotify_id ?? artist.spotifyId ?? null,
+        popularity: row.popularity ? row.popularity : artist.popularity,
+      }
       const patch: { genres?: string[]; popularity?: number; image_url?: string } = {}
       if (artist.genres.length > 0 && !(row.genres?.length)) patch.genres = artist.genres
-      if (artist.popularity > 0 && row.popularity == null) patch.popularity = artist.popularity
+      if (artist.popularity > 0 && !row.popularity) patch.popularity = artist.popularity
       if (artist.imageUrl && !row.image_url) patch.image_url = artist.imageUrl
-      if (Object.keys(patch).length === 0) return // row already filled
+      if (Object.keys(patch).length === 0) return stored // row already filled
       const { error } = await this.client.from(TABLE).update(patch).eq("id", artist.id)
       if (error) {
         console.log(`[cache-write] fail name="${name}" err="${error.message}"`)
-        return
+        return stored
       }
-      console.log(`[cache-write] ok name="${name}" spotifyId=${artist.spotifyId ?? "null"}`)
+      this.rows.set(artist.id, { ...row, ...patch })
+      console.log(`[cache-write] ok name="${name}" spotifyId=${stored.spotifyId ?? "null"}`)
+      return stored
     } catch (err) {
       console.log(`[cache-write] throw name="${name}" err="${errMsg(err)}"`)
+      return artist
     }
   }
 }

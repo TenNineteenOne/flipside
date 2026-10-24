@@ -374,8 +374,48 @@ describe("write — fill-only metadata patch", () => {
     expect(tables.artists).toHaveLength(0)
   })
 
-  it("never throws on a write error or throw", async () => {
-    await expect(new ArtistIdentity(failingClient("x")).write("A", artist(U(1), { genres: ["g"] }))).resolves.toBeUndefined()
-    await expect(new ArtistIdentity(failingClient("x", true)).write("A", artist(U(1), { genres: ["g"] }))).resolves.toBeUndefined()
+  it("never throws on a write error or throw (hands the input back)", async () => {
+    const a = artist(U(1), { genres: ["g"] })
+    await expect(new ArtistIdentity(failingClient("x")).write("A", a)).resolves.toBe(a)
+    await expect(new ArtistIdentity(failingClient("x", true)).write("A", a)).resolves.toBe(a)
+  })
+
+  it("#175 R2: popularity 0 counts as empty and gets filled; a value > 0 never does", async () => {
+    const { identity, tables } = setup([row(U(1), "Zero", { popularity: 0 }), row(U(2), "Low", { popularity: 3 })])
+    await identity.write("Zero", artist(U(1), { popularity: 40 }))
+    await identity.write("Low", artist(U(2), { popularity: 40 }))
+    expect(tables.artists[0].popularity).toBe(40)
+    expect(tables.artists[1].popularity).toBe(3)
+  })
+
+  it("#175 R2: after ensure() the write reuses the row it landed on (no extra SELECT)", async () => {
+    const { identity, tables, froms } = setup([row(U(1), "Known", { popularity: null })])
+    const id = (await identity.ensure({ name: "Known" }))!
+    const before = froms.length
+    await identity.write("Known", artist(id, { popularity: 25 }))
+    expect(froms.length - before).toBe(1) // the UPDATE only
+    expect(tables.artists[0].popularity).toBe(25)
+    // A fresh mint is known too: nothing to fill → no query at all.
+    const minted = (await identity.ensure({ name: "Brand New", genres: ["x"], popularity: 12 }))!
+    const n = froms.length
+    await identity.write("Brand New", artist(minted, { genres: ["x"], popularity: 12 }))
+    expect(froms.length).toBe(n)
+  })
+
+  it("#175 F-F: a bare name landing on a homonym's Spotify row returns that row's spotify_id and popularity", async () => {
+    const { identity } = setup([
+      row(U(1), "Homonym", { spotify_id: "spH", popularity: 62 }),
+      row(U(2), "Homonym", { popularity: null }),
+    ])
+    await identity.batchRead(["Homonym"]) // ambiguous → lookup → ensure
+    const id = (await identity.ensure({ name: "Homonym", popularity: 9 }))!
+    expect(id).toBe(U(1))
+    const out = await identity.write("Homonym", artist(id, { name: "Homonym", spotifyId: null, popularity: 9 }))
+    expect(out.spotifyId).toBe("spH")
+    expect(out.popularity).toBe(62)
+    // A row without popularity keeps the incoming value.
+    const { identity: id2 } = setup([row(U(3), "Solo", { popularity: null })])
+    const solo = (await id2.ensure({ name: "Solo" }))!
+    expect((await id2.write("Solo", artist(solo, { popularity: 7 }))).popularity).toBe(7)
   })
 })
