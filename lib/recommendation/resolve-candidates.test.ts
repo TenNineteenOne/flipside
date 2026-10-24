@@ -352,6 +352,14 @@ describe("resolveArtistsByName", () => {
     expect(r.resolved.get("Khruangbin")?.id).toBe("right")
   })
 
+  it("a punctuation variant is NOT an exact match — it goes through the fuzzy guard (#175 F3)", async () => {
+    // "M.I.A." vs "Mia" share a name key but are different artists; only a plain
+    // lowercase match bypasses the 0.8 similarity guard.
+    const search = async (): Promise<Artist[] | RateLimited> => [artist("mia-dot", "M.I.A.")]
+    const r = await resolveArtistsByName(["Mia"], makeDeps({ search }))
+    expect(r.resolved.has("Mia")).toBe(false)
+  })
+
   // ── mintArtist wiring ────────────────────────────────────────────────────
 
   it("mints the uuid identity: assigns the minted uuid to id, preserves the adapter's spotifyId", async () => {

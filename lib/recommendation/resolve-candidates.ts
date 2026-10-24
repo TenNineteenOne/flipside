@@ -1,7 +1,7 @@
 import type { Artist } from "@/lib/music-provider/types"
 import type { RateLimited } from "@/lib/music-provider"
 import { isRateLimited } from "@/lib/music-provider"
-import { artistNameDbKey, artistNameKey, stringSimilarity, type ArtistIdentity } from "@/lib/artist-identity"
+import { artistNameDbKey, stringSimilarity, type ArtistIdentity } from "@/lib/artist-identity"
 import { mergeEnrichment } from "@/lib/artist-identity/lastfm-lookup"
 import type { ArtistEnrichment } from "@/lib/lastfm"
 
@@ -180,10 +180,12 @@ export async function resolveArtistsByName(
 
         if (res.length === 0) break
 
-        const key = artistNameKey(name)
-        const exact = res.find((a) => artistNameKey(a.name) === key)
+        // Plain toLowerCase, NOT artistNameKey: punctuation variants ("M.I.A." vs
+        // "Mia") must go through the fuzzy guard below, not auto-accept (#175 F3).
+        const lower = name.toLowerCase()
+        const exact = res.find((a) => a.name.toLowerCase() === lower)
         if (exact) {
-          // Exact name-key match — accept unconditionally.
+          // Exact lowercased-name match — accept unconditionally.
           resolvedArtist = exact
         } else {
           // No exact match: only accept the top result as a fuzzy fallback when
