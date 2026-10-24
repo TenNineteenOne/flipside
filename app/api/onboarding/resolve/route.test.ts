@@ -46,4 +46,23 @@ describe("POST /api/onboarding/resolve mint name", () => {
     expect(await res.json()).toEqual({ error: "Could not resolve this artist" })
     expect(db.tables.artists).toHaveLength(0)
   })
+
+  it.each([
+    ["Bjork", "Björk"],
+    ["Sigur Ros", "Sigur Rós"],
+    ["BTS", "방탄소년단"],
+  ])("#175 R6: %s resolves against MB %s and mints MB's name", async (client, mb) => {
+    vi.stubGlobal("fetch", vi.fn(async () => mbResponse(mb)))
+    const res = await call(client)
+    expect(res.status).toBe(200)
+    expect(db.tables.artists).toHaveLength(1)
+    expect(db.tables.artists[0].name).toBe(mb)
+  })
+
+  it("#175 R6: an obvious Latin mismatch still 404s", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => mbResponse("Metallica")))
+    const res = await call("Taylor Swift")
+    expect(res.status).toBe(404)
+    expect(db.tables.artists).toHaveLength(0)
+  })
 })
