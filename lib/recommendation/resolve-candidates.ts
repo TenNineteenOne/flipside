@@ -211,10 +211,12 @@ export async function resolveArtistsByName(
         // from `.id` here.
         const uuid = await deps.mintArtist(resolvedArtist)
         if (uuid) {
-          resolvedArtist = { ...resolvedArtist, id: uuid }
+          // Fill-only write; it hands back the artist as the row holds it — an
+          // ambiguous name that landed on a homonym's Spotify row carries that
+          // row's spotify_id / popularity, not Last.fm's (#175 F-F).
+          resolvedArtist = await deps.cache.write(name, { ...resolvedArtist, id: uuid })
           result.searchOk++
           result.resolved.set(name, resolvedArtist)
-          await deps.cache.write(name, resolvedArtist)
           firstSuccessfulSearch = false
         } else {
           // Mint failed (e.g. DB unavailable). We must NEVER let a non-uuid id

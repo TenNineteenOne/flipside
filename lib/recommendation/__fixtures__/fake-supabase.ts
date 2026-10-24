@@ -121,8 +121,9 @@ export function createFakeSupabase(
         return { error: null }
       }
       if (op === "update") {
-        for (const r of matching()) Object.assign(r, payload)
-        return { error: null }
+        const rows = matching()
+        for (const r of rows) Object.assign(r, payload)
+        return { data: rows.map((r) => ({ ...r })), error: null }
       }
       if (op === "delete") {
         tables[table] = t.filter((r) => !(filters.length > 0 && filters.every((f) => f(r))))

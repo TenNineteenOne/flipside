@@ -160,4 +160,31 @@ describe("PlayableCandidates resolve / confirm / flush (Feed tiers)", () => {
     expect(a.artists.get("Same")?.id).toBe(b.artists.get("Same")?.id)
     expect(fake.tables.artists).toHaveLength(1)
   })
+
+  it("#175 F-F: an ambiguous name landing on the Spotify row keeps its spotify_id → Spotify fallback, no negative", async () => {
+    const SP = "c0000000-0000-4000-8000-000000000001"
+    const fake = createFakeSupabase({
+      artists: [
+        { ...artistsRow(SP, "Homonym"), spotify_id: "spH", popularity: 70 },
+        { ...artistsRow("c0000000-0000-4000-8000-000000000002", "Homonym"), popularity: null },
+      ],
+      artist_tracks_cache: [],
+    })
+    const { ports } = fakePorts({ Homonym: [] }) // iTunes: definitive empty
+    const spotifyCalls: Array<string | null> = []
+    ports.getSpotifyTopTracks = async (id) => {
+      spotifyCalls.push(id)
+      return []
+    }
+    const pipeline = new PlayableCandidates(fake.client, ports)
+    const { artists } = await pipeline.resolve(["Homonym"])
+    const a = artists.get("Homonym")!
+    expect(a.id).toBe(SP)
+    expect(a.spotifyId).toBe("spH")
+    expect(a.popularity).toBe(70) // the row's, not Last.fm's 30
+    await pipeline.confirm([{ artist: a }], 1)
+    await pipeline.flush()
+    expect(spotifyCalls).toEqual(["spH"])
+    expect(fake.tables.artist_tracks_cache).toHaveLength(0) // Spotify-ambiguous: no negative
+  })
 })

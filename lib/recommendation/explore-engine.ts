@@ -121,14 +121,12 @@ export function rankByCurve(
 function loadSharedRows(supabase: SupabaseClient, userId: string) {
   return {
     // Paged past the 1000-row cap (#175 F16); each is one promise, awaited twice.
-    listened: readAllRows((from, to) =>
+    listened: readAllRows<{ id: string; artist_id: string; play_count: number | null }>(() =>
       supabase
         .from('listened_artists')
-        .select('artist_id, play_count')
+        .select('id, artist_id, play_count')
         .eq('user_id', userId)
-        .not('artist_id', 'is', null)
-        .order('id', { ascending: true })
-        .range(from, to),
+        .not('artist_id', 'is', null),
     ),
     thumbsDown: readFeedbackIds(supabase, userId, 'thumbs_down'),
   }
@@ -940,6 +938,45 @@ function enforceUndergroundCap(
 }
 
 /**
+ * Read-time feedback exclusions (#175 F-D). A build loads its exclusions once,
+ * at the start, and the cache then serves its rails for 24h — so a thumbs-down
+ * or dismiss landing mid-build (or after it) would keep showing. Drops rail ids
+ * with an active thumbs-down or a `skip_at`, scoped to the ids on the rails.
+ * Feedback only: "any play" listened exclusion and the 7-day seen cooldown stay
+ * build-time (an Explore save/like stamps seen_at; hiding on that would yank
+ * the artist the user just acted on). A failed read degrades to no filtering.
+ */
+async function dropFeedbackExcluded(supabase: SupabaseClient, userId: string, rails: RailResult[]): Promise<void> {
+  const ids = [...new Set(rails.flatMap((r) => r.artistIds))]
+  if (ids.length === 0) return
+  const [down, skipped] = await Promise.all([
+    supabase.from('feedback').select('artist_id').eq('user_id', userId).eq('signal', 'thumbs_down').is('deleted_at', null).in('artist_id', ids),
+    supabase.from('recommendation_cache').select('artist_id').eq('user_id', userId).not('skip_at', 'is', null).in('artist_id', ids),
+  ])
+  for (const { error } of [down, skipped]) {
+    if (error) console.error('[explore-engine] read-time exclusion read failed', error.message)
+  }
+  const out = new Set([...(down.data ?? []), ...(skipped.data ?? [])].map((r) => r.artist_id as string))
+  if (out.size === 0) return
+  for (const r of rails) r.artistIds = r.artistIds.filter((id) => !out.has(id))
+}
+
+/** Hydrate (when asked) in parallel with the read-time exclusion filter. */
+async function finishRails(
+  supabase: SupabaseClient,
+  input: BuildRailsInput,
+  rails: RailResult[],
+  hydrate: boolean | undefined,
+): Promise<Map<string, HydratedRailArtist> | undefined> {
+  const [hydrated] = await Promise.all([
+    hydrate ? hydrateRailArtists(supabase, rails) : Promise.resolve(undefined),
+    dropFeedbackExcluded(supabase, input.userId, rails),
+  ])
+  enforceUndergroundCap(rails, hydrated, input.undergroundMode)
+  return hydrated
+}
+
+/**
  * Top-level entrypoint. Reads `explore_cache`, returns cached rails when
  * fresh, otherwise runs all four rail generators in parallel, writes the
  * results, and returns them.
@@ -980,8 +1017,7 @@ export async function buildExploreRails(
         artistIds: (row.artist_ids ?? []) as string[],
         why: (row.why ?? {}) as Record<string, RailWhy>,
       }))
-      const hydrated = opts.hydrate ? await hydrateRailArtists(supabase, rails) : undefined
-      enforceUndergroundCap(rails, hydrated, input.undergroundMode)
+      const hydrated = await finishRails(supabase, input, rails, opts.hydrate)
       return { cacheHit: true, rails, hydrated }
     }
 
@@ -997,8 +1033,7 @@ export async function buildExploreRails(
         artistIds: (row.artist_ids ?? []) as string[],
         why: (row.why ?? {}) as Record<string, RailWhy>,
       }))
-      const hydrated = opts.hydrate ? await hydrateRailArtists(supabase, rails) : undefined
-      enforceUndergroundCap(rails, hydrated, input.undergroundMode)
+      const hydrated = await finishRails(supabase, input, rails, opts.hydrate)
       return { cacheHit: false, rails, hydrated }
     }
   }
@@ -1131,17 +1166,17 @@ export async function buildExploreRails(
     expires_at: expiresAt,
   }))
 
-  // Upsert + hydration are independent — fire in parallel to save a roundtrip.
+  // Upsert + hydration (+ read-time exclusions) are independent — fire in
+  // parallel to save a roundtrip. The cache keeps any id excluded mid-build;
+  // every read filters it again.
   const [{ error }, hydrated] = await Promise.all([
     supabase.from('explore_cache').upsert(rows, { onConflict: 'user_id,rail_key' }),
-    opts.hydrate ? hydrateRailArtists(supabase, rails) : Promise.resolve(undefined),
+    finishRails(supabase, input, rails, opts.hydrate),
   ])
 
   if (error) {
     console.error('[explore-engine] cache upsert failed', error.message)
   }
-
-  enforceUndergroundCap(rails, hydrated, input.undergroundMode)
 
   const calls = snapshotCalls()
   console.log(

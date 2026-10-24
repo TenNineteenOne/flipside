@@ -20,7 +20,7 @@
  * 🔴 AUTH: /api/cron/* is excluded from middleware auth, so the CRON_SECRET
  * check in withCronRoute (lib/api/with-authed-route.ts) is the ONLY gate.
  */
-import { resolveArtistExternalIds, searchArtistMbid } from "@/lib/artist-identity/musicbrainz"
+import { lookupArtistExternalIds, lookupArtistMbid } from "@/lib/artist-identity/musicbrainz"
 import { apiError } from "@/lib/errors"
 import { withCronRoute } from "@/lib/api/with-authed-route"
 
@@ -37,6 +37,11 @@ const BATCH_LIMIT = 120
 
 // Don't re-attempt an artist MB already failed to resolve more often than this.
 const REATTEMPT_INTERVAL_DAYS = 14
+// A transient MB failure (503 / timeout) is retried on the next daily run: the
+// stamp is backdated so the row re-enters the queue after ~1 day, behind
+// never-attempted rows (#175). Not left unstamped: a row that fails every time
+// would otherwise sit at the head of the nulls-first queue forever.
+const TRANSIENT_RETRY_DAYS = 1
 
 // Postgres unique-violation SQLSTATE — surfaced by PostgREST/supabase-js as
 // error.code on a conflicting update.
@@ -45,6 +50,7 @@ const PG_UNIQUE_VIOLATION = "23505"
 interface ArtistRow {
   id: string
   name: string
+  mbid: string | null
 }
 
 export const GET = withCronRoute("mb-backfill", async ({ supabase }) => {
@@ -57,7 +63,7 @@ export const GET = withCronRoute("mb-backfill", async ({ supabase }) => {
   // index from migration 0038).
   const { data: rows, error: queueErr } = await supabase
     .from("artists")
-    .select("id, name")
+    .select("id, name, mbid")
     .is("spotify_id", null)
     .or(`mbid_attempted_at.is.null,mbid_attempted_at.lt.${cutoff.toISOString()}`)
     .order("mbid_attempted_at", { ascending: true, nullsFirst: true })
@@ -78,20 +84,37 @@ export const GET = withCronRoute("mb-backfill", async ({ supabase }) => {
   let resolved = 0
   let conflicts = 0
   let attempted = 0
+  let transient = 0
 
   // Serial loop — the MB limiter enforces 1 req/s across both calls per artist.
   for (const artist of batch) {
     const stampedAt = new Date().toISOString()
     const update: Record<string, string | null> = { mbid_attempted_at: stampedAt }
+    const retrySoon = () => {
+      transient++
+      update.mbid_attempted_at = new Date(
+        Date.now() - (REATTEMPT_INTERVAL_DAYS - TRANSIENT_RETRY_DAYS) * 86_400_000,
+      ).toISOString()
+    }
 
     try {
-      const mbid = await searchArtistMbid(artist.name)
+      // A row that already has a validated mbid reuses it (#175): re-searching
+      // by name could land on a homonym and swap the row's identity evidence.
+      let mbid = artist.mbid
+      if (!mbid) {
+        const found = await lookupArtistMbid(artist.name)
+        if (!found.ok) retrySoon()
+        else if (found.value) mbid = update.mbid = found.value
+      }
       if (mbid) {
-        const ext = await resolveArtistExternalIds(mbid)
-        update.mbid = mbid
-        if (ext.appleId) update.apple_id = ext.appleId
-        if (ext.deezerId) update.deezer_id = ext.deezerId
-        if (ext.spotifyId) update.spotify_id = ext.spotifyId
+        const ext = await lookupArtistExternalIds(mbid)
+        if (!ext.ok) {
+          retrySoon() // keep the mbid we found; next run reuses it for url-rels
+        } else {
+          if (ext.value.appleId) update.apple_id = ext.value.appleId
+          if (ext.value.deezerId) update.deezer_id = ext.value.deezerId
+          if (ext.value.spotifyId) update.spotify_id = ext.value.spotifyId
+        }
       }
 
       const { error: updErr } = await supabase.from("artists").update(update).eq("id", artist.id)
@@ -172,7 +195,7 @@ export const GET = withCronRoute("mb-backfill", async ({ supabase }) => {
       attempted++
       if (update.spotify_id) resolved++
     } catch (err) {
-      // searchArtistMbid / resolveArtistExternalIds never throw, but guard the
+      // lookupArtistMbid / lookupArtistExternalIds never throw, but guard the
       // DB calls so one bad row doesn't abort the whole run.
       console.error(
         `[mb-backfill] unexpected error artist=${artist.id}:`,
@@ -182,7 +205,7 @@ export const GET = withCronRoute("mb-backfill", async ({ supabase }) => {
   }
 
   console.log(
-    `[mb-backfill] scanned=${scanned} resolved=${resolved} conflicts=${conflicts} attempted=${attempted}`,
+    `[mb-backfill] scanned=${scanned} resolved=${resolved} conflicts=${conflicts} attempted=${attempted} transient=${transient}`,
   )
-  return Response.json({ scanned, resolved, conflicts, attempted })
+  return Response.json({ scanned, resolved, conflicts, attempted, transient })
 })

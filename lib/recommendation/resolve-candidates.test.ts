@@ -33,6 +33,7 @@ function makeDeps(opts: {
       },
       write: async (name, a) => {
         writes.set(name.toLowerCase(), a)
+        return a
       },
     },
     searchArtists: opts.search ?? (async () => []),

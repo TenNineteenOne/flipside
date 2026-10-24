@@ -57,7 +57,8 @@ const LASTFM_RATE_MS = 500             // 2 req/s
 const HTTP_TIMEOUT_MS = 12000
 const PAGE_SIZE = 1000                 // Supabase row page size
 const CHECKPOINT_EVERY_N_ARTISTS = 25
-const CHECKPOINT_PATH = join(process.cwd(), 'scripts', 'backfill-artist-genres.checkpoint.json')
+const CHECKPOINT_PATH =
+  process.env.BACKFILL_CHECKPOINT_PATH ?? join(process.cwd(), 'scripts', 'backfill-artist-genres.checkpoint.json')
 const CHECKPOINT_SCHEMA = 3            // 3: keyed by artists.id (was spotify id)
 
 // Last.fm non-genre tag blocklist. Conservative — only obvious non-genre.
@@ -92,7 +93,7 @@ interface LastfmResult {
   tags: string[]
 }
 
-interface Checkpoint {
+export interface Checkpoint {
   schema: number
   uniqueArtists: ArtistRef[]
   mbResults: Record<string, MbResult>
@@ -118,6 +119,13 @@ interface ArtistsRow {
   name: string
   genres: string[] | null
   popularity: number | null
+}
+
+/** One user's recommendation_cache row for an artist. */
+interface RecRow {
+  id: string
+  artist_id: string
+  artist_data: Artist
 }
 
 interface CliArgs {
@@ -377,21 +385,36 @@ async function fillArtistsRow(
   return (data ?? []).length
 }
 
-async function updateRecCacheByArtistId(
+/**
+ * Patch genres/popularity into EACH user's own `artist_data` copy (by row id).
+ * One blob copied onto every user's row would overwrite each row's own baked
+ * previews (`topTracks`), `artist_color` and image with another row's (#175).
+ */
+async function updateRecCacheRows(
   supabase: SupabaseClient,
-  artistId: string,
-  merged: Artist
+  rows: RecRow[],
+  genres: string[],
+  popularity: number
 ): Promise<number> {
-  const { data, error } = await supabase
-    .from('recommendation_cache')
-    .update({ artist_data: merged })
-    .eq('artist_id', artistId)
-    .select('id')
-  if (error) {
-    console.log(`[backfill] rec_cache update fail id=${artistId} err="${error.message}"`)
-    return 0
+  let n = 0
+  for (const r of rows) {
+    const merged = mergeArtistData(
+      r.artist_data,
+      genres.length > 0 ? genres : r.artist_data.genres,
+      popularity || r.artist_data.popularity
+    )
+    const { data, error } = await supabase
+      .from('recommendation_cache')
+      .update({ artist_data: merged })
+      .eq('id', r.id)
+      .select('id')
+    if (error) {
+      console.log(`[backfill] rec_cache update fail row=${r.id} err="${error.message}"`)
+      continue
+    }
+    n += (data ?? []).length
   }
-  return (data ?? []).length
+  return n
 }
 
 // ── Phases ───────────────────────────────────────────────────────────────
@@ -474,11 +497,11 @@ async function phaseLastfm(cp: Checkpoint, apiKey: string): Promise<void> {
   }
 }
 
-async function phaseWrite(
+export async function phaseWrite(
   cp: Checkpoint,
   supabase: SupabaseClient,
   artistsById: Map<string, ArtistsRow>,
-  recDataById: Map<string, Artist>,
+  recRowsByArtist: Map<string, RecRow[]>,
   dryRun: boolean
 ): Promise<void> {
   const written = new Set(cp.writtenIds)
@@ -501,25 +524,20 @@ async function phaseWrite(
     if (!row) {
       // Row deleted since the checkpoint was taken.
       console.log(`[backfill] write skip id=${a.id} — no artists row`)
-      written.add(a.id)
-      cp.writtenIds = Array.from(written)
       continue
     }
 
+    // A dry run writes nothing — so it must checkpoint nothing as written
+    // either, or the next real run skips every id (#175).
     if (!dryRun) {
       cp.stats.artistsUpdated += await fillArtistsRow(supabase, row, genres, popularity)
-      const recData = recDataById.get(a.id)
-      if (recData && (genres.length > 0 || popularity > 0)) {
-        cp.stats.recCacheUpdated += await updateRecCacheByArtistId(
-          supabase,
-          a.id,
-          mergeArtistData(recData, genres.length > 0 ? genres : recData.genres, popularity || recData.popularity)
-        )
+      const recRows = recRowsByArtist.get(a.id) ?? []
+      if (genres.length > 0 || popularity > 0) {
+        cp.stats.recCacheUpdated += await updateRecCacheRows(supabase, recRows, genres, popularity)
       }
+      written.add(a.id)
+      cp.writtenIds = Array.from(written)
     }
-
-    written.add(a.id)
-    cp.writtenIds = Array.from(written)
     sinceCheckpoint++
 
     if (sinceCheckpoint >= CHECKPOINT_EVERY_N_ARTISTS || i === todo.length - 1) {
@@ -560,20 +578,19 @@ async function main() {
   const artistRows = await readAllRows<ArtistsRow>(supabase, 'artists', 'id, name, genres, popularity', 'id')
 
   console.log(`[backfill] reading recommendation_cache…`)
-  const recRows = await readAllRows<{
-    id: string
-    artist_id: string
-    artist_data: Artist
-  }>(supabase, 'recommendation_cache', 'id, artist_id, artist_data', 'id')
+  const recRows = await readAllRows<RecRow>(supabase, 'recommendation_cache', 'id, artist_id, artist_data', 'id')
 
   // Work list = artists rows still missing genres or popularity. artistsById
-  // feeds the fill-only write; recDataById is one artist_data per artist_id
-  // to merge into the recommendation_cache copies.
+  // feeds the fill-only write; recRowsByArtist holds every user's cache row
+  // per artist_id, each patched with its own artist_data.
   const artistsById = new Map<string, ArtistsRow>()
   for (const r of artistRows) artistsById.set(r.id, r)
-  const recDataById = new Map<string, Artist>()
+  const recRowsByArtist = new Map<string, RecRow[]>()
   for (const r of recRows) {
-    if (r.artist_id && !recDataById.has(r.artist_id)) recDataById.set(r.artist_id, r.artist_data)
+    if (!r.artist_id || !r.artist_data) continue
+    const list = recRowsByArtist.get(r.artist_id)
+    if (list) list.push(r)
+    else recRowsByArtist.set(r.artist_id, [r])
   }
 
   const uniqueArtists: ArtistRef[] = artistRows
@@ -630,7 +647,7 @@ async function main() {
     await phaseLastfm(cp, lastfmKey)
   }
   if (args.phase === 'all' || args.phase === 'write') {
-    await phaseWrite(cp, supabase, artistsById, recDataById, args.dryRun)
+    await phaseWrite(cp, supabase, artistsById, recRowsByArtist, args.dryRun)
   }
 
   saveCheckpoint(cp)
@@ -643,7 +660,10 @@ async function main() {
   )
 }
 
-main().catch((err) => {
-  console.error(`[backfill] fatal: ${err instanceof Error ? err.stack : err}`)
-  process.exit(1)
-})
+// ponytail: env guard so the test can import phaseWrite without running main.
+if (!process.env.VITEST) {
+  main().catch((err) => {
+    console.error(`[backfill] fatal: ${err instanceof Error ? err.stack : err}`)
+    process.exit(1)
+  })
+}

@@ -189,10 +189,11 @@ describe("buildExploreRails — listened + feedback exclusion", () => {
     expect(goodRow).toBeTruthy()
     expect(ids.has(goodRow!.id)).toBe(true)
     // #175 E4b: listened_artists + feedback are read once each per side —
-    // listened once (shared), feedback twice (thumbs-up + the shared thumbs-down).
+    // listened once (shared), feedback twice (thumbs-up + the shared thumbs-down)
+    // plus once more at read time: the rail-scoped thumbs-down re-check (#175 F-D).
     const selects = (t: string) => h.fake.queries.filter((q) => q.table === t && q.op === "select").length
     expect(selects("listened_artists")).toBe(1)
-    expect(selects("feedback")).toBe(2)
+    expect(selects("feedback")).toBe(3)
   }, 20000)
 
   it("#175 F16: excludes a listened artist past row 1000, still reading the shared rows once (paged)", async () => {
@@ -285,5 +286,43 @@ describe("buildExploreRails — roster spelling differs from the Last.fm spellin
     // Old code keyed the confirmed map by the row's name → lookup by the query
     // spelling missed → confirmed, persisted, never shown.
     expect(wildcards.artistIds).toContain(bocId)
+  }, 20000)
+})
+
+// ── 6f. #175 F-D: feedback landing during an in-flight build ──────────────────
+describe("buildExploreRails — read-time feedback exclusions (#175 F-D)", () => {
+  it("a thumbs-down / dismiss landing mid-build is dropped from the fresh result AND every cache-hit read", async () => {
+    seed(withLikedSeed())
+    lf.similars.set("LikedArtist", [{ name: "W0", match: 0.9 }, { name: "W1", match: 0.3 }])
+    // The user acts while the build runs: just before the cache write, thumbs
+    // down the first pick of one rail and dismiss the first pick of another.
+    const victims: string[] = []
+    const from = h.fake.client.from
+    h.fake.client.from = (t: string) => {
+      const q = from(t)
+      if (t === "explore_cache") {
+        const upsert = q.upsert
+        q.upsert = (rows: Row[], o: unknown) => {
+          const [a, b] = rows.filter((r) => r.artist_ids.length > 0).map((r) => r.artist_ids[0] as string)
+          victims.push(a, b)
+          h.fake.tables.feedback.push({ id: "fd", user_id: "u1", artist_id: a, signal: "thumbs_down", deleted_at: null })
+          h.fake.tables.recommendation_cache.push({ id: "rc", user_id: "u1", artist_id: b, seen_at: new Date().toISOString(), skip_at: new Date().toISOString() })
+          return upsert(rows, o)
+        }
+      }
+      return q
+    }
+
+    const fresh = await buildExploreRails(baseInput(), { hydrate: true })
+    expect(victims.every(Boolean)).toBe(true)
+    for (const v of victims) expect(allRailIds(fresh.rails)).not.toContain(v)
+
+    h.fake.client.from = from
+    const hit = await buildExploreRails(baseInput(), { hydrate: true })
+    expect(hit.cacheHit).toBe(true)
+    expect(allRailIds(hit.rails).length).toBeGreaterThan(0)
+    for (const v of victims) expect(allRailIds(hit.rails)).not.toContain(v)
+    // Read-after-write intact: every remaining pick still hydrates with a preview.
+    for (const id of allRailIds(hit.rails)) expect(hit.hydrated!.get(id)?.topTracks?.length).toBeGreaterThan(0)
   }, 20000)
 })

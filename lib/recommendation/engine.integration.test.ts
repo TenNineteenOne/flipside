@@ -439,6 +439,9 @@ describe("buildRecommendations — writeScored cooldown read error (#175 F17)", 
     await result.finish()
 
     expect(result.count).toBe(0)
+    // #175 R7: a failed write is not an empty pool — no soften runs, no toast.
+    expect(result.softenedFilters).toBeUndefined()
+    expect(lf.calls.similar).toEqual(["SeedA"])
     const rows = cacheRows()
     expect(rows).toHaveLength(1)
     expect(rows[0].seen_at).toBe(seenAt)
@@ -561,5 +564,197 @@ describe("buildRecommendations — genre seed tag limit (#175 F15)", () => {
     await buildRecommendations(baseInput())
 
     for (const g of genres) expect(limits.get(g)).toEqual([20])
+  })
+})
+
+// ── #175 F-A: onboarding seed artists always shape the feed ─────────────────
+describe("buildRecommendations — picked seeds always used (#175 F-A)", () => {
+  it("every picked seed is fanned out even when genre tags add 40 names; picks are never recommended back", async () => {
+    const picks = ["PickA", "PickB", "PickC"]
+    for (let run = 0; run < 5; run++) {
+      seed({
+        users: [{ id: "u1", selected_genres: ["g-a", "g-b"] }],
+        seed_artists: picks.map((name) => ({ user_id: "u1", name })),
+      })
+      lf.reset()
+      lf.tags = (tag) => Array.from({ length: 20 }, (_, i) => `${tag}-artist${i}`)
+      // Every genre seed's similars include a picked seed: it must never come back as a rec.
+      for (const g of ["g-a", "g-b"]) {
+        for (let i = 0; i < 20; i++) lf.similars.set(`${g}-artist${i}`, similarRefs(["pickc", `${g}-${i}-sim`]))
+      }
+      for (const p of picks) lf.similars.set(p, similarRefs([`${p}-sim`]))
+
+      const result = await buildRecommendations(baseInput())
+      await result.finish()
+
+      for (const p of picks) expect(lf.calls.similar).toContain(p)
+      expect(lf.calls.similar.length).toBe(10) // the seed cap still holds
+      const names = cacheRows().map((r) => r.artist_data?.name.toLowerCase())
+      expect(names.length).toBeGreaterThan(0)
+      expect(names).not.toContain("pickc")
+    }
+  })
+})
+
+// ── #175 F-B (owner decision D1): liked / saved never resurface ─────────────
+describe("buildRecommendations — liked and saved never resurface (#175 F-B)", () => {
+  it("thumbs-up and saved artists stay hidden past the cooldown and after their cache row is gone", async () => {
+    const id = (n: number) => `f0000000-0000-4000-8000-0000000000${10 + n}`
+    const longAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString()
+    const old = { seen_at: longAgo, skip_at: null, created_at: longAgo, expires_at: longAgo }
+    seed({
+      seed_artists: [{ user_id: "u1", name: "SeedA" }],
+      artists: [
+        artistsRow(id(1), "LikedOld"),
+        artistsRow(id(2), "SavedOld"),
+        artistsRow(id(3), "LikedGone"),
+        artistsRow(id(4), "PassedBy"),
+      ],
+      feedback: [
+        { id: "fb1", user_id: "u1", artist_id: id(1), signal: "thumbs_up", deleted_at: null },
+        { id: "fb2", user_id: "u1", artist_id: id(3), signal: "thumbs_up", deleted_at: null },
+      ],
+      saves: [{ id: "sv1", user_id: "u1", artist_id: id(2) }],
+      recommendation_cache: [
+        { id: "c1", user_id: "u1", artist_id: id(1), ...old },
+        { id: "c2", user_id: "u1", artist_id: id(2), ...old },
+        { id: "c4", user_id: "u1", artist_id: id(4), ...old },
+      ],
+    })
+    lf.similars.set("SeedA", similarRefs(["LikedOld", "SavedOld", "LikedGone", "PassedBy"]))
+
+    const result = await buildRecommendations(baseInput())
+    await result.finish()
+
+    const byId = new Map(cacheRows().map((r) => [r.artist_id, r]))
+    expect(byId.get(id(1))!.seen_at).toBe(longAgo)
+    expect(byId.get(id(2))!.seen_at).toBe(longAgo)
+    expect(byId.has(id(3))).toBe(false)
+    expect(byId.get(id(4))!.seen_at).toBeNull() // scrolled-past still resurfaces (D1)
+  })
+})
+
+// ── #175 F-E: one doorway across soften runs ────────────────────────────────
+describe("buildRecommendations — one identity across soften runs (#175 F-E)", () => {
+  it("a softened build mints each secondary name once, though the discarded run's resolve is still in flight", async () => {
+    const primaryNames = Array.from({ length: 36 }, (_, i) => `Heard${i}`)
+    const secondaryNames = Array.from({ length: 6 }, (_, i) => `Later${i}`)
+    seed({
+      seed_artists: [{ user_id: "u1", name: "SeedA" }],
+      // play_count 7: over threshold 5 (run 1 → empty), under 10 (soften run passes).
+      listened_artists: primaryNames.map((n, i) => ({ id: `l${i}`, user_id: "u1", artist_id: null, lastfm_artist_name: n, play_count: 7 })),
+    })
+    // tail-first round robin: the LAST 36 refs fill the blocking pool.
+    lf.similars.set("SeedA", similarRefs([...secondaryNames, ...primaryNames]))
+    // Hold every secondary lookup until BOTH runs have asked for it, so the two
+    // runs' doorways ensure the same names at the same time (prod: real latency).
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    setTimeout(() => release(), 1000) // fallback, never hang
+    let asked = 0
+    const info = lf.artistInfo.bind(lf)
+    vi.spyOn(lf, "artistInfo").mockImplementation(async (name: string) => {
+      if (name === "Later0" && ++asked === 2) release()
+      if (name.startsWith("Later")) await gate
+      return info(name)
+    })
+
+    const result = await buildRecommendations(baseInput())
+    await result.finish()
+    expect(result.softenedFilters?.playThreshold).toBe(true)
+    await gate
+    await new Promise((r) => setTimeout(r, 200)) // let run 1's orphaned secondary resolve settle
+    expect(asked).toBeGreaterThanOrEqual(2) // both runs looked Later0 up
+
+    const counts = new Map<string, number>()
+    for (const a of h.fake.tables.artists) counts.set(a.name_lower, (counts.get(a.name_lower) ?? 0) + 1)
+    for (const n of secondaryNames) expect(counts.get(n.toLowerCase())).toBe(1)
+  })
+})
+
+// ── #175 R4: a dismiss racing the resurface write is never undone ───────────
+describe("buildRecommendations — resurface lost update (#175 R4)", () => {
+  it("a dismiss landing between writeScored's read and its write keeps seen_at and skip_at", async () => {
+    const oldId = "f0000000-0000-4000-8000-000000000020"
+    const longAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString()
+    seed({
+      seed_artists: [{ user_id: "u1", name: "SeedA" }],
+      artists: [artistsRow(oldId, "SeenLongAgo")],
+      recommendation_cache: [
+        { id: "c1", user_id: "u1", artist_id: oldId, seen_at: longAgo, skip_at: null, created_at: longAgo, expires_at: longAgo },
+      ],
+    })
+    lf.similars.set("SeedA", similarRefs(["SeenLongAgo", "Fresh0"]))
+    let dismissedAt: string | null = null
+    const origFrom = h.fake.client.from
+    h.fake.client.from = (t: string) => {
+      const q = origFrom(t)
+      if (t === "recommendation_cache") {
+        const origIn = q.in
+        // writeScored's cooldown read: once it has returned, the user dismisses (rpc stamps both).
+        q.in = (col: string, vals: unknown[]) => {
+          origIn(col, vals)
+          return {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            then: (res: (v: any) => any, rej?: (e: any) => any) =>
+              q.then((v: { data: Row[] }) => {
+                const row = cacheRows().find((r) => r.artist_id === oldId)!
+                if (!dismissedAt && v.data?.some((r) => r.artist_id === oldId)) {
+                  dismissedAt = new Date().toISOString()
+                  row.seen_at = dismissedAt
+                  row.skip_at = dismissedAt
+                }
+                return v
+              }).then(res, rej),
+          }
+        }
+      }
+      return q
+    }
+
+    const result = await buildRecommendations(baseInput())
+    await result.finish()
+
+    expect(dismissedAt).not.toBeNull()
+    const row = cacheRows().find((r) => r.artist_id === oldId)!
+    expect(row.seen_at).toBe(dismissedAt)
+    expect(row.skip_at).toBe(dismissedAt)
+  })
+
+  it("#175 F-C: a re-written unseen row gets a fresh created_at so tonight's 3-day expiry skips it", async () => {
+    const unseenId = "f0000000-0000-4000-8000-000000000021"
+    const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString()
+    const future = new Date(Date.now() + 86400_000).toISOString()
+    seed({
+      seed_artists: [{ user_id: "u1", name: "SeedA" }],
+      artists: [artistsRow(unseenId, "StillUnseen")],
+      recommendation_cache: [
+        { id: "c1", user_id: "u1", artist_id: unseenId, seen_at: null, skip_at: null, created_at: fiveDaysAgo, expires_at: future },
+      ],
+    })
+    lf.similars.set("SeedA", similarRefs(["StillUnseen", "Fresh0"]))
+
+    const result = await buildRecommendations(baseInput())
+    await result.finish()
+
+    const row = cacheRows().find((r) => r.artist_id === unseenId)!
+    expect(row.seen_at).toBeNull()
+    const threeDaysAgo = Date.now() - 3 * 24 * 60 * 60 * 1000
+    expect(new Date(row.created_at).getTime()).toBeGreaterThan(threeDaysAgo) // the cron's expiry cutoff
+    // Brand-new rows still take the DB default (no created_at in the payload).
+    const fresh = cacheRows().find((r) => r.artist_data?.name === "Fresh0")!
+    expect(fresh.created_at).toBeUndefined()
+  })
+
+  it("the feed query never lists a dismissed row, even one left unseen", async () => {
+    const future = new Date(Date.now() + 86400_000).toISOString()
+    seed({
+      recommendation_cache: [
+        { user_id: "u1", artist_id: "a-ok", seen_at: null, skip_at: null, expires_at: future, score: 1, artist_data: {} },
+        { user_id: "u1", artist_id: "a-skip", seen_at: null, skip_at: future, expires_at: future, score: 2, artist_data: {} },
+      ],
+    })
+    const unseen = await getUnseenRecommendations(h.fake.client, "u1", { limit: 20, undergroundMode: false })
+    expect(unseen.map((r) => r.artist_id)).toEqual(["a-ok"])
   })
 })

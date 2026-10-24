@@ -10,6 +10,7 @@ import {
 } from './types'
 import { isEligibleForCooldown, loadExclusions, readFeedbackIds } from './exclusions'
 import { PlayableCandidates, livePlayablePorts } from './playable-candidates'
+import { ArtistIdentity } from '@/lib/artist-identity'
 import { normalizedIncludes, normalizeGenre } from '@/lib/genre/normalize'
 import { adjacentGenres } from '@/lib/genre/adjacency'
 import coldStartData from '@/data/cold-start-seeds.json'
@@ -50,7 +51,7 @@ type SupabaseClient = ReturnType<typeof createServiceClient>
 async function gatherSeedContext(
   userId: string,
   supabase: SupabaseClient
-): Promise<{ seedNames: string[]; userGenres: string[] }> {
+): Promise<{ seedNames: string[]; pinnedSeeds: string[]; userGenres: string[] }> {
   const [dbSeeds, thumbsUpRows, userRow] = await Promise.all([
     supabase
       .from('seed_artists')
@@ -111,12 +112,21 @@ async function gatherSeedContext(
     `totalPooled=${names.length}`
   )
 
-  const deduped = [...new Set(names)]
-  for (let i = deduped.length - 1; i > 0; i--) {
+  // The user's own picks lead (#175 F-A): after F15 genres add ~20 names each,
+  // so one shuffled pool dropped every picked seed from about half of first
+  // feeds. Picks are shuffled among themselves, then the like/genre fill.
+  const pinnedKeys = new Set(dbSeeds.map((n) => n.toLowerCase()))
+  const fill = [...new Set(names.slice(dbSeeds.length))].filter((n) => !pinnedKeys.has(n.toLowerCase()))
+  const seedNames = [...shuffle([...new Set(dbSeeds)]), ...shuffle(fill)]
+  return { seedNames, pinnedSeeds: dbSeeds, userGenres }
+}
+
+function shuffle<T>(arr: T[]): T[] {
+  for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1))
-    ;[deduped[i], deduped[j]] = [deduped[j], deduped[i]]
+    ;[arr[i], arr[j]] = [arr[j], arr[i]]
   }
-  return { seedNames: deduped, userGenres }
+  return arr
 }
 
 // ── Core pipeline ───────────────────────────────────────────────────────────
@@ -404,6 +414,8 @@ export async function augmentWithAdjacent(
 
 export interface RunPipelineOpts {
   seedNames: string[]
+  /** The user's onboarding seed artists: never recommended back, even past the seed cap. */
+  pinnedSeeds?: string[]
   accessToken: string
   userId: string
   playThreshold: number
@@ -415,6 +427,12 @@ export interface RunPipelineOpts {
   deepDiscovery?: boolean
   adventurous?: boolean
   userGenres?: string[]
+  /**
+   * The doorway shared by every run of one build (#175 F-E): a discarded
+   * soften run's secondary resolve keeps going in the background, and two
+   * instances racing over the same names each mint a row.
+   */
+  identity?: ArtistIdentity
 }
 
 /**
@@ -429,11 +447,16 @@ export interface PipelineRun {
   runSecondary: (() => Promise<number>) | null
   /** Persist this run's confirm outcomes. Never throws. */
   flush: () => Promise<void>
+  /**
+   * The tier-1 write hit a DB error (#175 R7). A count of 0 then means "the
+   * write failed", not "nothing eligible", so softening must not kick in.
+   */
+  writeError?: boolean
 }
 
 async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
   const {
-    seedNames, accessToken, userId, playThreshold, popularityCurve, supabase,
+    seedNames, pinnedSeeds = [], accessToken, userId, playThreshold, popularityCurve, supabase,
     source, genre, undergroundMode, deepDiscovery, adventurous, userGenres = [],
   } = o
 
@@ -441,7 +464,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
   // (primary, secondary, bleed) shares its doorway; every confirm tier (tier-1
   // blocking, tier-2 deferred, secondary) records outcomes into it, flushed
   // once by finish() (in after()) so a single batch-upsert covers all three phases.
-  const candidates = new PlayableCandidates(supabase, livePlayablePorts(accessToken))
+  const candidates = new PlayableCandidates(supabase, livePlayablePorts(accessToken), o.identity)
   const flush = () => candidates.flush()
 
   const widenSeedCap = userGenres.length >= ADAPTIVE_BROADEN_THRESHOLD
@@ -469,7 +492,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
     names: items.map((i) => i.name),
   }))
 
-  const knownNames = new Set(capSeedNames.map((n) => n.toLowerCase()))
+  const knownNames = new Set([...capSeedNames, ...pinnedSeeds].map((n) => n.toLowerCase()))
   // Provenance keyed by the SAME lowercase key buildRoundRobinNames dedupes on
   // (#175 F20): "Boards of Canada" (seed A) and "Boards Of Canada" (seed B)
   // are one candidate, so both seeds must be credited. Read via seedsOf().
@@ -498,7 +521,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
   // threshold (by id, or by name for id-less history rows), and the 7-day
   // seen / dismissed cooldown — applied BEFORE confirm so no iTunes call is
   // spent on an artist writeScored would discard.
-  const exclusions = await loadExclusions(supabase, userId, { playThreshold, nameFallback: true })
+  const exclusions = await loadExclusions(supabase, userId, { playThreshold, nameFallback: true, liked: true })
   // Distinct ids hidden as listened (baseline counted per id, not per name).
   const filtListenedIds = new Set<string>()
   /** Every feed candidate gate: exclusions + underground cap + genre filter. */
@@ -678,6 +701,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
   // writtenIds tracks all ids written across tier-1, tier-2, and secondary to
   // avoid duplicate confirms or upserts.
   const writtenIds = new Set<string>()
+  let writeError = false
 
   /**
    * Write a set of confirmed ScoredArtists to recommendation_cache, skipping
@@ -685,17 +709,12 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
    * number of rows successfully upserted.
    *
    * Cooldown state is read fresh from the DB for the given items. Writes:
-   *   - new / never-seen rows: the payload carries NO seen_at / skip_at, so a
-   *     new row gets the column defaults (null) and an existing row keeps
-   *     whatever is live — a dismiss landing between our read and this write
-   *     is never overwritten (lost-update guard).
-   *   - resurfaced rows (seen > 7 days ago, no skip_at — owner decision D1,
-   *     #175 F26): `seen_at: null` so the feed shows them again, and
-   *     `created_at: now` so the nightly cron's 3-day unseen expiry doesn't
-   *     expire them immediately. Still no skip_at in the payload.
-   * The two kinds go in separate upserts because PostgREST upserts one column
-   * set per request: supabase-js sends the UNION of the rows' keys as
-   * `columns`, and a key missing from one row is written as NULL for it.
+   *   - new rows (none in the cache): an upsert carrying NO seen_at / skip_at /
+   *     created_at, so the row gets the column defaults.
+   *   - existing rows (unseen, or resurfaced: seen > 7 days ago, no skip_at —
+   *     owner decision D1, #175 F26): a conditional UPDATE (R4) with
+   *     `seen_at: null` so the feed shows them, and `created_at: now` so the
+   *     nightly cron's 3-day unseen expiry doesn't expire them again (F-C).
    */
   async function writeScored(items: ScoredArtist[]): Promise<number> {
     // Exclude ids already written in a previous phase
@@ -714,14 +733,15 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
     // nothing instead.
     if (readErr) {
       console.error(`[engine] cooldown_read_error source=${source} err=${readErr.message}`)
+      writeError = true
       return 0
     }
 
     const existing = new Map<string, { seen_at: string | null; skip_at: string | null }>()
     for (const row of existingCache ?? []) existing.set(row.artist_id, row)
 
-    const plain = []
-    const resurfaced = []
+    const inserts = []
+    const rewrites: Array<{ row: Record<string, unknown> & { artist_id: string }; seenAt: string | null }> = []
     for (const item of fresh) {
       const prev = existing.get(item.artist.id)
       if (prev && !isEligibleForCooldown(prev.seen_at, prev.skip_at, now)) continue
@@ -734,24 +754,55 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
         source: item.source,
         expires_at: expiresAt.toISOString(),
       }
-      if (prev?.seen_at) resurfaced.push({ ...row, seen_at: null, created_at: now.toISOString() })
-      else plain.push(row)
+      // A re-written row gets a fresh created_at too (#175 F-C): the nightly
+      // cron expires unseen rows by created_at age, so keeping the old one
+      // would expire a just-refreshed unseen row again that night.
+      if (prev) rewrites.push({ row: { ...row, seen_at: null, created_at: now.toISOString() }, seenAt: prev.seen_at })
+      else inserts.push(row) // brand-new: created_at / seen_at / skip_at from the DB defaults
     }
 
     let written = 0
-    for (const rows of [plain, resurfaced]) {
-      if (rows.length === 0) continue
+    if (inserts.length > 0) {
       const { error } = await supabase
         .from('recommendation_cache')
-        .upsert(rows, { onConflict: 'user_id,artist_id' })
+        .upsert(inserts, { onConflict: 'user_id,artist_id' })
       if (error) {
         console.error(`[engine] upsert_error source=${source} err=${error.message}`)
-        continue
+        writeError = true
+      } else {
+        for (const row of inserts) writtenIds.add(row.artist_id)
+        written += inserts.length
       }
-      for (const row of rows) writtenIds.add(row.artist_id)
-      written += rows.length
-      if (rows === resurfaced) console.log(`[engine] resurfaced source=${source} n=${rows.length}`)
     }
+
+    // Existing rows are re-written by a conditional UPDATE per row, never an
+    // upsert (#175 R4): it lands only while the row is still exactly what we
+    // read (same seen_at, no skip_at), so a dismiss / thumbs-down / save
+    // landing between the read above and this write is never undone.
+    const results = await Promise.all(
+      rewrites.map(({ row, seenAt }) => {
+        const q = supabase
+          .from('recommendation_cache')
+          .update(row)
+          .eq('user_id', userId)
+          .eq('artist_id', row.artist_id)
+          .is('skip_at', null)
+        return (seenAt ? q.eq('seen_at', seenAt) : q.is('seen_at', null)).select('artist_id')
+      }),
+    )
+    let resurfacedN = 0
+    for (const [i, { data, error }] of results.entries()) {
+      if (error) {
+        console.error(`[engine] rewrite_error source=${source} err=${error.message}`)
+        writeError = true
+      }
+      for (const r of data ?? []) {
+        writtenIds.add(r.artist_id)
+        written++
+        if (rewrites[i].seenAt) resurfacedN++
+      }
+    }
+    if (resurfacedN > 0) console.log(`[engine] resurfaced source=${source} n=${resurfacedN}`)
     return written
   }
 
@@ -852,6 +903,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
 
   return {
     count: tier1Written,
+    writeError, // tier-1 only: snapshotted before the background tiers run
     runSecondary,
     flush,
     metrics: {
@@ -920,8 +972,12 @@ export async function runWithSoftening(
     return r
   }
 
+  // A failed write is not an empty pool (#175 R7): softening would widen the
+  // filters (cold-start even drops underground mode) for a transient DB error.
+  const done = (r: PipelineRun) => r.count > 0 || !!r.writeError
+
   const primary = await run(baseOpts)
-  if (primary.count > 0) return composeResult(primary, runs)
+  if (done(primary)) return composeResult(primary, runs)
 
   const softened: SoftenedFilters = { playThreshold: false, coldStart: false }
   const originalPlayThreshold = baseOpts.playThreshold
@@ -934,7 +990,7 @@ export async function runWithSoftening(
     playThreshold: originalPlayThreshold + 5,
     source: 'soften_play_threshold',
   })
-  if (r1.count > 0) return composeResult(r1, runs, softened)
+  if (done(r1)) return composeResult(r1, runs, softened)
 
   // Soften 2: cold-start fallback. undergroundMode is intentionally off here —
   // cold-start is the degenerate escape hatch for users with no seeds; its
@@ -962,10 +1018,12 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
   const { userId, accessToken, playThreshold, popularityCurve, genre, undergroundMode, deepDiscovery, adventurous } = input
   const supabase = createServiceClient()
 
-  const { seedNames, userGenres } = await gatherSeedContext(userId, supabase)
+  const { seedNames, pinnedSeeds, userGenres } = await gatherSeedContext(userId, supabase)
+  const identity = new ArtistIdentity(supabase)
 
   const makeBaseOpts = (overrides: Partial<RunPipelineOpts>): RunPipelineOpts => ({
     seedNames,
+    pinnedSeeds,
     accessToken,
     userId,
     playThreshold,
@@ -977,6 +1035,7 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     deepDiscovery,
     adventurous,
     userGenres,
+    identity,
     ...overrides,
   })
 
@@ -998,10 +1057,5 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
 }
 
 function sampleColdStartSeeds(): string[] {
-  const pool = [...coldStartData.seeds]
-  for (let i = pool.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[pool[i], pool[j]] = [pool[j], pool[i]]
-  }
-  return pool.slice(0, 5).map((s) => s.name)
+  return shuffle([...coldStartData.seeds]).slice(0, 5).map((s) => s.name)
 }

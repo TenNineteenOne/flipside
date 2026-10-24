@@ -648,6 +648,18 @@ describe("runWithSoftening cascade order", () => {
     expect(result.softenedFilters).toEqual({ playThreshold: true, coldStart: true })
   })
 
+  it("a write error is not an empty pool: no softening (#175 R7)", async () => {
+    const calls: string[] = []
+    const run = async (opts: RunPipelineOpts): Promise<PipelineRun> => {
+      calls.push(opts.source)
+      return { count: 0, writeError: true, runSecondary: null, flush: async () => {}, metrics: { primaryMs: 0, previewMs: 0, firstBatchMs: 0, misses: 0, retries: 0, rateLimited: false } }
+    }
+    const result = await runWithSoftening(baseOpts, { run, coldStartSeeds: coldSeeds })
+    expect(calls).toEqual(["multi_source"])
+    expect(result.count).toBe(0)
+    expect(result.softenedFilters).toBeUndefined()
+  })
+
   it("returns zero from cold-start with flags still set when nothing works", async () => {
     const { run, calls } = makeRunner([0, 0, 0])
     const result = await runWithSoftening(baseOpts, { run, coldStartSeeds: coldSeeds })
