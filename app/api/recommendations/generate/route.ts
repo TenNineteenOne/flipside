@@ -2,6 +2,7 @@ import { createServiceClient } from "@/lib/supabase/server"
 import { apiError } from "@/lib/errors"
 import { withAuthedCsrfRoute } from "@/lib/api/with-authed-route"
 import { getSpotifyClientToken } from "@/lib/spotify-client-token"
+import { claimCooldown } from "@/lib/cooldown"
 import { buildRecommendations } from "@/lib/recommendation/engine"
 import { formatGenTiming } from "@/lib/recommendation/gen-timing"
 import { resetCalls, snapshotCalls } from "@/lib/recommendation/api-call-counter"
@@ -109,7 +110,7 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
   // Read user row including play_threshold
   const { data: user, error: userError } = await supabase
     .from("users")
-    .select("id, play_threshold, popularity_curve, underground_mode, deep_discovery, adventurous, last_generated_at")
+    .select("id, play_threshold, popularity_curve, underground_mode, deep_discovery, adventurous")
     .eq("id", userId)
     .maybeSingle()
 
@@ -120,16 +121,11 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
   // Default to 0.95 (legacy hardcoded value) for pre-migration rows
   const popularityCurve: number = user.popularity_curve ?? 0.95
 
-  // Per-user cooldown: 30 seconds between generate requests
-  if (user.last_generated_at) {
-    const elapsed = Date.now() - new Date(user.last_generated_at).getTime()
-    if (elapsed < 30_000) {
-      return apiError("Please wait before generating more recommendations", 429)
-    }
+  // Per-user cooldown: 30 seconds between generate requests (atomic claim —
+  // stamps last_generated_at in the same statement that checks it).
+  if ((await claimCooldown(supabase, userId, "last_generated_at", 30_000)) === "cooling") {
+    return apiError("Please wait before generating more recommendations", 429)
   }
-
-  // Update cooldown timestamp
-  await supabase.from("users").update({ last_generated_at: new Date().toISOString() }).eq("id", userId)
 
   // Replace mode: wipe unseen queue before regenerating. Powers the Settings
   // "Generate my feed" button so newly-added anchors take immediate effect.
