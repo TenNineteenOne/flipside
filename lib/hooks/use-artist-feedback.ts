@@ -7,8 +7,8 @@ import { createArtistFeedback, type ArtistFeedback } from "@/lib/client/artist-s
 export interface UseArtistFeedbackOptions {
   /**
    * When provided, the railKey is included in the POST /api/feedback body so
-   * the server can narrow-invalidate only the owning rail. Read when the POST
-   * is dispatched, so a rail switch between tap and send uses the new rail.
+   * the server can narrow-invalidate only the owning rail. Captured at tap
+   * time, so a rail switch before a queued POST sends still names the tapped rail.
    */
   railKey?: string
   /**

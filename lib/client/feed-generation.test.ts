@@ -155,12 +155,27 @@ describe("createFeedGeneration.requestMore", () => {
     await second
     expect(gen.generating).toBe(false)
   })
+
+  it("#175 Y3-f/g: release() reports generating=false and silences the abandoned run's toast", async () => {
+    let resolve: (r: Response) => void = () => {}
+    const fetchImpl = vi.fn(() => new Promise<Response>((r) => { resolve = r }))
+    const toast = makeToast()
+    const changes: boolean[] = []
+    const gen = createFeedGeneration({ fetchImpl, toast, onGeneratingChange: (g) => changes.push(g) })
+    const run = gen.requestMore()
+    gen.release()
+    expect(changes).toEqual([true, false])
+    resolve(res(500, { error: "boom" }))
+    await run
+    expect(toast.error).not.toHaveBeenCalled()
+    expect(changes).toEqual([true, false])
+  })
 })
 
 describe("createFeedGeneration.rebuild", () => {
   function setup(feed: Response | Error, explore: Response | Error) {
     const toast = makeToast()
-    const storage = { setItem: vi.fn() }
+    const storage = { setItem: vi.fn(), removeItem: vi.fn() }
     const fetchImpl = vi.fn((url: string) => {
       const r = url.startsWith("/api/explore") ? explore : feed
       return r instanceof Error ? Promise.reject(r) : Promise.resolve(r)
@@ -207,14 +222,23 @@ describe("createFeedGeneration.rebuild", () => {
     }
   })
 
-  it("softened toast fires alongside success; a network error toasts Couldn't rebuild and skips the flag", async () => {
+  it("#175 Y3-a: writes the regen flag BEFORE the POSTs; an Explore failure removes it", async () => {
+    const { gen, storage, fetchImpl } = setup(res(200, { count: 5 }), res(500))
+    await gen.rebuild()
+    const setOrder = storage.setItem.mock.invocationCallOrder[0]
+    const fetchOrder = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]
+    expect(setOrder).toBeLessThan(fetchOrder)
+    expect(storage.removeItem).toHaveBeenCalledWith(EXPLORE_REGEN_AT_KEY)
+  })
+
+  it("softened toast fires alongside success; a network error toasts Couldn't rebuild (flag kept: the POST may have landed)", async () => {
     const a = setup(res(200, { count: 5, softenedFilters: { playThreshold: true } }), res(200))
     await a.gen.rebuild()
     expect(a.toast).toHaveBeenCalledWith("Widened the search for this batch — loosening the familiarity cap.")
     const b = setup(new TypeError("offline"), res(200))
     await b.gen.rebuild()
     expect(b.toast.error).toHaveBeenCalledWith("Couldn't rebuild — try again")
-    expect(b.storage.setItem).not.toHaveBeenCalled()
+    expect(b.storage.removeItem).not.toHaveBeenCalled()
     expect(b.gen.generating).toBe(false)
   })
 

@@ -171,7 +171,7 @@ export interface FeedGenerationDeps {
   fetchImpl?: typeof fetch
   toast: ToastLike
   /** Where the Explore-regen-in-flight flag is written (localStorage in the browser). */
-  storage?: Pick<Storage, "setItem"> | null
+  storage?: Pick<Storage, "setItem" | "removeItem"> | null
   now?: () => number
   /** Called whenever `generating` flips. */
   onGeneratingChange?: (generating: boolean) => void
@@ -190,7 +190,8 @@ export interface FeedGeneration {
   rebuild(): Promise<void>
   /**
    * Drop the guard without waiting for the in-flight run (component unmount).
-   * The abandoned run no longer flips `generating` when it settles.
+   * Reports `generating` false now; the abandoned run no longer flips it when
+   * it settles, and never toasts.
    */
   release(): void
 }
@@ -229,7 +230,9 @@ export function createFeedGeneration({
       if (id === null) return null
       try {
         const r = await postGenerate(fetchImpl)
-        if (!silent) {
+        // A released run (the page unmounted) stays quiet: its toast would
+        // land on whatever page the user navigated to.
+        if (!silent && id === runId) {
           if (r.ok) {
             const soft = softenedFiltersMessage(r.body)
             if (soft) toast(soft)
@@ -246,21 +249,25 @@ export function createFeedGeneration({
     async rebuild() {
       const id = acquire()
       if (id === null) return
+      // Signal to ExploreClient that a background regen is in flight so it
+      // can start a poll-only when the user navigates to /explore before it
+      // finishes. Written BEFORE the POSTs: the server stamps generated_at at
+      // build start, so rails with generatedAt >= this t0 are the rebuild's
+      // (#175 Y3-a). localStorage throws in private/incognito mode.
+      try { storage?.setItem(EXPLORE_REGEN_AT_KEY, String(now())) } catch { /* private mode */ }
       try {
         const [feedRes, exploreRes] = await Promise.all([
           fetchImpl(`${GENERATE_URL}?replace=true`, { method: "POST" }),
           fetchImpl(EXPLORE_GENERATE_URL, { method: "POST" }),
         ])
 
-        // Signal to ExploreClient that a background regen is in flight so it
-        // can start a poll-only when the user navigates to /explore before it
-        // finishes. localStorage throws in private/incognito mode.
-        try { storage?.setItem(EXPLORE_REGEN_AT_KEY, String(now())) } catch { /* private mode */ }
-
         const feed = await readGenerateResponse(feedRes)
         // Explore's 429 is its cooldown: a rebuild is already running, which
         // is what we asked for — treat it as success (owner decision #4).
         const exploreOk = exploreRes.ok || exploreRes.status === 429
+        if (!exploreOk) {
+          try { storage?.removeItem(EXPLORE_REGEN_AT_KEY) } catch { /* private mode */ }
+        }
 
         if (feed.ok) {
           const soft = softenedFiltersMessage(feed.body)
@@ -288,7 +295,9 @@ export function createFeedGeneration({
 
     release() {
       runId++
+      if (!generating) return
       generating = false
+      onGeneratingChange?.(false) // else a StrictMode remount's "Generating…" sticks
     },
   }
 }

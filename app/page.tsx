@@ -92,7 +92,7 @@ export default async function LandingPage() {
 
       {/* CTA */}
       <Link
-        href="/sign-in"
+        href="/sign-in?mode=new"
         className="btn btn-primary btn-lg"
         style={{ paddingLeft: 24, paddingRight: 24 }}
       >

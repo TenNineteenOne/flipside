@@ -14,7 +14,11 @@ misconception — verify against `lib/auth.ts`). See [[spotify-dependency]].
 
 The sign-in page (`app/(marketing)/sign-in/page.tsx`) has two explicit modes, sent as the
 `mode` credential (#175 D3). Default is **Existing account**; a missing or unknown `mode`
-is treated as existing, so nothing ever creates an account by accident.
+is treated as existing, so nothing ever creates an account by accident. The landing CTA
+opens `/sign-in?mode=new` (parsed with `parseSignInMode`). New mode shows the username
+rule (`USERNAME_RULE`) before submit; the mode toggle is locked while a request is in
+flight; a thrown `signIn()` resets the form with "Something went wrong. Please try again.";
+success uses `router.replace` so Back doesn't return to the form.
 
 1. **Rate-limit** via `lib/rate-limiter.ts` → `login_attempts` table, enforced atomically in
    DB (`rpc_register_login_attempt`, migration 0035) to avoid TOCTOU races across Vercel
@@ -31,7 +35,8 @@ is treated as existing, so nothing ever creates an account by accident.
    The plaintext username is **never stored**; the hash is a one-way lookup key.
 4. `resolveSignIn(mode, hash, store)`:
    - **existing** → sign in if the hash exists; otherwise a generic `credentials` failure
-     ("Couldn't sign in with that username."), identical for unknown and invalid names.
+     ("Couldn't sign in with that username. New here? Choose New account."), identical for
+     unknown and invalid names. Copy lives in `signInErrorMessage`.
    - **new** → insert the `users` row if the hash is free; a taken name (including a
      concurrent insert hitting `users_username_hash_key`) fails with code `username_taken`.
      This reveals that a name exists; accepted trade-off.
@@ -65,7 +70,14 @@ Idempotent (already-encrypted passes through). One-time backfill:
 ## Route protection
 
 - **Middleware** (`proxy.ts`): gates all pages + `/api/*` except `/api/auth/*` and
-  `/api/cron/*`. See [[infra-and-ops]].
+  `/api/cron/*`. See [[infra-and-ops]]. A signed-in user is bounced from `/` and
+  `/sign-in` to `/feed` (so "New account" can't silently switch accounts). Exception:
+  `/sign-in?reauth=1`, which Feed/Explore/Saved use when the JWT is valid but the `users`
+  row is gone (otherwise `/feed` → `/sign-in` → `/feed` would loop).
+- **Onboarding resume**: `/feed` (server) redirects to `/onboarding` while the user has no
+  `onboarding_completed_at`, no Last.fm username and no seed artists (the
+  `/api/onboarding/check` rule). Onboarding's PATCH stamps `onboarding_completed_at`
+  (Skip too), so finishing lands on the feed.
 - **API wrappers** (`lib/api/with-authed-route.ts`): three factories —
   `withAuthedRoute` (session only), `withAuthedCsrfRoute` (+CSRF), `withAuthedJsonRoute`
   (+CSRF +JSON parse), each passing `{ userId, request, supabase }`; plus `withCronRoute` for

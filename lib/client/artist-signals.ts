@@ -176,8 +176,8 @@ export interface ArtistFeedback {
    */
   dismiss(artistId: string): Promise<boolean>
   /**
-   * Rail the user is on. Read when a POST is dispatched (not when tapped), so
-   * a rail switch while an earlier call is in flight sends the current rail.
+   * Rail the user is on. Captured when tapped: a POST queued behind an
+   * earlier in-flight call still names the rail the artist was on.
    */
   setRailKey(railKey: string | undefined): void
 }
@@ -202,6 +202,7 @@ export function createArtistFeedback({
     store,
 
     async setSignal(artistId, signal) {
+      const rail = railKey // the rail tapped on, even if the POST queues behind another call
       const op = classifyFeedbackOp(signal, store.get(artistId), localOnlySignals)
       if (op === "local") return store.optimistic(artistId, signal, async () => {})
       if (op === "delete") {
@@ -213,7 +214,7 @@ export function createArtistFeedback({
         const res = await fetchImpl("/api/feedback", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(buildFeedbackPostBody(artistId, signal, railKey)),
+          body: JSON.stringify(buildFeedbackPostBody(artistId, signal, rail)),
         })
         if (!res.ok) throw new Error("Server error")
       })

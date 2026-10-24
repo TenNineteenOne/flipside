@@ -1,70 +1,87 @@
 "use client"
 
-import { useState } from "react"
+import { use, useState } from "react"
 import { signIn } from "next-auth/react"
 import { useRouter } from "next/navigation"
-import { SIGN_IN_CODES, type SignInMode } from "@/lib/auth-sign-in"
+import {
+  normalizeUsername,
+  parseSignInMode,
+  signInErrorMessage,
+  SIGN_IN_GENERIC_ERROR,
+  USERNAME_RULE,
+  type SignInMode,
+} from "@/lib/auth-sign-in"
 
 const MODES: { mode: SignInMode; label: string }[] = [
   { mode: "existing", label: "Existing account" },
   { mode: "new", label: "New account" },
 ]
 
-// "Existing" failures stay generic: never reveal whether a username exists.
-// "New" must say a name is taken; that's the accepted trade-off (#175 D3).
-function errorMessage(mode: SignInMode, code: string | undefined): string {
-  if (code === SIGN_IN_CODES.rateLimited) return "Too many attempts. Wait a minute and try again."
-  if (code === SIGN_IN_CODES.taken) return "That username is taken. Pick another, or choose Existing account if it’s yours."
-  if (code === SIGN_IN_CODES.failed && mode === "existing") return "Couldn’t sign in with that username."
-  return "Something went wrong. Please try again."
-}
-
-export default function SignInPage() {
+export default function SignInPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
+}) {
   const router = useRouter()
-  const [mode, setMode] = useState<SignInMode>("existing")
+  // The landing CTA opens ?mode=new; anything else is Existing (never create by accident).
+  const initialMode = parseSignInMode(use(searchParams).mode)
+  const [mode, setMode] = useState<SignInMode>(initialMode)
   const [username, setUsername] = useState("")
   const [agreed, setAgreed] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const isNew = mode === "new"
+  // New mode validates before submitting so the user sees the rule, not a generic error.
+  const usernameInvalid = isNew && username.length > 0 && normalizeUsername(username) === null
   // The no-recovery acknowledgment only gates creating an account.
   const canSubmit = username.trim().length >= 2 && (agreed || !isNew) && !loading
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!canSubmit) return
+    if (isNew && normalizeUsername(username) === null) {
+      setError(USERNAME_RULE)
+      return
+    }
 
     setLoading(true)
     setError(null)
 
-    const result = await signIn("credentials", {
-      username: username.trim(),
-      mode,
-      redirect: false,
-    })
-
-    if (result?.error) {
-      setError(errorMessage(mode, result.code))
-      setLoading(false)
-      return
-    }
-
-    // Check if new user needs onboarding
+    let navigating = false
     try {
-      const check = await fetch("/api/onboarding/check")
-      if (check.ok) {
-        const { needsOnboarding } = await check.json()
-        if (needsOnboarding) {
-          router.push("/onboarding")
-          return
-        }
-      }
-    } catch {
-      // Fall through to feed on check failure
-    }
+      const result = await signIn("credentials", {
+        username: username.trim(),
+        mode,
+        redirect: false,
+      })
 
-    router.push("/feed")
+      if (result?.error) {
+        setError(signInErrorMessage(mode, result.code))
+        return
+      }
+
+      // Check if new user needs onboarding
+      let next = "/feed"
+      try {
+        const check = await fetch("/api/onboarding/check")
+        if (check.ok) {
+          const { needsOnboarding } = await check.json()
+          if (needsOnboarding) next = "/onboarding"
+        }
+      } catch {
+        // Fall through to feed on check failure (the feed page re-checks)
+      }
+      // replace: Back must not return to the sign-in form (the proxy bounces it anyway).
+      navigating = true
+      router.replace(next)
+    } catch {
+      // signIn threw (network drop, iOS backgrounding)
+      setError(SIGN_IN_GENERIC_ERROR)
+    } finally {
+      // Keep the spinner through a successful navigation; reset on any failure.
+      if (!navigating) setLoading(false)
+    }
   }
 
   return (
@@ -126,6 +143,7 @@ export default function SignInPage() {
               type="button"
               className={`chip${mode === m.mode ? " selected" : ""}`}
               aria-pressed={mode === m.mode}
+              disabled={loading}
               onClick={() => {
                 setMode(m.mode)
                 setError(null)
@@ -156,19 +174,34 @@ export default function SignInPage() {
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="col gap-12">
+          <label htmlFor="username" className="sr-only">Username</label>
           <div className="field" style={{ height: 48 }}>
             <input
+              id="username"
+              name="username"
               type="text"
               placeholder="your-username"
               value={username}
               onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, "").slice(0, 30))}
               autoComplete="username"
+              autoCapitalize="none"
+              autoCorrect="off"
               autoFocus
               spellCheck={false}
               maxLength={30}
+              aria-invalid={usernameInvalid || undefined}
+              aria-describedby={isNew ? "username-rule" : undefined}
               style={{ fontSize: 16 }}
             />
           </div>
+          {isNew && (
+            <div
+              id="username-rule"
+              style={{ fontSize: 11.5, marginTop: -4, color: usernameInvalid ? "var(--dislike)" : "var(--text-muted)" }}
+            >
+              {USERNAME_RULE}
+            </div>
+          )}
 
           {/* Acknowledgment */}
           {isNew && (
@@ -199,6 +232,7 @@ export default function SignInPage() {
 
           {error && (
             <div
+              role="alert"
               style={{
                 fontSize: 12,
                 color: "var(--dislike)",

@@ -7,9 +7,9 @@ import type { GenreNode } from "@/lib/types"
 import { GenrePicker, ALL_GENRES } from "@/components/onboarding/genre-picker"
 import { ArtistSearch, type SpotifyArtist } from "@/components/onboarding/artist-search"
 import { normalizeGenre } from "@/lib/genre/normalize"
-import { patchSettings } from "@/lib/settings/patch-settings"
+import { MAX_SELECTED_GENRES, patchSettings } from "@/lib/settings/patch-settings"
 
-const GENRE_CAP = 200
+const GENRE_CAP = MAX_SELECTED_GENRES
 const ARTIST_CAP = 200
 const GENRE_SAVE_DEBOUNCE_MS = 400
 

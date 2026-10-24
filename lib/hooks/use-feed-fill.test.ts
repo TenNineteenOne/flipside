@@ -251,4 +251,19 @@ describe("createFeedFillController", () => {
     await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 3)
     expect(fetchImpl).toHaveBeenCalledTimes(1) // stopped after the final check
   })
+
+  it("#175 Y3-e: a thrown final GET is retried once before stopping", async () => {
+    const ok = { ok: true, json: async () => ({ recommendations: [playableRec("a")] }) } as unknown as Response
+    const fetchImpl = vi.fn().mockRejectedValueOnce(new TypeError("Load failed")).mockResolvedValue(ok)
+    const onAppend = vi.fn()
+    createFeedFillController<FeedRec>({ initialIds: [], targetCount: 10, onAppend, fetchImpl })
+
+    vi.setSystemTime(Date.now() + 70_000)
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS)
+    await vi.advanceTimersByTimeAsync(1_500)
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+    expect(onAppend.mock.calls[0][0].map((r: FeedRec) => r.id)).toEqual(["a"])
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 3)
+    expect(fetchImpl).toHaveBeenCalledTimes(2) // stopped
+  })
 })
