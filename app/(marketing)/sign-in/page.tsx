@@ -3,15 +3,33 @@
 import { useState } from "react"
 import { signIn } from "next-auth/react"
 import { useRouter } from "next/navigation"
+import { SIGN_IN_CODES, type SignInMode } from "@/lib/auth-sign-in"
+
+const MODES: { mode: SignInMode; label: string }[] = [
+  { mode: "existing", label: "Existing account" },
+  { mode: "new", label: "New account" },
+]
+
+// "Existing" failures stay generic: never reveal whether a username exists.
+// "New" must say a name is taken; that's the accepted trade-off (#175 D3).
+function errorMessage(mode: SignInMode, code: string | undefined): string {
+  if (code === SIGN_IN_CODES.rateLimited) return "Too many attempts. Wait a minute and try again."
+  if (code === SIGN_IN_CODES.taken) return "That username is taken. Pick another, or choose Existing account if it’s yours."
+  if (code === SIGN_IN_CODES.failed && mode === "existing") return "Couldn’t sign in with that username."
+  return "Something went wrong. Please try again."
+}
 
 export default function SignInPage() {
   const router = useRouter()
+  const [mode, setMode] = useState<SignInMode>("existing")
   const [username, setUsername] = useState("")
   const [agreed, setAgreed] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const canSubmit = username.trim().length >= 2 && agreed && !loading
+  const isNew = mode === "new"
+  // The no-recovery acknowledgment only gates creating an account.
+  const canSubmit = username.trim().length >= 2 && (agreed || !isNew) && !loading
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -22,11 +40,12 @@ export default function SignInPage() {
 
     const result = await signIn("credentials", {
       username: username.trim(),
+      mode,
       redirect: false,
     })
 
     if (result?.error) {
-      setError("Something went wrong. Please try again.")
+      setError(errorMessage(mode, result.code))
       setLoading(false)
       return
     }
@@ -93,26 +112,47 @@ export default function SignInPage() {
             <span className="wordmark">flipside</span>
           </div>
           <div className="serif" style={{ fontSize: 22, color: "var(--text-primary)", lineHeight: 1.3 }}>
-            Pick a username.
+            {isNew ? "Pick a username." : "Welcome back."}
             <br />
-            That&rsquo;s it.
+            {isNew ? <>That&rsquo;s it.</> : "Enter your username."}
           </div>
         </div>
 
-        {/* Warning card */}
-        <div
-          className="fs-card"
-          style={{
-            marginBottom: 20,
-            borderColor: "rgba(139,92,246,0.25)",
-            background: "rgba(139,92,246,0.06)",
-          }}
-        >
-          <div style={{ fontSize: 12, lineHeight: 1.6, color: "var(--text-muted)" }}>
-            <span style={{ color: "var(--accent)", fontWeight: 700 }}>No recovery.</span>
-            {" "}Your username is your only key. If you forget it, your account is gone — there is no email, no password reset, and no way to recover it.
-          </div>
+        {/* Mode toggle */}
+        <div role="group" aria-label="Account" style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+          {MODES.map((m) => (
+            <button
+              key={m.mode}
+              type="button"
+              className={`chip${mode === m.mode ? " selected" : ""}`}
+              aria-pressed={mode === m.mode}
+              onClick={() => {
+                setMode(m.mode)
+                setError(null)
+              }}
+              style={{ flex: 1, justifyContent: "center", height: 36 }}
+            >
+              {m.label}
+            </button>
+          ))}
         </div>
+
+        {/* Warning card */}
+        {isNew && (
+          <div
+            className="fs-card"
+            style={{
+              marginBottom: 20,
+              borderColor: "rgba(139,92,246,0.25)",
+              background: "rgba(139,92,246,0.06)",
+            }}
+          >
+            <div style={{ fontSize: 12, lineHeight: 1.6, color: "var(--text-muted)" }}>
+              <span style={{ color: "var(--accent)", fontWeight: 700 }}>No recovery.</span>
+              {" "}Your username is your only key. If you forget it, your account is gone — there is no email, no password reset, and no way to recover it.
+            </div>
+          </div>
+        )}
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="col gap-12">
@@ -131,29 +171,31 @@ export default function SignInPage() {
           </div>
 
           {/* Acknowledgment */}
-          <label
-            style={{
-              display: "flex",
-              alignItems: "flex-start",
-              gap: 10,
-              cursor: "pointer",
-              padding: "10px 14px",
-              borderRadius: 10,
-              background: agreed ? "rgba(139,92,246,0.08)" : "transparent",
-              border: `1px solid ${agreed ? "rgba(139,92,246,0.3)" : "var(--border)"}`,
-              transition: "all 0.15s",
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={agreed}
-              onChange={(e) => setAgreed(e.target.checked)}
-              style={{ marginTop: 2, flexShrink: 0, accentColor: "var(--accent)" }}
-            />
-            <span style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
-              I understand my username cannot be recovered if I forget it.
-            </span>
-          </label>
+          {isNew && (
+            <label
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 10,
+                cursor: "pointer",
+                padding: "10px 14px",
+                borderRadius: 10,
+                background: agreed ? "rgba(139,92,246,0.08)" : "transparent",
+                border: `1px solid ${agreed ? "rgba(139,92,246,0.3)" : "var(--border)"}`,
+                transition: "all 0.15s",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={agreed}
+                onChange={(e) => setAgreed(e.target.checked)}
+                style={{ marginTop: 2, flexShrink: 0, accentColor: "var(--accent)" }}
+              />
+              <span style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
+                I understand my username cannot be recovered if I forget it.
+              </span>
+            </label>
+          )}
 
           {error && (
             <div
@@ -175,7 +217,9 @@ export default function SignInPage() {
             disabled={!canSubmit}
             style={{ height: 48, fontSize: 15 }}
           >
-            {loading ? "Signing in…" : "Continue →"}
+            {isNew
+              ? (loading ? "Creating account…" : "Create account →")
+              : (loading ? "Signing in…" : "Sign in →")}
           </button>
         </form>
 
