@@ -26,7 +26,7 @@ describe("invalidationFor (policy table)", () => {
     ["settings: deepDiscovery", { kind: "settings", fields: ["deepDiscovery"] }, { explore: "all", feed: true }],
     ["settings: popularityCurve", { kind: "settings", fields: ["popularityCurve"] }, { explore: "all", feed: false }],
     ["settings: curve + genres", { kind: "settings", fields: ["popularityCurve", "selectedGenres"] }, { explore: "all", feed: true }],
-    ["settings: playThreshold", { kind: "settings", fields: ["playThreshold"] }, { explore: null, feed: false }],
+    ["settings: playThreshold (feed only)", { kind: "settings", fields: ["playThreshold"] }, { explore: null, feed: true }],
     ["settings: usernames/platform", { kind: "settings", fields: ["lastfmUsername", "preferredMusicPlatform"] }, { explore: null, feed: false }],
   ]
   it.each(cases)("%s", (_label, change, expected) => {
@@ -62,20 +62,25 @@ describe("onTasteChanged", () => {
     expect(tables.recommendation_cache.map((r) => r.artist_id)).toEqual(["b", "c"])
   })
 
-  it("D5: any explore invalidation also clears the user's explore rebuild cooldown", async () => {
-    const t = { ...rows(), users: [
-      { id: "u1", last_explore_generated_at: "2026-10-24T00:00:00Z" },
-      { id: "u2", last_explore_generated_at: "2026-10-24T00:00:00Z" },
-    ] }
-    const { client, tables } = createFakeSupabase(t)
-    await onTasteChanged(client, "u1", { kind: "feedback", railKey: "wildcards" })
-    expect(tables.users[0].last_explore_generated_at).toBeNull()
-    expect(tables.users[1].last_explore_generated_at).toBe("2026-10-24T00:00:00Z")
+  it("explore invalidation never touches the users row (rebuild cooldown stays; #175 S1)", async () => {
+    const t = { ...rows(), users: [{ id: "u1", last_explore_generated_at: "2026-10-24T00:00:00Z" }] }
+    const { client, tables, queries } = createFakeSupabase(t)
+    await onTasteChanged(client, "u1", { kind: "settings", fields: ["selectedGenres"] })
+    expect(invalidateExploreCache).toHaveBeenCalled()
+    expect(tables.users[0].last_explore_generated_at).toBe("2026-10-24T00:00:00Z")
+    expect(queries.filter((q) => q.table === "users")).toHaveLength(0)
+  })
+
+  it("playThreshold wipes the unseen feed queue but leaves Explore alone", async () => {
+    const { client, tables } = createFakeSupabase(rows())
+    await onTasteChanged(client, "u1", { kind: "settings", fields: ["playThreshold"] })
+    expect(invalidateExploreCache).not.toHaveBeenCalled()
+    expect(tables.recommendation_cache.map((r) => r.artist_id)).toEqual(["b", "c"])
   })
 
   it("no-op settings touch nothing", async () => {
     const { client, tables } = createFakeSupabase(rows())
-    await onTasteChanged(client, "u1", { kind: "settings", fields: ["playThreshold"] })
+    await onTasteChanged(client, "u1", { kind: "settings", fields: ["lastfmUsername"] })
     expect(invalidateExploreCache).not.toHaveBeenCalled()
     expect(tables.recommendation_cache).toHaveLength(3)
   })

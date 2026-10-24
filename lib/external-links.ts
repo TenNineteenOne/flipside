@@ -64,10 +64,13 @@ export function isSafeAppleUrl(raw: string): boolean {
 }
 
 /**
- * Live iTunes artist lookup. `null` = no trusted match (negatively cached).
+ * Live iTunes artist lookup. `null` = iTunes answered with no trusted match
+ * (negatively cached); `undefined` = iTunes didn't answer (http/network/parse
+ * failure), which must NOT be cached: the cache is shared across users, so a
+ * 403 storm would otherwise pin artists to the search URL for the whole TTL.
  * Gate-only: bypasses the preview breaker and call counter (see itunesFetch).
  */
-async function resolveAppleMusicUrl(name: string): Promise<string | null> {
+async function resolveAppleMusicUrl(name: string): Promise<string | null | undefined> {
   const url =
     `https://itunes.apple.com/search?term=${encodeURIComponent(name)}` +
     `&entity=musicArtist&limit=1`
@@ -76,7 +79,7 @@ async function resolveAppleMusicUrl(name: string): Promise<string | null> {
     if (r.reason === "http") console.error(`[open/apple_music] itunes status=${r.status} name="${name}"`)
     else if (r.reason === "network") console.error(`[open/apple_music] itunes fetch failed name="${name}" err=${String(r.error)}`)
     else console.error(`[open/apple_music] itunes json parse failed name="${name}" err=${String(r.error)}`)
-    return null
+    return undefined
   }
   const hit = r.data?.results?.[0]
   if (!hit || typeof hit.artistName !== "string" || typeof hit.artistLinkUrl !== "string") {
@@ -125,9 +128,11 @@ export async function linkFor(
       : appleMusicSearchUrl(name)
   }
 
-  // 2. Live lookup + cache (upsert null on miss to negatively cache until TTL
-  // expiry, so repeated clicks on an unresolvable artist don't hammer iTunes).
+  // 2. Live lookup + cache (upsert null on an answered miss to negatively cache
+  // until TTL expiry, so repeated clicks on an unresolvable artist don't hammer
+  // iTunes). An iTunes failure is not an answer: search URL, nothing cached.
   const resolved = await resolveAppleMusicUrl(name)
+  if (resolved === undefined) return appleMusicSearchUrl(name)
   const { error: upsertError } = await supabase
     .from("artist_external_links")
     .upsert(

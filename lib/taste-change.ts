@@ -30,6 +30,9 @@ export interface Invalidation {
 const FEED_AND_EXPLORE_SETTINGS = ["selectedGenres", "adventurous", "undergroundMode", "deepDiscovery"]
 // Settings only Explore rails depend on (explore-engine ranks rails by the curve).
 const EXPLORE_ONLY_SETTINGS = ["popularityCurve"]
+// Settings only the Feed queue depends on (Explore hides any listened artist,
+// regardless of the familiarity threshold).
+const FEED_ONLY_SETTINGS = ["playThreshold"]
 
 /** The invalidation policy: which caches a taste change makes stale. Pure. */
 export function invalidationFor(change: TasteChange): Invalidation {
@@ -43,8 +46,9 @@ export function invalidationFor(change: TasteChange): Invalidation {
     case "seeds":
       return { explore: "all", feed: false }
     case "settings": {
-      const feed = change.fields.some((f) => FEED_AND_EXPLORE_SETTINGS.includes(f))
-      const explore = feed || change.fields.some((f) => EXPLORE_ONLY_SETTINGS.includes(f))
+      const both = change.fields.some((f) => FEED_AND_EXPLORE_SETTINGS.includes(f))
+      const feed = both || change.fields.some((f) => FEED_ONLY_SETTINGS.includes(f))
+      const explore = both || change.fields.some((f) => EXPLORE_ONLY_SETTINGS.includes(f))
       return { explore: explore ? "all" : null, feed }
     }
   }
@@ -67,17 +71,6 @@ export async function onTasteChanged(
       invalidateExploreCache(userId, explore === "all" ? undefined : explore).catch((err) => {
         console.error(`[taste-change] explore-invalidate failed kind=${change.kind}`, err)
       }),
-    // Reset the Explore rebuild cooldown with the rails (owner decision D5, #175):
-    // a build already in flight when the taste changed writes old-settings
-    // rails, and a live cooldown would pin them; cleared, the next load rebuilds.
-    explore &&
-      supabase
-        .from("users")
-        .update({ last_explore_generated_at: null })
-        .eq("id", userId)
-        .then(({ error }) => {
-          if (error) console.error(`[taste-change] explore-cooldown-reset failed kind=${change.kind}`, error.message)
-        }),
     feed &&
       supabase
         .from("recommendation_cache")

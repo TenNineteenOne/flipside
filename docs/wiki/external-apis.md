@@ -32,7 +32,7 @@ Auth: **none** (free, keyless). All HTTP via `itunesFetch`; gated by the iTunes 
 | Endpoint | Used for | Where |
 |---|---|---|
 | `search?entity=song` | **30s preview URLs** (primary source) | `itunes.ts:searchTracksByArtist` |
-| `search?entity=musicArtist` | Apple Music artist URL resolution | `lib/external-links.ts` (`linkFor`) |
+| `search?entity=musicArtist` | Apple Music artist URL resolution (an answered no-match is cached as NULL for 30 days; an http/network/parse failure falls back to the search URL and caches nothing) | `lib/external-links.ts` (`linkFor`) |
 
 Known pain point: ~20 req/min soft limit with erratic **403** throttling (per-IP, so prod's
 Vercel IP differs from local) and no `Retry-After`. The official Apple Music API needs a

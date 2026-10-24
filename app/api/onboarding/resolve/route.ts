@@ -13,6 +13,20 @@ const isRateLimited = createWindowLimiter({ max: 30, windowMs: 60_000 })
 
 const MBID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+const foldMarks = (s: string) => s.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase()
+const hasLatin = (s: string) => /\p{Script=Latin}/u.test(s)
+
+/**
+ * Client name vs MusicBrainz's canonical name (#175 R6). Diacritic-folded, so
+ * "Bjork" matches "Björk". When exactly one side has Latin letters (e.g. "BTS"
+ * vs "방탄소년단") bigrams can't compare across scripts, so the check is
+ * skipped: the mint still uses MB's name, which is the poisoning protection.
+ */
+function namesMatch(clientName: string, mbName: string): boolean {
+  if (hasLatin(clientName) !== hasLatin(mbName)) return true
+  return stringSimilarity(foldMarks(clientName), foldMarks(mbName)) >= SIMILARITY_THRESHOLD
+}
+
 /**
  * Resolve a Last.fm-sourced onboarding suggestion to our internal artist uuid,
  * so a seed can persist (`artist_id` is the load-bearing key post Stage-2).
@@ -31,14 +45,14 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }) => {
     return apiError("Too many lookups — slow down for a moment", 429)
   }
 
-  let body: { name?: unknown; mbid?: unknown }
+  let body: { name?: unknown; mbid?: unknown } | null
   try {
     body = await request.json()
   } catch {
     return apiError("Invalid JSON body", 400)
   }
 
-  if (typeof body.name !== "string") {
+  if (typeof body?.name !== "string") {
     return apiError("name must be a string", 400)
   }
   const name = body.name.trim()
@@ -76,7 +90,7 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }) => {
       }
       const { spotifyId } = await resolveArtistExternalIds(mbid, { fetchImpl: captureName })
       if (!spotifyId || !isValidSpotifyId(spotifyId) || !mbName) return null
-      if (stringSimilarity(name, mbName) < SIMILARITY_THRESHOLD) {
+      if (!namesMatch(name, mbName)) {
         console.log(`[onboard-resolve] name-mismatch name="${name}" mb="${mbName}" mbid=${mbid}`)
         return null
       }

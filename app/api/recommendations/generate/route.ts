@@ -15,6 +15,10 @@ import type { Artist } from "@/lib/music-provider/types"
 // Hobby/Fluid function budget (F-hardening).
 export const maxDuration = 300
 
+// Newest unseen rows the post-response colour pass decorates. The queue-full
+// gate caps the live queue near 60, so this only bounds pathological cases.
+const COLOR_PASS_LIMIT = 150
+
 /** Run an array of async tasks with a maximum concurrency of `limit`. */
 async function pLimit<T>(
   tasks: (() => Promise<T>)[],
@@ -47,10 +51,17 @@ async function runColorExtraction(
   cachedRecs: CachedRec[],
   artistIds: string[]
 ): Promise<void> {
-  const { data: cacheRows } = await supabase
+  const { data: cacheRows, error: colorReadErr } = await supabase
     .from("artists")
     .select("id, artist_color")
     .in("id", artistIds)
+
+  // An unreadable colour map would make every row "need colour" and refetch
+  // every image; skip this pass instead (missing colours fall back to a hue).
+  if (colorReadErr) {
+    console.error(`[generate] color-read-fail err=${colorReadErr.message}`)
+    return
+  }
 
   const colorMap = new Map<string, string | null>()
   for (const row of cacheRows ?? []) {
@@ -242,6 +253,11 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
         .select("artist_id, artist_data")
         .eq("user_id", user.id)
         .is("seen_at", null)
+        // Only the live queue: expired unseen rows can pile up to ~1000 per
+        // user (F6), and `.in()` over all of them risks a 414 (#175 F-G).
+        .gt("expires_at", new Date().toISOString())
+        .order("created_at", { ascending: false })
+        .limit(COLOR_PASS_LIMIT)
 
       if (!cachedRecs || cachedRecs.length === 0) return
 

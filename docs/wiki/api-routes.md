@@ -47,7 +47,7 @@ Which caches each taste change invalidates is decided in one place: `lib/taste-c
 
 | Route | Method | Does |
 |---|---|---|
-| `/api/feedback` | POST | `rpc_record_feedback`; thumbs → `invalidateExploreCache` (narrow for explore, full for feed) |
+| `/api/feedback` | POST | thumbs-up first ensures this week's `user_challenges` row (`ensureCurrentChallenge`) so the RPC can credit it; `rpc_record_feedback`; thumbs → `invalidateExploreCache` (narrow for explore, full for feed) |
 | `/api/feedback/[artistId]` | DELETE | `rpc_delete_feedback` (undo thumbs) + full explore invalidate, 204 |
 | `/api/dismiss/[artistId]` | DELETE | `rpc_clear_dismiss` + full explore invalidate, 204 |
 | `/api/saves` | POST/DELETE | upsert/delete `saves`; response keeps `playlistId: null` (the Spotify-playlist branch was removed in #175) |
@@ -59,10 +59,10 @@ Which caches each taste change invalidates is decided in one place: `lib/taste-c
 | Route | Method | Does |
 |---|---|---|
 | `/api/onboarding/search` | GET | **Spotify search** (client-creds), 120/min per user; **falls back to `artist_search_cache` ILIKE on 429** (`degraded:true`) |
-| `/api/onboarding/resolve` | POST | resolves a Last.fm-sourced onboarding suggestion to the internal artist uuid: `artists`-table exact-name doorway lookup first, MusicBrainz mbid url-rels fallback → mint under MB's canonical name (client name must match it at ≥0.8 similarity, else 404); 404 when unresolvable; 30/min per-user in-memory rate limit |
-| `/api/onboarding/seeds` | POST | upsert `seed_artists` (3–200) |
+| `/api/onboarding/resolve` | POST | resolves a Last.fm-sourced onboarding suggestion to the internal artist uuid: `artists`-table exact-name doorway lookup first, MusicBrainz mbid url-rels fallback → mint under MB's canonical name (client name must match it at ≥0.8 similarity after folding diacritics, else 404; the check is skipped when exactly one name has Latin letters, e.g. "BTS" vs "방탄소년단"); 404 when unresolvable; 30/min per-user in-memory rate limit |
+| `/api/onboarding/seeds` | POST | upsert `seed_artists` (3–200 per request; existing + new ≤ 200 total, same check as settings) |
 | `/api/onboarding/check` | GET | `{needsOnboarding}` |
-| `/api/settings` | PATCH | validate + encrypt usernames + update `users`; genre/mode change → explore + unseen-feed wipe; `popularityCurve` → explore only |
+| `/api/settings` | PATCH | validate + encrypt usernames + update `users`; genre/mode change → explore + unseen-feed wipe; `popularityCurve` → explore only; `playThreshold` → unseen-feed wipe only |
 | `/api/settings/seed-artists` | GET/POST/DELETE | manage seeds + invalidate explore |
 | `/api/account` | DELETE | delete user (cascade) + sign out |
 

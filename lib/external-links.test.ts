@@ -90,10 +90,23 @@ describe("linkFor apple_music precedence", () => {
     expect(tables.artist_external_links[0].apple_music_url).toBeNull()
   })
 
-  it("3. iTunes HTTP failure → search URL (negatively cached, as baseline)", async () => {
-    itunesFetch.mockResolvedValue({ ok: false, reason: "http", status: 500 })
+  it("3. iTunes OK with no results → search URL and negative cache", async () => {
+    itunesFetch.mockResolvedValue({ ok: true, data: { resultCount: 0, results: [] } })
     const { url, tables } = await run({})
     expect(url).toBe(SEARCH)
     expect(tables.artist_external_links).toHaveLength(1)
+    expect(tables.artist_external_links[0]).toMatchObject({ artist_id: ID, apple_music_url: null })
+  })
+
+  it.each([
+    ["http 403", { ok: false, reason: "http", status: 403 }],
+    ["network", { ok: false, reason: "network", error: new Error("ECONNRESET") }],
+    ["parse", { ok: false, reason: "parse", error: new Error("bad json") }],
+  ])("3. iTunes %s failure → search URL, nothing cached (#175 R5)", async (_label, failure) => {
+    itunesFetch.mockResolvedValue(failure)
+    const stale = { artist_id: ID, apple_music_url: "https://music.apple.com/us/artist/old/1", updated_at: STALE }
+    const { url, tables } = await run({ artist_external_links: [stale] })
+    expect(url).toBe(SEARCH)
+    expect(tables.artist_external_links).toEqual([stale])
   })
 })
