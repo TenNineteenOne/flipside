@@ -703,10 +703,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
    *   - resurfaced rows (seen > 7 days ago, no skip_at — owner decision D1,
    *     #175 F26): `seen_at: null` so the feed shows them again, and
    *     `created_at: now` so the nightly cron's 3-day unseen expiry doesn't
-   *     expire them immediately. Still no skip_at in the payload.
-   * The two kinds go in separate upserts because PostgREST upserts one column
-   * set per request: supabase-js sends the UNION of the rows' keys as
-   * `columns`, and a key missing from one row is written as NULL for it.
+   *     expire them immediately. Written by a conditional UPDATE (R4), below.
    */
   async function writeScored(items: ScoredArtist[]): Promise<number> {
     // Exclude ids already written in a previous phase
@@ -732,7 +729,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
     for (const row of existingCache ?? []) existing.set(row.artist_id, row)
 
     const plain = []
-    const resurfaced = []
+    const resurfaced: Array<{ row: Record<string, unknown> & { artist_id: string }; seenAt: string }> = []
     for (const item of fresh) {
       const prev = existing.get(item.artist.id)
       if (prev && !isEligibleForCooldown(prev.seen_at, prev.skip_at, now)) continue
@@ -745,25 +742,49 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
         source: item.source,
         expires_at: expiresAt.toISOString(),
       }
-      if (prev?.seen_at) resurfaced.push({ ...row, seen_at: null, created_at: now.toISOString() })
+      if (prev?.seen_at) resurfaced.push({ row: { ...row, seen_at: null, created_at: now.toISOString() }, seenAt: prev.seen_at })
       else plain.push(row)
     }
 
     let written = 0
-    for (const rows of [plain, resurfaced]) {
-      if (rows.length === 0) continue
+    if (plain.length > 0) {
       const { error } = await supabase
         .from('recommendation_cache')
-        .upsert(rows, { onConflict: 'user_id,artist_id' })
+        .upsert(plain, { onConflict: 'user_id,artist_id' })
       if (error) {
         console.error(`[engine] upsert_error source=${source} err=${error.message}`)
-        continue
+      } else {
+        for (const row of plain) writtenIds.add(row.artist_id)
+        written += plain.length
       }
-      for (const row of rows) writtenIds.add(row.artist_id)
-      written += rows.length
-      if (rows === resurfaced) console.log(`[engine] resurfaced source=${source} n=${rows.length}`)
     }
-    return written
+
+    // Resurfacing is a conditional UPDATE per row, never an upsert (#175 R4):
+    // it lands only while the row is still exactly what we read (same seen_at,
+    // no skip_at), so a dismiss / thumbs-down / save landing between the read
+    // above and this write is never undone by our `seen_at: null`.
+    const results = await Promise.all(
+      resurfaced.map(({ row, seenAt }) =>
+        supabase
+          .from('recommendation_cache')
+          .update(row)
+          .eq('user_id', userId)
+          .eq('artist_id', row.artist_id)
+          .is('skip_at', null)
+          .eq('seen_at', seenAt)
+          .select('artist_id'),
+      ),
+    )
+    let resurfacedN = 0
+    for (const { data, error } of results) {
+      if (error) console.error(`[engine] resurface_error source=${source} err=${error.message}`)
+      for (const r of data ?? []) {
+        writtenIds.add(r.artist_id)
+        resurfacedN++
+      }
+    }
+    if (resurfacedN > 0) console.log(`[engine] resurfaced source=${source} n=${resurfacedN}`)
+    return written + resurfacedN
   }
 
   // ── Tier 1 (blocking): confirm FIRST_BATCH_TARGET artists, write, return fast ──

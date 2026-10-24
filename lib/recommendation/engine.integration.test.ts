@@ -630,3 +630,65 @@ describe("buildRecommendations — liked and saved never resurface (#175 F-B)", 
     expect(byId.get(id(4))!.seen_at).toBeNull() // scrolled-past still resurfaces (D1)
   })
 })
+
+// ── #175 R4: a dismiss racing the resurface write is never undone ───────────
+describe("buildRecommendations — resurface lost update (#175 R4)", () => {
+  it("a dismiss landing between writeScored's read and its write keeps seen_at and skip_at", async () => {
+    const oldId = "f0000000-0000-4000-8000-000000000020"
+    const longAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString()
+    seed({
+      seed_artists: [{ user_id: "u1", name: "SeedA" }],
+      artists: [artistsRow(oldId, "SeenLongAgo")],
+      recommendation_cache: [
+        { id: "c1", user_id: "u1", artist_id: oldId, seen_at: longAgo, skip_at: null, created_at: longAgo, expires_at: longAgo },
+      ],
+    })
+    lf.similars.set("SeedA", similarRefs(["SeenLongAgo", "Fresh0"]))
+    let dismissedAt: string | null = null
+    const origFrom = h.fake.client.from
+    h.fake.client.from = (t: string) => {
+      const q = origFrom(t)
+      if (t === "recommendation_cache") {
+        const origIn = q.in
+        // writeScored's cooldown read: once it has returned, the user dismisses (rpc stamps both).
+        q.in = (col: string, vals: unknown[]) => {
+          origIn(col, vals)
+          return {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            then: (res: (v: any) => any, rej?: (e: any) => any) =>
+              q.then((v: { data: Row[] }) => {
+                const row = cacheRows().find((r) => r.artist_id === oldId)!
+                if (!dismissedAt && v.data?.some((r) => r.artist_id === oldId)) {
+                  dismissedAt = new Date().toISOString()
+                  row.seen_at = dismissedAt
+                  row.skip_at = dismissedAt
+                }
+                return v
+              }).then(res, rej),
+          }
+        }
+      }
+      return q
+    }
+
+    const result = await buildRecommendations(baseInput())
+    await result.finish()
+
+    expect(dismissedAt).not.toBeNull()
+    const row = cacheRows().find((r) => r.artist_id === oldId)!
+    expect(row.seen_at).toBe(dismissedAt)
+    expect(row.skip_at).toBe(dismissedAt)
+  })
+
+  it("the feed query never lists a dismissed row, even one left unseen", async () => {
+    const future = new Date(Date.now() + 86400_000).toISOString()
+    seed({
+      recommendation_cache: [
+        { user_id: "u1", artist_id: "a-ok", seen_at: null, skip_at: null, expires_at: future, score: 1, artist_data: {} },
+        { user_id: "u1", artist_id: "a-skip", seen_at: null, skip_at: future, expires_at: future, score: 2, artist_data: {} },
+      ],
+    })
+    const unseen = await getUnseenRecommendations(h.fake.client, "u1", { limit: 20, undergroundMode: false })
+    expect(unseen.map((r) => r.artist_id)).toEqual(["a-ok"])
+  })
+})
