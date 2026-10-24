@@ -361,3 +361,59 @@ describe("resolveUnresolvedArtistIds — 23505 merge path on artist_id", () => {
     expect(still.artist_id).toBeNull()
   })
 })
+
+describe("resolveUnresolvedArtistIds — #175 F5/F23 failure paths", () => {
+  it("F5: a failed mint logs mint-failed and leaves the row unresolved", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {})
+    const listened = [baseRow({})]
+    artistInfo.mockResolvedValue({ genres: ["rock"], popularity: 90 })
+    const supabase = makeSupabase(listened, [])
+    const origFrom = supabase.from.bind(supabase)
+    supabase.from = (table: string) => {
+      const t = origFrom(table)
+      if (table === "artists") {
+        t.insert = () => ({ select: () => ({ single: async () => ({ data: null, error: { message: "boom" } }) }) })
+      }
+      return t
+    }
+    await resolveUnresolvedArtistIds({ supabase, userId: "user-1" })
+    expect(listened[0].artist_id).toBeNull()
+    expect(listened[0].id_resolution_attempted_at).not.toBeNull()
+    expect(log.mock.calls.some((c) => String(c[0]).includes('mint-failed name="Radiohead" → unresolved'))).toBe(true)
+    log.mockRestore()
+  })
+
+  it("F5: a throwing getInfo logs the getInfo/mint threw line", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {})
+    const listened = [baseRow({})]
+    artistInfo.mockRejectedValue(new Error("lastfm 500"))
+    await resolveUnresolvedArtistIds({ supabase: makeSupabase(listened, []), userId: "user-1" })
+    expect(err.mock.calls.some((c) => String(c[0]).includes('getInfo/mint threw for "Radiohead"'))).toBe(true)
+    err.mockRestore()
+  })
+
+  it("F23: merge update error keeps the orphan (plays not lost) and leaves the target untouched", async () => {
+    const orphan = baseRow({ id: "orphan", play_count: 4 })
+    const target = baseRow({ id: "target", artist_id: "artist-uuid-9", lastfm_artist_name: null, play_count: 10 })
+    const listened = [orphan, target]
+    const artists: ArtistRow[] = [
+      { id: "artist-uuid-9", spotify_id: "sp-9", name: "Radiohead", name_lower: "radiohead" },
+    ]
+    const supabase = makeSupabase(listened, artists)
+    const origFrom = supabase.from.bind(supabase)
+    supabase.from = (table: string) => {
+      const t = origFrom(table)
+      if (table === "listened_artists") {
+        const origUpdate = t.update.bind(t)
+        t.update = (patch: Partial<ListenedRow>) =>
+          patch.play_count != null
+            ? { eq: () => Promise.resolve({ error: { code: "XX000", message: "merge failed" } }) }
+            : origUpdate(patch)
+      }
+      return t
+    }
+    await resolveUnresolvedArtistIds({ supabase, userId: "user-1" })
+    expect(listened.find((r) => r.id === "orphan")?.play_count).toBe(4)
+    expect(listened.find((r) => r.id === "target")?.play_count).toBe(10)
+  })
+})

@@ -91,7 +91,7 @@ async function resolveOrMergeRow(params: {
   if (!updateErr) return { merged: false }
   if (updateErr.code !== "23505") return { merged: false, error: updateErr.message }
 
-  const { data: orphan } = await supabase
+  const { data: orphan, error: orphanErr } = await supabase
     .from("listened_artists")
     .select("play_count, last_seen_at")
     .eq("id", orphanId)
@@ -111,19 +111,36 @@ async function resolveOrMergeRow(params: {
     return { merged: false }
   }
 
-  if (target && orphan) {
-    const mergedPlays = (target.play_count ?? 0) + (orphan.play_count ?? 0)
-    const mergedLastSeen =
-      new Date(target.last_seen_at).getTime() >= new Date(orphan.last_seen_at).getTime()
-        ? target.last_seen_at
-        : orphan.last_seen_at
-    await supabase
-      .from("listened_artists")
-      .update({ play_count: mergedPlays, last_seen_at: mergedLastSeen })
-      .eq("id", target.id)
+  if (orphanErr || !orphan) {
+    // Can't read the orphan's plays — deleting it now would lose them. Leave it.
+    console.log(`[id-resolver] merge-orphan-read-fail orphan=${orphanId} err="${orphanErr?.message ?? "no row"}"`)
+    return { merged: false, error: orphanErr?.message ?? "orphan row not found" }
   }
 
-  await supabase.from("listened_artists").delete().eq("id", orphanId)
+  // ponytail: read-modify-write; rpc_bump_listened_play_counts (0041) only does
+  // +1, so it can't add the orphan's count. A concurrent bump on the target in
+  // this window can still be lost — needs an add-N RPC (migration) to close.
+  const mergedPlays = (target.play_count ?? 0) + (orphan.play_count ?? 0)
+  const mergedLastSeen =
+    new Date(target.last_seen_at).getTime() >= new Date(orphan.last_seen_at).getTime()
+      ? target.last_seen_at
+      : orphan.last_seen_at
+  const { error: mergeErr } = await supabase
+    .from("listened_artists")
+    .update({ play_count: mergedPlays, last_seen_at: mergedLastSeen })
+    .eq("id", target.id)
+  if (mergeErr) {
+    // Only delete the orphan once its plays are safely folded into the target.
+    console.log(`[id-resolver] merge-update-fail target=${target.id} orphan=${orphanId} err="${mergeErr.message}"`)
+    return { merged: false, error: mergeErr.message }
+  }
+
+  const { error: deleteErr } = await supabase.from("listened_artists").delete().eq("id", orphanId)
+  if (deleteErr) {
+    // Plays are already merged; a surviving orphan would double-count. Log loudly.
+    console.log(`[id-resolver] merge-delete-fail orphan=${orphanId} err="${deleteErr.message}"`)
+    return { merged: true, error: deleteErr.message }
+  }
   return { merged: true }
 }
 
@@ -141,21 +158,36 @@ async function resolveLastFmBatch(params: {
   //     and land on the stable by-name row (minting one if none exists).
   //     spotify_id is backfilled later by the #159 MB worker.
   const identity = new ArtistIdentity(supabase)
+  // Names getInfo confirmed — absent from `resolved` afterwards means the mint failed.
+  const confirmed = new Set<string>()
   const resolved = await identity.resolve(
     batch.map((r) => r.lastfm_artist_name),
     async (name) => {
-      const enrichment = await lastfm.artistInfo(name)
-      if (!enrichment) {
-        // Genuine "artist not found" (or no apiKey / transient swallowed to null).
-        console.log(`[resolveLastFmArtistIds] no-getInfo name="${name}" → unresolved`)
+      try {
+        const enrichment = await lastfm.artistInfo(name)
+        if (!enrichment) {
+          // Genuine "artist not found" (or no apiKey / transient swallowed to null).
+          console.log(`[resolveLastFmArtistIds] no-getInfo name="${name}" → unresolved`)
+          return null
+        }
+        confirmed.add(name)
+        return { name, genres: enrichment.genres, popularity: enrichment.popularity }
+      } catch (err) {
+        console.error(
+          `[resolveLastFmArtistIds] getInfo/mint threw for "${name}":`,
+          err instanceof Error ? err.message : err
+        )
         return null
       }
-      return { name, genres: enrichment.genres, popularity: enrichment.popularity }
     },
   )
 
   for (const row of batch) {
     const artist = resolved.get(row.lastfm_artist_name)
+    if (!artist && confirmed.has(row.lastfm_artist_name)) {
+      // Mint failed → treat as no-match (degrade, don't throw).
+      console.log(`[resolveLastFmArtistIds] mint-failed name="${row.lastfm_artist_name}" → unresolved`)
+    }
 
     // Write result (resolved uuid or null) + update timestamp.
     // When resolved, the update may trip the (user_id, artist_id) unique
