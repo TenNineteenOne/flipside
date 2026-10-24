@@ -36,7 +36,8 @@
   (`artistNameDbKey()`), the stored column, which is always exactly `name.toLowerCase()`.
 - **mbid as hint, not authority** — a `mbid` from Last.fm is treated as an unverified hint
   (Last.fm conflates same-name artists, so its mbid is wrong precisely on collisions). The
-  canonical `mbid` is populated only by the validated MusicBrainz backfill worker.
+  canonical `mbid` is populated only by the validated MusicBrainz backfill worker, which reuses
+  a row's existing `mbid` rather than re-searching by name (a homonym could replace it).
 - **`artist_tracks_cache`** — the cross-user track cache (top tracks + previews), keyed by
   `artist_id` post-0036. Deliberately a *separate table*, NOT a column on `artists`: tracks are a
   volatile, TTL'd, lazily-populated cache, whereas `artists` is the stable, hot identity row.

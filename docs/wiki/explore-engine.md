@@ -16,6 +16,13 @@ issued once (`loadSharedRows`) and shared by `loadUserContext` and `loadExclusio
 E4b). Caches per-rail in
 `explore_cache` (24h TTL — see [[data-model]]).
 
+**Read-time feedback filter (#175 F-D).** Exclusions are loaded once at build start and the
+cache then serves rails for 24h, so every return path (cache hit, partial, fresh build) drops
+rail ids with an active thumbs-down or a `skip_at` (`dropFeedbackExcluded`, one rail-scoped read
+per table, in parallel with hydration). Only feedback is re-checked: "any play" and the 7-day
+seen cooldown stay build-time (an Explore save/like stamps `seen_at`). The cache row keeps an id
+excluded mid-build; each read filters it again.
+
 ## Cache behavior
 
 - `regenerate: false` returns partial cache **without** triggering a build (the fast-paint
