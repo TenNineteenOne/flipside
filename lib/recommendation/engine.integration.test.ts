@@ -680,6 +680,31 @@ describe("buildRecommendations — resurface lost update (#175 R4)", () => {
     expect(row.skip_at).toBe(dismissedAt)
   })
 
+  it("#175 F-C: a re-written unseen row gets a fresh created_at so tonight's 3-day expiry skips it", async () => {
+    const unseenId = "f0000000-0000-4000-8000-000000000021"
+    const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString()
+    const future = new Date(Date.now() + 86400_000).toISOString()
+    seed({
+      seed_artists: [{ user_id: "u1", name: "SeedA" }],
+      artists: [artistsRow(unseenId, "StillUnseen")],
+      recommendation_cache: [
+        { id: "c1", user_id: "u1", artist_id: unseenId, seen_at: null, skip_at: null, created_at: fiveDaysAgo, expires_at: future },
+      ],
+    })
+    lf.similars.set("SeedA", similarRefs(["StillUnseen", "Fresh0"]))
+
+    const result = await buildRecommendations(baseInput())
+    await result.finish()
+
+    const row = cacheRows().find((r) => r.artist_id === unseenId)!
+    expect(row.seen_at).toBeNull()
+    const threeDaysAgo = Date.now() - 3 * 24 * 60 * 60 * 1000
+    expect(new Date(row.created_at).getTime()).toBeGreaterThan(threeDaysAgo) // the cron's expiry cutoff
+    // Brand-new rows still take the DB default (no created_at in the payload).
+    const fresh = cacheRows().find((r) => r.artist_data?.name === "Fresh0")!
+    expect(fresh.created_at).toBeUndefined()
+  })
+
   it("the feed query never lists a dismissed row, even one left unseen", async () => {
     const future = new Date(Date.now() + 86400_000).toISOString()
     seed({
