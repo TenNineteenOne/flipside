@@ -1,6 +1,5 @@
-import { safeAuth } from "@/lib/auth"
-import { createServiceClient } from "@/lib/supabase/server"
-import { apiError, apiUnauthorized } from "@/lib/errors"
+import { apiError } from "@/lib/errors"
+import { withAuthedRoute } from "@/lib/api/with-authed-route"
 import { loadExploreInput } from "@/lib/explore-input"
 import { claimCooldown } from "@/lib/cooldown"
 import { buildExploreRails, RAIL_KEYS } from "@/lib/recommendation/explore-engine"
@@ -23,13 +22,7 @@ export const maxDuration = 300
  * is just `{ ok: true }`; the value is the side-effect of populating
  * `explore_cache` and `artist_search_cache`.
  */
-export async function GET(): Promise<Response> {
-  const session = await safeAuth()
-  if (!session?.user?.id) return apiUnauthorized()
-
-  const userId = session.user.id
-  const supabase = createServiceClient()
-
+export const GET = withAuthedRoute(async ({ userId, supabase }): Promise<Response> => {
   const input = await loadExploreInput(supabase, userId)
   if (!input) return apiError("User not found", 404)
 
@@ -56,4 +49,4 @@ export async function GET(): Promise<Response> {
     console.error("[explore/preload] fail", err instanceof Error ? err.message : err)
     return apiError("Preload failed", 500)
   }
-}
+})

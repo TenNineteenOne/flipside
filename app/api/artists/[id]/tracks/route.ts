@@ -1,7 +1,6 @@
 import { type NextRequest } from "next/server"
-import { safeAuth } from "@/lib/auth"
-import { createServiceClient } from "@/lib/supabase/server"
-import { apiError, apiUnauthorized } from "@/lib/errors"
+import { apiError } from "@/lib/errors"
+import { withAuthedRoute } from "@/lib/api/with-authed-route"
 import { isValidArtistId } from "@/lib/spotify-ids"
 import type { Track } from "@/lib/music-provider/types"
 import { searchTracksByArtist } from "@/lib/music-provider/itunes"
@@ -9,13 +8,11 @@ import { searchTracksByArtist } from "@/lib/music-provider/itunes"
 // 24 hours — kept in sync with the pre-warming TTL in the generate route.
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000
 
-export async function GET(
-  req: NextRequest,
+export const GET = withAuthedRoute(async (
+  { request, supabase },
   { params }: { params: Promise<{ id: string }> }
-): Promise<Response> {
-  const session = await safeAuth()
-  if (!session?.user?.id) return apiUnauthorized()
-
+): Promise<Response> => {
+  const req = request as NextRequest
   const { id: artistId } = await params
   if (!isValidArtistId(artistId)) return apiError("Invalid artist ID", 400)
 
@@ -25,8 +22,6 @@ export async function GET(
   if (artistName && artistName.length > 200) {
     return apiError("Artist name too long", 400)
   }
-
-  const supabase = createServiceClient()
 
   // Read exclusively from artist_tracks_cache — never call Spotify or iTunes.
   const { data: cached, error } = await supabase
@@ -94,4 +89,4 @@ export async function GET(
 
   const tracks = (cached.tracks ?? []) as Track[]
   return Response.json({ tracks })
-}
+})

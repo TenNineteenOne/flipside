@@ -1,12 +1,32 @@
+import { createHmac, timingSafeEqual } from "crypto"
 import { safeAuth } from "@/lib/auth"
 import { apiError, apiUnauthorized } from "@/lib/errors"
 import { enforceSameOrigin } from "@/lib/csrf"
+import { createServiceClient } from "@/lib/supabase/server"
 
 // ─── Shared context types ─────────────────────────────────────────────────────
+
+export type ServiceClient = ReturnType<typeof createServiceClient>
 
 export interface AuthedContext {
   userId: string
   request: Request
+  /**
+   * Service-role Supabase client, created lazily on first access (one per
+   * request). Tests mock `@/lib/supabase/server` to hand routes a fake.
+   */
+  readonly supabase: ServiceClient
+}
+
+function authedContext(userId: string, request: Request): AuthedContext {
+  let client: ServiceClient | undefined
+  return {
+    userId,
+    request,
+    get supabase() {
+      return (client ??= createServiceClient())
+    },
+  }
 }
 
 export interface AuthedJsonContext extends AuthedContext {
@@ -26,8 +46,7 @@ export function withAuthedRoute<TArgs extends unknown[]>(
     const session = await safeAuth()
     if (!session?.user?.id) return apiUnauthorized()
 
-    const userId = session.user.id
-    return handler({ userId, request }, ...rest)
+    return handler(authedContext(session.user.id, request), ...rest)
   }
 }
 
@@ -46,8 +65,7 @@ export function withAuthedCsrfRoute<TArgs extends unknown[]>(
     const session = await safeAuth()
     if (!session?.user?.id) return apiUnauthorized()
 
-    const userId = session.user.id
-    return handler({ userId, request }, ...rest)
+    return handler(authedContext(session.user.id, request), ...rest)
   }
 }
 
@@ -67,10 +85,46 @@ export function withAuthedJsonRoute<TArgs extends unknown[]>(
     const session = await safeAuth()
     if (!session?.user?.id) return apiUnauthorized()
 
-    const userId = session.user.id
     const body = await request.json().catch(() => null)
     if (body === null) return apiError("Invalid JSON", 400)
 
-    return handler({ userId, request, body }, ...rest)
+    return handler(Object.assign(authedContext(session.user.id, request), { body }), ...rest)
+  }
+}
+
+// ─── withCronRoute ────────────────────────────────────────────────────────────
+//
+// CRON_SECRET gate for /api/cron/* (excluded from middleware auth, so this is
+// the ONLY gate). 500 "Server misconfigured" when the secret is unset; 401
+// unless `Authorization: Bearer <CRON_SECRET>`. Both values are HMAC'd to
+// fixed-length digests before timingSafeEqual — no length leak.
+
+export interface CronContext {
+  request: Request
+  readonly supabase: ServiceClient
+}
+
+export function withCronRoute(
+  tag: string,
+  handler: (ctx: CronContext) => Promise<Response>,
+): (request: Request) => Promise<Response> {
+  return async (request: Request): Promise<Response> => {
+    const cronSecret = process.env.CRON_SECRET
+    if (!cronSecret) {
+      console.error(`[${tag}] CRON_SECRET is not set — refusing request`)
+      return apiError("Server misconfigured", 500)
+    }
+    const authHeader = request.headers.get("authorization") ?? ""
+    const hmac = (v: string) => createHmac("sha256", "cron-compare").update(v).digest()
+    if (!timingSafeEqual(hmac(authHeader), hmac(`Bearer ${cronSecret}`))) {
+      return apiUnauthorized()
+    }
+    let client: ServiceClient | undefined
+    return handler({
+      request,
+      get supabase() {
+        return (client ??= createServiceClient())
+      },
+    })
   }
 }

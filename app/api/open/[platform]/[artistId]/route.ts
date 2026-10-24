@@ -1,22 +1,18 @@
 import { NextResponse } from "next/server"
-import { safeAuth } from "@/lib/auth"
-import { createServiceClient } from "@/lib/supabase/server"
-import { apiError, apiUnauthorized } from "@/lib/errors"
+import { apiError } from "@/lib/errors"
+import { withAuthedRoute } from "@/lib/api/with-authed-route"
 import { isValidArtistId } from "@/lib/spotify-ids"
 import { linkFor } from "@/lib/external-links"
 
 const NAME_MAX_LEN = 200
 
-export async function GET(
-  request: Request,
+// proxy.ts already gates /api/* behind auth, but this route uses the service
+// role to touch a shared cache and redirect; withAuthedRoute requires an
+// explicit session so a future proxy config change can't silently expose it.
+export const GET = withAuthedRoute(async (
+  { request, supabase },
   { params }: { params: Promise<{ platform: string; artistId: string }> }
-) {
-  // proxy.ts already gates /api/* behind auth, but this route uses the
-  // service role to touch a shared cache and redirect; require an explicit
-  // session here so a future proxy config change can't silently expose it.
-  const session = await safeAuth()
-  if (!session?.user?.id) return apiUnauthorized()
-
+) => {
   const { platform, artistId } = await params
 
   if (platform !== "apple_music") {
@@ -36,6 +32,6 @@ export async function GET(
   }
   const name = rawName
 
-  const target = await linkFor(createServiceClient(), { id: artistId, name }, "apple_music")
+  const target = await linkFor(supabase, { id: artistId, name }, "apple_music")
   return NextResponse.redirect(target, 302)
-}
+})

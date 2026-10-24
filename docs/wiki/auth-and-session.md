@@ -51,7 +51,8 @@ Idempotent (already-encrypted passes through). One-time backfill:
   `/api/cron/*`. See [[infra-and-ops]].
 - **API wrappers** (`lib/api/with-authed-route.ts`): three factories —
   `withAuthedRoute` (session only), `withAuthedCsrfRoute` (+CSRF), `withAuthedJsonRoute`
-  (+CSRF +JSON parse). About half the routes inline the same pattern. See [[api-routes]].
+  (+CSRF +JSON parse), each passing `{ userId, request, supabase }`; plus `withCronRoute` for
+  the `CRON_SECRET` gate on `/api/cron/*`. A few routes still inline the preamble. See [[api-routes]].
 - **CSRF** (`lib/csrf.ts`): `enforceSameOrigin` checks Origin → Referer →
   `Sec-Fetch-Site` against known origins (`AUTH_URL`, `NEXTAUTH_URL`,
   `NEXT_PUBLIC_APP_URL`, `VERCEL_URL`, `VERCEL_PROJECT_PRODUCTION_URL`). **Fails closed**

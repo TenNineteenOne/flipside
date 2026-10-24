@@ -23,8 +23,11 @@ error-message text):
   `"source must be 'lastfm' or 'statsfm'"` validation error, not a generic JSON-parse error.
 
 All of the above still adopted `withAuthedCsrfRoute` for the shared CSRF+auth preamble; only
-the body-parse step stayed local. GET-only routes (`/api/history`, `/api/onboarding/check`,
-`/api/explore/rails`, etc.) stay on plain `safeAuth()` — no CSRF needed.
+the body-parse step stayed local. GET routes use `withAuthedRoute` (no CSRF). The shell hands
+handlers a lazily-created service-role client as `ctx.supabase` (tests mock
+`@/lib/supabase/server`). Still inline: `/api/onboarding/search` (logs `[onboard-search] unauth`
+before its 401) and the GETs owned elsewhere (`/api/history`, `/api/recommendations`). Crons use
+`withCronRoute(tag, handler)` — the single `CRON_SECRET` check.
 
 ## Generation & discovery
 

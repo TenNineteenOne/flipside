@@ -1,16 +1,8 @@
-import { safeAuth } from "@/lib/auth"
-import { apiUnauthorized } from "@/lib/errors"
-import { createServiceClient } from "@/lib/supabase/server"
+import { withAuthedRoute } from "@/lib/api/with-authed-route"
 
 // After the auth pivot, onboarding is always needed for new users.
 // A user is considered onboarded once they have at least one seed_artist OR lastfm_username set.
-export async function GET() {
-  const session = await safeAuth()
-  if (!session?.user?.id) return apiUnauthorized()
-
-  const userId = session.user.id
-  const supabase = createServiceClient()
-
+export const GET = withAuthedRoute(async ({ userId, supabase }) => {
   const { count: seedCount } = await supabase
     .from("seed_artists")
     .select("id", { count: "exact", head: true })
@@ -27,4 +19,4 @@ export async function GET() {
   const hasCompleted = !!user?.onboarding_completed_at
 
   return Response.json({ needsOnboarding: !hasSeeds && !hasLastfm && !hasCompleted })
-}
+})

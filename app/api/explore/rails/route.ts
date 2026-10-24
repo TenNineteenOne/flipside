@@ -13,20 +13,13 @@
  * The client compares this against the pre-regen snapshot; when it advances,
  * the regen is done.
  */
-import { safeAuth } from "@/lib/auth"
-import { createServiceClient } from "@/lib/supabase/server"
-import { apiUnauthorized, apiError } from "@/lib/errors"
+import { apiError } from "@/lib/errors"
+import { withAuthedRoute } from "@/lib/api/with-authed-route"
 import { loadExploreInput } from "@/lib/explore-input"
 import { buildExploreRails } from "@/lib/recommendation/explore-engine"
 import { assembleRailPayloads } from "@/lib/recommendation/explore-rail-payloads"
 
-export async function GET(): Promise<Response> {
-  const session = await safeAuth()
-  if (!session?.user?.id) return apiUnauthorized()
-
-  const userId = session.user.id
-  const supabase = createServiceClient()
-
+export const GET = withAuthedRoute(async ({ userId, supabase }): Promise<Response> => {
   const input = await loadExploreInput(supabase, userId)
   if (!input) return apiError("User not found", 404)
 
@@ -56,4 +49,4 @@ export async function GET(): Promise<Response> {
     )
     return apiError("Failed to read rails", 500)
   }
-}
+})
