@@ -98,11 +98,23 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
     })
     return () => {
       cancelled = true
-      generation.release()
     }
     // Mount-only: deliberately not re-firing on recommendations identity change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Unmount (navigation): release the generation guard so a run still in
+  // flight stays quiet, and don't refresh the page the user moved to. Separate
+  // from the top-up effect, which returns early on a full queue.
+  const aliveRef = useRef(true)
+  const releaseGeneration = generation.release
+  useEffect(() => {
+    aliveRef.current = true
+    return () => {
+      aliveRef.current = false
+      releaseGeneration()
+    }
+  }, [releaseGeneration])
 
   const sequence = useMemo(() => buildSequence(recs), [recs])
 
@@ -120,7 +132,7 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
 
   async function handleGenerateMore() {
     const r = await generation.requestMore()
-    if (r === null) return
+    if (r === null || !aliveRef.current) return
     if (r.kind === "unauthorized") {
       window.location.href = "/sign-in"
       return

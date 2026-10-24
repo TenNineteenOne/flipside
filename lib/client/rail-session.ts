@@ -30,8 +30,16 @@ export const POLL_INTERVAL_MS = 2_500
  */
 export const SETTINGS_REGEN_WINDOW_MS = 120_000
 
-/** localStorage key written by Settings when a background explore regen fires. */
+/**
+ * localStorage key holding the epoch ms just BEFORE an Explore regen POST
+ * (Settings rebuild, Shuffle, Apply, cold start). The server stamps
+ * `generated_at` at build start, after the POST arrives, so rails with
+ * `generatedAt >= flag` came from that regen (#175 Y3-a). Cleared on fresh.
+ */
 export const EXPLORE_REGEN_AT_KEY = "explore-regen-at"
+
+/** Delay before retrying a thrown final GET (iOS resume network blip). */
+export const FINAL_GET_RETRY_MS = 1_500
 
 /**
  * Pure helper — true when the stored flag value indicates a background explore
@@ -117,7 +125,7 @@ export interface RailSessionDeps {
   fetchImpl?: typeof fetch
   timers?: Timers
   now?: () => number
-  storage?: Pick<Storage, "getItem" | "removeItem"> | null
+  storage?: Pick<Storage, "getItem" | "setItem" | "removeItem"> | null
   toast: { (message: string, opts?: { duration?: number }): void; error: (message: string) => void }
   /** Persist an adventurous flip (useAdventurousMode's setter). Rejects on failure. */
   persistAdventurous: (next: boolean) => Promise<void>
@@ -213,22 +221,36 @@ export function createRailSession(deps: RailSessionDeps): RailSession {
   }
 
   /**
-   * Fetch GET /api/explore/rails and swap the rails in when generatedAt has
-   * advanced past `captured`. Returns true if the swap landed. Never throws —
-   * network/parse errors skip the tick so the poller stays alive.
+   * Mark a regen in flight (before its POST) so a later session — the user
+   * left Explore mid-build — picks it up and polls. An existing live flag is
+   * kept: its earlier t0 is the build the server is actually running.
+   * Returns true when this call wrote the flag.
    */
-  async function pollOnce(captured: string | null, gen: number): Promise<boolean> {
+  function markRegen(): boolean {
+    try {
+      if (shouldPollOnArrival(deps.storage?.getItem(EXPLORE_REGEN_AT_KEY) ?? null, now())) return false
+      deps.storage?.setItem(EXPLORE_REGEN_AT_KEY, String(now()))
+      return true
+    } catch { return false /* private mode */ }
+  }
+
+  /**
+   * Fetch GET /api/explore/rails and swap the rails in when generatedAt has
+   * advanced past `captured`. Never throws: "threw" is a network/parse error
+   * (the poller stays alive; the final check retries it once).
+   */
+  async function pollOnce(captured: string | null, gen: number): Promise<"fresh" | "stale" | "threw"> {
     try {
       const res = await fetchImpl("/api/explore/rails")
-      if (!res.ok) return false
+      if (!res.ok) return "stale"
       const json = (await res.json()) as { rails: RailPayload[]; generatedAt: string | null }
-      if (disposed || gen !== pollGen) return false // stale tick: never swap over a newer poll
-      if (!hasRegenCompleted(captured, json.generatedAt)) return false
+      if (disposed || gen !== pollGen) return "stale" // stale tick: never swap over a newer poll
+      if (!hasRegenCompleted(captured, json.generatedAt)) return "stale"
       generatedAt = json.generatedAt
       set({ rails: json.rails }) // activeKey re-validated by derive()
-      return true
+      return "fresh"
     } catch {
-      return false
+      return "threw"
     }
   }
 
@@ -249,7 +271,13 @@ export function createRailSession(deps: RailSessionDeps): RailSession {
     if (disposed || gen !== pollGen || !p || p.inFlight) return
     p.inFlight = true
     const finalCheck = now() >= p.deadline
-    const fresh = await pollOnce(p.captured, gen)
+    let result = await pollOnce(p.captured, gen)
+    if (finalCheck && result === "threw" && !disposed && gen === pollGen) {
+      // The one final GET hit a resume network blip: retry once, not "Still building".
+      await new Promise((r) => setTimeout(r, FINAL_GET_RETRY_MS))
+      if (!disposed && gen === pollGen) result = await pollOnce(p.captured, gen)
+    }
+    const fresh = result === "fresh"
     p.inFlight = false
     if (disposed || gen !== pollGen) return
     if (!fresh && !finalCheck) return
@@ -275,18 +303,24 @@ export function createRailSession(deps: RailSessionDeps): RailSession {
     armTimer()
   }
 
-  /** POST a forced Explore regen, then poll until the new rails swap in. */
+  /**
+   * POST a forced Explore regen, then poll until the new rails swap in. A 429
+   * is the server's cooldown: a build is already running (a Settings rebuild,
+   * or a Shuffle from a previous visit) — poll for it like a success.
+   */
   async function regenAndPoll(opts: { onSettle: () => void; dropThumbsUp?: boolean; clearAdvDirty?: boolean }) {
+    const wroteFlag = markRegen()
     try {
       const res = await fetchImpl("/api/explore/generate?force=true", { method: "POST" })
-      if (!res.ok) throw new Error("generate failed")
+      if (!res.ok && res.status !== 429) throw new Error("generate failed")
     } catch {
+      if (wroteFlag) clearRegenFlag()
       if (disposed) return
       deps.toast.error("Couldn't start rebuild — try again")
       opts.onSettle()
       return
     }
-    if (disposed) return // unmounted mid-POST: no orphan poller
+    if (disposed) return // unmounted mid-POST: no orphan poller (the flag lets the next session poll)
     appliedAdventurous = state.adventurous // the regen builds with the current setting
 
     // Capture AFTER the POST so a cache row written before the regen started
@@ -300,12 +334,16 @@ export function createRailSession(deps: RailSessionDeps): RailSession {
       if (active) deps.dropThumbsUp(active.artists.map((a) => a.id))
     }
 
-    if (opts.clearAdvDirty) {
-      deps.clearSignals()
-      set({ isAdvDirty: false })
-    }
+    if (opts.clearAdvDirty) deps.clearSignals()
+    set({ isAdvDirty: false }) // appliedAdventurous === state.adventurous now (Shuffle too)
 
-    pollUntilFresh({ captured, onSettle: opts.onSettle })
+    pollUntilFresh({
+      captured,
+      onSettle: () => {
+        clearRegenFlag()
+        opts.onSettle()
+      },
+    })
   }
 
   return {
@@ -367,13 +405,13 @@ export function createRailSession(deps: RailSessionDeps): RailSession {
         void regenAndPoll({ onSettle: () => set({ isRegenerating: false }) })
         return
       }
-      // Settings fired a background regen and the user navigated here before
-      // it finished: poll only (no re-POST). The storage flag is the
-      // cross-navigation signal.
+      // Settings (or a Shuffle/Apply on a previous visit) fired a background
+      // regen and the user navigated here before it finished: poll only (no
+      // re-POST). The storage flag is the cross-navigation signal.
       let flag: string | null = null
       try { flag = deps.storage?.getItem(EXPLORE_REGEN_AT_KEY) ?? null } catch { /* private mode */ }
       if (!shouldPollOnArrival(flag, now())) return
-      if (generatedAt !== null && new Date(generatedAt).getTime() > Number(flag)) {
+      if (generatedAt !== null && new Date(generatedAt).getTime() >= Number(flag)) {
         // The server already rendered the rails that regen produced.
         clearRegenFlag()
         return

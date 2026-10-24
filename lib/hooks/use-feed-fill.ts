@@ -33,6 +33,7 @@ const POLL_INTERVAL_MS = 2500
 const MAX_IDLE_POLLS = 3
 const HARD_CEILING_MS = 60_000
 const RESTART_TARGET_BUMP = 20
+const FINAL_GET_RETRY_MS = 1_500
 
 export interface FeedFillController {
   /**
@@ -127,7 +128,16 @@ export function createFeedFillController<R extends FeedRec>({
       }
 
       try {
-        const res = await fetchImpl("/api/recommendations")
+        let res: Response
+        try {
+          res = await fetchImpl("/api/recommendations")
+        } catch (err) {
+          if (!finalCheck) throw err
+          // The one final GET hit a resume network blip: retry once.
+          await new Promise((r) => setTimeout(r, FINAL_GET_RETRY_MS))
+          if (stopped || run !== runId) return
+          res = await fetchImpl("/api/recommendations")
+        }
         if (!res.ok) return
 
         const data = (await res.json().catch(() => ({}))) as { recommendations?: R[] }

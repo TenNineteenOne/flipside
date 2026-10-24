@@ -4,6 +4,7 @@ import {
   orderRails,
   resolveActiveKey,
   EXPLORE_REGEN_AT_KEY,
+  FINAL_GET_RETRY_MS,
   POLL_CEILING_MS,
   POLL_INTERVAL_MS,
   type RailSessionDeps,
@@ -27,7 +28,7 @@ function setup(overrides: Partial<RailSessionDeps> = {}) {
   const toast = Object.assign(vi.fn(), { error: vi.fn() })
   const dropThumbsUp = vi.fn()
   const clearSignals = vi.fn()
-  const storage = { getItem: vi.fn(() => null as string | null), removeItem: vi.fn() }
+  const storage = { getItem: vi.fn(() => null as string | null), setItem: vi.fn(), removeItem: vi.fn() }
   const fetchImpl = vi.fn()
   const session = createRailSession({
     initialRails: ALL,
@@ -235,9 +236,9 @@ describe("#175 F11 poll lifecycle", () => {
 
   it("(c) Apply during Shuffle settles both spinners", async () => {
     const { session, fetchImpl } = setup()
-    await session.toggleAdventurous()
     fetchImpl.mockResolvedValueOnce(json(200)).mockResolvedValueOnce(json(200)).mockResolvedValue(json(200, FRESH))
     await session.shuffle()
+    await session.toggleAdventurous() // after the shuffle POST, so Apply is still dirty
     await session.applyAdventurous()
     await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS)
     expect(session.getState()).toMatchObject({ isRegenerating: false, isApplyingAdv: false })
@@ -264,7 +265,6 @@ describe("#175 F11 poll lifecycle", () => {
 
   it("(d) a stale tick resolving late does not kill the newer poll", async () => {
     const { session, fetchImpl } = setup()
-    await session.toggleAdventurous()
     let resolveOld: (r: Response) => void = () => {}
     fetchImpl
       .mockResolvedValueOnce(json(200)) // shuffle POST
@@ -273,6 +273,7 @@ describe("#175 F11 poll lifecycle", () => {
       .mockResolvedValue(json(200, STALE))
     await session.shuffle()
     await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS) // old GET in flight
+    await session.toggleAdventurous()
     await session.applyAdventurous() // new poll
     resolveOld(json(200, FRESH)) // old tick lands late
     await vi.advanceTimersByTimeAsync(0)
@@ -321,5 +322,100 @@ describe("#175 F11 poll lifecycle", () => {
     session.setAdventurous(true) // useAdventurousMode pushes the flip back
     await session.toggleAdventurous()
     expect(session.getState().isAdvDirty).toBe(false)
+  })
+})
+
+describe("#175 sweep 2 Y3 — Explore after a rebuild", () => {
+  const STALE = { rails: ALL, generatedAt: "2026-10-01T00:00:00Z" }
+  const FRESH = { rails: [rail("adjacent", 5, "new"), ...ALL.slice(1)], generatedAt: "2026-10-02T00:00:00Z" }
+  const gets = (f: ReturnType<typeof vi.fn>) => f.mock.calls.filter((c) => c[0] === "/api/explore/rails").length
+  function memStorage() {
+    const m = new Map<string, string>()
+    return {
+      getItem: vi.fn((k: string) => m.get(k) ?? null),
+      setItem: vi.fn((k: string, v: string) => { m.set(k, v) }),
+      removeItem: vi.fn((k: string) => { m.delete(k) }),
+    }
+  }
+
+  it("(a) arrival skips the poll when generatedAt equals the pre-POST flag (build stamped at start)", () => {
+    const t0 = Date.parse("2026-10-02T00:00:00Z")
+    const { session, fetchImpl, storage } = setup({ initialGeneratedAt: new Date(t0).toISOString(), now: () => t0 + 5_000 })
+    storage.getItem.mockReturnValue(String(t0))
+    session.start({ coldStart: false })
+    expect(session.getState().isRegenerating).toBe(false)
+    expect(storage.removeItem).toHaveBeenCalledWith(EXPLORE_REGEN_AT_KEY)
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
+  it("(b) cold start: a 429 (rebuild already running) polls instead of toasting", async () => {
+    const { session, fetchImpl, toast } = setup({ initialRails: [], initialGeneratedAt: null })
+    fetchImpl.mockResolvedValueOnce(json(429, { error: "Explore is already refreshing — please wait a moment" }))
+      .mockResolvedValue(json(200, FRESH))
+    session.start({ coldStart: true })
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS)
+    expect(toast.error).not.toHaveBeenCalled()
+    expect(session.getState().rails[0].artists[0].id).toBe("new-0")
+    expect(session.getState().isRegenerating).toBe(false)
+  })
+
+  it("(b) shuffle 429 polls too", async () => {
+    const { session, fetchImpl, toast } = setup()
+    fetchImpl.mockResolvedValueOnce(json(429)).mockResolvedValue(json(200, FRESH))
+    await session.shuffle()
+    expect(session.getState().isRegenerating).toBe(true)
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS)
+    expect(toast.error).not.toHaveBeenCalled()
+    expect(session.getState().isRegenerating).toBe(false)
+  })
+
+  it("(c) leaving mid-shuffle: the next session finds the flag and polls; fresh clears it", async () => {
+    const storage = memStorage()
+    const a = setup({ storage })
+    a.fetchImpl.mockResolvedValueOnce(json(200))
+    await a.session.shuffle()
+    a.session.dispose()
+    expect(storage.getItem(EXPLORE_REGEN_AT_KEY)).not.toBeNull()
+
+    const b = setup({ storage }) // server render still has the old rails
+    b.fetchImpl.mockResolvedValueOnce(json(200, STALE)).mockResolvedValue(json(200, FRESH))
+    b.session.start({ coldStart: false })
+    expect(b.session.getState().isRegenerating).toBe(true)
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 2)
+    expect(b.fetchImpl).not.toHaveBeenCalledWith("/api/explore/generate?force=true", expect.anything())
+    expect(b.session.getState().rails[0].artists[0].id).toBe("new-0")
+    expect(storage.getItem(EXPLORE_REGEN_AT_KEY)).toBeNull()
+  })
+
+  it("(c) a failed regen POST removes the flag it wrote", async () => {
+    const storage = memStorage()
+    const { session, fetchImpl } = setup({ storage })
+    fetchImpl.mockResolvedValueOnce(json(500))
+    await session.shuffle()
+    expect(storage.getItem(EXPLORE_REGEN_AT_KEY)).toBeNull()
+  })
+
+  it("(d) Toggle → Shuffle clears the dirty flag (rails rebuilt with the new setting)", async () => {
+    const { session, fetchImpl } = setup()
+    await session.toggleAdventurous()
+    session.setAdventurous(true)
+    expect(session.getState().isAdvDirty).toBe(true)
+    fetchImpl.mockResolvedValueOnce(json(200)).mockResolvedValue(json(200, FRESH))
+    await session.shuffle()
+    expect(session.getState().isAdvDirty).toBe(false)
+    session.dispose()
+  })
+
+  it("(e) a thrown final GET is retried once and swaps instead of toasting", async () => {
+    let t = 0
+    const { session, fetchImpl, toast } = setup({ now: () => t })
+    fetchImpl.mockResolvedValueOnce(json(200)).mockRejectedValueOnce(new TypeError("Load failed")).mockResolvedValue(json(200, FRESH))
+    await session.shuffle()
+    t = POLL_CEILING_MS + 60_000
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS)
+    await vi.advanceTimersByTimeAsync(FINAL_GET_RETRY_MS)
+    expect(gets(fetchImpl)).toBe(2)
+    expect(session.getState().rails[0].artists[0].id).toBe("new-0")
+    expect(toast).not.toHaveBeenCalled()
   })
 })
