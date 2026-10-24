@@ -339,6 +339,23 @@ describe("write — fill-only metadata patch", () => {
     expect(tables.artists[0]).toMatchObject({ genres: ["jazz"], popularity: 70, image_url: "https://i/r" })
   })
 
+  it("#175 F24: never overwrites an existing value, even with a non-empty one", async () => {
+    const { identity, tables } = setup([row(U(1), "Homonym", { genres: ["jazz"], popularity: 70, image_url: "https://i/r" })])
+    await identity.write("Homonym", artist(U(1), { genres: ["noise"], popularity: 5, imageUrl: "https://i/other" }))
+    expect(tables.artists[0]).toMatchObject({ genres: ["jazz"], popularity: 70, image_url: "https://i/r" })
+  })
+
+  it("#175 F24: fills only the empty fields (genres [] / null popularity / null image)", async () => {
+    const { identity, tables } = setup([
+      row(U(1), "Half", { genres: [], popularity: 33, image_url: null }),
+      row(U(2), "NullGenres", { genres: null }),
+    ])
+    await identity.write("Half", artist(U(1), { genres: ["dub"], popularity: 90, imageUrl: "https://i/h" }))
+    await identity.write("NullGenres", artist(U(2), { genres: ["ska"] }))
+    expect(tables.artists[0]).toMatchObject({ genres: ["dub"], popularity: 33, image_url: "https://i/h" })
+    expect(tables.artists[1].genres).toEqual(["ska"])
+  })
+
   it("skips an artist without a minted uuid (never inserts)", async () => {
     const { identity, tables, froms } = setup()
     await identity.write("A", artist("not-a-uuid", { spotifyId: "spA", genres: ["x"] }))

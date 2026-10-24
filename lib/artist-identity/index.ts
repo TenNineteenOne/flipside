@@ -21,7 +21,7 @@
  *    already read (one read, not two).
  *  - race-safe mint (insert … on conflict do nothing on `spotify_id`, then a
  *    read-back), chunking (`.in()` lists ≤500 to stay under the 414 limit),
- *  - the fill-only write policy: metadata is never clobbered.
+ *  - the fill-only write policy: only empty metadata fields are ever filled.
  *
  * Never throws — DB failures degrade to "absent" / null so the doorway can't
  * break generation, a history sync, or onboarding.
@@ -300,10 +300,15 @@ export class ArtistIdentity {
   }
 
   /**
-   * Fill-only metadata patch on the artist's uuid row: empty genres / zero
-   * popularity / null image are never written, and `name`/`name_lower` and
-   * `spotify_id` are never touched — a sparse resolve can't blank out a richer
-   * row. Skips (logs) when the artist has no minted uuid. Never throws.
+   * Fill-only metadata patch on the artist's uuid row: a field is written ONLY
+   * when the row's value is empty (genres null or [], popularity null,
+   * image_url null) and the incoming value is non-empty. Existing values are
+   * never overwritten (#175 F24 — an ambiguous name resolved via Last.fm must
+   * not stomp a homonym row's Spotify metadata, shifting tiering / the
+   * underground cap). `name`/`name_lower`/`spotify_id` are never touched.
+   * Read-then-update: two concurrent fills of the same empty field can race,
+   * but both are fills — an existing value is never replaced. Skips (logs)
+   * when the artist has no minted uuid. Never throws.
    */
   async write(name: string, artist: Artist): Promise<void> {
     try {
@@ -311,11 +316,23 @@ export class ArtistIdentity {
         console.log(`[cache-write] skip name="${name}" (no id)`)
         return
       }
+      const incoming = artist.genres.length > 0 || artist.popularity > 0 || !!artist.imageUrl
+      if (!incoming) return // nothing worth writing
+      const { data: current, error: readErr } = await this.client
+        .from(TABLE)
+        .select("genres, popularity, image_url")
+        .eq("id", artist.id)
+        .maybeSingle()
+      if (readErr || !current) {
+        console.log(`[cache-write] read-fail name="${name}" err="${readErr?.message ?? "no row"}"`)
+        return
+      }
+      const row = current as Pick<ArtistsRow, "genres" | "popularity" | "image_url">
       const patch: { genres?: string[]; popularity?: number; image_url?: string } = {}
-      if (artist.genres.length > 0) patch.genres = artist.genres
-      if (artist.popularity > 0) patch.popularity = artist.popularity
-      if (artist.imageUrl) patch.image_url = artist.imageUrl
-      if (Object.keys(patch).length === 0) return // nothing worth writing
+      if (artist.genres.length > 0 && !(row.genres?.length)) patch.genres = artist.genres
+      if (artist.popularity > 0 && row.popularity == null) patch.popularity = artist.popularity
+      if (artist.imageUrl && !row.image_url) patch.image_url = artist.imageUrl
+      if (Object.keys(patch).length === 0) return // row already filled
       const { error } = await this.client.from(TABLE).update(patch).eq("id", artist.id)
       if (error) {
         console.log(`[cache-write] fail name="${name}" err="${error.message}"`)
