@@ -13,8 +13,8 @@ function rec(id: string, previewUrl: string | null | undefined): FeedRec {
       ? undefined
       : [{ previewUrl }]
   return {
-    artist_id: id,
-    artist_data: { topTracks },
+    id,
+    topTracks,
   }
 }
 
@@ -27,7 +27,7 @@ function unplayableRec(id: string): FeedRec {
 }
 
 function noTracksRec(id: string): FeedRec {
-  return { artist_id: id, artist_data: {} }
+  return { id }
 }
 
 // ---------------------------------------------------------------------------
@@ -53,16 +53,14 @@ describe("isPlayable", () => {
   })
 
   it("is false when topTracks is an empty array", () => {
-    const r: FeedRec = { artist_id: "a", artist_data: { topTracks: [] } }
+    const r: FeedRec = { id: "a", topTracks: [] }
     expect(isPlayable(r)).toBe(false)
   })
 
   it("is true when mixed tracks include at least one playable", () => {
     const r: FeedRec = {
-      artist_id: "a",
-      artist_data: {
-        topTracks: [{ previewUrl: null }, { previewUrl: "https://audio.example.com/t.m4a" }],
-      },
+      id: "a",
+      topTracks: [{ previewUrl: null }, { previewUrl: "https://audio.example.com/t.m4a" }],
     }
     expect(isPlayable(r)).toBe(true)
   })
@@ -77,21 +75,21 @@ describe("selectNewPlayable", () => {
     const seen = new Set(["a"])
     const fetched = [playableRec("a"), playableRec("b"), playableRec("c")]
     const result = selectNewPlayable(seen, fetched)
-    expect(result.map((r) => r.artist_id)).toEqual(["b", "c"])
+    expect(result.map((r) => r.id)).toEqual(["b", "c"])
   })
 
   it("excludes unplayable recs even if not in seenIds", () => {
     const seen = new Set<string>()
     const fetched = [playableRec("a"), unplayableRec("b"), noTracksRec("c")]
     const result = selectNewPlayable(seen, fetched)
-    expect(result.map((r) => r.artist_id)).toEqual(["a"])
+    expect(result.map((r) => r.id)).toEqual(["a"])
   })
 
   it("excludes recs already in seenIds regardless of playability", () => {
     const seen = new Set(["a", "b"])
     const fetched = [playableRec("a"), playableRec("b"), playableRec("c")]
     const result = selectNewPlayable(seen, fetched)
-    expect(result.map((r) => r.artist_id)).toEqual(["c"])
+    expect(result.map((r) => r.id)).toEqual(["c"])
   })
 
   it("returns empty array when all are seen", () => {
@@ -115,7 +113,7 @@ describe("selectNewPlayable", () => {
     const seen = new Set<string>()
     const fetched = [playableRec("c"), playableRec("a"), playableRec("b")]
     const result = selectNewPlayable(seen, fetched)
-    expect(result.map((r) => r.artist_id)).toEqual(["c", "a", "b"])
+    expect(result.map((r) => r.id)).toEqual(["c", "a", "b"])
   })
 
   it("handles idle scenario: all fetched recs already seen", () => {
@@ -183,7 +181,7 @@ describe("createFeedFillController", () => {
     await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS)
 
     expect(onAppend).toHaveBeenCalledTimes(1)
-    expect(onAppend.mock.calls[0][0].map((r: FeedRec) => r.artist_id)).toEqual(["a"])
+    expect(onAppend.mock.calls[0][0].map((r: FeedRec) => r.id)).toEqual(["a"])
   })
 
   it("restart begins polling when the controller never auto-started", async () => {
@@ -206,7 +204,7 @@ describe("createFeedFillController", () => {
 
     expect(fetchImpl).toHaveBeenCalledTimes(1)
     expect(onAppend).toHaveBeenCalledTimes(1)
-    expect(onAppend.mock.calls[0][0].map((r: FeedRec) => r.artist_id)).toEqual(["c"])
+    expect(onAppend.mock.calls[0][0].map((r: FeedRec) => r.id)).toEqual(["c"])
   })
 
   it("restart extends the target past the original targetCount", async () => {
@@ -237,6 +235,6 @@ describe("createFeedFillController", () => {
     await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS)
 
     expect(onAppend).toHaveBeenCalledTimes(3)
-    expect(onAppend.mock.calls[2][0].map((r: FeedRec) => r.artist_id)).toEqual(["c"])
+    expect(onAppend.mock.calls[2][0].map((r: FeedRec) => r.id)).toEqual(["c"])
   })
 })

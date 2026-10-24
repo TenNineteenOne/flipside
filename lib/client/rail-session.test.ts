@@ -1,5 +1,5 @@
 /**
- * Unit tests for pure helpers exported from explore-client.tsx.
+ * Unit tests for pure helpers exported from rail-session.ts.
  * No DOM / React rendering — these functions are fully synchronous / testable.
  */
 import { describe, it, expect } from "vitest"
@@ -9,7 +9,7 @@ import {
   POLL_CEILING_MS,
   POLL_INTERVAL_MS,
   SETTINGS_REGEN_WINDOW_MS,
-} from "./explore-client"
+} from "./rail-session"
 
 describe("hasRegenCompleted", () => {
   it("returns false when latest is null (nothing in cache yet)", () => {

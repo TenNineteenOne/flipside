@@ -9,6 +9,8 @@ import { GenrePicker } from "@/components/onboarding/genre-picker"
 import { ArtistSearch, type SpotifyArtist } from "@/components/onboarding/artist-search"
 import { PlatformPicker } from "@/components/settings/platform-picker"
 import { DEFAULT_MUSIC_PLATFORM, type MusicPlatform } from "@/lib/music-links"
+import { postGenerate } from "@/lib/client/feed-generation"
+import { patchSettings, SettingsSaveError, type SettingsPatch } from "@/lib/settings/patch-settings"
 
 const ARTIST_CAP = 200
 const GENRE_CAP = 200
@@ -69,9 +71,11 @@ export default function OnboardingPage() {
     setSaving(true)
 
     try {
-      const promises: Promise<Response>[] = []
+      // Each write resolves to whether the server accepted it; a network
+      // failure rejects (→ the generic error below).
+      const promises: Promise<boolean>[] = []
 
-      const settingsPayload: Record<string, unknown> = {}
+      const settingsPayload: SettingsPatch = {}
       // Always persist the platform choice (even on skip) so outbound links
       // reflect the user's selection on the very first feed view. Default is
       // Spotify so the value is never unexpected if the user didn't touch it.
@@ -85,11 +89,15 @@ export default function OnboardingPage() {
         settingsPayload.selectedGenres = selectedGenres.map((g) => g.lastfmTag)
       }
       if (Object.keys(settingsPayload).length > 0) {
-        promises.push(fetch("/api/settings", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(settingsPayload),
-        }))
+        promises.push(
+          patchSettings(settingsPayload).then(
+            () => true,
+            (err) => {
+              if (err instanceof SettingsSaveError) return false
+              throw err
+            },
+          ),
+        )
       }
 
       const artistsToSave = selectedArtists.slice(0, ARTIST_CAP)
@@ -100,22 +108,22 @@ export default function OnboardingPage() {
           body: JSON.stringify({
             artists: artistsToSave.map((a) => ({ id: a.id, name: a.name, imageUrl: a.imageUrl })),
           }),
-        }))
+        }).then((r) => r.ok))
       }
 
       const results = await Promise.all(promises)
-      const failed = results.find((r) => !r.ok)
-      if (failed) {
+      if (results.includes(false)) {
         toast.error("Some settings couldn't be saved — you can update them later")
       }
 
       // Kick off recommendation generation now (non-awaited) so it overlaps with
       // navigation and is underway/done by the time the feed mounts. Cooldown-
       // safe: if the feed's loader also fires, it gets a 429 and polls (see
-      // classifyGenerateResponse / RecommendationsLoader). If seeds were saved
-      // above (non-skip path) the engine sees them on this run; on skip it
+      // loaderAction / RecommendationsLoader). If seeds were saved above
+      // (non-skip path) the engine sees them on this run; on skip it
       // cold-starts, which is the intended "show something" behavior.
-      void fetch("/api/recommendations/generate", { method: "POST" }).catch(() => {})
+      // postGenerate never throws; the result is deliberately ignored.
+      void postGenerate()
 
       router.push("/feed")
     } catch {

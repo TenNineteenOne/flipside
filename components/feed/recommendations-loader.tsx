@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Loader2, RefreshCw } from "lucide-react"
-import { classifyGenerateResponse } from "@/lib/recommendation/generate-response"
+import { loaderAction, postGenerate } from "@/lib/client/feed-generation"
 
 /** Poll cadence + ceiling while a generation is in flight. */
 const POLL_INTERVAL_MS = 2500
@@ -34,30 +34,24 @@ export function RecommendationsLoader() {
     }
 
     async function generate() {
-      try {
-        const res = await fetch("/api/recommendations/generate", { method: "POST" })
-        if (cancelled) return
-        const data = (await res.json().catch(() => ({}))) as { count?: number; error?: string; pending?: boolean }
-        const outcome = classifyGenerateResponse(res.status, data)
-
-        if (outcome === "ready") {
-          router.refresh()
-          return
-        }
-        if (outcome === "in-flight") {
-          await pollUntilReady(Date.now() + POLL_MAX_MS)
-          return
-        }
-        // outcome === "error"
-        if (res.ok && data.count === 0) {
-          throw new Error("No new artists found. Your listening history may be filtering everything out — try raising your play threshold in Settings.")
-        }
-        throw new Error(data.error ?? "Generation failed")
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load recommendations")
-        }
+      const result = await postGenerate()
+      if (cancelled) return
+      const next = loaderAction(result)
+      if (next.action === "refresh") {
+        router.refresh()
+        return
       }
+      if (next.action === "poll") {
+        try {
+          await pollUntilReady(Date.now() + POLL_MAX_MS)
+        } catch (err) {
+          if (!cancelled) {
+            setError(err instanceof Error ? err.message : "Failed to load recommendations")
+          }
+        }
+        return
+      }
+      setError(next.message)
     }
 
     generate()

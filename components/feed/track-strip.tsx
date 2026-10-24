@@ -12,8 +12,6 @@ import type { Track } from "@/lib/music-provider/types"
 
 export interface TrackStripProps {
   tracks: Track[]
-  artistId?: string          // Used to save track to Spotify Playlist
-  artistName?: string        // Used for JIT Spotify resolution
   artistColor?: string       // hex, defaults to '#8b5cf6'
   compact?: boolean          // Optional for dense UI views like Saved screen
   onPlay?: (track: Track) => void

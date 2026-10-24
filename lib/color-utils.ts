@@ -7,6 +7,19 @@ export function sanitizeHex(color: string | null | undefined, fallback = "#8b5cf
   return color && /^#[0-9a-fA-F]{6}$/.test(color) ? color : fallback
 }
 
+/**
+ * The one display-colour rule for an artist. sanitizeHex returns "#8b5cf6" as
+ * its fallback when the stored color is null, undefined, empty, or invalid;
+ * that sentinel (whether stored or produced by the fallback) means "no real
+ * color", so fall back to the deterministic name-hash and every artist gets a
+ * distinctive tint.
+ */
+export function resolveArtistColor(rawColor: string | null | undefined, artistName: string): string {
+  const sanitized = sanitizeHex(rawColor)
+  if (sanitized === "#8b5cf6") return stringToVibrantHex(artistName)
+  return sanitized
+}
+
 export function stringToVibrantHex(str: string): string {
   let hash = 0
   for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash)

@@ -2,9 +2,8 @@
 
 import { useState, useMemo, useRef } from "react"
 import Image from "next/image"
-import { toast } from "sonner"
 import { ThumbsUp, ThumbsDown, SkipForward, Bookmark, Undo2 } from "lucide-react"
-import { stringToVibrantHex, hexToRgba, sanitizeHex } from "@/lib/color-utils"
+import { hexToRgba, resolveArtistColor } from "@/lib/color-utils"
 import { useArtistFeedback } from "@/lib/hooks/use-artist-feedback"
 
 interface HistoryEntry {
@@ -106,35 +105,13 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
   // pulled from the server instead.
   const fetchedCountRef = useRef(initialHistory.length)
 
-  const filtered = useMemo(() => {
-    if (filter === "all") return history
-    if (filter === "bookmarked") return history.filter((h) => h.bookmarked)
-    return history.filter((h) => h.signal === filter && !h.bookmarked)
-  }, [history, filter])
-
-  const counts = useMemo(() => {
-    const c: Record<FilterTab, number> = { all: history.length, thumbs_up: 0, thumbs_down: 0, skip: 0, dismissed: 0, bookmarked: 0 }
-    for (const h of history) {
-      if (h.bookmarked) c.bookmarked++
-      else if (h.signal === "thumbs_up") c.thumbs_up++
-      else if (h.signal === "thumbs_down") c.thumbs_down++
-      else if (h.signal === "dismissed") c.dismissed++
-      else c.skip++
-    }
-    return c
-  }, [history])
-
-  const groups = useMemo(() => groupByPeriod(filtered), [filtered])
-
-  // Signal changes (thumbs up/down) and undo go through the shared hook so
-  // rapid taps on the same artist (e.g. "Change to Liked" immediately
-  // followed by "Undo") are serialized in click order instead of racing as
-  // independent fetches. HistoryClient renders from its own `history` array
-  // rather than the hook's internal signals map — the hook is used here for
-  // its network/serialization/toast plumbing, with setSignal/removeSignal's
-  // resolved boolean driving the same optimistic-then-rollback updates the
-  // original hand-rolled fetches did.
-  const { setSignal, removeSignal } = useArtistFeedback({
+  // Signal changes (thumbs up/down) and undo go through the shared artist-
+  // signal controller so rapid taps on the same artist (e.g. "Change to Liked"
+  // immediately followed by "Undo") are serialized in click order. A row shows
+  // the controller's (optimistic, rolled-back-on-failure) signal when it has
+  // one, else the signal the row was loaded with. Undo/unblock are confirmed
+  // ops: the row stays until the server confirms, then drops out.
+  const { signals, setSignal, removeSignal, dismiss } = useArtistFeedback({
     errorMessages: {
       // undoFailed default ("Couldn't undo — try again") already matches
       // this page's copy for both undo paths below.
@@ -142,29 +119,44 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
     },
   })
 
+  // Rows as displayed: the controller's signal overrides the loaded one.
+  const shown = useMemo(
+    () =>
+      history.map((h) => {
+        const sig = signals.get(h.artist_id)
+        return sig === undefined || sig === h.signal ? h : { ...h, signal: sig }
+      }),
+    [history, signals],
+  )
+
+  const filtered = useMemo(() => {
+    if (filter === "all") return shown
+    if (filter === "bookmarked") return shown.filter((h) => h.bookmarked)
+    return shown.filter((h) => h.signal === filter && !h.bookmarked)
+  }, [shown, filter])
+
+  const counts = useMemo(() => {
+    const c: Record<FilterTab, number> = { all: shown.length, thumbs_up: 0, thumbs_down: 0, skip: 0, dismissed: 0, bookmarked: 0 }
+    for (const h of shown) {
+      if (h.bookmarked) c.bookmarked++
+      else if (h.signal === "thumbs_up") c.thumbs_up++
+      else if (h.signal === "thumbs_down") c.thumbs_down++
+      else if (h.signal === "dismissed") c.dismissed++
+      else c.skip++
+    }
+    return c
+  }, [shown])
+
+  const groups = useMemo(() => groupByPeriod(filtered), [filtered])
+
   async function handleUndo(artistId: string, signal: string) {
     setUndoingIds((prev) => new Set(prev).add(artistId))
     try {
-      if (signal === "dismissed") {
-        // Dismissed items have no feedback row (the skip RPC only stamps
-        // recommendation_cache.skip_at). Clearing requires a separate endpoint
-        // that wipes skip_at + seen_at so the artist is fully eligible again.
-        // ponytail: dismissed rows only ever expose this one action (no
-        // concurrent button), so there's no race to serialize — raw fetch is fine.
-        const res = await fetch(`/api/dismiss/${artistId}`, { method: "DELETE" })
-        if (!res.ok) throw new Error("Server error")
-        setHistory((prev) => prev.filter((h) => h.artist_id !== artistId))
-      } else {
-        // removeSignal shows its own toast and rolls back its internal state
-        // on failure; onSettled tells us whether to also drop the row here.
-        await removeSignal(artistId, {
-          onSettled: (ok) => {
-            if (ok) setHistory((prev) => prev.filter((h) => h.artist_id !== artistId))
-          },
-        })
-      }
-    } catch {
-      toast.error("Couldn't undo — try again")
+      // Dismissed items have no feedback row (the skip RPC only stamps
+      // recommendation_cache.skip_at): unblocking wipes skip_at + seen_at via
+      // /api/dismiss so the artist is fully eligible again.
+      const ok = signal === "dismissed" ? await dismiss(artistId) : await removeSignal(artistId)
+      if (ok) setHistory((prev) => prev.filter((h) => h.artist_id !== artistId))
     } finally {
       setUndoingIds((prev) => {
         const next = new Set(prev)
@@ -174,22 +166,8 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
     }
   }
 
-  async function handleChangeSignal(artistId: string, newSignal: string) {
-    const prevSignal = history.find((h) => h.artist_id === artistId)?.signal
-    setHistory((prev) =>
-      prev.map((h) => (h.artist_id === artistId ? { ...h, signal: newSignal } : h))
-    )
-    // setSignal shows its own toast (overridden above) and rolls back its
-    // internal state on failure; onSettled mirrors that into our own history array.
-    await setSignal(artistId, newSignal, {
-      onSettled: (ok) => {
-        if (!ok) {
-          setHistory((prev) =>
-            prev.map((h) => (h.artist_id === artistId ? { ...h, signal: prevSignal ?? "skip" } : h))
-          )
-        }
-      },
-    })
+  function handleChangeSignal(artistId: string, newSignal: string) {
+    void setSignal(artistId, newSignal)
   }
 
   async function handleLoadMore() {
@@ -282,7 +260,7 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
                 }}
               >
                 {items.map((entry, i) => {
-                  const artistColor = sanitizeHex(entry.artist_color) === "#8b5cf6" ? stringToVibrantHex(entry.artist_data.name) : sanitizeHex(entry.artist_color)
+                  const artistColor = resolveArtistColor(entry.artist_color, entry.artist_data.name)
                   const sig = entry.bookmarked
                     ? SIG_STYLES.bookmarked
                     : (SIG_STYLES[entry.signal] ?? SIG_STYLES.skip)

@@ -1,14 +1,15 @@
 ---
 title: Settings & Discovery Tuning
-updated: 2026-06-06
+updated: 2026-10-24
 related: [[generation-engine]], [[data-model]], [[genre-system]], [[pages-and-components]]
 ---
 
 # Settings & Discovery Tuning
 
 User discovery preferences live as columns on the `users` row (see [[data-model]]), edited
-via `PATCH /api/settings` (`lib/settings/patch-settings.ts`). Any change triggers
-`lib/settings/regenerate.ts`, which fires **both**
+via `PATCH /api/settings` (`lib/settings/patch-settings.ts` — the only client writer, with
+typed keys, abort support and `SettingsSaveError`). Any change triggers `rebuild()` on the
+feed-generation controller (`lib/client/feed-generation.ts`), which fires **both**
 `POST /api/recommendations/generate?replace=true` and `POST /api/explore/generate?force=true`
 in parallel.
 
@@ -41,8 +42,10 @@ is the base of an exponential applied to artist popularity.
 `score = k^popularity × 0.8 + seedRelevance × 0.2 − adventurousPenalty`. See
 [[generation-engine]].
 
-## Regenerate flow (`lib/settings/regenerate.ts`)
-Guards concurrent calls with a synchronous `isGeneratingRef`. Both endpoints return after
+## Regenerate flow (`rebuild()` in `lib/client/feed-generation.ts`)
+Guards concurrent calls with the controller's synchronous re-entry flag. An Explore 429
+(its 90s cooldown) means a rebuild is already running and is treated as success — no
+"Explore failed" toast. Both endpoints return after
 *scheduling* (not completion) — the toast says "loading", and `localStorage["explore-regen-
 at"]` signals `ExploreClient` to begin poll-swapping ([[pages-and-components]]). Honest
 async copy was the fix in #146.

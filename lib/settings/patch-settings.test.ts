@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { patchSettings } from "./patch-settings"
+import { patchSettings, SettingsSaveError } from "./patch-settings"
 
 vi.mock("sonner", () => ({ toast: { error: vi.fn() } }))
 
@@ -29,7 +29,7 @@ describe("patchSettings", () => {
     })
     vi.stubGlobal("fetch", mockFetch)
 
-    await expect(patchSettings({ foo: "bar" })).rejects.toThrow("quota exceeded")
+    await expect(patchSettings({ undergroundMode: true })).rejects.toThrow("quota exceeded")
   })
 
   it("throws generic message when error body is empty", async () => {
@@ -39,6 +39,24 @@ describe("patchSettings", () => {
     })
     vi.stubGlobal("fetch", mockFetch)
 
-    await expect(patchSettings({ foo: "bar" })).rejects.toThrow("Failed to save")
+    await expect(patchSettings({ undergroundMode: true })).rejects.toThrow("Failed to save")
+  })
+
+  it("rejects with SettingsSaveError carrying the status; network errors pass through", async () => {
+    const err = await patchSettings({ adventurous: true }, {
+      fetchImpl: vi.fn().mockResolvedValue({ ok: false, status: 400, json: () => Promise.resolve({ error: "bad" }) }),
+    }).catch((e) => e)
+    expect(err).toBeInstanceOf(SettingsSaveError)
+    expect(err).toMatchObject({ message: "bad", status: 400 })
+
+    const net = await patchSettings({ adventurous: true }, { fetchImpl: vi.fn().mockRejectedValue(new TypeError("offline")) }).catch((e) => e)
+    expect(net).not.toBeInstanceOf(SettingsSaveError)
+  })
+
+  it("forwards the abort signal", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: true })
+    const aborter = new AbortController()
+    await patchSettings({ selectedGenres: ["jazz"] }, { signal: aborter.signal, fetchImpl })
+    expect((fetchImpl.mock.calls[0][1] as RequestInit).signal).toBe(aborter.signal)
   })
 })

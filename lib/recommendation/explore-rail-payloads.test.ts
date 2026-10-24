@@ -72,7 +72,7 @@ function rail(
 // ---------------------------------------------------------------------------
 
 describe("hydrateRailArtists", () => {
-  it("maps ids to RailArtist, skipping missing entries", () => {
+  it("maps ids to card artists, skipping missing entries", () => {
     const byId = new Map([["a1", makeHydrated("a1")]])
     const result = hydrateRailArtists(["a1", "missing"], {}, byId)
     expect(result).toHaveLength(1)
@@ -101,14 +101,20 @@ describe("hydrateRailArtists", () => {
     const a = makeHydrated("a1")
     const why = { a1: { sourceArtist: "Portishead", tag: "trip-hop" } }
     const result = hydrateRailArtists(["a1"], why, new Map([["a1", a]]))
-    expect(result[0].why?.sourceArtist).toBe("Portishead")
-    expect(result[0].why?.tag).toBe("trip-hop")
+    expect(result[0].why).toEqual({ sourceArtists: ["Portishead"], genres: ["trip-hop"] })
   })
 
-  it("leaves why undefined when not present", () => {
+  it("gives an empty why when not present", () => {
     const a = makeHydrated("a1")
     const result = hydrateRailArtists(["a1"], {}, new Map([["a1", a]]))
-    expect(result[0].why).toBeUndefined()
+    expect(result[0].why).toEqual({ sourceArtists: [], genres: [] })
+  })
+
+  it("carries the stored colour as artistColor and never a spotifyId", () => {
+    const a = makeHydrated("a1", { artist_color: "#123456" })
+    const [card] = hydrateRailArtists(["a1"], {}, new Map([["a1", a]]))
+    expect(card.artistColor).toBe("#123456")
+    expect(card.spotifyId).toBeNull()
   })
 })
 
