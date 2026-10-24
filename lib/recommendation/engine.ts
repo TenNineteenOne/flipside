@@ -10,6 +10,7 @@ import {
 } from './types'
 import { isEligibleForCooldown, loadExclusions, readFeedbackIds } from './exclusions'
 import { PlayableCandidates, livePlayablePorts } from './playable-candidates'
+import { ArtistIdentity } from '@/lib/artist-identity'
 import { normalizedIncludes, normalizeGenre } from '@/lib/genre/normalize'
 import { adjacentGenres } from '@/lib/genre/adjacency'
 import coldStartData from '@/data/cold-start-seeds.json'
@@ -426,6 +427,12 @@ export interface RunPipelineOpts {
   deepDiscovery?: boolean
   adventurous?: boolean
   userGenres?: string[]
+  /**
+   * The doorway shared by every run of one build (#175 F-E): a discarded
+   * soften run's secondary resolve keeps going in the background, and two
+   * instances racing over the same names each mint a row.
+   */
+  identity?: ArtistIdentity
 }
 
 /**
@@ -457,7 +464,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
   // (primary, secondary, bleed) shares its doorway; every confirm tier (tier-1
   // blocking, tier-2 deferred, secondary) records outcomes into it, flushed
   // once by finish() (in after()) so a single batch-upsert covers all three phases.
-  const candidates = new PlayableCandidates(supabase, livePlayablePorts(accessToken))
+  const candidates = new PlayableCandidates(supabase, livePlayablePorts(accessToken), o.identity)
   const flush = () => candidates.flush()
 
   const widenSeedCap = userGenres.length >= ADAPTIVE_BROADEN_THRESHOLD
@@ -1012,6 +1019,7 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
   const supabase = createServiceClient()
 
   const { seedNames, pinnedSeeds, userGenres } = await gatherSeedContext(userId, supabase)
+  const identity = new ArtistIdentity(supabase)
 
   const makeBaseOpts = (overrides: Partial<RunPipelineOpts>): RunPipelineOpts => ({
     seedNames,
@@ -1027,6 +1035,7 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     deepDiscovery,
     adventurous,
     userGenres,
+    identity,
     ...overrides,
   })
 

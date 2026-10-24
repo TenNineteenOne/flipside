@@ -634,6 +634,44 @@ describe("buildRecommendations — liked and saved never resurface (#175 F-B)", 
   })
 })
 
+// ── #175 F-E: one doorway across soften runs ────────────────────────────────
+describe("buildRecommendations — one identity across soften runs (#175 F-E)", () => {
+  it("a softened build mints each secondary name once, though the discarded run's resolve is still in flight", async () => {
+    const primaryNames = Array.from({ length: 36 }, (_, i) => `Heard${i}`)
+    const secondaryNames = Array.from({ length: 6 }, (_, i) => `Later${i}`)
+    seed({
+      seed_artists: [{ user_id: "u1", name: "SeedA" }],
+      // play_count 7: over threshold 5 (run 1 → empty), under 10 (soften run passes).
+      listened_artists: primaryNames.map((n, i) => ({ id: `l${i}`, user_id: "u1", artist_id: null, lastfm_artist_name: n, play_count: 7 })),
+    })
+    // tail-first round robin: the LAST 36 refs fill the blocking pool.
+    lf.similars.set("SeedA", similarRefs([...secondaryNames, ...primaryNames]))
+    // Hold every secondary lookup until BOTH runs have asked for it, so the two
+    // runs' doorways ensure the same names at the same time (prod: real latency).
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    setTimeout(() => release(), 1000) // fallback, never hang
+    let asked = 0
+    const info = lf.artistInfo.bind(lf)
+    vi.spyOn(lf, "artistInfo").mockImplementation(async (name: string) => {
+      if (name === "Later0" && ++asked === 2) release()
+      if (name.startsWith("Later")) await gate
+      return info(name)
+    })
+
+    const result = await buildRecommendations(baseInput())
+    await result.finish()
+    expect(result.softenedFilters?.playThreshold).toBe(true)
+    await gate
+    await new Promise((r) => setTimeout(r, 200)) // let run 1's orphaned secondary resolve settle
+    expect(asked).toBeGreaterThanOrEqual(2) // both runs looked Later0 up
+
+    const counts = new Map<string, number>()
+    for (const a of h.fake.tables.artists) counts.set(a.name_lower, (counts.get(a.name_lower) ?? 0) + 1)
+    for (const n of secondaryNames) expect(counts.get(n.toLowerCase())).toBe(1)
+  })
+})
+
 // ── #175 R4: a dismiss racing the resurface write is never undone ───────────
 describe("buildRecommendations — resurface lost update (#175 R4)", () => {
   it("a dismiss landing between writeScored's read and its write keeps seen_at and skip_at", async () => {
