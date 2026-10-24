@@ -409,6 +409,41 @@ describe("buildRecommendations — adjacent bleed is rehydrated (#175 D2)", () =
   })
 })
 
+// ── #175 F17: writeScored fails safe when its cooldown read errors ──────────
+describe("buildRecommendations — writeScored cooldown read error (#175 F17)", () => {
+  it("writes nothing (never nulls an existing seen_at) when the cooldown read fails", async () => {
+    const oldId = "f0000000-0000-4000-8000-000000000003"
+    const seenAt = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString()
+    seed({
+      seed_artists: [{ user_id: "u1", name: "SeedA" }],
+      artists: [artistsRow(oldId, "SeenLongAgo")],
+      recommendation_cache: [{ user_id: "u1", artist_id: oldId, seen_at: seenAt, skip_at: null }],
+    })
+    lf.similars.set("SeedA", similarRefs(["SeenLongAgo", "Fresh0"]))
+    // Fail only writeScored's `.in('artist_id', ids)` read on recommendation_cache.
+    const origFrom = h.fake.client.from
+    h.fake.client.from = (t: string) => {
+      const q = origFrom(t)
+      if (t === "recommendation_cache") {
+        q.in = () => ({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          then: (res: (v: any) => any) => Promise.resolve({ data: null, error: { message: "boom" } }).then(res),
+        })
+      }
+      return q
+    }
+    vi.spyOn(console, "error").mockImplementation(() => {})
+
+    const result = await buildRecommendations(baseInput())
+    await result.finish()
+
+    expect(result.count).toBe(0)
+    const rows = cacheRows()
+    expect(rows).toHaveLength(1)
+    expect(rows[0].seen_at).toBe(seenAt)
+  })
+})
+
 // ── #175 F15: genre seeds request the default tag limit ─────────────────────
 describe("buildRecommendations — genre seed tag limit (#175 F15)", () => {
   it("asks Last.fm for the default 20 artists per selected genre (not the array index)", async () => {

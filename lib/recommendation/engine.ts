@@ -687,11 +687,19 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
     if (fresh.length === 0) return 0
 
     const ids = fresh.map((item) => item.artist.id)
-    const { data: existingCache } = await supabase
+    const { data: existingCache, error: readErr } = await supabase
       .from('recommendation_cache')
       .select('artist_id, seen_at, skip_at')
       .eq('user_id', userId)
       .in('artist_id', ids)
+
+    // Fail safe (#175 F17): without the cooldown read every item looks "not in
+    // cache" and the upsert would null out seen_at/skip_at — resurrecting
+    // dismissed artists. Write nothing instead.
+    if (readErr) {
+      console.error(`[engine] cooldown_read_error source=${source} err=${readErr.message}`)
+      return 0
+    }
 
     const existingSeenAt = new Map<string, string | null>()
     const existingSkipAt = new Map<string, string | null>()
