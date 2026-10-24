@@ -92,17 +92,20 @@ describe("feedback: optimistic before queue", () => {
     expect(calls).toHaveLength(1)
   })
 
-  it("sends the rail current at dispatch time", async () => {
+  it("#175 Y3: sends the rail current at tap time, even when the POST is queued", async () => {
     const { c, calls } = feedback({ railKey: "adjacent" })
     c.setSignal("a", "thumbs_up")
-    c.setSignal("a", "thumbs_down")
+    c.setSignal("a", "thumbs_down") // queued behind the like, tapped on adjacent
     c.setRailKey("outside")
     await flush()
-    expect(body(calls[0].init).railKey).toBe("outside")
-    c.setRailKey(undefined)
+    expect(body(calls[0].init).railKey).toBe("adjacent")
     calls[0].resolve(true)
     await flush()
-    expect(body(calls[1].init)).toEqual({ artistId: "a", signal: "thumbs_down" })
+    expect(body(calls[1].init).railKey).toBe("adjacent")
+    c.setRailKey(undefined)
+    c.setSignal("b", "thumbs_down")
+    await flush()
+    expect(body(calls[2].init)).toEqual({ artistId: "b", signal: "thumbs_down" })
   })
 
   it("other artists are independent", async () => {
