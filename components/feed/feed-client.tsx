@@ -1,6 +1,6 @@
 "use client"
 
-import { memo, useCallback, useEffect, useMemo, useState } from "react"
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { ArtistCard } from "@/components/feed/artist-card"
 import { ColdStartBanner } from "@/components/feed/cold-start-banner"
@@ -11,6 +11,7 @@ import { useArtistSaves } from "@/lib/hooks/use-artist-saves"
 import { useFeedFill } from "@/lib/hooks/use-feed-fill"
 import { useFeedGeneration } from "@/lib/hooks/use-feed-generation"
 import type { CardArtist } from "@/lib/cards/card-artist"
+import type { GenerateResult } from "@/lib/client/feed-generation"
 
 interface FeedClientProps {
   recommendations: CardArtist[]
@@ -79,10 +80,15 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
   // just no-ops, then refresh shows whatever's available. router.refresh() is a
   // soft refresh (preserves scroll/state), and it doesn't remount this client
   // component, so the mount-only effect won't loop.
+  // StrictMode (dev) re-runs this effect on the same instance: the second run
+  // reuses the first run's POST instead of firing another (which would 429 and
+  // skip restartFeedFill). Production runs it once, so the ref starts empty.
+  const topUpRef = useRef<Promise<GenerateResult | null> | null>(null)
   useEffect(() => {
     if (recommendations.length >= TOPUP_THRESHOLD) return
     let cancelled = false
-    void generation.requestMore({ silent: true }).then((r) => {
+    topUpRef.current ??= generation.requestMore({ silent: true })
+    void topUpRef.current.then((r) => {
       if (r === null || cancelled) return
       // New cards land server-side; restart the poller so they surface
       // without waiting for a hard navigation (router.refresh() alone

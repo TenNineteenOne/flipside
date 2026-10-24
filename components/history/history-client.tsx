@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useRef } from "react"
+import { useState, useMemo, useRef, useSyncExternalStore } from "react"
 import Image from "next/image"
 import { ThumbsUp, ThumbsDown, SkipForward, Bookmark, Undo2 } from "lucide-react"
 import { hexToRgba, resolveArtistColor } from "@/lib/color-utils"
@@ -48,6 +48,17 @@ function timeAgo(dateStr: string): string {
   const days = Math.floor(hours / 24)
   if (days < 7) return `${days}d ago`
   return new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+}
+
+const noopSubscribe = () => () => {}
+
+/**
+ * False on the server and during hydration, true after. timeAgo() reads the
+ * clock and local timezone, so rendering it on the server (UTC) mismatches the
+ * client on every load; it renders only once mounted.
+ */
+function useMounted(): boolean {
+  return useSyncExternalStore(noopSubscribe, () => true, () => false)
 }
 
 function groupByPeriod(entries: HistoryEntry[]) {
@@ -104,6 +115,7 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
   // duplicate React key + duplicate visible row. Track what we've actually
   // pulled from the server instead.
   const fetchedCountRef = useRef(initialHistory.length)
+  const mounted = useMounted()
 
   // Signal changes (thumbs up/down) and undo go through the shared artist-
   // signal controller so rapid taps on the same artist (e.g. "Change to Liked"
@@ -307,7 +319,8 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
                           {entry.artist_data.name}
                         </div>
                         <div className="mono" style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                          {timeAgo(entry.seen_at)}
+                          {/* nbsp keeps the line's height until the client-only time renders */}
+                          {mounted ? timeAgo(entry.seen_at) : "\u00a0"}
                           {entry.artist_data.popularity > 0 && ` · popularity ${entry.artist_data.popularity}`}
                         </div>
                       </div>

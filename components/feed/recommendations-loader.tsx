@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Loader2, RefreshCw } from "lucide-react"
-import { loaderAction, postGenerate } from "@/lib/client/feed-generation"
+import { loaderAction, pollRecsUntilReady, postGenerate } from "@/lib/client/feed-generation"
 
 /** Poll cadence + ceiling while a generation is in flight. */
 const POLL_INTERVAL_MS = 2500
@@ -17,22 +17,6 @@ export function RecommendationsLoader() {
   useEffect(() => {
     let cancelled = false
 
-    /** Poll GET /api/recommendations until recs appear or the ceiling is hit. */
-    async function pollUntilReady(deadline: number): Promise<void> {
-      while (!cancelled && Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
-        if (cancelled) return
-        const res = await fetch("/api/recommendations")
-        if (!res.ok) continue
-        const data = (await res.json().catch(() => ({}))) as { recommendations?: unknown[] }
-        if ((data.recommendations?.length ?? 0) > 0) {
-          if (!cancelled) router.refresh()
-          return
-        }
-      }
-      if (!cancelled) setError("Still working on your feed — refresh in a moment.")
-    }
-
     async function generate() {
       const result = await postGenerate()
       if (cancelled) return
@@ -42,13 +26,13 @@ export function RecommendationsLoader() {
         return
       }
       if (next.action === "poll") {
-        try {
-          await pollUntilReady(Date.now() + POLL_MAX_MS)
-        } catch (err) {
-          if (!cancelled) {
-            setError(err instanceof Error ? err.message : "Failed to load recommendations")
-          }
-        }
+        const outcome = await pollRecsUntilReady({
+          deadline: Date.now() + POLL_MAX_MS,
+          intervalMs: POLL_INTERVAL_MS,
+          isCancelled: () => cancelled,
+        })
+        if (outcome === "ready") router.refresh()
+        else if (outcome === "timeout") setError("Still working on your feed — refresh in a moment.")
         return
       }
       setError(next.message)

@@ -75,7 +75,8 @@ export interface CreateFeedFillControllerOpts<R extends FeedRec> {
  * Stops when:
  *   - shown count ≥ target (targetCount, or the restart()-extended target)
  *   - 3 consecutive polls added nothing new (idle)
- *   - 60s hard ceiling elapsed (measured from start, or from the last restart())
+ *   - 60s hard ceiling elapsed (measured from start, or from the last restart()),
+ *     after one final poll
  *   - stop() is called (e.g. on unmount)
  *
  * Never throws on fetch failures — skips that tick silently.
@@ -95,6 +96,7 @@ export function createFeedFillController<R extends FeedRec>({
   let intervalId: ReturnType<typeof setInterval> | null = null
   let startedAt = 0
   let stopped = true
+  let runId = 0
 
   function stop() {
     if (intervalId !== null) {
@@ -109,15 +111,14 @@ export function createFeedFillController<R extends FeedRec>({
     stopped = false
     startedAt = Date.now()
     idleCount = 0
+    const run = ++runId
 
     intervalId = setInterval(async () => {
       if (stopped) return
 
-      // Hard ceiling
-      if (Date.now() - startedAt >= HARD_CEILING_MS) {
-        stop()
-        return
-      }
+      // Hard ceiling: still poll once more, then stop. A frozen background tab
+      // (iOS) resumes past the ceiling with zero GETs having run.
+      const finalCheck = Date.now() - startedAt >= HARD_CEILING_MS
 
       // Already reached target
       if (shownCount >= target) {
@@ -158,6 +159,8 @@ export function createFeedFillController<R extends FeedRec>({
         }
       } catch {
         // Swallow fetch/parse errors — skip this tick silently
+      } finally {
+        if (finalCheck && run === runId) stop()
       }
     }, POLL_INTERVAL_MS)
   }

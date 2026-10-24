@@ -89,7 +89,11 @@ export function softenedFiltersMessage(body: GenerateBody): string | null {
   return null
 }
 
-/** Feed-loader decision: refresh the page, poll for an in-flight run, or show an error. */
+/**
+ * Feed-loader decision: refresh the page, poll for an in-flight run, or show an error.
+ * A thrown POST (status 0) polls too: iOS kills in-flight fetches when the tab
+ * backgrounds, and the server run usually finished anyway.
+ */
 export function loaderAction(r: GenerateResult): { action: "refresh" } | { action: "poll" } | { action: "error"; message: string } {
   switch (r.kind) {
     case "ready":
@@ -98,6 +102,9 @@ export function loaderAction(r: GenerateResult): { action: "refresh" } | { actio
     case "in-flight":
     case "cooldown":
       return { action: "poll" }
+    case "error":
+      if (r.status === 0) return { action: "poll" }
+      return { action: "error", message: r.error ?? "Generation failed" }
     case "empty":
       return {
         action: "error",
@@ -106,9 +113,44 @@ export function loaderAction(r: GenerateResult): { action: "refresh" } | { actio
     default:
       return {
         action: "error",
-        message: r.status === 0 ? r.error ?? "Failed to load recommendations" : r.error ?? "Generation failed",
+        message: r.error ?? "Generation failed",
       }
   }
+}
+
+/**
+ * Poll GET /api/recommendations until recs appear ("ready"), `deadline` passes
+ * ("timeout") or `isCancelled()` ("cancelled"). Never throws: a thrown fetch
+ * (iOS backgrounding) or bad JSON is a transient miss and polling continues.
+ */
+export async function pollRecsUntilReady({
+  deadline,
+  intervalMs,
+  isCancelled,
+  fetchImpl = fetch,
+  now = Date.now,
+  sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
+}: {
+  deadline: number
+  intervalMs: number
+  isCancelled: () => boolean
+  fetchImpl?: typeof fetch
+  now?: () => number
+  sleep?: (ms: number) => Promise<unknown>
+}): Promise<"ready" | "timeout" | "cancelled"> {
+  while (!isCancelled() && now() < deadline) {
+    await sleep(intervalMs)
+    if (isCancelled()) return "cancelled"
+    try {
+      const res = await fetchImpl("/api/recommendations")
+      if (!res.ok) continue
+      const data = (await res.json().catch(() => ({}))) as { recommendations?: unknown[] }
+      if ((data.recommendations?.length ?? 0) > 0) return isCancelled() ? "cancelled" : "ready"
+    } catch {
+      // transient — keep polling until the deadline
+    }
+  }
+  return isCancelled() ? "cancelled" : "timeout"
 }
 
 /** Settings-rebuild copy when the feed half failed. */

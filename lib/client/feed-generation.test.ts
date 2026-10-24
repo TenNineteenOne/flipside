@@ -3,6 +3,7 @@ import {
   classifyGenerate,
   createFeedGeneration,
   loaderAction,
+  pollRecsUntilReady,
   postGenerate,
   rebuildFailureMessage,
   type ToastLike,
@@ -60,6 +61,28 @@ describe("loaderAction (RecommendationsLoader)", () => {
     expect(await run(503, { error: "Music service temporarily unavailable" })).toEqual({ action: "error", message: "Music service temporarily unavailable" })
     expect((await run(200, { count: 0 })).action).toBe("error")
     expect(await run(401)).toEqual({ action: "error", message: "Generation failed" })
+  })
+  it("#175 F13: a thrown POST (iOS backgrounding) polls instead of surfacing the raw message", async () => {
+    expect(loaderAction(await postGenerate(vi.fn().mockRejectedValue(new TypeError("Load failed"))))).toEqual({ action: "poll" })
+  })
+})
+
+describe("#175 F13 pollRecsUntilReady", () => {
+  const deps = (fetchImpl: ReturnType<typeof vi.fn>) => {
+    let t = 0
+    return { deadline: 10_000, intervalMs: 2500, isCancelled: () => false, fetchImpl: fetchImpl as unknown as typeof fetch, now: () => t, sleep: async (ms: number) => { t += ms } }
+  }
+  it("a thrown poll fetch is transient: keeps polling and reaches ready", async () => {
+    const fetchImpl = vi.fn()
+      .mockRejectedValueOnce(new TypeError("Load failed"))
+      .mockResolvedValue(res(200, { recommendations: [{}] }))
+    expect(await pollRecsUntilReady(deps(fetchImpl))).toBe("ready")
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+  })
+  it("only times out once the deadline passes", async () => {
+    const fetchImpl = vi.fn().mockRejectedValue(new TypeError("Load failed"))
+    expect(await pollRecsUntilReady(deps(fetchImpl))).toBe("timeout")
+    expect(fetchImpl).toHaveBeenCalledTimes(4)
   })
 })
 

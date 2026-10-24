@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useSyncExternalStore } from "react"
+import { useLayoutEffect, useState, useSyncExternalStore } from "react"
 import { toast } from "sonner"
 import { createArtistFeedback, type ArtistFeedback } from "@/lib/client/artist-signals"
 
@@ -60,8 +60,10 @@ export function useArtistFeedback(opts?: UseArtistFeedbackOptions): UseArtistFee
     }
   })
 
+  // Layout effect: applied in the same commit as the rail switch, before any
+  // tap can fire (a passive effect let a same-frame thumbs-up POST the old rail).
   const railKey = opts?.railKey
-  useEffect(() => {
+  useLayoutEffect(() => {
     api.setRailKey(railKey)
   }, [api, railKey])
 
