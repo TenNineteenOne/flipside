@@ -48,4 +48,13 @@ Guards concurrent calls with the controller's synchronous re-entry flag. An Expl
 "Explore failed" toast. Both endpoints return after
 *scheduling* (not completion) — the toast says "loading", and `localStorage["explore-regen-
 at"]` signals `ExploreClient` to begin poll-swapping ([[pages-and-components]]). Honest
-async copy was the fix in #146.
+async copy was the fix in #146. The flag is the epoch ms written **before** the POSTs
+(the server stamps `generated_at` at build start), so Explore treats rails with
+`generatedAt >= flag` as already fresh; an Explore failure (non-429) removes it. Shuffle,
+Apply and the Explore cold start write the same flag (#175 sweep 2 Y3).
+
+Connected sources: blur saves a Last.fm / stats.fm username when it differs from the last
+value the server **accepted**; the "connected · @name" status and Sync use that saved
+value, never an unsaved or rejected draft. Genre pickers (onboarding + Settings) cap at
+50 (`MAX_SELECTED_GENRES`), matching `PATCH /api/settings`, which rejects the whole patch
+above that.
