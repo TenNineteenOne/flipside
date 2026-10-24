@@ -53,16 +53,33 @@ export function isEligibleForCooldown(
   return true
 }
 
+type QueryRows<T> = PromiseLike<{ data: T[] | null }>
+
+/**
+ * Reads a caller already has in flight (#175 E4b: Explore's user context reads
+ * the same rows). `listened` must hold every row with an `artist_id` (and
+ * `lastfm_artist_name` when the policy uses `nameFallback`); `thumbsDown` the
+ * user's active thumbs-down feedback. Pass settled promises (`Promise.resolve`
+ * a query builder) so the request runs once.
+ */
+export interface PreloadedRows {
+  listened?: QueryRows<{ artist_id: string | null; play_count?: number | null; lastfm_artist_name?: string | null }>
+  thumbsDown?: QueryRows<{ artist_id: string }>
+}
+
 export async function loadExclusions(
   supabase: Pick<SupabaseClient, "from">,
   userId: string,
   policy: ExclusionPolicy,
   now: Date = new Date(),
+  preloaded: PreloadedRows = {},
 ): Promise<Exclusions> {
   const cooldownStart = new Date(now.getTime() - COOLDOWN_DAYS * DAY_MS).toISOString()
   const [listened, thumbsDown, seen, skipped] = await Promise.all([
-    supabase.from("listened_artists").select("artist_id, lastfm_artist_name, play_count").eq("user_id", userId),
-    supabase.from("feedback").select("artist_id").eq("user_id", userId).eq("signal", "thumbs_down").is("deleted_at", null),
+    preloaded.listened ??
+      supabase.from("listened_artists").select("artist_id, lastfm_artist_name, play_count").eq("user_id", userId),
+    preloaded.thumbsDown ??
+      supabase.from("feedback").select("artist_id").eq("user_id", userId).eq("signal", "thumbs_down").is("deleted_at", null),
     supabase
       .from("recommendation_cache")
       .select("artist_id")

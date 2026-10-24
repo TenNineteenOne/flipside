@@ -16,9 +16,10 @@
  *   - display reads (`readForDisplay`): no TTL — a row is a row.
  *
  * Writers: the confirm collector (generation + Explore) and the tracks route.
- * Both go through `upsertGuarded`, which applies the shared-cache poisoning
- * guard: a row is never written when the name we searched iTunes with
- * disagrees with the canonical `artists.name` for that id.
+ * Both go through `upsertGuarded`. The tracks route applies the shared-cache
+ * poisoning guard (a row is never written when the name we searched iTunes
+ * with disagrees with the canonical `artists.name` for that id); collector
+ * writes skip it because they satisfy it by construction (see `collector`).
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js"
@@ -169,7 +170,17 @@ export class PreviewStore {
         }
         if (rows.length === 0) return
         try {
-          const { written, error } = await this.upsertGuarded(rows, "persist-confirms")
+          // ponytail: no canonical `artists` read here (#175 E4a) — it was one
+          // extra round-trip per flush, on Explore's critical path once per rail,
+          // and it cannot fire: every collected outcome's name is the doorway
+          // artist's name, which is either the roster row's own `name` (name-cache
+          // hit) or the input name whose `artistNameDbKey` (= toLowerCase) IS the
+          // row's `name_lower` (lookup + ensure by name; Last.fm lookups carry no
+          // Spotify id, so ensure never lands on a different-name row). Since
+          // `name_lower` is always `name.toLowerCase()`, `sameName` holds. If a
+          // writer ever confirms artists NOT from PlayableCandidates.resolve, or a
+          // Spotify-id lookup returns to generation, pass `guard: true`.
+          const { written, error } = await this.upsertGuarded(rows, "persist-confirms", false)
           const neg = written.filter((r) => r.source === "none").length
           const pos = written.length - neg
           if (error) {
@@ -241,9 +252,10 @@ export class PreviewStore {
   private async upsertGuarded(
     rows: Array<TracksRow & { name: string }>,
     tag: string,
+    guard = true,
   ): Promise<{ written: TracksRow[]; error: string | null }> {
     const canonical = new Map<string, string>()
-    const ids = rows.map((r) => r.artist_id)
+    const ids = guard ? rows.map((r) => r.artist_id) : []
     for (let i = 0; i < ids.length; i += CHUNK) {
       const { data } = await this.client
         .from("artists")

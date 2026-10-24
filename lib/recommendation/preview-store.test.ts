@@ -180,19 +180,14 @@ describe("PreviewStore.collector", () => {
     }
   })
 
-  it("poison guard: skips a row whose searched name disagrees with artists.name", async () => {
-    const fake = createFakeSupabase({
-      artists: [
-        { id: UUID_A, name: "Real Name" },
-        { id: UUID_B, name: "Boards of Canada" },
-      ],
-    })
-    vi.spyOn(console, "warn").mockImplementation(() => {})
+  it("flush is one upsert: no canonical artists read (the guard holds by construction, #175 E4a)", async () => {
+    const fake = createFakeSupabase({ artists: [{ id: UUID_A, name: "Artist" }] })
     const c = new PreviewStore(fake.client).collector()
-    c.onConfirmOutcome(positive(UUID_A, "Someone Else"))
-    c.onConfirmOutcome(negative(UUID_B, " boards OF canada ")) // case/space-insensitive match
+    c.onConfirmOutcome(positive(UUID_A))
+    c.onConfirmOutcome(negative(UUID_B))
     await c.flush()
-    expect(rows(fake).map((r) => r.artist_id)).toEqual([UUID_B])
+    expect(fake.queries.map((q) => q.table)).toEqual(["artist_tracks_cache"])
+    expect(rows(fake)).toHaveLength(2)
   })
 })
 

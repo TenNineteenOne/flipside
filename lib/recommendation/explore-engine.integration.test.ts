@@ -188,6 +188,11 @@ describe("buildExploreRails — listened + feedback exclusion", () => {
     const goodRow = h.fake.tables.artists.find((a) => a.name_lower === "goodartist")
     expect(goodRow).toBeTruthy()
     expect(ids.has(goodRow!.id)).toBe(true)
+    // #175 E4b: listened_artists + feedback are read once each per side —
+    // listened once (shared), feedback twice (thumbs-up + the shared thumbs-down).
+    const selects = (t: string) => h.fake.queries.filter((q: { table: string; op: string }) => q.table === t && q.op === "select").length
+    expect(selects("listened_artists")).toBe(1)
+    expect(selects("feedback")).toBe(2)
   }, 20000)
 })
 
@@ -195,7 +200,7 @@ describe("buildExploreRails — listened + feedback exclusion", () => {
 describe("buildExploreRails — rail failure isolation", () => {
   it("a throwing rail does not abort the others (allSettled)", async () => {
     seed(withLikedSeed())
-    // getSimilarArtistNames throws → wildcardsRail rejects. The three tag-driven
+    // similarArtists throws → wildcardsRail rejects. The three tag-driven
     // rails must still generate, and buildExploreRails must not throw.
     lf.similarThrows = true
 

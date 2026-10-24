@@ -77,6 +77,22 @@ describe("PlayableCandidates.playable (Explore one-shot)", () => {
     ])
   })
 
+  it("every confirmed artist's name matches its canonical row (why the collector skips the poison-guard read, #175 E4a)", async () => {
+    const MONO_A = "c0000000-0000-4000-8000-00000000000a"
+    const MONO_B = "c0000000-0000-4000-8000-00000000000b"
+    // name-cache hit (different casing), fresh mint, and an ambiguous name (two rows → lookup → ensure).
+    const { pipeline, fake } = setup({
+      artists: [artistsRow(BOC, "Boards of Canada"), artistsRow(MONO_A, "MONO"), artistsRow(MONO_B, "Mono")],
+    })
+    const out = await pipeline.playable(["boards of canada", "Brand New Name", "mono"], 5)
+    expect(out.size).toBe(3)
+    for (const a of out.values()) {
+      const row = fake.tables.artists.find((r) => r.id === a.id)!
+      expect(a.name.toLowerCase().trim()).toBe(String(row.name).toLowerCase().trim())
+    }
+    expect(fake.tables.artist_tracks_cache).toHaveLength(3)
+  })
+
   it("rehydrate: cached positive skips iTunes; fresh negative is dropped without iTunes", async () => {
     const { pipeline, calls } = setup({
       artists: [artistsRow(POS, "Warm"), artistsRow(NEG, "Dead")],

@@ -109,13 +109,32 @@ export function rankByCurve(
   return scored.map((s) => s.n)
 }
 
-async function loadUserContext(supabase: SupabaseClient, userId: string) {
+/**
+ * The listened (with an artist_id) and thumbs-down reads, issued ONCE and
+ * shared by `loadUserContext` (genre anchors, wildcard seeds) and
+ * `loadExclusions` (#175 E4b). `Promise.resolve` settles each query builder
+ * once, so awaiting it twice never re-sends the request. Explore's exclusion
+ * policy (any play, ids only) needs no null-id rows, so the not-null filter
+ * changes nothing there.
+ */
+function loadSharedRows(supabase: SupabaseClient, userId: string) {
+  return {
+    listened: Promise.resolve(
+      supabase.from('listened_artists').select('artist_id, play_count').eq('user_id', userId).not('artist_id', 'is', null),
+    ),
+    thumbsDown: Promise.resolve(
+      supabase.from('feedback').select('artist_id').eq('user_id', userId).eq('signal', 'thumbs_down').is('deleted_at', null),
+    ),
+  }
+}
+
+async function loadUserContext(supabase: SupabaseClient, userId: string, shared: ReturnType<typeof loadSharedRows>) {
   const [{ data: user }, { data: seedArtists }, { data: listenedRows }, { data: thumbsUp }, { data: thumbsDown }] = await Promise.all([
     supabase.from('users').select('id, selected_genres, adventurous').eq('id', userId).maybeSingle(),
     supabase.from('seed_artists').select('artist_id, name').eq('user_id', userId),
-    supabase.from('listened_artists').select('artist_id, play_count').eq('user_id', userId).not('artist_id', 'is', null),
+    shared.listened,
     supabase.from('feedback').select('artist_id').eq('user_id', userId).eq('signal', 'thumbs_up').is('deleted_at', null),
-    supabase.from('feedback').select('artist_id').eq('user_id', userId).eq('signal', 'thumbs_down').is('deleted_at', null),
+    shared.thumbsDown,
   ])
 
   // Hydrate listened artists with their genres via the canonical `artists`
@@ -969,9 +988,10 @@ export async function buildExploreRails(
   // Explore's exclusion policy (#175 D3): any listened play hides (owner
   // decision #3 — explicit, not an accident), ids only; plus thumbs-down and
   // the 7-day seen / dismissed cooldown — all applied before confirm.
+  const shared = loadSharedRows(supabase, input.userId)
   const [ctx, exclusions] = await Promise.all([
-    loadUserContext(supabase, input.userId),
-    loadExclusions(supabase, input.userId, { playThreshold: 'any', nameFallback: false }),
+    loadUserContext(supabase, input.userId, shared),
+    loadExclusions(supabase, input.userId, { playThreshold: 'any', nameFallback: false }, undefined, shared),
   ])
 
   // allSettled so one rail throwing doesn't nuke the whole explore generation.
