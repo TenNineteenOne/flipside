@@ -52,7 +52,10 @@ The Feed ("For You") pipeline. Entry point: `buildRecommendations(input)` in
     `search?entity=song` → **Spotify `/artists/{id}/top-tracks`** fallback. Artists with no
     playable preview are **dropped**. Every live outcome is collected for persistence.
 13. **Write Tier 1** (`writeScored`) — upsert ≤8 rows to `recommendation_cache` (re-checks
-    cooldown fresh from the DB as a safety net).
+    cooldown fresh from the DB as a safety net; a failed read writes nothing). An artist
+    seen more than 7 days ago (no `skip_at`) **resurfaces**: written with `seen_at: null` and
+    a fresh `created_at` so the nightly 3-day unseen expiry doesn't drop it (owner decision
+    D1, #175 F26). Upserts never carry `skip_at`, so a concurrent dismiss is never overwritten.
 14. **Return fast** — the result carries `count`, `pending`, one `finish()` continuation,
     and `metrics`.
 15. **Background** (`finish()` via `after()`) — confirm the rest of the primary pool

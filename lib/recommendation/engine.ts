@@ -684,9 +684,18 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
    * cooldown-ineligible rows and ids already written this run. Returns the
    * number of rows successfully upserted.
    *
-   * Preserves ALL existing behaviour: cooldown filtering, row shape, expires_at,
-   * upsert onConflict. Fetches cooldown state fresh from DB for the given items
-   * so concurrent phases never clobber a live seen_at/skip_at.
+   * Cooldown state is read fresh from the DB for the given items. Writes:
+   *   - new / never-seen rows: the payload carries NO seen_at / skip_at, so a
+   *     new row gets the column defaults (null) and an existing row keeps
+   *     whatever is live — a dismiss landing between our read and this write
+   *     is never overwritten (lost-update guard).
+   *   - resurfaced rows (seen > 7 days ago, no skip_at — owner decision D1,
+   *     #175 F26): `seen_at: null` so the feed shows them again, and
+   *     `created_at: now` so the nightly cron's 3-day unseen expiry doesn't
+   *     expire them immediately. Still no skip_at in the payload.
+   * The two kinds go in separate upserts because PostgREST upserts one column
+   * set per request: supabase-js sends the UNION of the rows' keys as
+   * `columns`, and a key missing from one row is written as NULL for it.
    */
   async function writeScored(items: ScoredArtist[]): Promise<number> {
     // Exclude ids already written in a previous phase
@@ -701,58 +710,49 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
       .in('artist_id', ids)
 
     // Fail safe (#175 F17): without the cooldown read every item looks "not in
-    // cache" and the upsert would null out seen_at/skip_at — resurrecting
-    // dismissed artists. Write nothing instead.
+    // cache" and could be resurfaced or written over a live dismissal. Write
+    // nothing instead.
     if (readErr) {
       console.error(`[engine] cooldown_read_error source=${source} err=${readErr.message}`)
       return 0
     }
 
-    const existingSeenAt = new Map<string, string | null>()
-    const existingSkipAt = new Map<string, string | null>()
-    for (const row of existingCache ?? []) {
-      existingSeenAt.set(row.artist_id, row.seen_at)
-      existingSkipAt.set(row.artist_id, row.skip_at)
+    const existing = new Map<string, { seen_at: string | null; skip_at: string | null }>()
+    for (const row of existingCache ?? []) existing.set(row.artist_id, row)
+
+    const plain = []
+    const resurfaced = []
+    for (const item of fresh) {
+      const prev = existing.get(item.artist.id)
+      if (prev && !isEligibleForCooldown(prev.seen_at, prev.skip_at, now)) continue
+      const row = {
+        user_id: userId,
+        artist_id: item.artist.id,
+        artist_data: item.artist,
+        score: item.score,
+        why: item.why,
+        source: item.source,
+        expires_at: expiresAt.toISOString(),
+      }
+      if (prev?.seen_at) resurfaced.push({ ...row, seen_at: null, created_at: now.toISOString() })
+      else plain.push(row)
     }
 
-    const rows = fresh
-      .filter((item) => {
-        const seenAt = existingSeenAt.get(item.artist.id)
-        const skipAt = existingSkipAt.get(item.artist.id)
-        // Not in cache → eligible. In cache → check both cooldowns.
-        if (seenAt === undefined && skipAt === undefined) return true
-        return isEligibleForCooldown(seenAt, skipAt, now)
-      })
-      .map((item) => {
-        const previousSeenAt = existingSeenAt.get(item.artist.id)
-        const previousSkipAt = existingSkipAt.get(item.artist.id)
-        return {
-          user_id: userId,
-          artist_id: item.artist.id,
-          artist_data: item.artist,
-          score: item.score,
-          why: item.why,
-          source: item.source,
-          expires_at: expiresAt.toISOString(),
-          // Preserve existing cooldown state on re-surface so the window doesn't reset.
-          ...(previousSeenAt !== undefined ? { seen_at: previousSeenAt } : { seen_at: null }),
-          ...(previousSkipAt !== undefined ? { skip_at: previousSkipAt } : { skip_at: null }),
-        }
-      })
-
-    if (rows.length === 0) return 0
-
-    const { error } = await supabase
-      .from('recommendation_cache')
-      .upsert(rows, { onConflict: 'user_id,artist_id' })
-
-    if (error) {
-      console.error(`[engine] upsert_error source=${source} err=${error.message}`)
-      return 0
+    let written = 0
+    for (const rows of [plain, resurfaced]) {
+      if (rows.length === 0) continue
+      const { error } = await supabase
+        .from('recommendation_cache')
+        .upsert(rows, { onConflict: 'user_id,artist_id' })
+      if (error) {
+        console.error(`[engine] upsert_error source=${source} err=${error.message}`)
+        continue
+      }
+      for (const row of rows) writtenIds.add(row.artist_id)
+      written += rows.length
+      if (rows === resurfaced) console.log(`[engine] resurfaced source=${source} n=${rows.length}`)
     }
-
-    for (const row of rows) writtenIds.add(row.artist_id)
-    return rows.length
+    return written
   }
 
   // ── Tier 1 (blocking): confirm FIRST_BATCH_TARGET artists, write, return fast ──

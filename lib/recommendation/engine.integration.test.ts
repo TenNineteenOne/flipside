@@ -56,6 +56,7 @@ const tagArtists = new Map<string, string[]>()
 
 // Imported AFTER mocks are registered.
 import { buildRecommendations } from "./engine"
+import { getUnseenRecommendations } from "./feed-query"
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 function track(seed: string): Track {
@@ -476,6 +477,73 @@ describe("buildRecommendations — seed provenance casing (#175 F20)", () => {
 
     const row = cacheRows().find((r) => r.artist_data?.name.toLowerCase() === "boards of canada")
     expect(row?.why.sourceArtists.sort()).toEqual(["SeedA", "SeedB"])
+  })
+})
+
+// ── #175 F26 (owner decision D1): seen > 7 days ago resurfaces ──────────────
+describe("buildRecommendations — resurfacing (#175 F26 / D1)", () => {
+  it("a seen-long-ago artist is rewritten unseen with a fresh created_at and reaches the feed; dismissed stays hidden", async () => {
+    const oldId = "f0000000-0000-4000-8000-000000000005"
+    const skipId = "f0000000-0000-4000-8000-000000000006"
+    const longAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString()
+    seed({
+      seed_artists: [{ user_id: "u1", name: "SeedA" }],
+      artists: [artistsRow(oldId, "SeenLongAgo"), artistsRow(skipId, "Dismissed")],
+      recommendation_cache: [
+        { id: "c1", user_id: "u1", artist_id: oldId, seen_at: longAgo, skip_at: null, created_at: longAgo, expires_at: longAgo },
+        { id: "c2", user_id: "u1", artist_id: skipId, seen_at: longAgo, skip_at: longAgo, created_at: longAgo, expires_at: longAgo },
+      ],
+    })
+    lf.similars.set("SeedA", similarRefs(["SeenLongAgo", "Dismissed", "Fresh0"]))
+
+    const result = await buildRecommendations(baseInput())
+    await result.finish()
+
+    const resurfaced = cacheRows().find((r) => r.artist_id === oldId)!
+    expect(resurfaced.seen_at).toBeNull()
+    expect(new Date(resurfaced.created_at).getTime()).toBeGreaterThan(Date.now() - 60_000)
+    const dismissed = cacheRows().find((r) => r.artist_id === skipId)!
+    expect(dismissed.skip_at).toBe(longAgo) // untouched
+
+    const unseen = await getUnseenRecommendations(h.fake.client, "u1", { limit: 20, undergroundMode: false })
+    const ids = unseen.map((r) => r.artist_id)
+    expect(ids).toContain(oldId)
+    expect(ids).not.toContain(skipId)
+  })
+
+  it("never puts skip_at in an upsert payload (a concurrent dismiss can't be overwritten)", async () => {
+    const oldId = "f0000000-0000-4000-8000-000000000007"
+    const longAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString()
+    seed({
+      seed_artists: [{ user_id: "u1", name: "SeedA" }],
+      artists: [artistsRow(oldId, "SeenLongAgo")],
+      recommendation_cache: [{ id: "c1", user_id: "u1", artist_id: oldId, seen_at: longAgo, skip_at: null, created_at: longAgo }],
+    })
+    lf.similars.set("SeedA", similarRefs(["SeenLongAgo", "Fresh0"]))
+    const payloads: Row[][] = []
+    const origFrom = h.fake.client.from
+    h.fake.client.from = (t: string) => {
+      const q = origFrom(t)
+      if (t === "recommendation_cache") {
+        const origUpsert = q.upsert
+        q.upsert = (rows: Row[], o: unknown) => {
+          payloads.push(rows)
+          return origUpsert(rows, o)
+        }
+      }
+      return q
+    }
+
+    const result = await buildRecommendations(baseInput())
+    await result.finish()
+
+    expect(payloads.length).toBeGreaterThan(0)
+    for (const rows of payloads) {
+      for (const r of rows) expect(r).not.toHaveProperty("skip_at")
+      // One column set per upsert (PostgREST nulls keys missing from some rows).
+      const keySets = new Set(rows.map((r) => Object.keys(r).sort().join(",")))
+      expect(keySets.size).toBe(1)
+    }
   })
 })
 
