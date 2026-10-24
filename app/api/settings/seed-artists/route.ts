@@ -4,8 +4,7 @@ import { isValidArtistId } from "@/lib/spotify-ids"
 import { validateSeedArtists } from "@/lib/seed-artist-validation"
 import { onTasteChanged } from "@/lib/taste-change"
 import { withAuthedRoute, withAuthedCsrfRoute } from "@/lib/api/with-authed-route"
-
-const MAX_SEED_ARTISTS = 200
+import { MAX_SEED_ARTISTS, seedCapError } from "@/lib/api/seed-cap"
 
 export const GET = withAuthedRoute(async ({ userId }) => {
   const supabase = createServiceClient()
@@ -29,30 +28,20 @@ export const GET = withAuthedRoute(async ({ userId }) => {
 // error message stays "Invalid JSON body", matching this route's prior
 // behavior exactly — the wrapper's built-in body parser says "Invalid JSON".
 export const POST = withAuthedCsrfRoute(async ({ userId, request }) => {
-  let body: { artists?: unknown }
+  let body: { artists?: unknown } | null
   try {
     body = await request.json()
   } catch {
     return apiError("Invalid JSON body", 400)
   }
 
-  const result = validateSeedArtists(body.artists, { min: 1, max: MAX_SEED_ARTISTS })
+  const result = validateSeedArtists(body?.artists, { min: 1, max: MAX_SEED_ARTISTS })
   if (!result.ok) return apiError(result.error, 400)
 
   const supabase = createServiceClient()
 
-  const { data: existingRows, error: existingError } = await supabase
-    .from("seed_artists")
-    .select("artist_id")
-    .eq("user_id", userId)
-
-  if (existingError) return dbError(existingError, "settings/seed-artists/list")
-
-  const existingIds = new Set((existingRows ?? []).map((r) => r.artist_id))
-  const newIds = result.artists.filter((a) => !existingIds.has(a.id))
-  if (existingIds.size + newIds.length > MAX_SEED_ARTISTS) {
-    return apiError(`Cannot exceed ${MAX_SEED_ARTISTS} seed artists`, 400)
-  }
+  const capped = await seedCapError(supabase, userId, result.artists, "settings/seed-artists/list")
+  if (capped) return capped
 
   const rows = result.artists.map((a) => ({
     user_id: userId,

@@ -40,6 +40,7 @@ export const PATCH = withAuthedJsonRoute(async ({ userId, body: rawBody }) => {
   }
 
   if (body.lastfmUsername !== undefined) {
+    if (typeof body.lastfmUsername !== "string") return apiError("Invalid Last.fm username format", 400)
     const lfmUsername = body.lastfmUsername.trim()
     if (lfmUsername && !/^[a-zA-Z][a-zA-Z0-9_-]{0,24}$/.test(lfmUsername)) {
       return apiError("Invalid Last.fm username format", 400)
@@ -48,6 +49,7 @@ export const PATCH = withAuthedJsonRoute(async ({ userId, body: rawBody }) => {
   }
 
   if (body.statsfmUsername !== undefined) {
+    if (typeof body.statsfmUsername !== "string") return apiError("Invalid stats.fm username format", 400)
     const sfmUsername = body.statsfmUsername.trim()
     if (sfmUsername && !/^[a-zA-Z0-9._-]{1,30}$/.test(sfmUsername)) {
       return apiError("Invalid stats.fm username format", 400)
