@@ -592,3 +592,41 @@ describe("buildRecommendations — picked seeds always used (#175 F-A)", () => {
     }
   })
 })
+
+// ── #175 F-B (owner decision D1): liked / saved never resurface ─────────────
+describe("buildRecommendations — liked and saved never resurface (#175 F-B)", () => {
+  it("thumbs-up and saved artists stay hidden past the cooldown and after their cache row is gone", async () => {
+    const id = (n: number) => `f0000000-0000-4000-8000-0000000000${10 + n}`
+    const longAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString()
+    const old = { seen_at: longAgo, skip_at: null, created_at: longAgo, expires_at: longAgo }
+    seed({
+      seed_artists: [{ user_id: "u1", name: "SeedA" }],
+      artists: [
+        artistsRow(id(1), "LikedOld"),
+        artistsRow(id(2), "SavedOld"),
+        artistsRow(id(3), "LikedGone"),
+        artistsRow(id(4), "PassedBy"),
+      ],
+      feedback: [
+        { id: "fb1", user_id: "u1", artist_id: id(1), signal: "thumbs_up", deleted_at: null },
+        { id: "fb2", user_id: "u1", artist_id: id(3), signal: "thumbs_up", deleted_at: null },
+      ],
+      saves: [{ id: "sv1", user_id: "u1", artist_id: id(2) }],
+      recommendation_cache: [
+        { id: "c1", user_id: "u1", artist_id: id(1), ...old },
+        { id: "c2", user_id: "u1", artist_id: id(2), ...old },
+        { id: "c4", user_id: "u1", artist_id: id(4), ...old },
+      ],
+    })
+    lf.similars.set("SeedA", similarRefs(["LikedOld", "SavedOld", "LikedGone", "PassedBy"]))
+
+    const result = await buildRecommendations(baseInput())
+    await result.finish()
+
+    const byId = new Map(cacheRows().map((r) => [r.artist_id, r]))
+    expect(byId.get(id(1))!.seen_at).toBe(longAgo)
+    expect(byId.get(id(2))!.seen_at).toBe(longAgo)
+    expect(byId.has(id(3))).toBe(false)
+    expect(byId.get(id(4))!.seen_at).toBeNull() // scrolled-past still resurfaces (D1)
+  })
+})

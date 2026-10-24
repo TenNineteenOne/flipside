@@ -72,6 +72,13 @@ describe("loadExclusions — feedback + cooldown", () => {
       expect(ex.reason(a("fresh"))).toBeNull()
     }
   })
+
+  it("liked policy (#175 F-B): thumbs-up and saved artists are hidden", async () => {
+    const ex = await load({ ...tables, saves: [{ user_id: "u1", artist_id: "saved" }] }, { ...FEED, liked: true })
+    expect(ex.reason(a("up"))).toBe("liked")
+    expect(ex.reason(a("saved"))).toBe("liked")
+    expect(ex.reason(a("seen8"))).toBeNull()
+  })
 })
 
 describe("loadExclusions — reads past the 1000-row cap (#175 F16)", () => {

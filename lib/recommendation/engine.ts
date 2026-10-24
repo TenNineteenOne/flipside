@@ -509,7 +509,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
   // threshold (by id, or by name for id-less history rows), and the 7-day
   // seen / dismissed cooldown — applied BEFORE confirm so no iTunes call is
   // spent on an artist writeScored would discard.
-  const exclusions = await loadExclusions(supabase, userId, { playThreshold, nameFallback: true })
+  const exclusions = await loadExclusions(supabase, userId, { playThreshold, nameFallback: true, liked: true })
   // Distinct ids hidden as listened (baseline counted per id, not per name).
   const filtListenedIds = new Set<string>()
   /** Every feed candidate gate: exclusions + underground cap + genre filter. */
