@@ -66,4 +66,3 @@ See `docs/_sweeps/research-*.md` and [[spotify-dependency]]:
 - **MusicBrainz** — keyless (1 req/s, User-Agent required); url-rels return an artist's
   **Spotify URL** → recover the Spotify ID without the Spotify API.
 - **ListenBrainz**, **TheAudioDB**, **Discogs**, **Wikidata/Commons** — secondary.
-- `scripts/mb-coverage-spike.ts` is a research spike only (not production).
