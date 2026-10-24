@@ -3,7 +3,7 @@ import { safeAuth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, apiUnauthorized } from "@/lib/errors"
 import { isValidArtistId } from "@/lib/spotify-ids"
-import { runItunes } from "@/lib/itunes-limit"
+import { itunesFetch } from "@/lib/music-provider/itunes"
 
 interface ITunesArtistResult {
   artistId: number
@@ -45,35 +45,27 @@ function isSafeAppleUrl(raw: string): boolean {
   }
 }
 
-async function resolveAppleMusicUrl(name: string): Promise<string | null> {
+/**
+ * Live iTunes artist lookup. `null` = no trusted match (negatively cacheable);
+ * `undefined` = skipped because the iTunes breaker is open (transient — do
+ * NOT negatively cache it).
+ */
+async function resolveAppleMusicUrl(name: string): Promise<string | null | undefined> {
   const url =
     `https://itunes.apple.com/search?term=${encodeURIComponent(name)}` +
     `&entity=musicArtist&limit=1`
-  let data: ITunesResponse
-  try {
-    data = await runItunes(async () => {
-      let res: Response
-      try {
-        res = await fetch(url, { signal: AbortSignal.timeout(5000) })
-      } catch (err) {
-        console.error(`[open/apple_music] itunes fetch failed name="${name}" err=${String(err)}`)
-        throw err
-      }
-      if (!res.ok) {
-        console.error(`[open/apple_music] itunes status=${res.status} name="${name}"`)
-        throw new Error(`itunes ${res.status}`)
-      }
-      try {
-        return (await res.json()) as ITunesResponse
-      } catch (err) {
-        console.error(`[open/apple_music] itunes json parse failed name="${name}" err=${String(err)}`)
-        throw err
-      }
-    })
-  } catch {
+  const r = await itunesFetch<ITunesResponse>(url, 5000)
+  if (!r.ok) {
+    if (r.reason === "breaker") {
+      console.log(`[open/apple_music] itunes breaker open, skip name="${name}"`)
+      return undefined
+    }
+    if (r.reason === "http") console.error(`[open/apple_music] itunes status=${r.status} name="${name}"`)
+    else if (r.reason === "network") console.error(`[open/apple_music] itunes fetch failed name="${name}" err=${String(r.error)}`)
+    else console.error(`[open/apple_music] itunes json parse failed name="${name}" err=${String(r.error)}`)
     return null
   }
-  const hit = data.results?.[0]
+  const hit = r.data?.results?.[0]
   if (!hit || typeof hit.artistName !== "string" || typeof hit.artistLinkUrl !== "string") {
     return null
   }
@@ -138,18 +130,20 @@ export async function GET(
   // Resolve + cache (upsert null on miss to negatively cache until TTL expiry,
   // so repeated clicks on an unresolvable artist don't hammer iTunes)
   const resolved = await resolveAppleMusicUrl(name)
-  const { error: upsertError } = await supabase
-    .from("artist_external_links")
-    .upsert(
-      {
-        artist_id: artistId,
-        apple_music_url: resolved,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "artist_id" }
-    )
-  if (upsertError) {
-    console.error(`[open/apple_music] cache upsert failed id=${artistId} err="${upsertError.message}"`)
+  if (resolved !== undefined) {
+    const { error: upsertError } = await supabase
+      .from("artist_external_links")
+      .upsert(
+        {
+          artist_id: artistId,
+          apple_music_url: resolved,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "artist_id" }
+      )
+    if (upsertError) {
+      console.error(`[open/apple_music] cache upsert failed id=${artistId} err="${upsertError.message}"`)
+    }
   }
 
   return NextResponse.redirect(resolved ?? appleMusicSearchUrl(name), 302)
