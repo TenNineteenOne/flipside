@@ -1,8 +1,8 @@
 import { apiError } from "@/lib/errors"
 import { createServiceClient } from "@/lib/supabase/server"
 import { withAuthedCsrfRoute } from "@/lib/api/with-authed-route"
-import { accumulateLastFmHistory } from "@/lib/listened-artists"
-import { accumulateStatsFmHistory } from "@/lib/statsfm-listened-artists"
+import { accumulateLastFmHistory } from "@/lib/history/lastfm-syncer"
+import { accumulateStatsFmHistory } from "@/lib/history/statsfm-syncer"
 import { decryptUsername } from "@/lib/crypto/username"
 
 const COOLDOWN_MS = 15 * 60_000

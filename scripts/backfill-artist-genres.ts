@@ -40,11 +40,12 @@ import { join } from 'path'
 import { config as loadEnv } from 'dotenv'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { Artist } from '../lib/music-provider'
+import { artistNameKey } from '../lib/artist-identity/name-key'
+import { createMbLimiter } from '../lib/music-provider/musicbrainz'
 
 // ── Config ───────────────────────────────────────────────────────────────
 
 const MB_BASE = 'https://musicbrainz.org/ws/2'
-const MB_RATE_MS = 1000                // MB enforces 1 req/s
 const MB_USER_AGENT = 'Flipside/0.1.0 ( fluxuate27@gmail.com )'
 const MB_MIN_SCORE = 85                // accept match if MB score >= this
 
@@ -202,23 +203,13 @@ async function readAllRows<T>(
   return out
 }
 
-// ── Name normalization for matching ──────────────────────────────────────
-
-function normalizeName(s: string): string {
-  return s
-    .toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')  // strip diacritics
-    .replace(/[^\w\s&-]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
 // ── MusicBrainz ──────────────────────────────────────────────────────────
 
-const mbGate = makeGate(MB_RATE_MS)
+// The shared MusicBrainz 1 req/s limiter (lib/music-provider/musicbrainz.ts).
+const mbLimiter = createMbLimiter()
 
 async function mbFetch(pathAndQuery: string): Promise<unknown | null> {
-  return mbGate(async () => {
+  return mbLimiter.run(async () => {
     try {
       const res = await fetch(`${MB_BASE}${pathAndQuery}`, {
         headers: { 'User-Agent': MB_USER_AGENT, 'Accept': 'application/json' },
@@ -251,10 +242,10 @@ async function mbSearchArtist(name: string): Promise<MbSearchArtist | null> {
   const data = await mbFetch(url) as { artists?: MbSearchArtist[] } | null
   if (!data?.artists?.length) return null
 
-  const nameNorm = normalizeName(name)
+  const nameNorm = artistNameKey(name)
   // Prefer: exact normalized name match AND score >= MIN_SCORE; else top score if >= MIN_SCORE.
   const ranked = [...data.artists].sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-  const exact = ranked.find((a) => normalizeName(a.name) === nameNorm && (a.score ?? 0) >= MB_MIN_SCORE)
+  const exact = ranked.find((a) => artistNameKey(a.name) === nameNorm && (a.score ?? 0) >= MB_MIN_SCORE)
   if (exact) return exact
   const top = ranked[0]
   if ((top.score ?? 0) >= MB_MIN_SCORE) return top

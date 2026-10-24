@@ -14,7 +14,7 @@
 import { musicProvider } from '@/lib/music-provider/provider'
 import type { Artist, Track } from '@/lib/music-provider/types'
 import { createServiceClient } from '@/lib/supabase/server'
-import { ArtistNameCache } from './artist-name-cache'
+import { ArtistIdentity } from '@/lib/artist-identity'
 import { resolveArtistsByName } from './resolve-candidates'
 import { buildEnrichArtist } from './enrich-artist'
 import { getTagArtistNames, buildConfirmPreview, buildMintArtist, lastfmResolve, rehydrateTopTracks } from './engine'
@@ -214,13 +214,12 @@ async function resolveAndFilter(
 ): Promise<Artist[]> {
   const unique = [...new Set(names.filter(Boolean))]
   if (unique.length === 0) return []
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const nameCache = new ArtistNameCache(supabase as any)
+  const nameCache = new ArtistIdentity(supabase)
   const resolved = await resolveArtistsByName(unique, {
     cache: nameCache,
     searchArtists: (name) => lastfmResolve(name),
     enrichArtist: buildEnrichArtist(),
-    mintArtist: buildMintArtist(supabase),
+    mintArtist: buildMintArtist(nameCache),
   })
 
   // Playability guarantee (#143): confirm previews for only the artists that

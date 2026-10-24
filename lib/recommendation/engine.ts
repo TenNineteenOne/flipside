@@ -9,14 +9,12 @@ import {
   type ScoredArtist,
   type SoftenedFilters,
 } from './types'
-import { ArtistNameCache } from './artist-name-cache'
 import { resolveArtistsByName } from './resolve-candidates'
-import { ensureArtist, type ArtistsSupabaseClient } from '@/lib/artists'
+import { ArtistIdentity, artistNameKey } from '@/lib/artist-identity'
 import { confirmPlayableTracks, confirmToTarget, type ConfirmOutcome } from './confirm-previews'
 import { createConfirmCollector, NEGATIVE_TTL_MS } from './persist-confirms'
 import { searchTracksByArtist } from '@/lib/music-provider/itunes'
 import { fetchArtistEnrichment, buildEnrichArtist } from './enrich-artist'
-import { normalizeArtistName } from '@/lib/listened-artists'
 import { normalizedIncludes, normalizeGenre } from '@/lib/genre/normalize'
 import { adjacentGenres } from '@/lib/genre/adjacency'
 import { cachedTagArtistNames } from '@/lib/lastfm-cache'
@@ -133,7 +131,7 @@ export async function getTagArtistNames(tag: string, limit = 20): Promise<string
  * genuine "artist not found" (null enrichment).
  *
  *  - `id: ""` — the canonical uuid is minted downstream (resolve-candidates
- *    calls mintArtist → ensureArtist by name, then re-keys `.id`).
+ *    calls mintArtist → ArtistIdentity.ensure by name, then re-keys `.id`).
  *  - `spotifyId: null` — Last.fm has no Spotify id; the #159 worker backfills it.
  *  - `imageUrl: null` — getInfo's image is a placeholder; Stage 3 fills real art.
  *
@@ -184,24 +182,17 @@ export function buildConfirmPreview(
 }
 
 /**
- * Build the `mintArtist` dep for resolve-candidates. Mints/resolves the
- * canonical `artists.id` (uuid) race-safely via `ensureArtist`.
+ * Build the `mintArtist` dep for resolve-candidates from the SAME doorway
+ * instance passed as `cache` (so an ambiguous name's rows are read once).
  *
  * Provider-agnostic (Stage 2, #157): the seed's spotifyId comes from the
  * resolved Artist's `.spotifyId` attribute, NOT `.id` (which the search adapter
  * leaves as "" — the uuid is assigned downstream). For Last.fm-resolved
- * artists spotifyId is null → `ensureArtist` get-or-creates by name. For reused
- * artists carrying a spotify_id it dedups on spotify_id as before.
+ * artists spotifyId is null → the stable by-name row. For artists carrying a
+ * spotify_id it dedups on spotify_id.
  */
-export function buildMintArtist(supabase: SupabaseClient) {
-  return (artist: Artist) =>
-    ensureArtist(supabase as unknown as ArtistsSupabaseClient, {
-      spotifyId: artist.spotifyId ?? null,
-      name: artist.name,
-      genres: artist.genres,
-      popularity: artist.popularity,
-      imageUrl: artist.imageUrl,
-    })
+export function buildMintArtist(identity: ArtistIdentity) {
+  return (artist: Artist) => identity.ensure(artist)
 }
 
 // ── Seed gathering ──────────────────────────────────────────────────────────
@@ -604,7 +595,7 @@ export async function augmentWithAdjacent(
     if (baseIds.has(artist.id)) continue
     if (opts.thumbsDownIds.has(artist.id)) continue
     if (opts.overThresholdIds.has(artist.id)) continue
-    if (opts.overThresholdNames.has(normalizeArtistName(artist.name))) continue
+    if (opts.overThresholdNames.has(artistNameKey(artist.name))) continue
     if (opts.undergroundMode && (artist.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) continue
 
     const tag = nameToTag.get(name.toLowerCase()) ?? ''
@@ -726,15 +717,14 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
 
   const candidateMap = new Map<string, { artist: Artist; seedArtists: string[] }>()
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const nameCache = new ArtistNameCache(supabase as any)
+  const nameCache = new ArtistIdentity(supabase)
 
   // Fire the secondary resolution in parallel with primary. It's still best-
   // effort and its scoring/write-back happens later in `runSecondary` (from
   // an `after()` block), but the Spotify/Last.fm round-trips now overlap with
   // the primary resolve instead of waiting for it to finish first. Shared
   // `nameCache` — writes are idempotent, names don't overlap between slices.
-  const mintArtist = buildMintArtist(supabase)
+  const mintArtist = buildMintArtist(nameCache)
 
   const secondaryResolvePromise = secondaryNames.length === 0
     ? null
@@ -796,7 +786,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     if (row.artist_id) {
       overThresholdIds.add(row.artist_id)
     } else if (row.lastfm_artist_name) {
-      overThresholdNames.add(normalizeArtistName(row.lastfm_artist_name))
+      overThresholdNames.add(artistNameKey(row.lastfm_artist_name))
     }
   }
 
@@ -807,7 +797,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     .filter(([id, val]) => {
       if (thumbsDownIds.has(id)) return false
       if (overThresholdIds.has(id)) { filtListened++; return false }
-      if (overThresholdNames.has(normalizeArtistName(val.artist.name))) { filtListened++; return false }
+      if (overThresholdNames.has(artistNameKey(val.artist.name))) { filtListened++; return false }
       if (undergroundMode && (val.artist.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) return false
       if (genre && !val.artist.genres.some((g) => normalizedIncludes(g, genre))) return false
       return true
@@ -929,7 +919,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
       if (pickedIds.has(art.id)) continue
       if (thumbsDownIds.has(art.id)) continue
       if (overThresholdIds.has(art.id)) continue
-      if (overThresholdNames.has(normalizeArtistName(art.name))) continue
+      if (overThresholdNames.has(artistNameKey(art.name))) continue
       if (undergroundMode && (art.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) continue
       if (genre && !art.genres.some((g) => normalizedIncludes(g, genre))) continue
       reserve.push(scoreCandidate(art, nameToSeeds.get(name) ?? [], `${source}_backfill`))
@@ -1103,7 +1093,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
       if (writtenIds.has(artist.id)) continue
       if (thumbsDownIds.has(artist.id)) continue
       if (overThresholdIds.has(artist.id)) continue
-      if (overThresholdNames.has(normalizeArtistName(artist.name))) continue
+      if (overThresholdNames.has(artistNameKey(artist.name))) continue
       if (undergroundMode && (artist.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) continue
       if (genre && !artist.genres.some((g) => normalizedIncludes(g, genre))) continue
       const seedArtists = nameToSeeds.get(name) ?? []

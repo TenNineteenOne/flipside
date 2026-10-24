@@ -6,11 +6,12 @@
  * `buildExploreRails`) and their helpers exercise:
  *
  *   .from(table)
- *     .select(cols)[.eq/.is/.not/.gt/.gte/.in/.order/.limit][.maybeSingle/.single]
- *     .insert(row).select(cols).single()
+ *     .select(cols)[.eq/.is/.not/.gt/.gte/.in/.or/.order/.limit][.maybeSingle/.single]
+ *     .insert(row | rows)[.select(cols).single()]
  *     .upsert(rows, { onConflict, ignoreDuplicates })
  *     .update(patch).eq(col, val)
  *     .delete().eq(col, val)
+ *   .rpc(name, args)   — dispatched to the `rpcs` handlers passed in (optional)
  *
  * Every builder node is a thenable (implements `.then`), so both
  * `await query` and `query.then(cb)` resolve to `{ data, error }` — matching
@@ -32,7 +33,13 @@ export interface FakeSupabase {
   tables: Tables
 }
 
-export function createFakeSupabase(initial: Tables = {}): FakeSupabase {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type RpcHandler = (args: any, tables: Tables) => { data?: unknown; error: { message: string } | null }
+
+export function createFakeSupabase(
+  initial: Tables = {},
+  opts: { rpcs?: Record<string, RpcHandler> } = {},
+): FakeSupabase {
   const tables: Tables = {}
   for (const k of Object.keys(initial)) tables[k] = initial[k].map((r) => ({ ...r }))
   const ensure = (t: string): Row[] => (tables[t] ??= [])
@@ -74,6 +81,11 @@ export function createFakeSupabase(initial: Tables = {}): FakeSupabase {
         return { data: rows.map((r) => ({ ...r })), error: null }
       }
       if (op === "insert") {
+        if (Array.isArray(payload)) {
+          const rows = payload.map((p: Row) => ({ id: p.id ?? randomUUID(), ...p }))
+          t.push(...rows)
+          return { data: rows.map((r: Row) => ({ ...r })), error: null }
+        }
         const row = { id: payload.id ?? randomUUID(), ...payload }
         t.push(row)
         if (single || maybeSingle) return { data: { ...row }, error: null }
@@ -165,6 +177,20 @@ export function createFakeSupabase(initial: Tables = {}): FakeSupabase {
         filters.push((r) => s.has(r[col]))
         return q
       },
+      // PostgREST `or` filter — supports `col.is.null` and `col.{eq,lt,gt}.value` terms.
+      or(expr: string) {
+        const terms = expr.split(",").map((term) => {
+          const [col, cmp, ...rest] = term.split(".")
+          const val = rest.join(".")
+          return (r: Row) =>
+            cmp === "is" && val === "null"
+              ? r[col] == null
+              : r[col] != null &&
+                (cmp === "eq" ? String(r[col]) === val : cmp === "lt" ? r[col] < val : cmp === "gt" ? r[col] > val : false)
+        })
+        filters.push((r) => terms.some((f) => f(r)))
+        return q
+      },
       order(col: string, opts: { ascending: boolean }) {
         orderSpec = { col, ascending: opts.ascending }
         return q
@@ -191,5 +217,11 @@ export function createFakeSupabase(initial: Tables = {}): FakeSupabase {
     return q
   }
 
-  return { client: { from: (t: string) => makeQuery(t) }, tables }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rpc = async (name: string, args: any) => {
+    const handler = opts.rpcs?.[name]
+    return handler ? { data: null, ...handler(args, tables) } : { data: null, error: { message: `no rpc ${name}` } }
+  }
+
+  return { client: { from: (t: string) => makeQuery(t), rpc }, tables }
 }

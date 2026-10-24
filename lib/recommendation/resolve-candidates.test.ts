@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import { resolveArtistsByName, type ResolveDeps } from "./resolve-candidates"
 import type { Artist } from "@/lib/music-provider/types"
 import type { RateLimited } from "@/lib/music-provider"
-import type { ArtistEnrichment } from "./enrich-artist"
+import type { ArtistEnrichment } from "@/lib/artist-identity/lastfm-lookup"
 
 function artist(id: string, name: string, popularity = 50): Artist {
   return { id, name, genres: [], imageUrl: null, popularity }
@@ -36,6 +36,9 @@ function makeDeps(opts: {
       },
     },
     searchArtists: opts.search ?? (async () => []),
+    // Identity mint stub: keep the adapter's id (the doorway is covered by
+    // lib/artist-identity/doorway.test.ts).
+    mintArtist: async (a) => a.id,
     enrichArtist: opts.enrichArtist,
     delayMs: 0,
     maxRetryBackoffMs: opts.maxRetryBackoffMs,
@@ -384,7 +387,7 @@ describe("resolveArtistsByName", () => {
     const deps: ResolveDeps = { ...makeDeps({ search, cacheWrites: writes }), mintArtist }
     const r = await resolveArtistsByName(["A"], deps)
 
-    // mintArtist sees a null spotifyId → ensureArtist mints by name.
+    // mintArtist sees a null spotifyId → identity.ensure lands on the by-name row.
     expect(mintArtist.mock.calls[0][0].spotifyId).toBeNull()
     const resolved = r.resolved.get("A")!
     expect(resolved.id).toBe("uuid-lfm")
