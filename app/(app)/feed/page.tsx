@@ -24,6 +24,18 @@ export default async function FeedPage() {
     redirect("/sign-in?reauth=1") // stale JWT, row gone: the proxy lets this through
   }
 
+  // Resume onboarding: the proxy sends a signed-in "/" here, so this is the
+  // only way back for someone who signed up and left before finishing. Same
+  // rule as /api/onboarding/check; the onboarding PATCH stamps
+  // onboarding_completed_at (even on Skip), so finishing can't loop back.
+  if (!user.onboarding_completed_at && !user.lastfm_username) {
+    const { count } = await supabase
+      .from("seed_artists")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id)
+    if ((count ?? 0) === 0) redirect("/onboarding")
+  }
+
   // Fetch cached recommendations, re-filtered by the user's current
   // underground_mode so a just-toggled setting is honored on first paint
   // instead of waiting for the client poll to replace the list.

@@ -4,6 +4,9 @@ import { useEffect, useRef, useState } from "react"
 import Image from "next/image"
 import { Search, X } from "lucide-react"
 
+/** /api/onboarding/search ignores shorter queries; don't search or say "No artists found". */
+const MIN_QUERY = 2
+
 type SearchError =
   | "unauth"
   | "rate-limited"
@@ -101,7 +104,7 @@ export function ArtistSearch({ selected, onAdd, onRemove, cap, minForHint = 3 }:
     if (debounceRef.current) clearTimeout(debounceRef.current)
     abortRef.current?.abort()
     setResolveFailedId(null)
-    if (!query.trim()) { setResults([]); setError(null); setDegraded(false); return }
+    if (query.trim().length < MIN_QUERY) { setResults([]); setError(null); setDegraded(false); setSearching(false); return }
 
     debounceRef.current = setTimeout(async () => {
       const aborter = new AbortController()
@@ -198,7 +201,7 @@ export function ArtistSearch({ selected, onAdd, onRemove, cap, minForHint = 3 }:
           Showing cached results — live search is rate-limited
         </div>
       )}
-      {!error && !searching && query.trim().length > 0 && results.length === 0 && (
+      {!error && !searching && query.trim().length >= MIN_QUERY && results.length === 0 && (
         <div className="mono muted" style={{ fontSize: 11, textAlign: "center", padding: "12px 0" }}>
           No artists found for &ldquo;{query.trim()}&rdquo; — try a different spelling
         </div>

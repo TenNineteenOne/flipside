@@ -10,10 +10,12 @@ import { ArtistSearch, type SpotifyArtist } from "@/components/onboarding/artist
 import { PlatformPicker } from "@/components/settings/platform-picker"
 import { DEFAULT_MUSIC_PLATFORM, type MusicPlatform } from "@/lib/music-links"
 import { postGenerate } from "@/lib/client/feed-generation"
-import { patchSettings, SettingsSaveError, type SettingsPatch } from "@/lib/settings/patch-settings"
+import { MAX_SELECTED_GENRES, patchSettings, SettingsSaveError, type SettingsPatch } from "@/lib/settings/patch-settings"
 
 const ARTIST_CAP = 200
-const GENRE_CAP = 200
+const GENRE_CAP = MAX_SELECTED_GENRES
+/** app/api/onboarding/seeds validates `{ min: 3 }`. */
+const MIN_SEEDS = 3
 
 // ── Main component ────────────────────────────────────────────────────────────
 
@@ -65,6 +67,9 @@ export default function OnboardingPage() {
     selectedGenres.length > 0 ||
     lastfmUsername.trim().length > 0 ||
     statsfmUsername.trim().length > 0
+  // POST /api/onboarding/seeds rejects fewer than MIN_SEEDS, so 1–2 picks
+  // would be silently dropped: block "Get started" until they add more or remove them.
+  const artistsShort = selectedArtists.length > 0 && selectedArtists.length < MIN_SEEDS
 
   async function handleContinue(skip = false) {
     if (saving) return
@@ -101,7 +106,7 @@ export default function OnboardingPage() {
       }
 
       const artistsToSave = selectedArtists.slice(0, ARTIST_CAP)
-      if (!skip && artistsToSave.length >= 3) {
+      if (!skip && artistsToSave.length >= MIN_SEEDS) {
         promises.push(fetch("/api/onboarding/seeds", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -285,10 +290,15 @@ export default function OnboardingPage() {
 
         {/* Actions */}
         <div className="col gap-10" style={{ marginTop: 28 }}>
+          {artistsShort && (
+            <div className="muted" role="status" style={{ fontSize: 11, textAlign: "center" }}>
+              Add {MIN_SEEDS - selectedArtists.length} more artist{MIN_SEEDS - selectedArtists.length === 1 ? "" : "s"} to use that path, or remove {selectedArtists.length === 1 ? "it" : "them"}
+            </div>
+          )}
           <button
             className="btn btn-primary btn-block"
             onClick={() => handleContinue(false)}
-            disabled={!hasAnyInput || saving}
+            disabled={!hasAnyInput || artistsShort || saving}
             style={{ height: 48, fontSize: 15 }}
           >
             {saving ? "Saving…" : "Get started →"}

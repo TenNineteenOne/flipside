@@ -14,6 +14,13 @@ export interface SettingsPatch {
   onboardingCompleted?: boolean
 }
 
+/**
+ * PATCH /api/settings rejects the WHOLE patch when selectedGenres is longer
+ * than this (app/api/settings/route.ts) — onboarding would lose its
+ * completion stamp, platform and Last.fm with it. Pickers cap here.
+ */
+export const MAX_SELECTED_GENRES = 50
+
 /** The server answered non-2xx. `message` is the server's error text, or "Failed to save". */
 export class SettingsSaveError extends Error {
   constructor(message: string, readonly status: number) {
