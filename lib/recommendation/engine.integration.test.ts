@@ -464,6 +464,21 @@ describe("buildRecommendations — tier1 log semantics (#175 F19)", () => {
   })
 })
 
+// ── #175 F20: seed provenance survives casing differences ───────────────────
+describe("buildRecommendations — seed provenance casing (#175 F20)", () => {
+  it("credits every seed that surfaced a candidate, whatever casing each used", async () => {
+    seed({ seed_artists: [{ user_id: "u1", name: "SeedA" }, { user_id: "u1", name: "SeedB" }] })
+    lf.similars.set("SeedA", similarRefs(["Boards of Canada"]))
+    lf.similars.set("SeedB", similarRefs(["Boards Of Canada"]))
+
+    const result = await buildRecommendations(baseInput())
+    await result.finish()
+
+    const row = cacheRows().find((r) => r.artist_data?.name.toLowerCase() === "boards of canada")
+    expect(row?.why.sourceArtists.sort()).toEqual(["SeedA", "SeedB"])
+  })
+})
+
 // ── #175 F15: genre seeds request the default tag limit ─────────────────────
 describe("buildRecommendations — genre seed tag limit (#175 F15)", () => {
   it("asks Last.fm for the default 20 artists per selected genre (not the array index)", async () => {

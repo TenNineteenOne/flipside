@@ -470,14 +470,20 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
   }))
 
   const knownNames = new Set(capSeedNames.map((n) => n.toLowerCase()))
+  // Provenance keyed by the SAME lowercase key buildRoundRobinNames dedupes on
+  // (#175 F20): "Boards of Canada" (seed A) and "Boards Of Canada" (seed B)
+  // are one candidate, so both seeds must be credited. Read via seedsOf().
   const nameToSeeds = new Map<string, string[]>()
   for (const { seed, names } of lfmResults) {
     for (const name of names) {
-      if (knownNames.has(name.toLowerCase())) continue
-      if (!nameToSeeds.has(name)) nameToSeeds.set(name, [])
-      nameToSeeds.get(name)!.push(seed)
+      const key = name.toLowerCase()
+      if (knownNames.has(key)) continue
+      const seeds = nameToSeeds.get(key)
+      if (!seeds) nameToSeeds.set(key, [seed])
+      else if (!seeds.includes(seed)) seeds.push(seed)
     }
   }
+  const seedsOf = (name: string) => nameToSeeds.get(name.toLowerCase()) ?? []
 
   const allNames = buildRoundRobinNames(lfmResults, knownNames, { tailFirst: true })
   const { blocking: uniqueNames, secondary: secondaryNames } = splitResolvePools(allNames)
@@ -535,7 +541,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
   const candsCount = new Set([...resolved.resolved.values()].map((a) => a.id)).size
   const candidateMap = new Map<string, { artist: Artist; seedArtists: string[] }>()
   for (const [name, artist] of primary.artists) {
-    const seedArtists = nameToSeeds.get(name) ?? []
+    const seedArtists = seedsOf(name)
     if (candidateMap.has(artist.id)) {
       const existing = candidateMap.get(artist.id)!
       for (const s of seedArtists) {
@@ -647,7 +653,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
     const reserve: ScoredArtist[] = []
     for (const [name, art] of sec.artists) {
       if (pickedIds.has(art.id)) continue
-      reserve.push(scoreCandidate(art, nameToSeeds.get(name) ?? [], `${source}_backfill`))
+      reserve.push(scoreCandidate(art, seedsOf(name), `${source}_backfill`))
     }
     const before = top.length
     top = backfillToTarget(top, reserve, TARGET)
@@ -794,7 +800,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
     const secondaryCandidates: Array<{ artist: Artist; seedArtists: string[] }> = []
     for (const [name, artist] of secondaryResolved.artists) {
       if (writtenIds.has(artist.id)) continue
-      const seedArtists = nameToSeeds.get(name) ?? []
+      const seedArtists = seedsOf(name)
       secondaryCandidates.push({ artist, seedArtists })
     }
 
