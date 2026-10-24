@@ -4,6 +4,7 @@ import { isValidArtistId } from "@/lib/spotify-ids"
 import { RAIL_KEYS, type RailKey } from "@/lib/recommendation/explore-engine"
 import { onTasteChanged } from "@/lib/taste-change"
 import { withAuthedJsonRoute } from "@/lib/api/with-authed-route"
+import { ensureCurrentChallenge } from "@/lib/challenges/engine"
 
 function isRailKey(v: unknown): v is RailKey {
   return typeof v === "string" && (RAIL_KEYS as readonly string[]).includes(v)
@@ -23,6 +24,15 @@ export const POST = withAuthedJsonRoute(async ({ userId, body }) => {
     return apiError("railKey must be one of adjacent | outside | wildcards | leftfield", 400)
 
   const supabase = createServiceClient()
+
+  // The feedback RPC credits the weekly challenge but no-ops when this week's
+  // row doesn't exist yet (it was only created on /explore load), so assign
+  // it first. Best-effort: never fails the feedback write.
+  if (signal === "thumbs_up") {
+    await ensureCurrentChallenge(supabase, userId).catch((err) => {
+      console.error("[feedback] ensure-challenge failed", err instanceof Error ? err.message : err)
+    })
+  }
 
   const { error: rpcError } = await supabase.rpc("rpc_record_feedback_v2", {
     p_user_id: userId,

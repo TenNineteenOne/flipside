@@ -14,6 +14,10 @@
  * challenges that can't meaningfully apply to the current user state (e.g.
  * the "new anchor" challenge when every anchor is already touched). If all
  * templates are skipped, we fall back to the default `thumbs_up_any`.
+ *
+ * The row must exist before any feedback of the week: the progress RPC
+ * no-ops without it. /explore assigns it on load (ensureWeeklyChallenge) and
+ * POST /api/feedback assigns it before a thumbs-up (ensureCurrentChallenge).
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -93,18 +97,31 @@ export function getISOWeekStart(now: Date = new Date()): string {
 }
 
 /**
+ * This week's template: one of the applicable templates, picked by a hash of
+ * the week start (#175). Varies week to week, stable within a week (reloads,
+ * and the feedback route's pre-RPC ensure, pick the same one).
+ */
+export function pickWeeklyTemplate(ctx: ChallengeApplicabilityCtx, weekStart: string): ChallengeTemplate {
+  const applicable = CHALLENGE_TEMPLATES.filter((t) => t.applicableFor(ctx))
+  if (applicable.length === 0) return CHALLENGE_TEMPLATES[0]
+  let h = 0
+  for (const ch of weekStart) h = (Math.imul(h, 31) + ch.charCodeAt(0)) >>> 0
+  return applicable[h % applicable.length]
+}
+
+/**
  * Fetch (or assign) the user's active challenge for this ISO week.
  *
- * Assignment rule: first applicable template (by declared order) that the
- * user hasn't been assigned this week. The UNIQUE (user_id, week_start,
- * challenge_key) index keeps the row idempotent — concurrent /explore
- * loads on Monday morning can't spawn duplicates.
+ * Assignment rule: pickWeeklyTemplate over the applicable templates. The
+ * UNIQUE (user_id, week_start, challenge_key) index keeps the row idempotent:
+ * concurrent assigns on Monday morning can't spawn duplicates. `ctx` may be a
+ * loader so callers that usually find an existing row skip its reads.
  */
 export async function ensureWeeklyChallenge(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: SupabaseClient<any, any, any>,
   userId: string,
-  ctx: ChallengeApplicabilityCtx,
+  ctx: ChallengeApplicabilityCtx | (() => Promise<ChallengeApplicabilityCtx>),
   now: Date = new Date(),
 ): Promise<UserChallenge | null> {
   const weekStart = getISOWeekStart(now)
@@ -129,9 +146,7 @@ export async function ensureWeeklyChallenge(
     }
   }
 
-  const pick =
-    CHALLENGE_TEMPLATES.find((t) => t.applicableFor(ctx)) ??
-    CHALLENGE_TEMPLATES[0]
+  const pick = pickWeeklyTemplate(typeof ctx === 'function' ? await ctx() : ctx, weekStart)
 
   const { data: inserted, error } = await supabase
     .from('user_challenges')
@@ -171,6 +186,40 @@ export interface UserChallenge {
  * pulls for rail generation. Keeping this synchronous + pure makes it
  * cheap to call from the /explore page.
  */
+/**
+ * Ensure the user's current-week challenge row exists, loading the
+ * applicability ctx only when it has to assign one. Same reads as the
+ * /explore page's loadChallenge (selected genres, ≤500 listened artists'
+ * primary genres, any live thumbs-up).
+ */
+export function ensureCurrentChallenge(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: SupabaseClient<any, any, any>,
+  userId: string,
+  now: Date = new Date(),
+): Promise<UserChallenge | null> {
+  return ensureWeeklyChallenge(supabase, userId, async () => {
+    const [{ data: userRow }, { data: listenedRows }, { data: thumbsUp }] = await Promise.all([
+      supabase.from('users').select('selected_genres').eq('id', userId).maybeSingle(),
+      supabase.from('listened_artists').select('artist_id').eq('user_id', userId).limit(500),
+      supabase.from('feedback').select('artist_id').eq('user_id', userId).eq('signal', 'thumbs_up').is('deleted_at', null).limit(1),
+    ])
+    const listenedIds = ((listenedRows ?? []) as Array<{ artist_id: string | null }>)
+      .map((r) => r.artist_id)
+      .filter((id): id is string => id != null)
+    const genresById = new Map<string, string[]>()
+    for (let i = 0; i < listenedIds.length; i += 200) {
+      const { data } = await supabase.from('artists').select('id, genres').in('id', listenedIds.slice(i, i + 200))
+      for (const row of data ?? []) genresById.set(row.id as string, (row.genres as string[] | null) ?? [])
+    }
+    return buildApplicabilityCtx({
+      selectedGenres: (userRow?.selected_genres as string[] | null) ?? [],
+      listened: listenedIds.map((id) => ({ genres: genresById.get(id) ?? [] })),
+      hasThumbsUp: (thumbsUp ?? []).length > 0,
+    })
+  }, now)
+}
+
 export function buildApplicabilityCtx(args: {
   selectedGenres: string[]
   listened: Array<{ genres: string[] }>
