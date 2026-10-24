@@ -1,15 +1,16 @@
 import type { Artist } from "@/lib/music-provider/types"
 import type { RateLimited } from "@/lib/music-provider"
 import { isRateLimited } from "@/lib/music-provider"
-import type { ArtistNameCache } from "./artist-name-cache"
-import { mergeEnrichment, type ArtistEnrichment } from "./enrich-artist"
+import { artistNameDbKey, type ArtistIdentity } from "@/lib/artist-identity"
+import { mergeEnrichment, type ArtistEnrichment } from "@/lib/artist-identity/lastfm-lookup"
 import { stringSimilarity } from "@/lib/history/name-utils"
 
 /** Min Dice-coefficient name similarity to accept a fuzzy (non-exact) Spotify result. */
 const FUZZY_ACCEPT_THRESHOLD = 0.8
 
 export interface ResolveDeps {
-  cache: Pick<ArtistNameCache, "batchRead" | "write">
+  /** The artist-identity doorway: unambiguous-name read + fill-only patch. */
+  cache: Pick<ArtistIdentity, "batchRead" | "write">
   /**
    * Provider-agnostic name resolver. Returns the artist array on success, an
    * empty array on no-match, or a `RateLimited` sentinel on 429. Wired to
@@ -21,14 +22,14 @@ export interface ResolveDeps {
   searchArtists: (name: string) => Promise<Artist[] | RateLimited>
   /**
    * Mint/resolve the canonical `artists.id` (uuid) for a resolved artist. The
-   * caller wires this to `ensureArtist(serviceClient, …)`, which dedups on
-   * spotify_id when the artist carries one, else get-or-creates by name.
+   * caller wires this to the SAME `ArtistIdentity` as `cache` (`identity.ensure`),
+   * which dedups on spotify_id when the artist carries one, else lands on the
+   * stable by-name row (reusing the rows `batchRead` already read).
    * Returns the uuid, or null when minting failed (e.g. DB unavailable) — in
    * which case the resolver SKIPS caching that name rather than persist a
-   * non-uuid `.id` as the identity. Optional: when omitted (legacy/tests) the
-   * resolved result is used as-is and `.id` is left untouched.
+   * non-uuid `.id` as the identity.
    */
-  mintArtist?: (artist: Artist) => Promise<string | null>
+  mintArtist: (artist: Artist) => Promise<string | null>
   /**
    * Optional enrichment — called by name in parallel with the Spotify
    * search and merged into the resolved Artist before the cache write.
@@ -108,7 +109,7 @@ export async function resolveArtistsByName(
 
   const misses: string[] = []
   for (const name of names) {
-    const hit = cached.get(name.toLowerCase())
+    const hit = cached.get(artistNameDbKey(name))
     if (hit) {
       result.resolved.set(name, hit)
       result.cacheHits++
@@ -206,27 +207,20 @@ export async function resolveArtistsByName(
         // it to null; a Spotify adapter would set the real Spotify id), so we
         // ONLY assign the minted uuid to `.id` — we never derive `.spotifyId`
         // from `.id` here.
-        if (deps.mintArtist) {
-          const uuid = await deps.mintArtist(resolvedArtist)
-          if (uuid) {
-            resolvedArtist = { ...resolvedArtist, id: uuid }
-            result.searchOk++
-            result.resolved.set(name, resolvedArtist)
-            await deps.cache.write(name, resolvedArtist)
-            firstSuccessfulSearch = false
-          } else {
-            // Mint failed (e.g. DB unavailable). We must NEVER let a non-uuid id
-            // leak downstream as the artist identity — recommendation_cache /
-            // explore now key on artists.id (a uuid FK), so a placeholder `.id`
-            // would either violate the FK or poison dedup. Drop the name: skip
-            // both the resolved map and the cache write, count as a fail.
-            result.searchFail++
-          }
-        } else {
+        const uuid = await deps.mintArtist(resolvedArtist)
+        if (uuid) {
+          resolvedArtist = { ...resolvedArtist, id: uuid }
           result.searchOk++
           result.resolved.set(name, resolvedArtist)
           await deps.cache.write(name, resolvedArtist)
           firstSuccessfulSearch = false
+        } else {
+          // Mint failed (e.g. DB unavailable). We must NEVER let a non-uuid id
+          // leak downstream as the artist identity — recommendation_cache /
+          // explore now key on artists.id (a uuid FK), so a placeholder `.id`
+          // would either violate the FK or poison dedup. Drop the name: skip
+          // both the resolved map and the cache write, count as a fail.
+          result.searchFail++
         }
       } else {
         // Avoid unhandled-rejection warnings on the enrichment promise.

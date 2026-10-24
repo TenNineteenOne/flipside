@@ -1,6 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/server"
 import { resolveUnresolvedArtistIds } from "@/lib/history/id-resolver"
-import { ensureArtists, type ArtistsSupabaseClient } from "@/lib/artists"
+import { ArtistIdentity } from "@/lib/artist-identity"
 import { upsertListenedArtists } from "@/lib/history/listened-upsert"
 
 interface StatsFmArtist {
@@ -84,8 +84,7 @@ async function batchUpsertStatsFmResolved(
   entries: ResolvedEntry[]
 ): Promise<void> {
   // Mint/resolve each incoming Spotify id → canonical artists.id (uuid).
-  const idMap = await ensureArtists(
-    supabase as unknown as ArtistsSupabaseClient,
+  const idMap = await new ArtistIdentity(supabase).ensureBySpotifyId(
     entries.map((e) => ({ spotifyId: e.spotifyId, name: e.name }))
   )
   const uuids = [...new Set([...idMap.values()])]

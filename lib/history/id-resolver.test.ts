@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 //   found ({genres, popularity}) → mints by name → artist_id
 //   null                         → genuine not-found → unresolved
 const fetchArtistEnrichment = vi.fn()
-vi.mock("@/lib/recommendation/enrich-artist", () => ({
+vi.mock("@/lib/artist-identity/lastfm-lookup", () => ({
   fetchArtistEnrichment: (...args: unknown[]) => fetchArtistEnrichment(...args),
 }))
 

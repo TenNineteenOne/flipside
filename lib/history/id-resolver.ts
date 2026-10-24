@@ -1,7 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/server"
-import { fetchArtistEnrichment } from "@/lib/recommendation/enrich-artist"
-import { ensureArtist, type ArtistsSupabaseClient } from "@/lib/artists"
-import { ArtistNameCache, type CacheSupabaseClient } from "@/lib/recommendation/artist-name-cache"
+import { ArtistIdentity } from "@/lib/artist-identity"
+import { fetchArtistEnrichment } from "@/lib/artist-identity/lastfm-lookup"
 
 // ── Name → artist_id (uuid) resolution ───────────────────────────────────────
 
@@ -16,13 +15,11 @@ interface UnresolvedRow {
  * For every name-only listened_artists row belonging to `userId` —
  * `artist_id IS NULL AND lastfm_artist_name IS NOT NULL` — that hasn't been
  * attempted in the last 7 days, resolve the canonical `artist_id` (uuid) via the
- * `artists` table first, then — since the artist NAME is already known — by
- * confirming the artist exists via Last.fm getInfo (cached) and minting a
- * canonical uuid by name. No live Spotify call: the spotify_id is backfilled
- * later by the #159 MusicBrainz worker.
+ * artist-identity doorway (`ArtistIdentity.resolve`) with a Last.fm getInfo
+ * lookup (cached). No live Spotify call: the spotify_id is backfilled later by
+ * the #159 MusicBrainz worker.
  *
- * - Table hit  → write artist_id, update id_resolution_attempted_at
- * - getInfo hit → ensureArtist (mint/resolve uuid by name), write artist_id, update timestamp
+ * - Resolved   → write artist_id, update id_resolution_attempted_at
  * - No match   → leave artist_id null, update timestamp (retry after 7 days)
  *
  * Processed in batches of RESOLUTION_BATCH_SIZE. The getInfo calls are cached
@@ -139,94 +136,37 @@ async function resolveLastFmBatch(params: {
   const now = new Date().toISOString()
   const lastfmApiKey = process.env.LASTFM_API_KEY ?? ""
 
-  // 2a. Batch-read the canonical `artists` table through the ONE doorway
-  //     lookup (ArtistNameCache.batchRead): ambiguous name_lower (>1 row) is
-  //     treated as a miss — never guessed — per the Option B doorway rule,
-  //     and read errors degrade to an empty map so we fall back to
-  //     mint-by-name exactly as before.
-  const cache = new ArtistNameCache(supabase as unknown as CacheSupabaseClient)
-  const cacheHits = await cache.batchRead(batch.map((r) => r.lastfm_artist_name))
-
-  for (const row of batch) {
-    const nameLower = row.lastfm_artist_name.toLowerCase()
-
-    // Unambiguous table hit → use its uuid directly. Ambiguous or missing
-    // names are absent from the map and fall through to mint-by-name.
-    const hit = cacheHits.get(nameLower)
-    if (hit) {
-      const res = await resolveOrMergeRow({
-        supabase,
-        userId,
-        orphanId: row.id,
-        artistId: hit.id,
-        now,
-      })
-      if (res.error) {
-        console.error(
-          `[resolveLastFmArtistIds] table-hit update failed for "${row.lastfm_artist_name}":`,
-          res.error
-        )
-      } else {
-        console.log(
-          `[resolveLastFmArtistIds] table-hit name="${row.lastfm_artist_name}" artist_id=${hit.id} spotifyId=${hit.spotifyId ?? "-"}${res.merged ? " (merged)" : ""}`
-        )
-      }
-      continue
-    }
-
-    // Cache miss (or ambiguous) — the NAME is already known, so confirm the
-    // artist exists via Last.fm getInfo (cached) and mint a canonical uuid by
-    // name. spotify_id is backfilled later by the #159 MB worker.
-    let resolvedUuid: string | null = null
-
-    try {
-      const enrichment = await fetchArtistEnrichment(row.lastfm_artist_name, lastfmApiKey)
-
+  // 2a. Resolve the batch through the artist-identity doorway. An unambiguous
+  //     `artists` name hit is used directly; otherwise — since the NAME is
+  //     already known — confirm the artist exists via Last.fm getInfo (cached)
+  //     and land on the stable by-name row (minting one if none exists).
+  //     spotify_id is backfilled later by the #159 MB worker.
+  const identity = new ArtistIdentity(supabase)
+  const resolved = await identity.resolve(
+    batch.map((r) => r.lastfm_artist_name),
+    async (name) => {
+      const enrichment = await fetchArtistEnrichment(name, lastfmApiKey)
       if (!enrichment) {
         // Genuine "artist not found" (or no apiKey / transient swallowed to null).
-        // Leave unresolved — fall through to the timestamp-only path below.
-        console.log(
-          `[resolveLastFmArtistIds] no-getInfo name="${row.lastfm_artist_name}" → unresolved`
-        )
-      } else {
-        // Mint/resolve the canonical artists.id (uuid) by name (no spotifyId).
-        const uuid = await ensureArtist(
-          supabase as unknown as ArtistsSupabaseClient,
-          {
-            name: row.lastfm_artist_name,
-            genres: enrichment.genres,
-            popularity: enrichment.popularity,
-          }
-        )
-
-        if (uuid) {
-          resolvedUuid = uuid
-          console.log(
-            `[resolveLastFmArtistIds] resolved name="${row.lastfm_artist_name}" artist_id=${uuid} (mint-by-name)`
-          )
-        } else {
-          // Mint failed → treat as no-match (degrade, don't throw).
-          console.log(
-            `[resolveLastFmArtistIds] mint-failed name="${row.lastfm_artist_name}" → unresolved`
-          )
-        }
+        console.log(`[resolveLastFmArtistIds] no-getInfo name="${name}" → unresolved`)
+        return null
       }
-    } catch (err) {
-      console.error(
-        `[resolveLastFmArtistIds] getInfo/mint threw for "${row.lastfm_artist_name}":`,
-        err instanceof Error ? err.message : err
-      )
-    }
+      return { name, genres: enrichment.genres, popularity: enrichment.popularity }
+    },
+  )
+
+  for (const row of batch) {
+    const artist = resolved.get(row.lastfm_artist_name)
 
     // Write result (resolved uuid or null) + update timestamp.
-    // When resolvedUuid is set, the update may trip the (user_id, artist_id)
-    // unique constraint if another source already owns that artist — merge in that case.
-    if (resolvedUuid) {
+    // When resolved, the update may trip the (user_id, artist_id) unique
+    // constraint if another source already owns that artist — merge in that case.
+    if (artist) {
       const res = await resolveOrMergeRow({
         supabase,
         userId,
         orphanId: row.id,
-        artistId: resolvedUuid,
+        artistId: artist.id,
         now,
       })
       if (res.error) {
@@ -234,9 +174,9 @@ async function resolveLastFmBatch(params: {
           `[resolveLastFmArtistIds] Update failed for "${row.lastfm_artist_name}":`,
           res.error
         )
-      } else if (res.merged) {
+      } else {
         console.log(
-          `[resolveLastFmArtistIds] merged orphan name="${row.lastfm_artist_name}" into existing artist_id=${resolvedUuid}`
+          `[resolveLastFmArtistIds] resolved name="${row.lastfm_artist_name}" artist_id=${artist.id} spotifyId=${artist.spotifyId ?? "-"}${res.merged ? " (merged)" : ""}`
         )
       }
     } else {

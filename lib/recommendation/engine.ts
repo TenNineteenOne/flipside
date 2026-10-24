@@ -9,9 +9,8 @@ import {
   type ScoredArtist,
   type SoftenedFilters,
 } from './types'
-import { ArtistNameCache } from './artist-name-cache'
 import { resolveArtistsByName } from './resolve-candidates'
-import { ensureArtist, type ArtistsSupabaseClient } from '@/lib/artists'
+import { ArtistIdentity } from '@/lib/artist-identity'
 import { confirmPlayableTracks, confirmToTarget, type ConfirmOutcome } from './confirm-previews'
 import { createConfirmCollector, NEGATIVE_TTL_MS } from './persist-confirms'
 import { searchTracksByArtist } from '@/lib/music-provider/itunes'
@@ -184,24 +183,17 @@ export function buildConfirmPreview(
 }
 
 /**
- * Build the `mintArtist` dep for resolve-candidates. Mints/resolves the
- * canonical `artists.id` (uuid) race-safely via `ensureArtist`.
+ * Build the `mintArtist` dep for resolve-candidates from the SAME doorway
+ * instance passed as `cache` (so an ambiguous name's rows are read once).
  *
  * Provider-agnostic (Stage 2, #157): the seed's spotifyId comes from the
  * resolved Artist's `.spotifyId` attribute, NOT `.id` (which the search adapter
  * leaves as "" — the uuid is assigned downstream). For Last.fm-resolved
- * artists spotifyId is null → `ensureArtist` get-or-creates by name. For reused
- * artists carrying a spotify_id it dedups on spotify_id as before.
+ * artists spotifyId is null → the stable by-name row. For artists carrying a
+ * spotify_id it dedups on spotify_id.
  */
-export function buildMintArtist(supabase: SupabaseClient) {
-  return (artist: Artist) =>
-    ensureArtist(supabase as unknown as ArtistsSupabaseClient, {
-      spotifyId: artist.spotifyId ?? null,
-      name: artist.name,
-      genres: artist.genres,
-      popularity: artist.popularity,
-      imageUrl: artist.imageUrl,
-    })
+export function buildMintArtist(identity: ArtistIdentity) {
+  return (artist: Artist) => identity.ensure(artist)
 }
 
 // ── Seed gathering ──────────────────────────────────────────────────────────
@@ -726,15 +718,14 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
 
   const candidateMap = new Map<string, { artist: Artist; seedArtists: string[] }>()
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const nameCache = new ArtistNameCache(supabase as any)
+  const nameCache = new ArtistIdentity(supabase)
 
   // Fire the secondary resolution in parallel with primary. It's still best-
   // effort and its scoring/write-back happens later in `runSecondary` (from
   // an `after()` block), but the Spotify/Last.fm round-trips now overlap with
   // the primary resolve instead of waiting for it to finish first. Shared
   // `nameCache` — writes are idempotent, names don't overlap between slices.
-  const mintArtist = buildMintArtist(supabase)
+  const mintArtist = buildMintArtist(nameCache)
 
   const secondaryResolvePromise = secondaryNames.length === 0
     ? null

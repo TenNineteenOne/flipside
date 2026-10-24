@@ -5,7 +5,7 @@ import {
   mergeEnrichment,
   scaleListeners,
   filterGenreTags,
-} from "./enrich-artist"
+} from "./lastfm-lookup"
 import type { Artist } from "@/lib/music-provider/types"
 
 function makeFetch(response: unknown, ok = true): typeof fetch {

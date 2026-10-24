@@ -2,9 +2,8 @@ import { apiError } from "@/lib/errors"
 import { createServiceClient } from "@/lib/supabase/server"
 import { createWindowLimiter } from "@/lib/rate-limiter"
 import { isValidSpotifyId } from "@/lib/spotify-ids"
-import { ensureArtist, type ArtistsSupabaseClient } from "@/lib/artists"
+import { ArtistIdentity } from "@/lib/artist-identity"
 import { resolveArtistExternalIds } from "@/lib/music-provider/musicbrainz"
-import { ArtistNameCache, type CacheSupabaseClient } from "@/lib/recommendation/artist-name-cache"
 import { withAuthedCsrfRoute } from "@/lib/api/with-authed-route"
 
 // Resolution is low-volume (only when a user SELECTS a Last.fm-only suggestion,
@@ -17,9 +16,9 @@ const MBID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 /**
  * Resolve a Last.fm-sourced onboarding suggestion to our internal artist uuid,
  * so a seed can persist (`artist_id` is the load-bearing key post Stage-2).
- * Tries the folded `artists` table by exact name first; on a miss, falls back
- * to MusicBrainz url-rels by mbid → a Spotify id, which we then MINT into an
- * `artists` row to obtain its uuid. Returns 404 when neither yields an id — the
+ * Tries the folded `artists` table by exact name first; on a miss (or an
+ * ambiguous name), falls back to MusicBrainz url-rels by mbid → a Spotify id,
+ * which the doorway resolves/mints by spotify_id to obtain its uuid. Returns 404 when neither yields an id — the
  * client blocks that selection. The returned `id` is a uuid the client relays
  * to the seed routes. Makes ZERO Spotify calls.
  *
@@ -48,30 +47,25 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }) => {
   }
   const mbid = typeof body.mbid === "string" && MBID_RE.test(body.mbid) ? body.mbid : null
 
-  const supabase = createServiceClient()
-
-  // 1. Folded `artists` table by exact name, through the ONE doorway lookup
-  //    (ArtistNameCache.batchRead): an ambiguous name_lower (>1 row) is a
-  //    miss — we can't safely pick one, and the MusicBrainz/mbid path
-  //    disambiguates instead. Errors degrade to a miss (empty map).
-  const cached = (
-    await new ArtistNameCache(supabase as unknown as CacheSupabaseClient).batchRead([name])
-  ).get(name.toLowerCase())
-  if (cached) {
-    return Response.json({ id: cached.id, name, imageUrl: cached.imageUrl })
-  }
-
-  // 2. MusicBrainz url-rels by mbid (keyless; 1-req/s limited internally).
-  //    The url-rel yields a Spotify id; mint it into `artists` to get a uuid.
-  if (mbid) {
-    const { spotifyId } = await resolveArtistExternalIds(mbid)
-    if (spotifyId && isValidSpotifyId(spotifyId)) {
-      const uuid = await ensureArtist(supabase as unknown as ArtistsSupabaseClient, { spotifyId, name })
-      if (uuid) {
-        console.log(`[onboard-resolve] mb-resolved name="${name}" mbid=${mbid} uuid=${uuid}`)
-        return Response.json({ id: uuid, name, imageUrl: null })
-      }
-    }
+  // Through the artist-identity doorway: an unambiguous `artists` name hit is
+  // returned as-is; otherwise (unknown OR ambiguous name) the lookup runs
+  // MusicBrainz url-rels by mbid (keyless; 1-req/s limited internally). The
+  // url-rel's Spotify id is the evidence that picks/mints the right row — the
+  // Last.fm mbid itself is only a hint. No mbid / no Spotify rel → 404.
+  let viaMb = false
+  const identity = new ArtistIdentity(createServiceClient())
+  const resolved = (
+    await identity.resolve([name], async () => {
+      if (!mbid) return null
+      const { spotifyId } = await resolveArtistExternalIds(mbid)
+      if (!spotifyId || !isValidSpotifyId(spotifyId)) return null
+      viaMb = true
+      return { spotifyId, name }
+    })
+  ).get(name)
+  if (resolved) {
+    if (viaMb) console.log(`[onboard-resolve] mb-resolved name="${name}" mbid=${mbid} uuid=${resolved.id}`)
+    return Response.json({ id: resolved.id, name, imageUrl: resolved.imageUrl })
   }
 
   console.log(`[onboard-resolve] unresolved name="${name}" mbid=${mbid ?? "-"}`)

@@ -1,6 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/server"
 import { musicProvider } from "@/lib/music-provider/provider"
-import { ensureArtists, type ArtistSeed, type ArtistsSupabaseClient } from "@/lib/artists"
+import { ArtistIdentity, type ArtistSeed } from "@/lib/artist-identity"
 import { upsertListenedArtists } from "@/lib/history/listened-upsert"
 
 // Accumulate Spotify top artists + recently played into listened_artists
@@ -55,7 +55,7 @@ async function batchUpsertSpotifyArtists(
   if (seeds.length === 0) return
 
   // Mint/resolve each incoming Spotify id → canonical artists.id (uuid).
-  const idMap = await ensureArtists(supabase as unknown as ArtistsSupabaseClient, seeds)
+  const idMap = await new ArtistIdentity(supabase).ensureBySpotifyId(seeds)
   const uuids = [...new Set([...idMap.values()])]
   if (uuids.length === 0) {
     console.log(`[accumulateSpotifyHistory] batch source=${source} no uuids minted`)
