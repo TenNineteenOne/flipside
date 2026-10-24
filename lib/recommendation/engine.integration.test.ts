@@ -7,6 +7,10 @@
  * ordering, mint identity, and the recommendation_cache writes where the
  * #143/#145/#161-class bugs actually lived.
  *
+ * Pipeline-level cases (casing, rehydrate positive/negative, persistence
+ * rules, exclusion gate) live in playable-candidates.test.ts with fake ports;
+ * this suite covers the For You wiring + scoring/picking end-to-end.
+ *
  * Seams used (no production file is modified):
  *   - vi.mock('@/lib/supabase/server')      → in-memory FakeSupabase
  *   - vi.mock('@/lib/music-provider/provider') → getSimilarArtistNames stub
@@ -32,6 +36,8 @@ const h = vi.hoisted(() => ({
   /** artist name → iTunes tracks (or null). Default: one playable track. */
   itunes: new Map<string, Track[] | null>(),
   calls: { enrich: [] as string[], similar: [] as string[], itunes: [] as string[] },
+  /** tag → Last.fm tag.gettopartists names (default: none). */
+  tagArtists: new Map<string, string[]>(),
 }))
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -55,7 +61,7 @@ vi.mock("@/lib/lastfm-cache", () => ({
     const key = name.toLowerCase()
     return h.enrichment.has(key) ? h.enrichment.get(key)! : { genres: ["indie"], popularity: 30 }
   },
-  cachedTagArtistNames: async () => [],
+  cachedTagArtistNames: async (tag: string) => h.tagArtists.get(tag) ?? [],
   cachedSimilarArtistNames: async () => [],
   cachedArtistSearch: async () => [],
 }))
@@ -134,6 +140,7 @@ beforeEach(() => {
   h.similars.clear()
   h.enrichment.clear()
   h.itunes.clear()
+  h.tagArtists.clear()
   h.calls.enrich = []
   h.calls.similar = []
   h.calls.itunes = []
@@ -374,30 +381,6 @@ describe("buildRecommendations — persist confirms (#162)", () => {
     }
   })
 
-  it("writes a confirmed-empty negative row; iTunes failure (null) writes NOTHING", async () => {
-    const negId = "1a2b3c4d-0000-4000-8000-000000000001"
-    const failId = "5e6f7a8b-0000-4000-8000-000000000002"
-    seed({
-      seed_artists: [{ user_id: "u1", name: "SeedA" }],
-      artists: [artistsRow(negId, "NegArtist"), artistsRow(failId, "FailArtist")],
-    })
-    h.similars.set("SeedA", similarRefs(["Good0", "Good1", "Good2", "NegArtist", "FailArtist"]))
-    h.itunes.set("NegArtist", []) // real [] + no spotifyId → confirmed-empty negative
-    h.itunes.set("FailArtist", null) // failure → no callback → no row
-
-    const result = await buildRecommendations(baseInput())
-    await result.runSecondary?.()
-    await result.flushConfirms?.()
-
-    const rows = tracksCacheRows()
-    const neg = rows.find((r) => r.artist_id === negId)
-    expect(neg).toBeTruthy()
-    expect(neg!.tracks).toEqual([])
-    expect(neg!.source).toBe("none")
-    // The failure artist was never definitively confirmed → no negative row.
-    expect(rows.find((r) => r.artist_id === failId)).toBeUndefined()
-  })
-
   it("run 2 makes ZERO iTunes calls for artists confirmed + persisted in run 1", async () => {
     // Pin shuffle nondeterminism so both runs resolve the same candidate set.
     const rand = vi.spyOn(Math, "random").mockReturnValue(0.42)
@@ -419,5 +402,34 @@ describe("buildRecommendations — persist confirms (#162)", () => {
     expect(h.calls.itunes).toEqual([])
 
     rand.mockRestore()
+  })
+})
+
+// ── 8. #175 D2: adjacent-bleed picks go through rehydrate ─────────────────────
+describe("buildRecommendations — adjacent bleed is rehydrated (#175 D2)", () => {
+  it("a bleed pick with a cached preview is written without an iTunes call", async () => {
+    const bleedId = "b1eed000-0000-4000-8000-000000000001"
+    seed({
+      users: [{ id: "u1", selected_genres: ["indie-rock"] }],
+      seed_artists: [{ user_id: "u1", name: "SeedA" }],
+      artists: [artistsRow(bleedId, "BleedArtist")],
+      artist_tracks_cache: [
+        { artist_id: bleedId, tracks: [track("cached-bleed")], source: "itunes", fetched_at: new Date().toISOString() },
+      ],
+    })
+    h.similars.set("SeedA", similarRefs(Array.from({ length: 10 }, (_, i) => `Base${i}`)))
+    // Every adjacent tag of indie-rock yields the bleed artist; the user's own
+    // genre (used for genre seeds) yields nothing.
+    const { adjacentGenres } = await import("@/lib/genre/adjacency")
+    for (const tag of adjacentGenres("indie-rock", "close")) h.tagArtists.set(tag, ["BleedArtist"])
+
+    const result = await buildRecommendations(baseInput())
+    await result.runSecondary?.()
+
+    const bleedRow = cacheRows().find((r) => r.artist_id === bleedId)
+    expect(bleedRow?.source).toBe("adjacent_bleed")
+    expect(bleedRow?.artist_data.topTracks[0].id).toBe("it-cached-bleed")
+    // Old code handed bleed picks `topTracks: []` (never rehydrated) → iTunes.
+    expect(h.calls.itunes).not.toContain("BleedArtist")
   })
 })

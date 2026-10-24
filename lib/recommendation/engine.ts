@@ -9,11 +9,8 @@ import {
   type ScoredArtist,
   type SoftenedFilters,
 } from './types'
-import { resolveArtistsByName } from './resolve-candidates'
-import { ArtistIdentity } from '@/lib/artist-identity'
 import { isEligibleForCooldown, loadExclusions } from './exclusions'
-import { confirmPlayableTracks, confirmToTarget, type ConfirmOutcome } from './confirm-previews'
-import { PreviewStore } from './preview-store'
+import { PlayableCandidates, type PlayablePorts } from './playable-candidates'
 import { searchTracksByArtist } from '@/lib/music-provider/itunes'
 import { fetchArtistEnrichment, buildEnrichArtist } from './enrich-artist'
 import { normalizedIncludes, normalizeGenre } from '@/lib/genre/normalize'
@@ -150,50 +147,22 @@ export function lastfmResolve(name: string): Promise<Artist[]> {
 }
 
 /**
- * Build a live confirmPreview dep for resolve-candidates. iTunes-first (free,
- * no auth, near-universal 30s previews), Spotify top-tracks as fallback. Reuses
- * any `topTracks` already on the artist (warm name-cache hit) with zero network.
- * Shared by the primary, secondary, and adjacent-bleed resolves so the
- * playability guarantee holds across the whole For You pipeline.
+ * The live outbound ports for the PlayableCandidates pipeline, shared by Feed
+ * and Explore: Last.fm getInfo as the doorway lookup + enrichment, iTunes-first
+ * previews (free, no auth, near-universal 30s clips), Spotify top-tracks as the
+ * fallback — keyed on the SPOTIFY id, never the uuid identity; no id (Last.fm-
+ * only artist) or no token → no-op to [].
  */
-export function buildConfirmPreview(
-  accessToken: string,
-  onConfirmOutcome?: (o: ConfirmOutcome) => void,
-) {
-  return (artist: Artist) =>
-    confirmPlayableTracks(
-      {
-        id: artist.id,
-        name: artist.name,
-        spotifyId: artist.spotifyId,
-        topTracks: artist.topTracks,
-        knownEmpty: artist.knownEmpty,
-      },
-      {
-        onConfirmOutcome,
-        searchItunes: (name) => searchTracksByArtist(name, 'US', 5),
-        // Spotify top-tracks keyed on the SPOTIFY id (not the uuid identity).
-        // No id (Last.fm-only artist) or no token → no-op to [].
-        getSpotifyTopTracks: (spotifyId) =>
-          accessToken && spotifyId
-            ? musicProvider.getArtistTopTracks(accessToken, spotifyId, 5, 'US').catch(() => [])
-            : Promise.resolve([]),
-      },
-    )
-}
-
-/**
- * Build the `mintArtist` dep for resolve-candidates from the SAME doorway
- * instance passed as `cache` (so an ambiguous name's rows are read once).
- *
- * Provider-agnostic (Stage 2, #157): the seed's spotifyId comes from the
- * resolved Artist's `.spotifyId` attribute, NOT `.id` (which the search adapter
- * leaves as "" — the uuid is assigned downstream). For Last.fm-resolved
- * artists spotifyId is null → the stable by-name row. For artists carrying a
- * spotify_id it dedups on spotify_id.
- */
-export function buildMintArtist(identity: ArtistIdentity) {
-  return (artist: Artist) => identity.ensure(artist)
+export function livePlayablePorts(accessToken: string): PlayablePorts {
+  return {
+    searchArtists: (name) => lastfmResolve(name),
+    enrichArtist: buildEnrichArtist(),
+    searchItunes: (name) => searchTracksByArtist(name, 'US', 5),
+    getSpotifyTopTracks: (spotifyId) =>
+      accessToken && spotifyId
+        ? musicProvider.getArtistTopTracks(accessToken, spotifyId, 5, 'US').catch(() => [])
+        : Promise.resolve([]),
+  }
 }
 
 // ── Seed gathering ──────────────────────────────────────────────────────────
@@ -578,12 +547,12 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     source, genre, undergroundMode, deepDiscovery, adventurous, userGenres = [],
   } = o
 
-  // ONE collector per run (#162). Every confirm tier (tier-1 blocking, tier-2
-  // deferred, secondary) records outcomes here; the route flushes it once in
-  // after() so a single batch-upsert covers all three phases.
-  const previews = new PreviewStore(supabase)
-  const confirmCollector = previews.collector()
-  const flushConfirms = () => confirmCollector.flush()
+  // ONE pipeline (and so ONE outcome collector, #162) per run. Every resolve
+  // (primary, secondary, bleed) shares its doorway; every confirm tier (tier-1
+  // blocking, tier-2 deferred, secondary) records outcomes into it, flushed
+  // once in after() so a single batch-upsert covers all three phases.
+  const candidates = new PlayableCandidates(supabase, livePlayablePorts(accessToken))
+  const flushConfirms = () => candidates.flush()
 
   const widenSeedCap = userGenres.length >= ADAPTIVE_BROADEN_THRESHOLD
   const seedCap = widenSeedCap ? 15 : 10
@@ -629,52 +598,6 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     return { count: 0, runSecondary: null, flushConfirms, metrics: { primaryMs: 0, previewMs: 0, firstBatchMs: 0, misses: 0, retries: 0, rateLimited: false } }
   }
 
-  const candidateMap = new Map<string, { artist: Artist; seedArtists: string[] }>()
-
-  const nameCache = new ArtistIdentity(supabase)
-
-  // Fire the secondary resolution in parallel with primary. It's still best-
-  // effort and its scoring/write-back happens later in `runSecondary` (from
-  // an `after()` block), but the Spotify/Last.fm round-trips now overlap with
-  // the primary resolve instead of waiting for it to finish first. Shared
-  // `nameCache` — writes are idempotent, names don't overlap between slices.
-  const mintArtist = buildMintArtist(nameCache)
-
-  const secondaryResolvePromise = secondaryNames.length === 0
-    ? null
-    : resolveArtistsByName(secondaryNames, {
-        cache: nameCache,
-        searchArtists: (name) => lastfmResolve(name),
-        enrichArtist: buildEnrichArtist(),
-        mintArtist,
-      })
-
-  let previewMs = 0
-  const primaryStart = Date.now()
-  const resolved = await resolveArtistsByName(uniqueNames, {
-    cache: nameCache,
-    searchArtists: (name) => lastfmResolve(name),
-    enrichArtist: buildEnrichArtist(),
-    mintArtist,
-    concurrency: RESOLVE_CONCURRENCY,
-    delayMs: RESOLVE_DELAY_MS,
-  })
-  const primaryMs = Date.now() - primaryStart
-
-  console.log(`[cache-search] hit=${resolved.cacheHits} miss=${resolved.cacheMisses} total=${uniqueNames.length}`)
-
-  for (const [name, artist] of resolved.resolved) {
-    const seedArtists = nameToSeeds.get(name) ?? []
-    if (candidateMap.has(artist.id)) {
-      const existing = candidateMap.get(artist.id)!
-      for (const s of seedArtists) {
-        if (!existing.seedArtists.includes(s)) existing.seedArtists.push(s)
-      }
-    } else {
-      candidateMap.set(artist.id, { artist, seedArtists })
-    }
-  }
-
   // The one exclusion policy (#175 D3): thumbs-down, listened over the play
   // threshold (by id, or by name for id-less history rows), and the 7-day
   // seen / dismissed cooldown — applied BEFORE confirm so no iTunes call is
@@ -693,12 +616,45 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     return true
   }
 
-  const filteredCandidates = [...candidateMap.values()].filter((val) => feedKeeps(val.artist, true))
+  // Fire the secondary resolution in parallel with primary. It's still best-
+  // effort and its confirm/write happens later in `runSecondary` (from an
+  // `after()` block), but the Last.fm round-trips overlap with the primary
+  // resolve instead of waiting for it to finish first. Gated + rehydrated by
+  // the same pipeline, so the backfill reserve and the secondary tier both
+  // arrive filtered and warm.
+  const secondaryResolvePromise = secondaryNames.length === 0
+    ? null
+    : candidates.resolve(secondaryNames, { keep: (a) => feedKeeps(a) })
 
-  // Rehydrate baked previews from artist_tracks_cache so warm artists arrive at
-  // preview-confirmation already confirmed (no re-confirm / no iTunes call).
-  // Cold artists keep topTracks undefined and fall through to iTunes/Spotify.
-  await previews.rehydrate(filteredCandidates)
+  let previewMs = 0
+  const primaryStart = Date.now()
+  // Resolve → gate → rehydrate: warm artists arrive at preview-confirmation
+  // already confirmed (no iTunes call); cold ones fall through to iTunes/Spotify.
+  const primary = await candidates.resolve(uniqueNames, {
+    keep: (a) => feedKeeps(a, true),
+    concurrency: RESOLVE_CONCURRENCY,
+    delayMs: RESOLVE_DELAY_MS,
+  })
+  const resolved = primary.stats
+  const primaryMs = Date.now() - primaryStart
+
+  console.log(`[cache-search] hit=${resolved.cacheHits} miss=${resolved.cacheMisses} total=${uniqueNames.length}`)
+
+  // Distinct resolved identities, pre-gate (the `cands` log field).
+  const candsCount = new Set([...resolved.resolved.values()].map((a) => a.id)).size
+  const candidateMap = new Map<string, { artist: Artist; seedArtists: string[] }>()
+  for (const [name, artist] of primary.artists) {
+    const seedArtists = nameToSeeds.get(name) ?? []
+    if (candidateMap.has(artist.id)) {
+      const existing = candidateMap.get(artist.id)!
+      for (const s of seedArtists) {
+        if (!existing.seedArtists.includes(s)) existing.seedArtists.push(s)
+      }
+    } else {
+      candidateMap.set(artist.id, { artist, seedArtists })
+    }
+  }
+  const filteredCandidates = [...candidateMap.values()]
 
   // Local scorer — shared by the primary pool and the backfill reserve so the
   // two are ranked on the same scale. (The secondary `runSecondary` closure
@@ -764,7 +720,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     console.error(
       `[engine] FAIL zero_top seeds=${capSeedNames.length} lfm=${lfmTotal} ` +
       `uniq=${uniqueNames.length} ok=${resolved.searchOk} fail=${resolved.searchFail} ` +
-      `filtListened=${filtListened} cands=${candidateMap.size} source=${source}`
+      `filtListened=${filtListened} cands=${candsCount} source=${source}`
     )
     return { count: 0, runSecondary: null, flushConfirms, metrics: { primaryMs: Date.now() - primaryStart, previewMs, firstBatchMs: 0, misses: resolved.cacheMisses, retries: resolved.searchRetries, rateLimited: resolved.rateLimited } }
   }
@@ -780,15 +736,10 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
       popularityCurve,
       undergroundMode,
       fetchTagArtists: getTagArtistNames,
-      resolveArtists: async (names) => {
-        const r = await resolveArtistsByName(names, {
-          cache: nameCache,
-          searchArtists: (name) => lastfmResolve(name),
-          enrichArtist: buildEnrichArtist(),
-          mintArtist,
-        })
-        return new Map([...r.resolved].filter(([, a]) => !exclusions.reason(a)))
-      },
+      // Same pipeline: gated by the exclusions AND rehydrated, so a bleed
+      // pick with a cached preview (or a fresh negative) never re-hits iTunes.
+      resolveArtists: async (names) =>
+        (await candidates.resolve(names, { keep: (a) => !exclusions.reason(a) })).artists,
     })
   }
 
@@ -803,9 +754,8 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     const sec = await secondaryResolvePromise
     const pickedIds = new Set(top.map((t) => t.artist.id))
     const reserve: ScoredArtist[] = []
-    for (const [name, art] of sec.resolved) {
+    for (const [name, art] of sec.artists) {
       if (pickedIds.has(art.id)) continue
-      if (!feedKeeps(art)) continue
       reserve.push(scoreCandidate(art, nameToSeeds.get(name) ?? [], `${source}_backfill`))
     }
     const before = top.length
@@ -820,7 +770,6 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
   //   Tier 2 (deferred): finish primary to TARGET, then secondary pool — all in after().
   // Every artist written in ANY phase is confirmed-playable (comes through confirmToTarget).
 
-  const confirmFn = buildConfirmPreview(accessToken, confirmCollector.onConfirmOutcome)
   const inTop = new Set(top.map((t) => t.artist.id))
   const tail = pool.filter((s) => !inTop.has(s.artist.id)) // already score-sorted
   const ordered = [...top, ...tail]
@@ -903,11 +852,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
 
   // ── Tier 1 (blocking): confirm FIRST_BATCH_TARGET artists, write, return fast ──
   const firstBatchStart = Date.now()
-  const { kept: firstBatch, confirmedCount: c1 } = await confirmToTarget(
-    ordered,
-    FIRST_BATCH_TARGET,
-    confirmFn,
-  )
+  const { kept: firstBatch, confirmedCount: c1 } = await candidates.confirm(ordered, FIRST_BATCH_TARGET)
   const firstBatchMs = Date.now() - firstBatchStart
   previewMs = firstBatchMs // time the user waited for first paint
 
@@ -930,11 +875,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     // ── Tier 2: finish primary to TARGET ──
     const tier2Need = TARGET - firstBatch.length
     if (tier2Need > 0 && c1 < ordered.length) {
-      const { kept: tier2Batch } = await confirmToTarget(
-        ordered.slice(c1),
-        tier2Need,
-        confirmFn,
-      )
+      const { kept: tier2Batch } = await candidates.confirm(ordered.slice(c1), tier2Need)
       if (tier2Batch.length > 0) {
         const written = await writeScored(tier2Batch)
         backgroundWritten += written
@@ -951,9 +892,8 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     const secondaryResolved = await secondaryResolvePromise
 
     const secondaryCandidates: Array<{ artist: Artist; seedArtists: string[] }> = []
-    for (const [name, artist] of secondaryResolved.resolved) {
+    for (const [name, artist] of secondaryResolved.artists) {
       if (writtenIds.has(artist.id)) continue
-      if (!feedKeeps(artist)) continue
       const seedArtists = nameToSeeds.get(name) ?? []
       secondaryCandidates.push({ artist, seedArtists })
     }
@@ -962,10 +902,6 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
       console.log(`[engine] secondary_empty source=${source}`)
       return backgroundWritten
     }
-
-    // Rehydrate baked previews for the secondary pool too (mirror the primary
-    // path) so tier-2/secondary warm artists also arrive confirmed.
-    await previews.rehydrate(secondaryCandidates)
 
     const secondaryScored: ScoredArtist[] = secondaryCandidates.map(({ artist, seedArtists }) => {
       const seedRelevance = Math.min(Math.sqrt(seedArtists.length) / Math.sqrt(6), 1)
@@ -992,18 +928,14 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     secondaryScored.sort((a, b) => b.score - a.score)
 
     // Confirm only up to TARGET secondary candidates before writing.
-    const { kept: secConfirmed } = await confirmToTarget(
-      secondaryScored,
-      TARGET,
-      buildConfirmPreview(accessToken, confirmCollector.onConfirmOutcome),
-    )
+    const { kept: secConfirmed } = await candidates.confirm(secondaryScored, TARGET)
 
     if (secConfirmed.length > 0) {
       const secWritten = await writeScored(secConfirmed)
       backgroundWritten += secWritten
       console.log(
         `[engine] secondary-OK source=${source} names=${secondaryNames.length} ` +
-        `resolved=${secondaryResolved.resolved.size} written=${secWritten}`
+        `resolved=${secondaryResolved.stats.resolved.size} written=${secWritten}`
       )
     } else {
       console.log(`[engine] secondary_all_in_cooldown source=${source}`)

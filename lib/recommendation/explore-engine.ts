@@ -14,11 +14,8 @@
 import { musicProvider } from '@/lib/music-provider/provider'
 import type { Artist, Track } from '@/lib/music-provider/types'
 import { createServiceClient } from '@/lib/supabase/server'
-import { ArtistIdentity } from '@/lib/artist-identity'
-import { resolveArtistsByName } from './resolve-candidates'
-import { buildEnrichArtist } from './enrich-artist'
-import { getTagArtistNames, buildConfirmPreview, buildMintArtist, lastfmResolve } from './engine'
-import { confirmToTarget } from './confirm-previews'
+import { getTagArtistNames, livePlayablePorts } from './engine'
+import { PlayableCandidates } from './playable-candidates'
 import { PreviewStore, resetPersisted, snapshotPersisted } from './preview-store'
 import { resetCalls, snapshotCalls } from './api-call-counter'
 import {
@@ -193,15 +190,22 @@ export function computeTopAnchors(
 }
 
 /**
- * Resolve a flat list of Last.fm artist names to Spotify Artists + cache them.
- * Honors the same listened/thumbs-down/seen filters the main engine uses so
- * rails stay consistent with For You.
+ * Explore's pass through the shared PlayableCandidates pipeline: resolve the
+ * names, drop excluded (Explore policy) and — under undergroundMode — pop>50
+ * artists, rehydrate, confirm up to `confirmTarget` playable, and flush the
+ * confirm outcomes to artist_tracks_cache BEFORE returning. That awaited flush
+ * is the #162 read-after-write: hydrateRailArtists reads those rows in the
+ * same request, and without them a freshly-confirmed pick would hydrate with
+ * no previews and be dropped.
  *
- * `confirmTarget` is how many confirmed-playable artists to stop at. Pass
- * `Math.min(railDisplayTarget + HEADROOM, 30)` from each rail so smaller rails
- * confirm fewer candidates while never exceeding the old 30-cap.
+ * Returns confirmed artists keyed by the INPUT name (the Last.fm spelling the
+ * rail looks up by), so a roster row spelled differently ("Boards Of Canada"
+ * vs "Boards of Canada") is still found (#175 D2).
+ *
+ * `confirmTarget`: pass `Math.min(railDisplayTarget + HEADROOM, 30)` from each
+ * rail so smaller rails confirm fewer candidates.
  */
-async function resolveAndFilter(
+function resolveAndFilter(
   names: string[],
   accessToken: string,
   supabase: SupabaseClient,
@@ -210,48 +214,14 @@ async function resolveAndFilter(
     undergroundMode?: boolean
   },
   confirmTarget: number,
-): Promise<Artist[]> {
-  const unique = [...new Set(names.filter(Boolean))]
-  if (unique.length === 0) return []
-  const nameCache = new ArtistIdentity(supabase)
-  const resolved = await resolveArtistsByName(unique, {
-    cache: nameCache,
-    searchArtists: (name) => lastfmResolve(name),
-    enrichArtist: buildEnrichArtist(),
-    mintArtist: buildMintArtist(nameCache),
-  })
-
-  // Playability guarantee (#143): confirm previews for only the artists that
-  // pass all filters (listen/thumbs-down/seen) and are about to be shown.
-  // This avoids confirming artists that will be filtered out anyway.
-  const candidates: Array<{ artist: Artist; name: string }> = []
-  for (const [name, artist] of resolved.resolved) {
-    if (filters.exclusions.reason(artist)) continue
-    if (filters.undergroundMode && (artist.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) continue
-    candidates.push({ artist, name })
-  }
-
-  // Pre-confirm rehydrate (#162): warm positives from artist_tracks_cache skip
-  // iTunes entirely, and fresh confirmed-empty negatives short-circuit (dropped
-  // without a re-query). The generation path has always done this; the Explore
-  // confirm slice never did.
-  const previews = new PreviewStore(supabase)
-  await previews.rehydrate(candidates)
-
-  // Confirm up to `confirmTarget` artists. Per-rail callers set this to
-  // displayTarget + HEADROOM so smaller rails confirm fewer candidates. The
-  // collector records each live confirm so the flush below persists them.
-  const collector = previews.collector()
-  const { kept } = await confirmToTarget(candidates, confirmTarget, buildConfirmPreview(accessToken, collector.onConfirmOutcome))
-
-  // Persist confirmed previews to artist_tracks_cache (#162). This write MUST
-  // land before hydrateRailArtists reads it in the same request — that
-  // read-after-write is the fix for the 76% cached-pick drop. Explore persists
-  // only artist IDs in explore_cache and re-hydrates by id, so without it every
-  // freshly-resolved rail card would hydrate with no previews → dropped.
-  await collector.flush()
-
-  return kept.map((k) => k.artist)
+): Promise<Map<string, Artist>> {
+  return new PlayableCandidates(supabase, livePlayablePorts(accessToken)).playable(
+    names,
+    confirmTarget,
+    (artist) =>
+      !filters.exclusions.reason(artist) &&
+      !(filters.undergroundMode && (artist.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY),
+  )
 }
 
 /** Headroom added to each rail's display target when computing confirmTarget. */
@@ -345,13 +315,12 @@ export async function adjacentRail(
     idx++
   }
 
-  const resolved = await resolveAndFilter(namesRoundRobin, input.accessToken, supabase, {
+  // Confirmed artists keyed by INPUT name (#175 D2).
+  const artistByName = await resolveAndFilter(namesRoundRobin, input.accessToken, supabase, {
     exclusions,
     undergroundMode: input.undergroundMode,
   }, Math.max(target, Math.min(target + CONFIRM_HEADROOM, 30)))
 
-  const artistByName = new Map<string, Artist>()
-  for (const a of resolved) artistByName.set(a.name, a)
 
   const ranked = rankByCurve(namesRoundRobin, artistByName, input.popularityCurve)
 
@@ -479,13 +448,12 @@ export async function outsideRail(
     idx++
   }
 
-  const resolved = await resolveAndFilter(namesRoundRobin, input.accessToken, supabase, {
+  // Confirmed artists keyed by INPUT name (#175 D2).
+  const artistByName = await resolveAndFilter(namesRoundRobin, input.accessToken, supabase, {
     exclusions,
     undergroundMode: input.undergroundMode,
   }, Math.max(target, Math.min(target + CONFIRM_HEADROOM, 30)))
 
-  const artistByName = new Map<string, Artist>()
-  for (const a of resolved) artistByName.set(a.name, a)
 
   const ranked = rankByCurve(namesRoundRobin, artistByName, input.popularityCurve)
 
@@ -617,12 +585,11 @@ export async function wildcardsRail(
     idx++
   }
 
-  const resolved = await resolveAndFilter(namesRoundRobin, input.accessToken, supabase, {
+  // Confirmed artists keyed by INPUT name (#175 D2).
+  const artistByName = await resolveAndFilter(namesRoundRobin, input.accessToken, supabase, {
     exclusions,
     undergroundMode: input.undergroundMode,
   }, Math.max(target, Math.min(target + CONFIRM_HEADROOM, 30)))
-  const artistByName = new Map<string, Artist>()
-  for (const a of resolved) artistByName.set(a.name, a)
 
   const ranked = rankByCurve(namesRoundRobin, artistByName, input.popularityCurve)
 
@@ -776,7 +743,8 @@ export async function leftfieldRail(
     const resolveCap = input.adventurous ? LEFTFIELD_RESOLVE_CAP_ADVENTUROUS : LEFTFIELD_RESOLVE_CAP
     const namesToResolve = namesRoundRobin.slice(0, resolveCap)
 
-    const resolved = await resolveAndFilter(namesToResolve, input.accessToken, supabase, {
+    // Confirmed artists keyed by INPUT name (#175 D2).
+    const artistByName = await resolveAndFilter(namesToResolve, input.accessToken, supabase, {
       exclusions,
       undergroundMode: input.undergroundMode,
     }, Math.max(target, Math.min(target + CONFIRM_HEADROOM, 30)))
@@ -795,9 +763,6 @@ export async function leftfieldRail(
         undergroundMode: input.undergroundMode,
       }, Math.max(target, Math.min(target + CONFIRM_HEADROOM, 30))).catch(() => {})
     }
-
-    const artistByName = new Map<string, Artist>()
-    for (const a of resolved) artistByName.set(a.name, a)
 
     const railPicks: Artist[] = []
     const railLeftover: Artist[] = []

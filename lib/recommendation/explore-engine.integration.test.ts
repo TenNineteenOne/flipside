@@ -271,3 +271,19 @@ describe("buildExploreRails — freshly confirmed picks hydrate with previews (#
     }
   }, 20000)
 })
+
+// ── 6e. #175 D2: casing drop — a cache hit spelled differently still shows ────
+describe("buildExploreRails — roster spelling differs from the Last.fm spelling (#175 D2)", () => {
+  it("surfaces a name-cache hit whose row is cased differently from the query", async () => {
+    const bocId = "b0c00000-0000-4000-8000-000000000001"
+    seed(withLikedSeed({ artists: [artistsRow(bocId, "Boards of Canada")] }))
+    // Last.fm spells it "Boards Of Canada"; the roster row says "Boards of Canada".
+    h.similars.set("LikedArtist", [{ name: "Boards Of Canada", match: 0.1 }])
+
+    const { rails } = await buildExploreRails(baseInput())
+    const wildcards = rails.find((r) => r.railKey === "wildcards")!
+    // Old code keyed the confirmed map by the row's name → lookup by the query
+    // spelling missed → confirmed, persisted, never shown.
+    expect(wildcards.artistIds).toContain(bocId)
+  }, 20000)
+})
