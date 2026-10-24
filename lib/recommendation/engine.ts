@@ -11,7 +11,7 @@ import {
 } from './types'
 import { resolveArtistsByName } from './resolve-candidates'
 import { ArtistIdentity } from '@/lib/artist-identity'
-import { isEligibleForCooldown, loadExclusions, type Exclusions } from './exclusions'
+import { isEligibleForCooldown, loadExclusions } from './exclusions'
 import { confirmPlayableTracks, confirmToTarget, type ConfirmOutcome } from './confirm-previews'
 import { PreviewStore } from './preview-store'
 import { searchTracksByArtist } from '@/lib/music-provider/itunes'
