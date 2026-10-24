@@ -56,6 +56,7 @@ const tagArtists = new Map<string, string[]>()
 
 // Imported AFTER mocks are registered.
 import { buildRecommendations } from "./engine"
+import { getUnseenRecommendations } from "./feed-query"
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 function track(seed: string): Track {
@@ -406,5 +407,159 @@ describe("buildRecommendations — adjacent bleed is rehydrated (#175 D2)", () =
     expect(bleedRow?.artist_data.topTracks[0].id).toBe("it-cached-bleed")
     // Old code handed bleed picks `topTracks: []` (never rehydrated) → iTunes.
     expect(h.calls.itunes).not.toContain("BleedArtist")
+  })
+})
+
+// ── #175 F17: writeScored fails safe when its cooldown read errors ──────────
+describe("buildRecommendations — writeScored cooldown read error (#175 F17)", () => {
+  it("writes nothing (never nulls an existing seen_at) when the cooldown read fails", async () => {
+    const oldId = "f0000000-0000-4000-8000-000000000003"
+    const seenAt = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString()
+    seed({
+      seed_artists: [{ user_id: "u1", name: "SeedA" }],
+      artists: [artistsRow(oldId, "SeenLongAgo")],
+      recommendation_cache: [{ user_id: "u1", artist_id: oldId, seen_at: seenAt, skip_at: null }],
+    })
+    lf.similars.set("SeedA", similarRefs(["SeenLongAgo", "Fresh0"]))
+    // Fail only writeScored's `.in('artist_id', ids)` read on recommendation_cache.
+    const origFrom = h.fake.client.from
+    h.fake.client.from = (t: string) => {
+      const q = origFrom(t)
+      if (t === "recommendation_cache") {
+        q.in = () => ({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          then: (res: (v: any) => any) => Promise.resolve({ data: null, error: { message: "boom" } }).then(res),
+        })
+      }
+      return q
+    }
+    vi.spyOn(console, "error").mockImplementation(() => {})
+
+    const result = await buildRecommendations(baseInput())
+    await result.finish()
+
+    expect(result.count).toBe(0)
+    const rows = cacheRows()
+    expect(rows).toHaveLength(1)
+    expect(rows[0].seen_at).toBe(seenAt)
+  })
+})
+
+// ── #175 F19: tier1 log fields keep their baseline meaning ──────────────────
+describe("buildRecommendations — tier1 log semantics (#175 F19)", () => {
+  it("cands counts pre-gate resolved ids; filtListened counts distinct listened ids", async () => {
+    const knownId = "f0000000-0000-4000-8000-000000000004"
+    seed({
+      seed_artists: [{ user_id: "u1", name: "SeedA" }],
+      artists: [artistsRow(knownId, "Known")],
+      listened_artists: [{ id: "l1", user_id: "u1", artist_id: knownId, play_count: 99 }],
+    })
+    lf.similars.set("SeedA", similarRefs(["Known", "Fresh0", "Fresh1"]))
+    const log = vi.spyOn(console, "log").mockImplementation(() => {})
+
+    await buildRecommendations(baseInput())
+
+    const tier1 = log.mock.calls.map((c) => String(c[0])).find((l) => l.startsWith("[engine] tier1"))
+    expect(tier1).toContain("filtListened=1 ")
+    expect(tier1).toContain("cands=3 ")
+  })
+})
+
+// ── #175 F20: seed provenance survives casing differences ───────────────────
+describe("buildRecommendations — seed provenance casing (#175 F20)", () => {
+  it("credits every seed that surfaced a candidate, whatever casing each used", async () => {
+    seed({ seed_artists: [{ user_id: "u1", name: "SeedA" }, { user_id: "u1", name: "SeedB" }] })
+    lf.similars.set("SeedA", similarRefs(["Boards of Canada"]))
+    lf.similars.set("SeedB", similarRefs(["Boards Of Canada"]))
+
+    const result = await buildRecommendations(baseInput())
+    await result.finish()
+
+    const row = cacheRows().find((r) => r.artist_data?.name.toLowerCase() === "boards of canada")
+    expect(row?.why.sourceArtists.sort()).toEqual(["SeedA", "SeedB"])
+  })
+})
+
+// ── #175 F26 (owner decision D1): seen > 7 days ago resurfaces ──────────────
+describe("buildRecommendations — resurfacing (#175 F26 / D1)", () => {
+  it("a seen-long-ago artist is rewritten unseen with a fresh created_at and reaches the feed; dismissed stays hidden", async () => {
+    const oldId = "f0000000-0000-4000-8000-000000000005"
+    const skipId = "f0000000-0000-4000-8000-000000000006"
+    const longAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString()
+    seed({
+      seed_artists: [{ user_id: "u1", name: "SeedA" }],
+      artists: [artistsRow(oldId, "SeenLongAgo"), artistsRow(skipId, "Dismissed")],
+      recommendation_cache: [
+        { id: "c1", user_id: "u1", artist_id: oldId, seen_at: longAgo, skip_at: null, created_at: longAgo, expires_at: longAgo },
+        { id: "c2", user_id: "u1", artist_id: skipId, seen_at: longAgo, skip_at: longAgo, created_at: longAgo, expires_at: longAgo },
+      ],
+    })
+    lf.similars.set("SeedA", similarRefs(["SeenLongAgo", "Dismissed", "Fresh0"]))
+
+    const result = await buildRecommendations(baseInput())
+    await result.finish()
+
+    const resurfaced = cacheRows().find((r) => r.artist_id === oldId)!
+    expect(resurfaced.seen_at).toBeNull()
+    expect(new Date(resurfaced.created_at).getTime()).toBeGreaterThan(Date.now() - 60_000)
+    const dismissed = cacheRows().find((r) => r.artist_id === skipId)!
+    expect(dismissed.skip_at).toBe(longAgo) // untouched
+
+    const unseen = await getUnseenRecommendations(h.fake.client, "u1", { limit: 20, undergroundMode: false })
+    const ids = unseen.map((r) => r.artist_id)
+    expect(ids).toContain(oldId)
+    expect(ids).not.toContain(skipId)
+  })
+
+  it("never puts skip_at in an upsert payload (a concurrent dismiss can't be overwritten)", async () => {
+    const oldId = "f0000000-0000-4000-8000-000000000007"
+    const longAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString()
+    seed({
+      seed_artists: [{ user_id: "u1", name: "SeedA" }],
+      artists: [artistsRow(oldId, "SeenLongAgo")],
+      recommendation_cache: [{ id: "c1", user_id: "u1", artist_id: oldId, seen_at: longAgo, skip_at: null, created_at: longAgo }],
+    })
+    lf.similars.set("SeedA", similarRefs(["SeenLongAgo", "Fresh0"]))
+    const payloads: Row[][] = []
+    const origFrom = h.fake.client.from
+    h.fake.client.from = (t: string) => {
+      const q = origFrom(t)
+      if (t === "recommendation_cache") {
+        const origUpsert = q.upsert
+        q.upsert = (rows: Row[], o: unknown) => {
+          payloads.push(rows)
+          return origUpsert(rows, o)
+        }
+      }
+      return q
+    }
+
+    const result = await buildRecommendations(baseInput())
+    await result.finish()
+
+    expect(payloads.length).toBeGreaterThan(0)
+    for (const rows of payloads) {
+      for (const r of rows) expect(r).not.toHaveProperty("skip_at")
+      // One column set per upsert (PostgREST nulls keys missing from some rows).
+      const keySets = new Set(rows.map((r) => Object.keys(r).sort().join(",")))
+      expect(keySets.size).toBe(1)
+    }
+  })
+})
+
+// ── #175 F15: genre seeds request the default tag limit ─────────────────────
+describe("buildRecommendations — genre seed tag limit (#175 F15)", () => {
+  it("asks Last.fm for the default 20 artists per selected genre (not the array index)", async () => {
+    const genres = ["g-a", "g-b", "g-c", "g-d", "g-e"]
+    seed({ users: [{ id: "u1", selected_genres: genres }] })
+    const limits = new Map<string, number[]>()
+    lf.tags = (tag, limit) => {
+      limits.set(tag, [...(limits.get(tag) ?? []), limit])
+      return []
+    }
+
+    await buildRecommendations(baseInput())
+
+    for (const g of genres) expect(limits.get(g)).toEqual([20])
   })
 })

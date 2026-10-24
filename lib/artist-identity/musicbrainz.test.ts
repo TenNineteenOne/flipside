@@ -136,6 +136,19 @@ describe("searchArtistMbid", () => {
     expect(mbid).toBe("exact-id")
   })
 
+  it("tie-break exactness is plain lowercase — a punctuation variant is NOT exact (#175 F3)", async () => {
+    // With the punctuation-dropping name key, "M.I.A." would tie "Mia" as exact and
+    // (listed first) win — the backfill would write M.I.A.'s mbid onto Mia's row.
+    const fetchImpl = (async () =>
+      jsonResponse({
+        artists: [
+          { id: "mia-dot-id", name: "M.I.A.", score: 100 },
+          { id: "mia-id", name: "Mia", score: 100 },
+        ],
+      })) as unknown as typeof fetch
+    expect(await searchArtistMbid("mia", { fetchImpl, limiter: instantLimiter })).toBe("mia-id")
+  })
+
   it("returns null when there are no results", async () => {
     const fetchImpl = (async () => jsonResponse({ artists: [] })) as unknown as typeof fetch
     expect(await searchArtistMbid("zzzznoartist", { fetchImpl, limiter: instantLimiter })).toBeNull()

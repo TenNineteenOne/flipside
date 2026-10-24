@@ -58,9 +58,7 @@ Used by `augmentWithAdjacent` (Feed bleed), `outsideRail`/`leftfieldRail` (Explo
 | `validate-genre-tree.ts` | Last.fm `tag.getSimilar` validation; `--apply` auto-moves leaves ≥0.75 confidence |
 | `subcluster-keywords.ts` | the keyword dictionary |
 | `seed-artist-cache.ts` | populate `artist_search_cache` from Last.fm tag top artists → Spotify-resolve |
-| `backfill-artist-genres.ts` | fill genres+popularity via MusicBrainz + Last.fm (avoids Spotify quota) |
-| `mb-coverage-spike.ts` | one-off MusicBrainz genre-coverage research (not production) |
-| `inspect-cache.ts` | post-backfill verification |
+| `backfill-artist-genres.ts` | fill-only genres+popularity on `artists` (+ `recommendation_cache.artist_data`) via MusicBrainz + Last.fm (avoids Spotify quota) |
 
 All long scripts checkpoint to `.checkpoint.json` for safe resume.
 

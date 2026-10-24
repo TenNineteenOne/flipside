@@ -62,6 +62,17 @@ describe("onTasteChanged", () => {
     expect(tables.recommendation_cache.map((r) => r.artist_id)).toEqual(["b", "c"])
   })
 
+  it("D5: any explore invalidation also clears the user's explore rebuild cooldown", async () => {
+    const t = { ...rows(), users: [
+      { id: "u1", last_explore_generated_at: "2026-10-24T00:00:00Z" },
+      { id: "u2", last_explore_generated_at: "2026-10-24T00:00:00Z" },
+    ] }
+    const { client, tables } = createFakeSupabase(t)
+    await onTasteChanged(client, "u1", { kind: "feedback", railKey: "wildcards" })
+    expect(tables.users[0].last_explore_generated_at).toBeNull()
+    expect(tables.users[1].last_explore_generated_at).toBe("2026-10-24T00:00:00Z")
+  })
+
   it("no-op settings touch nothing", async () => {
     const { client, tables } = createFakeSupabase(rows())
     await onTasteChanged(client, "u1", { kind: "settings", fields: ["playThreshold"] })

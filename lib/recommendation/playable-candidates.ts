@@ -66,8 +66,13 @@ export class PlayableCandidates {
   private readonly previews: PreviewStore
   private readonly collector: ConfirmCollector
 
-  constructor(supabase: Pick<SupabaseClient, "from">, private readonly ports: PlayablePorts) {
-    this.identity = new ArtistIdentity(supabase)
+  /** `identity`: pass a shared doorway so concurrent pipelines dedupe in-flight mints (#175 F25). */
+  constructor(
+    supabase: Pick<SupabaseClient, "from">,
+    private readonly ports: PlayablePorts,
+    identity?: ArtistIdentity,
+  ) {
+    this.identity = identity ?? new ArtistIdentity(supabase)
     this.previews = new PreviewStore(supabase)
     this.collector = this.previews.collector()
   }

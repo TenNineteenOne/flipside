@@ -6,7 +6,7 @@
  * `buildExploreRails`) and their helpers exercise:
  *
  *   .from(table)
- *     .select(cols)[.eq/.is/.not/.gt/.gte/.in/.or/.order/.limit][.maybeSingle/.single]
+ *     .select(cols)[.eq/.is/.not/.gt/.gte/.in/.or/.order/.limit/.range][.maybeSingle/.single]
  *     .insert(row | rows)[.select(cols).single()]
  *     .upsert(rows, { onConflict, ignoreDuplicates })
  *     .update(patch).eq(col, val)
@@ -62,6 +62,7 @@ export function createFakeSupabase(
     let maybeSingle = false
     let orderSpec: { col: string; ascending: boolean } | null = null
     let limitN: number | null = null
+    let rangeSpec: [number, number] | null = null
     let inVals: unknown[] | undefined
 
     function matching(): Row[] {
@@ -76,6 +77,7 @@ export function createFakeSupabase(
         })
       }
       if (limitN != null) rows = rows.slice(0, limitN)
+      if (rangeSpec) rows = rows.slice(rangeSpec[0], rangeSpec[1] + 1)
       return rows
     }
 
@@ -87,7 +89,8 @@ export function createFakeSupabase(
       if (failure === "error") return { data: null, error: { message: `fake ${table} ${op} failed` } }
       const t = ensure(table)
       if (op === "select") {
-        const rows = matching()
+        // PostgREST's max-rows cap: a select never returns more than 1000 rows.
+        const rows = matching().slice(0, 1000)
         if (single) return { data: rows[0] ?? null, error: rows.length ? null : { message: "no rows" } }
         if (maybeSingle) return { data: rows[0] ?? null, error: null }
         return { data: rows.map((r) => ({ ...r })), error: null }
@@ -210,6 +213,11 @@ export function createFakeSupabase(
       },
       limit(n: number) {
         limitN = n
+        return q
+      },
+      /** Inclusive offsets, like PostgREST `Range`. */
+      range(from: number, to: number) {
+        rangeSpec = [from, to]
         return q
       },
       maybeSingle() {

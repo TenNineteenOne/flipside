@@ -14,7 +14,6 @@
  * This module is pure parsing + the limiter + a thin fetch; the worker that
  * drives it over many artists is a separate slice (#159).
  */
-import { artistNameKey } from "./name-key"
 
 const MB_BASE = "https://musicbrainz.org/ws/2"
 const USER_AGENT = "Flipside/0.1.0 ( fluxuate27@gmail.com )"
@@ -205,14 +204,17 @@ export async function searchArtistMbid(
       const data = (await res.json()) as MbSearchResponse
       if (data.error || !Array.isArray(data.artists) || data.artists.length === 0) return null
 
-      const lowerName = artistNameKey(trimmed)
+      // Plain toLowerCase on purpose, NOT artistNameKey — the punctuation-
+      // dropping key would tie "M.I.A." with "Mia" as exact and the backfill
+      // could write the wrong mbid/spotify_id onto a row (#175 F3).
+      const lowerName = trimmed.toLowerCase()
       let best: MbSearchArtist | null = null
       let bestScore = -1
       let bestExact = false
       for (const a of data.artists) {
         if (!a?.id) continue
         const score = typeof a.score === "number" ? a.score : 0
-        const exact = typeof a.name === "string" && artistNameKey(a.name) === lowerName
+        const exact = typeof a.name === "string" && a.name.toLowerCase() === lowerName
         // Prefer higher score; on a tie prefer an exact name match.
         if (score > bestScore || (score === bestScore && exact && !bestExact)) {
           best = a

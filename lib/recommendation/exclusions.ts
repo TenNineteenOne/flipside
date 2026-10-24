@@ -55,12 +55,36 @@ export function isEligibleForCooldown(
 
 type QueryRows<T> = PromiseLike<{ data: T[] | null }>
 
+/** PostgREST's default max-rows cap; a plain select silently truncates past it. */
+const PAGE_SIZE = 1000
+
+/**
+ * Read EVERY row of a per-user query, paging with `.range()` in chunks of
+ * PAGE_SIZE until a short page (#175 F16 — a heavy Last.fm user easily has
+ * >1000 listened rows, and a truncated read silently un-excludes the rest).
+ * `page(from, to)` must build the full query (ordered by a unique column so
+ * pages don't overlap) and apply `.range(from, to)`. On an error the rows read
+ * so far are returned with it — callers already degrade an error to "fewer
+ * exclusions".
+ */
+export async function readAllRows<T>(
+  page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+): Promise<{ data: T[]; error: { message: string } | null }> {
+  const rows: T[] = []
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await page(from, from + PAGE_SIZE - 1)
+    if (error) return { data: rows, error }
+    rows.push(...(data ?? []))
+    if ((data ?? []).length < PAGE_SIZE) return { data: rows, error: null }
+  }
+}
+
 /**
  * Reads a caller already has in flight (#175 E4b: Explore's user context reads
  * the same rows). `listened` must hold every row with an `artist_id` (and
  * `lastfm_artist_name` when the policy uses `nameFallback`); `thumbsDown` the
- * user's active thumbs-down feedback. Pass settled promises (`Promise.resolve`
- * a query builder) so the request runs once.
+ * user's active thumbs-down feedback — ALL rows (page with `readAllRows`).
+ * Pass promises, not builders, so each read runs once however often it's awaited.
  */
 export interface PreloadedRows {
   listened?: QueryRows<{ artist_id: string | null; play_count?: number | null; lastfm_artist_name?: string | null }>
@@ -77,16 +101,34 @@ export async function loadExclusions(
   const cooldownStart = new Date(now.getTime() - COOLDOWN_DAYS * DAY_MS).toISOString()
   const [listened, thumbsDown, seen, skipped] = await Promise.all([
     preloaded.listened ??
-      supabase.from("listened_artists").select("artist_id, lastfm_artist_name, play_count").eq("user_id", userId),
-    preloaded.thumbsDown ??
-      supabase.from("feedback").select("artist_id").eq("user_id", userId).eq("signal", "thumbs_down").is("deleted_at", null),
-    supabase
-      .from("recommendation_cache")
-      .select("artist_id")
-      .eq("user_id", userId)
-      .not("seen_at", "is", null)
-      .gte("seen_at", cooldownStart),
-    supabase.from("recommendation_cache").select("artist_id").eq("user_id", userId).not("skip_at", "is", null),
+      readAllRows((from, to) =>
+        supabase
+          .from("listened_artists")
+          .select("artist_id, lastfm_artist_name, play_count")
+          .eq("user_id", userId)
+          .order("id", { ascending: true })
+          .range(from, to),
+      ),
+    preloaded.thumbsDown ?? readFeedbackIds(supabase, userId, "thumbs_down"),
+    readAllRows((from, to) =>
+      supabase
+        .from("recommendation_cache")
+        .select("artist_id")
+        .eq("user_id", userId)
+        .not("seen_at", "is", null)
+        .gte("seen_at", cooldownStart)
+        .order("id", { ascending: true })
+        .range(from, to),
+    ),
+    readAllRows((from, to) =>
+      supabase
+        .from("recommendation_cache")
+        .select("artist_id")
+        .eq("user_id", userId)
+        .not("skip_at", "is", null)
+        .order("id", { ascending: true })
+        .range(from, to),
+    ),
   ])
 
   const listenedIds = new Set<string>()
@@ -109,4 +151,22 @@ export async function loadExclusions(
       return null
     },
   }
+}
+
+/** The user's active thumbs-down / thumbs-up feedback, every row (paged). */
+export function readFeedbackIds(
+  supabase: Pick<SupabaseClient, "from">,
+  userId: string,
+  signal: "thumbs_down" | "thumbs_up",
+) {
+  return readAllRows<{ artist_id: string }>((from, to) =>
+    supabase
+      .from("feedback")
+      .select("artist_id")
+      .eq("user_id", userId)
+      .eq("signal", signal)
+      .is("deleted_at", null)
+      .order("id", { ascending: true })
+      .range(from, to),
+  )
 }

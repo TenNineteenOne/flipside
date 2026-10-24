@@ -17,8 +17,8 @@ The Feed ("For You") pipeline. Entry point: `buildRecommendations(input)` in
    `seed_artists`, a stable weekly sample of thumbs-up artists (`sampleLikes`, via
    `recommendation_cache`), and Last.fm `tag.gettopartists` (`lastfm.tagTopArtists`) for the
    user's top ~5 `selected_genres`. Shuffled + deduped → `seedNames[]` (capped 10–15).
-   ⚠️ The genre fetch passes the **array index as the limit** (0..4) — a long-standing
-   `.map(getTagArtistNames)` quirk kept byte-identical in #175 E1 pending an owner call.
+   Each genre requests the default 20 artists (before #175 F15 a `.map(getTagArtistNames)`
+   quirk passed the array index, 0..4, as the limit).
 2. **Soften gate** (`runWithSoftening`) — if the run returns `count=0`, retry with
    `playThreshold+5`, then fall back to `sampleColdStartSeeds()` from
    `data/cold-start-seeds.json`.
@@ -52,7 +52,10 @@ The Feed ("For You") pipeline. Entry point: `buildRecommendations(input)` in
     `search?entity=song` → **Spotify `/artists/{id}/top-tracks`** fallback. Artists with no
     playable preview are **dropped**. Every live outcome is collected for persistence.
 13. **Write Tier 1** (`writeScored`) — upsert ≤8 rows to `recommendation_cache` (re-checks
-    cooldown fresh from the DB as a safety net).
+    cooldown fresh from the DB as a safety net; a failed read writes nothing). An artist
+    seen more than 7 days ago (no `skip_at`) **resurfaces**: written with `seen_at: null` and
+    a fresh `created_at` so the nightly 3-day unseen expiry doesn't drop it (owner decision
+    D1, #175 F26). Upserts never carry `skip_at`, so a concurrent dismiss is never overwritten.
 14. **Return fast** — the result carries `count`, `pending`, one `finish()` continuation,
     and `metrics`.
 15. **Background** (`finish()` via `after()`) — confirm the rest of the primary pool

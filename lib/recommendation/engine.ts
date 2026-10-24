@@ -8,7 +8,7 @@ import {
   type ScoredArtist,
   type SoftenedFilters,
 } from './types'
-import { isEligibleForCooldown, loadExclusions } from './exclusions'
+import { isEligibleForCooldown, loadExclusions, readFeedbackIds } from './exclusions'
 import { PlayableCandidates, livePlayablePorts } from './playable-candidates'
 import { normalizedIncludes, normalizeGenre } from '@/lib/genre/normalize'
 import { adjacentGenres } from '@/lib/genre/adjacency'
@@ -61,13 +61,9 @@ async function gatherSeedContext(
     // Fetch the full thumbs-up set; sampling is applied below via
     // sampleLikes() so the Feed draws the same 10 random likes Explore uses
     // within a cache window. See docs/prd-diversity-overhaul.md (M1).
-    supabase
-      .from('feedback')
-      .select('artist_id')
-      .eq('user_id', userId)
-      .eq('signal', 'thumbs_up')
-      .is('deleted_at', null)
-      .then(({ data }) => (data ?? []).map((r) => r.artist_id as string).filter(Boolean)),
+    readFeedbackIds(supabase, userId, 'thumbs_up').then(({ data }) =>
+      data.map((r) => r.artist_id).filter(Boolean)
+    ),
 
     supabase
       .from('users')
@@ -100,9 +96,9 @@ async function gatherSeedContext(
     // Genre seed names from Last.fm tags (each cached).
     topGenres.length === 0
       ? Promise.resolve([] as string[])
-      : // ponytail: `.map` passes the INDEX as the limit (0..4) — pre-#175
-      // behavior kept byte-identical; flagged on #175 for an owner decision.
-      Promise.all(topGenres.map((tag, i) => lastfm.tagTopArtists(tag, i))).then((batches) => batches.flat()),
+      : // Default limit (20). Pre-#175 F15 a bare `.map(fn)` passed the array
+      // INDEX as the limit, so genre seeds asked Last.fm for 0..4 artists.
+      Promise.all(topGenres.map((tag) => lastfm.tagTopArtists(tag))).then((batches) => batches.flat()),
   ])
 
   names.push(...thumbsUpNames)
@@ -474,14 +470,20 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
   }))
 
   const knownNames = new Set(capSeedNames.map((n) => n.toLowerCase()))
+  // Provenance keyed by the SAME lowercase key buildRoundRobinNames dedupes on
+  // (#175 F20): "Boards of Canada" (seed A) and "Boards Of Canada" (seed B)
+  // are one candidate, so both seeds must be credited. Read via seedsOf().
   const nameToSeeds = new Map<string, string[]>()
   for (const { seed, names } of lfmResults) {
     for (const name of names) {
-      if (knownNames.has(name.toLowerCase())) continue
-      if (!nameToSeeds.has(name)) nameToSeeds.set(name, [])
-      nameToSeeds.get(name)!.push(seed)
+      const key = name.toLowerCase()
+      if (knownNames.has(key)) continue
+      const seeds = nameToSeeds.get(key)
+      if (!seeds) nameToSeeds.set(key, [seed])
+      else if (!seeds.includes(seed)) seeds.push(seed)
     }
   }
+  const seedsOf = (name: string) => nameToSeeds.get(name.toLowerCase()) ?? []
 
   const allNames = buildRoundRobinNames(lfmResults, knownNames, { tailFirst: true })
   const { blocking: uniqueNames, secondary: secondaryNames } = splitResolvePools(allNames)
@@ -497,12 +499,13 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
   // seen / dismissed cooldown — applied BEFORE confirm so no iTunes call is
   // spent on an artist writeScored would discard.
   const exclusions = await loadExclusions(supabase, userId, { playThreshold, nameFallback: true })
-  let filtListened = 0
+  // Distinct ids hidden as listened (baseline counted per id, not per name).
+  const filtListenedIds = new Set<string>()
   /** Every feed candidate gate: exclusions + underground cap + genre filter. */
   const feedKeeps = (artist: Artist, countListened = false): boolean => {
     const why = exclusions.reason(artist)
     if (why) {
-      if (countListened && why === 'listened') filtListened++
+      if (countListened && why === 'listened') filtListenedIds.add(artist.id)
       return false
     }
     if (undergroundMode && (artist.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) return false
@@ -538,7 +541,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
   const candsCount = new Set([...resolved.resolved.values()].map((a) => a.id)).size
   const candidateMap = new Map<string, { artist: Artist; seedArtists: string[] }>()
   for (const [name, artist] of primary.artists) {
-    const seedArtists = nameToSeeds.get(name) ?? []
+    const seedArtists = seedsOf(name)
     if (candidateMap.has(artist.id)) {
       const existing = candidateMap.get(artist.id)!
       for (const s of seedArtists) {
@@ -614,7 +617,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
     console.error(
       `[engine] FAIL zero_top seeds=${capSeedNames.length} lfm=${lfmTotal} ` +
       `uniq=${uniqueNames.length} ok=${resolved.searchOk} fail=${resolved.searchFail} ` +
-      `filtListened=${filtListened} cands=${candsCount} source=${source}`
+      `filtListened=${filtListenedIds.size} cands=${candsCount} source=${source}`
     )
     return { count: 0, runSecondary: null, flush, metrics: { primaryMs: Date.now() - primaryStart, previewMs, firstBatchMs: 0, misses: resolved.cacheMisses, retries: resolved.searchRetries, rateLimited: resolved.rateLimited } }
   }
@@ -650,7 +653,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
     const reserve: ScoredArtist[] = []
     for (const [name, art] of sec.artists) {
       if (pickedIds.has(art.id)) continue
-      reserve.push(scoreCandidate(art, nameToSeeds.get(name) ?? [], `${source}_backfill`))
+      reserve.push(scoreCandidate(art, seedsOf(name), `${source}_backfill`))
     }
     const before = top.length
     top = backfillToTarget(top, reserve, TARGET)
@@ -681,9 +684,18 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
    * cooldown-ineligible rows and ids already written this run. Returns the
    * number of rows successfully upserted.
    *
-   * Preserves ALL existing behaviour: cooldown filtering, row shape, expires_at,
-   * upsert onConflict. Fetches cooldown state fresh from DB for the given items
-   * so concurrent phases never clobber a live seen_at/skip_at.
+   * Cooldown state is read fresh from the DB for the given items. Writes:
+   *   - new / never-seen rows: the payload carries NO seen_at / skip_at, so a
+   *     new row gets the column defaults (null) and an existing row keeps
+   *     whatever is live — a dismiss landing between our read and this write
+   *     is never overwritten (lost-update guard).
+   *   - resurfaced rows (seen > 7 days ago, no skip_at — owner decision D1,
+   *     #175 F26): `seen_at: null` so the feed shows them again, and
+   *     `created_at: now` so the nightly cron's 3-day unseen expiry doesn't
+   *     expire them immediately. Still no skip_at in the payload.
+   * The two kinds go in separate upserts because PostgREST upserts one column
+   * set per request: supabase-js sends the UNION of the rows' keys as
+   * `columns`, and a key missing from one row is written as NULL for it.
    */
   async function writeScored(items: ScoredArtist[]): Promise<number> {
     // Exclude ids already written in a previous phase
@@ -691,57 +703,56 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
     if (fresh.length === 0) return 0
 
     const ids = fresh.map((item) => item.artist.id)
-    const { data: existingCache } = await supabase
+    const { data: existingCache, error: readErr } = await supabase
       .from('recommendation_cache')
       .select('artist_id, seen_at, skip_at')
       .eq('user_id', userId)
       .in('artist_id', ids)
 
-    const existingSeenAt = new Map<string, string | null>()
-    const existingSkipAt = new Map<string, string | null>()
-    for (const row of existingCache ?? []) {
-      existingSeenAt.set(row.artist_id, row.seen_at)
-      existingSkipAt.set(row.artist_id, row.skip_at)
-    }
-
-    const rows = fresh
-      .filter((item) => {
-        const seenAt = existingSeenAt.get(item.artist.id)
-        const skipAt = existingSkipAt.get(item.artist.id)
-        // Not in cache → eligible. In cache → check both cooldowns.
-        if (seenAt === undefined && skipAt === undefined) return true
-        return isEligibleForCooldown(seenAt, skipAt, now)
-      })
-      .map((item) => {
-        const previousSeenAt = existingSeenAt.get(item.artist.id)
-        const previousSkipAt = existingSkipAt.get(item.artist.id)
-        return {
-          user_id: userId,
-          artist_id: item.artist.id,
-          artist_data: item.artist,
-          score: item.score,
-          why: item.why,
-          source: item.source,
-          expires_at: expiresAt.toISOString(),
-          // Preserve existing cooldown state on re-surface so the window doesn't reset.
-          ...(previousSeenAt !== undefined ? { seen_at: previousSeenAt } : { seen_at: null }),
-          ...(previousSkipAt !== undefined ? { skip_at: previousSkipAt } : { skip_at: null }),
-        }
-      })
-
-    if (rows.length === 0) return 0
-
-    const { error } = await supabase
-      .from('recommendation_cache')
-      .upsert(rows, { onConflict: 'user_id,artist_id' })
-
-    if (error) {
-      console.error(`[engine] upsert_error source=${source} err=${error.message}`)
+    // Fail safe (#175 F17): without the cooldown read every item looks "not in
+    // cache" and could be resurfaced or written over a live dismissal. Write
+    // nothing instead.
+    if (readErr) {
+      console.error(`[engine] cooldown_read_error source=${source} err=${readErr.message}`)
       return 0
     }
 
-    for (const row of rows) writtenIds.add(row.artist_id)
-    return rows.length
+    const existing = new Map<string, { seen_at: string | null; skip_at: string | null }>()
+    for (const row of existingCache ?? []) existing.set(row.artist_id, row)
+
+    const plain = []
+    const resurfaced = []
+    for (const item of fresh) {
+      const prev = existing.get(item.artist.id)
+      if (prev && !isEligibleForCooldown(prev.seen_at, prev.skip_at, now)) continue
+      const row = {
+        user_id: userId,
+        artist_id: item.artist.id,
+        artist_data: item.artist,
+        score: item.score,
+        why: item.why,
+        source: item.source,
+        expires_at: expiresAt.toISOString(),
+      }
+      if (prev?.seen_at) resurfaced.push({ ...row, seen_at: null, created_at: now.toISOString() })
+      else plain.push(row)
+    }
+
+    let written = 0
+    for (const rows of [plain, resurfaced]) {
+      if (rows.length === 0) continue
+      const { error } = await supabase
+        .from('recommendation_cache')
+        .upsert(rows, { onConflict: 'user_id,artist_id' })
+      if (error) {
+        console.error(`[engine] upsert_error source=${source} err=${error.message}`)
+        continue
+      }
+      for (const row of rows) writtenIds.add(row.artist_id)
+      written += rows.length
+      if (rows === resurfaced) console.log(`[engine] resurfaced source=${source} n=${rows.length}`)
+    }
+    return written
   }
 
   // ── Tier 1 (blocking): confirm FIRST_BATCH_TARGET artists, write, return fast ──
@@ -754,8 +765,8 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
 
   console.log(
     `[engine] tier1 seeds=${capSeedNames.length} lfm=${lfmTotal} uniq=${uniqueNames.length} ` +
-    `ok=${resolved.searchOk} fail=${resolved.searchFail} filtListened=${filtListened} ` +
-    `cands=${candidateMap.size} firstBatch=${firstBatch.length} written=${tier1Written} source=${source}`
+    `ok=${resolved.searchOk} fail=${resolved.searchFail} filtListened=${filtListenedIds.size} ` +
+    `cands=${candsCount} firstBatch=${firstBatch.length} written=${tier1Written} source=${source}`
   )
 
   // ── Background continuation: tier-2 (finish primary to TARGET) + secondary pool ──
@@ -789,7 +800,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
     const secondaryCandidates: Array<{ artist: Artist; seedArtists: string[] }> = []
     for (const [name, artist] of secondaryResolved.artists) {
       if (writtenIds.has(artist.id)) continue
-      const seedArtists = nameToSeeds.get(name) ?? []
+      const seedArtists = seedsOf(name)
       secondaryCandidates.push({ artist, seedArtists })
     }
 
