@@ -15,6 +15,7 @@ import { lastfm } from '@/lib/lastfm'
 import type { Artist, Track } from '@/lib/music-provider/types'
 import { createServiceClient } from '@/lib/supabase/server'
 import { PlayableCandidates, livePlayablePorts } from './playable-candidates'
+import { ArtistIdentity } from '@/lib/artist-identity'
 import { PreviewStore, resetPersisted, snapshotPersisted } from './preview-store'
 import { resetCalls, snapshotCalls } from '@/lib/metrics/api-call-counter'
 import {
@@ -228,6 +229,18 @@ export function computeTopAnchors(
  * `confirmTarget`: pass `Math.min(railDisplayTarget + HEADROOM, 30)` from each
  * rail so smaller rails confirm fewer candidates.
  */
+/**
+ * One doorway per request's Supabase client (#175 F25): rails resolve in
+ * parallel and often share names, so they must share the in-flight mint
+ * dedupe or two rails can mint the same name twice.
+ */
+const identities = new WeakMap<SupabaseClient, ArtistIdentity>()
+function identityFor(supabase: SupabaseClient): ArtistIdentity {
+  let identity = identities.get(supabase)
+  if (!identity) identities.set(supabase, (identity = new ArtistIdentity(supabase)))
+  return identity
+}
+
 function resolveAndFilter(
   names: string[],
   accessToken: string,
@@ -238,7 +251,7 @@ function resolveAndFilter(
   },
   confirmTarget: number,
 ): Promise<Map<string, Artist>> {
-  return new PlayableCandidates(supabase, livePlayablePorts(accessToken)).playable(
+  return new PlayableCandidates(supabase, livePlayablePorts(accessToken), identityFor(supabase)).playable(
     names,
     confirmTarget,
     (artist) =>

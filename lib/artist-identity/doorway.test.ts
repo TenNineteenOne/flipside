@@ -188,6 +188,17 @@ describe("ensure — rule 2: a bare name reuses the one stable row", () => {
     } as unknown as ArtistsClient
     expect(await new ArtistIdentity(client).ensure({ name: "Boom" })).toBeNull()
   })
+
+  it("#175 F25: concurrent ensures of case-variants on one instance share ONE mint", async () => {
+    const { identity, tables } = setup()
+    const [a, b] = await Promise.all([identity.ensure({ name: "Ghost Band" }), identity.ensure({ name: "ghost band" })])
+    expect(tables.artists).toHaveLength(1)
+    expect(a).toBe(tables.artists[0].id)
+    expect(b).toBe(a)
+    // Settled → a later ensure reads the row (no stale in-flight entry, no new mint).
+    expect(await identity.ensure({ name: "GHOST BAND" })).toBe(a)
+    expect(tables.artists).toHaveLength(1)
+  })
 })
 
 describe("ensure — rule 1: distinct Spotify ids never share a row", () => {

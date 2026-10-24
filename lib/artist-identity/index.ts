@@ -211,8 +211,26 @@ export class ArtistIdentity {
     return out
   }
 
-  private async ensureByName(seed: ArtistSeed): Promise<string | null> {
+  /**
+   * In-flight by-name ensures, keyed by `name_lower` (#175 F25). Concurrent
+   * resolves on ONE instance (feed: primary + secondary + bleed share the run's
+   * instance; or "Ghost Band" / "ghost band" in one batch) would otherwise both
+   * read "no row" and both insert — `name_lower` isn't unique — minting
+   * duplicate uuids (#161 class). Cross-request races still need a DB unique
+   * index on name-only rows (owner decision D2, deferred; #168).
+   */
+  private readonly inflight = new Map<string, Promise<string | null>>()
+
+  private ensureByName(seed: ArtistSeed): Promise<string | null> {
     const nameLower = artistNameDbKey(seed.name)
+    const pending = this.inflight.get(nameLower)
+    if (pending) return pending
+    const p = this.readOrMintByName(seed, nameLower).finally(() => this.inflight.delete(nameLower))
+    this.inflight.set(nameLower, p)
+    return p
+  }
+
+  private async readOrMintByName(seed: ArtistSeed, nameLower: string): Promise<string | null> {
     const known = this.ambiguous.get(nameLower)
     if (known) return pickRow(known).id
 
