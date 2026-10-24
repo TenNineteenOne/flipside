@@ -45,7 +45,7 @@ function makeSupabase(listened: ListenedRow[], artists: ArtistRow[]) {
   // ── artists table ──
   function artistsTable() {
     return {
-      // ensureArtists upsert(rows, {onConflict, ignoreDuplicates})
+      // ArtistIdentity.ensureBySpotifyId upsert(rows, {onConflict, ignoreDuplicates})
       async upsert(rows: ArtistRow[]) {
         for (const r of rows) {
           const existing = artists.find((x) => x.spotify_id === r.spotify_id)
@@ -54,7 +54,7 @@ function makeSupabase(listened: ListenedRow[], artists: ArtistRow[]) {
         }
         return { error: null }
       },
-      // ensureArtistByName insert(): name-only mint (no spotify_id).
+      // ArtistIdentity by-name insert(): name-only mint (no spotify_id).
       insert(row: Partial<ArtistRow>) {
         return {
           select(_c: string) {
@@ -78,7 +78,7 @@ function makeSupabase(listened: ListenedRow[], artists: ArtistRow[]) {
       },
       select(_cols: string) {
         return {
-          // ensureArtists read-back: .in("spotify_id", chunk)
+          // ensureBySpotifyId read-back: .in("spotify_id", chunk)
           // resolver table-hit read: .in("name_lower", nameLowers)
           async in(column: string, values: string[]) {
             const data = artists
@@ -91,7 +91,7 @@ function makeSupabase(listened: ListenedRow[], artists: ArtistRow[]) {
               }))
             return { data, error: null }
           },
-          // ensureArtistByName read: .eq("name_lower", v).order("id").limit(20)
+          // by-name read: .eq("name_lower", v).order("id").limit(20)
           eq(column: string, value: string) {
             return {
               order(orderCol: string, o: { ascending: boolean }) {
@@ -259,7 +259,7 @@ describe("resolveUnresolvedArtistIds — artists table hit", () => {
       { id: "artist-uuid-a", spotify_id: "sp-a", name: "Radiohead", name_lower: "radiohead" },
       { id: "artist-uuid-b", spotify_id: "sp-b", name: "Radiohead", name_lower: "radiohead" },
     ]
-    // getInfo confirms the artist exists → ensureArtist(by name) reuses the best
+    // getInfo confirms the artist exists → the doorway lands on the stable by-name row
     // existing row (spotify_id NOT NULL first) rather than minting a duplicate.
     fetchArtistEnrichment.mockResolvedValue({ genres: ["rock"], popularity: 80 })
     const supabase = makeSupabase(listened, artists)
@@ -271,7 +271,7 @@ describe("resolveUnresolvedArtistIds — artists table hit", () => {
 })
 
 describe("resolveUnresolvedArtistIds — getInfo confirm + mint-by-name", () => {
-  it("mints a uuid via ensureArtist when getInfo confirms the artist", async () => {
+  it("mints a uuid via the doorway when getInfo confirms the artist", async () => {
     const listened = [baseRow({})]
     fetchArtistEnrichment.mockResolvedValue({ genres: ["rock"], popularity: 90 })
     const artists: ArtistRow[] = []

@@ -387,7 +387,7 @@ describe("resolveArtistsByName", () => {
     const deps: ResolveDeps = { ...makeDeps({ search, cacheWrites: writes }), mintArtist }
     const r = await resolveArtistsByName(["A"], deps)
 
-    // mintArtist sees a null spotifyId → ensureArtist mints by name.
+    // mintArtist sees a null spotifyId → identity.ensure lands on the by-name row.
     expect(mintArtist.mock.calls[0][0].spotifyId).toBeNull()
     const resolved = r.resolved.get("A")!
     expect(resolved.id).toBe("uuid-lfm")

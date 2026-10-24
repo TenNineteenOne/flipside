@@ -1,6 +1,6 @@
 ---
 title: Architecture Overview
-updated: 2026-06-06
+updated: 2026-10-24
 related: [[generation-engine]], [[api-routes]], [[music-providers]], [[data-model]]
 ---
 
@@ -38,7 +38,8 @@ resolver/confirm core:
 
 ```
 seeds ─▶ Last.fm similarity / tag fan-out ─▶ candidate names
-      ─▶ resolve names → artists (cache → Spotify search, + Last.fm enrichment)
+      ─▶ resolve names → artist uuids (the doorway, lib/artist-identity:
+         `artists` name read → Last.fm artist.getInfo → mint/reuse row)
       ─▶ filter (listened / thumbs-down / cooldown / underground cap)
       ─▶ score (k^popularity) + diversity (greedy + 25% cluster cap)
       ─▶ confirm playable preview (iTunes first → Spotify fallback)
@@ -64,7 +65,7 @@ Key design properties:
 |---|---|---|
 | Last.fm | similar artists, genre tags, enrichment (genres/popularity), history | [[external-apis]] |
 | iTunes / Apple | 30s preview audio (primary), Apple Music links | [[external-apis]] |
-| Spotify Web API | artist search (name→ID+image), user history (optional), "open in Spotify" | [[external-apis]], [[spotify-dependency]] |
+| Spotify Web API | top-tracks preview fallback, Spotify-library actions, "open in Spotify" — no longer resolves artist names (#157) | [[external-apis]], [[spotify-dependency]] |
 | stats.fm | optional listening-history source | [[external-apis]] |
 | Supabase | all persistence | [[data-model]] |
 

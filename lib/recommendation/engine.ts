@@ -131,7 +131,7 @@ export async function getTagArtistNames(tag: string, limit = 20): Promise<string
  * genuine "artist not found" (null enrichment).
  *
  *  - `id: ""` — the canonical uuid is minted downstream (resolve-candidates
- *    calls mintArtist → ensureArtist by name, then re-keys `.id`).
+ *    calls mintArtist → ArtistIdentity.ensure by name, then re-keys `.id`).
  *  - `spotifyId: null` — Last.fm has no Spotify id; the #159 worker backfills it.
  *  - `imageUrl: null` — getInfo's image is a placeholder; Stage 3 fills real art.
  *
