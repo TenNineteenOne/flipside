@@ -311,8 +311,6 @@ function ArtistCardImpl({
           <div onClick={(e) => e.stopPropagation()}>
             <TrackStrip
               tracks={localTracks}
-              artistId={artist.id}
-              artistName={artist.name}
               artistColor={artistColor}
               onPlay={handlePlay}
             />
