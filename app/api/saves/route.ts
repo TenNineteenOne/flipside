@@ -1,15 +1,11 @@
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, dbError } from "@/lib/errors"
-import { getAccessToken } from "@/lib/get-access-token"
 import { isValidArtistId, isValidSpotifyId } from "@/lib/spotify-ids"
-import { invalidateExploreCache } from "@/lib/recommendation/explore-engine"
-import { musicProvider } from "@/lib/music-provider/provider"
-import { type NextRequest } from "next/server"
+import { onTasteChanged } from "@/lib/taste-change"
 import { withAuthedJsonRoute } from "@/lib/api/with-authed-route"
 
-export const POST = withAuthedJsonRoute(async ({ userId, request, body: rawBody }) => {
-  const body = rawBody as { artistId?: string; spotifyTrackId?: string; addToPlaylist?: boolean }
-  const { artistId, spotifyTrackId, addToPlaylist = false } = body
+export const POST = withAuthedJsonRoute(async ({ userId, body: rawBody }) => {
+  const { artistId, spotifyTrackId } = rawBody as { artistId?: string; spotifyTrackId?: string }
 
   if (!artistId || !isValidArtistId(artistId)) {
     return apiError("Valid artistId (uuid) is required", 400)
@@ -53,9 +49,7 @@ export const POST = withAuthedJsonRoute(async ({ userId, request, body: rawBody 
   // the next /explore load picks fresh candidates (the saved artist should
   // not reappear, and adjacent picks may shift). Awaited so the serverless
   // function doesn't terminate mid-delete after the response is sent.
-  await invalidateExploreCache(userId).catch((err) => {
-    console.error("[saves] explore-invalidate failed", err)
-  })
+  await onTasteChanged(supabase, userId, { kind: "save" })
 
   const { error: seenError } = await supabase
     .from("recommendation_cache")
@@ -64,78 +58,9 @@ export const POST = withAuthedJsonRoute(async ({ userId, request, body: rawBody 
     .eq("artist_id", artistId)
   if (seenError) console.error(`[saves] seen_at err=${seenError.message}`)
 
-  // Only add to Spotify playlist when explicitly requested and user has Spotify access
-  let playlistId: string | null = null
-  if (spotifyTrackId && addToPlaylist) {
-    const accessToken = await getAccessToken(request as NextRequest)
-    if (accessToken) {
-      const { data: user } = await supabase
-        .from("users")
-        .select("id, spotify_id, flipside_playlist_id")
-        .eq("id", userId)
-        .maybeSingle()
-
-      if (user?.spotify_id) {
-        playlistId = user.flipside_playlist_id ?? null
-
-        if (!playlistId) {
-          // Only the provider call itself is guarded — matching the original route,
-          // where a DB-update failure after a successful create was left unhandled
-          // (propagates as an uncaught error) rather than swallowed here.
-          let created: string | null = null
-          try {
-            created = await musicProvider.createPlaylist(
-              accessToken,
-              user.spotify_id,
-              "Flipside Discoveries",
-              "Tracks saved via Flipside"
-            )
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : "unknown"
-            if (msg === "scope_missing") {
-              console.warn("[saves] Spotify 403 on playlist create — scope missing or app not approved")
-              return apiError("Spotify permission denied for playlist", 403)
-            }
-            if (msg === "rate_limited") {
-              console.warn("[saves] Spotify rate limit hit when creating playlist — skipping")
-            }
-            // Other failures (auth_expired, http_N): silently continue with playlistId unset,
-            // matching the original route's behavior of only branching on 403/429.
-          }
-          if (created) {
-            playlistId = created
-            await supabase
-              .from("users")
-              .update({ flipside_playlist_id: playlistId })
-              .eq("id", userId)
-          }
-        }
-
-        if (playlistId) {
-          try {
-            await musicProvider.addTracksToPlaylist(accessToken, playlistId, [spotifyTrackId])
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : "unknown"
-            if (msg === "auth_expired") {
-              console.warn("[saves] Spotify 401 on track add — token expired")
-              return Response.json({ success: true, saved: true, playlistError: "Spotify token expired" })
-            }
-            if (msg === "scope_missing") {
-              console.warn("[saves] Spotify 403 on track add — scope missing or app not approved")
-              return Response.json({ success: true, saved: true, playlistError: "Spotify permission denied for playlist" })
-            }
-            if (msg === "rate_limited") {
-              console.warn("[saves] Spotify rate limit hit when adding track — skipping")
-              return Response.json({ success: true, saved: true, playlistError: "Spotify rate limit — try again later" })
-            }
-            // Other failures (http_N): silently continue, matching original fallthrough behavior.
-          }
-        }
-      }
-    }
-  }
-
-  return Response.json({ success: true, saved: true, playlistId: playlistId ?? null })
+  // playlistId is always null: the Spotify-playlist branch was removed with the
+  // dead user-token surface (#175 A1). Kept in the body for response-shape parity.
+  return Response.json({ success: true, saved: true, playlistId: null })
 })
 
 export const DELETE = withAuthedJsonRoute(async ({ userId, body: rawBody }) => {
@@ -153,9 +78,7 @@ export const DELETE = withAuthedJsonRoute(async ({ userId, body: rawBody }) => {
 
   if (error) return dbError(error, "saves/delete")
 
-  await invalidateExploreCache(userId).catch((err) => {
-    console.error("[saves] explore-invalidate failed", err)
-  })
+  await onTasteChanged(supabase, userId, { kind: "save" })
 
   return Response.json({ success: true })
 })

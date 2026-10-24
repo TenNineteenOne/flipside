@@ -1,6 +1,6 @@
 ---
 title: API Routes
-updated: 2026-07-11
+updated: 2026-10-24
 related: [[generation-engine]], [[explore-engine]], [[music-providers]], [[auth-and-session]], [[data-model]]
 ---
 
@@ -15,9 +15,6 @@ Mutating routes go through `withAuthedCsrfRoute`/`withAuthedJsonRoute` (CSRF →
 optional JSON body-parse, in that order) as the house pattern. Exceptions that stayed on an
 inline preamble because a wrapper would have changed observable behavior (check order or
 error-message text):
-- `/api/spotify/like`, `/api/spotify/resolve-track` — check the Spotify access token *before*
-  parsing the body (a missing token 401s ahead of a body-parse failure); adopted
-  `withAuthedCsrfRoute` for CSRF+auth but keep body-parsing local.
 - `/api/onboarding/resolve` — rate-limits before parsing the body, and its invalid-body error
   is `"Invalid JSON body"`, not the wrapper's generic `"Invalid JSON"`.
 - `/api/onboarding/seeds`, `/api/settings/seed-artists` (POST) — invalid-body error is
@@ -26,8 +23,11 @@ error-message text):
   `"source must be 'lastfm' or 'statsfm'"` validation error, not a generic JSON-parse error.
 
 All of the above still adopted `withAuthedCsrfRoute` for the shared CSRF+auth preamble; only
-the body-parse step stayed local. GET-only routes (`/api/history`, `/api/onboarding/check`,
-`/api/explore/rails`, etc.) stay on plain `safeAuth()` — no CSRF needed.
+the body-parse step stayed local. GET routes use `withAuthedRoute` (no CSRF). The shell hands
+handlers a lazily-created service-role client as `ctx.supabase` (tests mock
+`@/lib/supabase/server`). Still inline: `/api/onboarding/search` (logs `[onboard-search] unauth`
+before its 401) and the GETs owned elsewhere (`/api/history`, `/api/recommendations`). Crons use
+`withCronRoute(tag, handler)` — the single `CRON_SECRET` check.
 
 ## Generation & discovery
 
@@ -42,12 +42,15 @@ the body-parse step stayed local. GET-only routes (`/api/history`, `/api/onboard
 
 ## Feedback, saves, history
 
+Which caches each taste change invalidates is decided in one place: `lib/taste-change.ts`
+(`onTasteChanged` / `invalidationFor`). A `skip` is not a taste change.
+
 | Route | Method | Does |
 |---|---|---|
 | `/api/feedback` | POST | `rpc_record_feedback`; thumbs → `invalidateExploreCache` (narrow for explore, full for feed) |
-| `/api/feedback/[artistId]` | DELETE | `rpc_delete_feedback` (undo thumbs), 204 |
+| `/api/feedback/[artistId]` | DELETE | `rpc_delete_feedback` (undo thumbs) + full explore invalidate, 204 |
 | `/api/dismiss/[artistId]` | DELETE | `rpc_clear_dismiss` + full explore invalidate, 204 |
-| `/api/saves` | POST/DELETE | upsert/delete `saves`; optional save→Spotify playlist (degrades to `playlistError`) |
+| `/api/saves` | POST/DELETE | upsert/delete `saves`; response keeps `playlistId: null` (the Spotify-playlist branch was removed in #175) |
 | `/api/history` | GET | paginated seen recs + feedback/saves join |
 | `/api/history/accumulate` | POST | 15-min cooldown; sync Last.fm or stats.fm history into `listened_artists` |
 
@@ -59,18 +62,16 @@ the body-parse step stayed local. GET-only routes (`/api/history`, `/api/onboard
 | `/api/onboarding/resolve` | POST | resolves a Last.fm-sourced onboarding suggestion to the internal artist uuid: `artists`-table exact-name doorway lookup first, MusicBrainz mbid url-rels fallback → mint; 404 when unresolvable; 30/min per-user in-memory rate limit |
 | `/api/onboarding/seeds` | POST | upsert `seed_artists` (3–200) |
 | `/api/onboarding/check` | GET | `{needsOnboarding}` |
-| `/api/settings` | PATCH | validate + encrypt usernames + update `users`; genre/mode change → invalidate caches |
+| `/api/settings` | PATCH | validate + encrypt usernames + update `users`; genre/mode change → explore + unseen-feed wipe; `popularityCurve` → explore only |
 | `/api/settings/seed-artists` | GET/POST/DELETE | manage seeds + invalidate explore |
 | `/api/account` | DELETE | delete user (cascade) + sign out |
 
-## Spotify-specific & misc
+## Misc
 
 | Route | Method | Notes |
 |---|---|---|
-| `/api/spotify/like` | POST | `musicProvider.likeTrack`; requires user token; 401/403 on auth issues |
-| `/api/spotify/resolve-track` | POST | resolve track→Spotify ID for "like"; ID/name guard against cache poisoning |
-| `/api/open/[platform]/[artistId]` | GET | **only `apple_music`** — resolves Apple Music URL via iTunes, caches 30d, 302 redirect |
-| `/api/auth/[...nextauth]` | GET/POST | NextAuth handlers (incl. optional Spotify OAuth) |
+| `/api/open/[platform]/[artistId]` | GET | **only `apple_music`** — `linkFor` (`lib/external-links.ts`): MB-backfilled `artists.apple_id` → cached iTunes result (30d) → live iTunes (via `itunesFetch`, breaker-aware) → search URL; 302 redirect |
+| `/api/auth/[...nextauth]` | GET/POST | NextAuth handlers (Credentials only) |
 | `/api/cron/recommendations` | GET | **no session** — `CRON_SECRET` Bearer (timing-safe); expire >3d unseen, hard-delete >30d (keeps `skip_at`) |
 
 ## The "Open in Spotify" path

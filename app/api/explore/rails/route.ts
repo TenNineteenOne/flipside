@@ -13,52 +13,20 @@
  * The client compares this against the pre-regen snapshot; when it advances,
  * the regen is done.
  */
-import { safeAuth } from "@/lib/auth"
-import { createServiceClient } from "@/lib/supabase/server"
-import { apiUnauthorized, apiError } from "@/lib/errors"
-import { getAccessToken } from "@/lib/get-access-token"
-import { getSpotifyClientToken } from "@/lib/spotify-client-token"
+import { apiError } from "@/lib/errors"
+import { withAuthedRoute } from "@/lib/api/with-authed-route"
+import { loadExploreInput } from "@/lib/explore-input"
 import { buildExploreRails } from "@/lib/recommendation/explore-engine"
 import { assembleRailPayloads } from "@/lib/recommendation/explore-rail-payloads"
-import type { NextRequest } from "next/server"
 
-export async function GET(req: NextRequest): Promise<Response> {
-  const session = await safeAuth()
-  if (!session?.user?.id) return apiUnauthorized()
-
-  const userId = session.user.id
-  const supabase = createServiceClient()
-
-  const [{ data: user, error: userError }, userAccessToken, clientToken] = await Promise.all([
-    supabase
-      .from("users")
-      .select("id, adventurous, underground_mode, popularity_curve, play_threshold")
-      .eq("id", userId)
-      .maybeSingle(),
-    getAccessToken(req),
-    getSpotifyClientToken(),
-  ])
-
-  if (userError || !user) return apiError("User not found", 404)
-
-  const accessToken = userAccessToken ?? clientToken ?? ""
+export const GET = withAuthedRoute(async ({ userId, supabase }): Promise<Response> => {
+  const input = await loadExploreInput(supabase, userId)
+  if (!input) return apiError("User not found", 404)
 
   try {
     // Read-only: never regenerate. Returns partial/empty rails when cold.
     const [buildResult, generatedAtResult] = await Promise.all([
-      buildExploreRails(
-        {
-          userId: user.id,
-          accessToken,
-          adventurous: user.adventurous ?? false,
-          undergroundMode: user.underground_mode ?? false,
-          popularityCurve:
-            typeof user.popularity_curve === "number" ? user.popularity_curve : undefined,
-          playThreshold:
-            typeof user.play_threshold === "number" ? user.play_threshold : undefined,
-        },
-        { hydrate: true, regenerate: false },
-      ),
+      buildExploreRails(input, { hydrate: true, regenerate: false }),
       supabase
         .from("explore_cache")
         .select("generated_at")
@@ -81,4 +49,4 @@ export async function GET(req: NextRequest): Promise<Response> {
     )
     return apiError("Failed to read rails", 500)
   }
-}
+})

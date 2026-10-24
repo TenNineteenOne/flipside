@@ -1,23 +1,7 @@
-import { createServiceClient } from "@/lib/supabase/server"
-import { createHmac, timingSafeEqual } from "crypto"
-import { NextRequest } from "next/server"
-import { apiError, apiUnauthorized } from "@/lib/errors"
+import { apiError } from "@/lib/errors"
+import { withCronRoute } from "@/lib/api/with-authed-route"
 
-export async function GET(req: NextRequest) {
-  const cronSecret = process.env.CRON_SECRET
-  if (!cronSecret) {
-    console.error("[cron] CRON_SECRET is not set — refusing request")
-    return apiError("Server misconfigured", 500)
-  }
-  const authHeader = req.headers.get("authorization") ?? ""
-  const expected = `Bearer ${cronSecret}`
-  // HMAC both values to fixed-length digests — prevents length-leak from direct comparison
-  const hmac = (v: string) => createHmac("sha256", "cron-compare").update(v).digest()
-  if (!timingSafeEqual(hmac(authHeader), hmac(expected))) {
-    return apiUnauthorized()
-  }
-
-  const supabase = createServiceClient()
+export const GET = withCronRoute("cron", async ({ supabase }) => {
   const now = new Date()
 
   const threeDaysAgo = new Date(now)
@@ -61,4 +45,4 @@ export async function GET(req: NextRequest) {
     `[cron/recommendations] Expired ${expiredCount} stale entries; deleted ${deletedCount} > 30d old`,
   )
   return Response.json({ success: true, expired: expiredCount, deleted: deletedCount })
-}
+})

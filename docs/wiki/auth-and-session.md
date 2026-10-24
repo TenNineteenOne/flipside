@@ -1,6 +1,6 @@
 ---
 title: Auth & Session
-updated: 2026-06-06
+updated: 2026-10-24
 related: [[data-model]], [[api-routes]], [[infra-and-ops]]
 ---
 
@@ -27,13 +27,15 @@ misconception — verify against `lib/auth.ts`). See [[spotify-dependency]].
 `safeAuth()` wraps `auth()` and catches stale-cookie decryption errors (deletes the bad
 cookie instead of throwing).
 
-## The Spotify user token (optional, separate from login)
+## No Spotify user token
 
-Some users connect Spotify for richer history. When present, the encrypted OAuth token
-lives in the NextAuth JWT and is read server-side by `getAccessToken(req)`
-(`lib/get-access-token.ts`); it returns `null` on `RefreshTokenError`. This token powers
-only *connected-user extras* (history sync, like-a-track) and is **preferred** over the
-shared client-credentials key during generation (`userAccessToken ?? clientToken`). See
+There is **no per-user Spotify token**. Login is Credentials-only, so nothing ever wrote an
+`accessToken` into the JWT. The dead reader (`lib/get-access-token.ts`) and the routes that
+depended on it (`/api/spotify/like`, `/api/spotify/resolve-track`, the save→playlist branch
+of `/api/saves`) were deleted in #175 (restore tag `archive/spotify-user-token`). All
+server-side Spotify calls use the shared client-credentials token
+(`lib/spotify-client-token.ts`), or `""` (Spotify-free) when it is unavailable. The
+`users.flipside_playlist_id` / `spotify_id` columns remain but are unused. See
 [[external-apis]] and [[music-providers]].
 
 ## Username encryption at rest (`lib/crypto/username.ts`)
@@ -49,7 +51,8 @@ Idempotent (already-encrypted passes through). One-time backfill:
   `/api/cron/*`. See [[infra-and-ops]].
 - **API wrappers** (`lib/api/with-authed-route.ts`): three factories —
   `withAuthedRoute` (session only), `withAuthedCsrfRoute` (+CSRF), `withAuthedJsonRoute`
-  (+CSRF +JSON parse). About half the routes inline the same pattern. See [[api-routes]].
+  (+CSRF +JSON parse), each passing `{ userId, request, supabase }`; plus `withCronRoute` for
+  the `CRON_SECRET` gate on `/api/cron/*`. A few routes still inline the preamble. See [[api-routes]].
 - **CSRF** (`lib/csrf.ts`): `enforceSameOrigin` checks Origin → Referer →
   `Sec-Fetch-Site` against known origins (`AUTH_URL`, `NEXTAUTH_URL`,
   `NEXT_PUBLIC_APP_URL`, `VERCEL_URL`, `VERCEL_PROJECT_PRODUCTION_URL`). **Fails closed**

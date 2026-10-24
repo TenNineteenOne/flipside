@@ -18,14 +18,11 @@
  * long enough to overlap the next.
  *
  * 🔴 AUTH: /api/cron/* is excluded from middleware auth, so the CRON_SECRET
- * check below is the ONLY gate. Pattern copied from
- * app/api/cron/recommendations/route.ts (timingSafeEqual over HMAC digests).
+ * check in withCronRoute (lib/api/with-authed-route.ts) is the ONLY gate.
  */
-import { createServiceClient } from "@/lib/supabase/server"
 import { resolveArtistExternalIds, searchArtistMbid } from "@/lib/music-provider/musicbrainz"
-import { createHmac, timingSafeEqual } from "crypto"
-import { NextRequest } from "next/server"
-import { apiError, apiUnauthorized } from "@/lib/errors"
+import { apiError } from "@/lib/errors"
+import { withCronRoute } from "@/lib/api/with-authed-route"
 
 // This worker is almost entirely I/O-wait on the 1-req/s MusicBrainz limiter, so
 // allow the full Hobby/Fluid 300s function budget for a single daily run.
@@ -50,21 +47,7 @@ interface ArtistRow {
   name: string
 }
 
-export async function GET(req: NextRequest) {
-  const cronSecret = process.env.CRON_SECRET
-  if (!cronSecret) {
-    console.error("[mb-backfill] CRON_SECRET is not set — refusing request")
-    return apiError("Server misconfigured", 500)
-  }
-  const authHeader = req.headers.get("authorization") ?? ""
-  const expected = `Bearer ${cronSecret}`
-  // HMAC both values to fixed-length digests — prevents length-leak from direct comparison.
-  const hmac = (v: string) => createHmac("sha256", "cron-compare").update(v).digest()
-  if (!timingSafeEqual(hmac(authHeader), hmac(expected))) {
-    return apiUnauthorized()
-  }
-
-  const supabase = createServiceClient()
+export const GET = withCronRoute("mb-backfill", async ({ supabase }) => {
   const now = new Date()
   const cutoff = new Date(now)
   cutoff.setDate(cutoff.getDate() - REATTEMPT_INTERVAL_DAYS)
@@ -202,4 +185,4 @@ export async function GET(req: NextRequest) {
     `[mb-backfill] scanned=${scanned} resolved=${resolved} conflicts=${conflicts} attempted=${attempted}`,
   )
   return Response.json({ scanned, resolved, conflicts, attempted })
-}
+})
