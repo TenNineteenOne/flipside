@@ -493,12 +493,13 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
   // seen / dismissed cooldown — applied BEFORE confirm so no iTunes call is
   // spent on an artist writeScored would discard.
   const exclusions = await loadExclusions(supabase, userId, { playThreshold, nameFallback: true })
-  let filtListened = 0
+  // Distinct ids hidden as listened (baseline counted per id, not per name).
+  const filtListenedIds = new Set<string>()
   /** Every feed candidate gate: exclusions + underground cap + genre filter. */
   const feedKeeps = (artist: Artist, countListened = false): boolean => {
     const why = exclusions.reason(artist)
     if (why) {
-      if (countListened && why === 'listened') filtListened++
+      if (countListened && why === 'listened') filtListenedIds.add(artist.id)
       return false
     }
     if (undergroundMode && (artist.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) return false
@@ -610,7 +611,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
     console.error(
       `[engine] FAIL zero_top seeds=${capSeedNames.length} lfm=${lfmTotal} ` +
       `uniq=${uniqueNames.length} ok=${resolved.searchOk} fail=${resolved.searchFail} ` +
-      `filtListened=${filtListened} cands=${candsCount} source=${source}`
+      `filtListened=${filtListenedIds.size} cands=${candsCount} source=${source}`
     )
     return { count: 0, runSecondary: null, flush, metrics: { primaryMs: Date.now() - primaryStart, previewMs, firstBatchMs: 0, misses: resolved.cacheMisses, retries: resolved.searchRetries, rateLimited: resolved.rateLimited } }
   }
@@ -758,8 +759,8 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
 
   console.log(
     `[engine] tier1 seeds=${capSeedNames.length} lfm=${lfmTotal} uniq=${uniqueNames.length} ` +
-    `ok=${resolved.searchOk} fail=${resolved.searchFail} filtListened=${filtListened} ` +
-    `cands=${candidateMap.size} firstBatch=${firstBatch.length} written=${tier1Written} source=${source}`
+    `ok=${resolved.searchOk} fail=${resolved.searchFail} filtListened=${filtListenedIds.size} ` +
+    `cands=${candsCount} firstBatch=${firstBatch.length} written=${tier1Written} source=${source}`
   )
 
   // ── Background continuation: tier-2 (finish primary to TARGET) + secondary pool ──

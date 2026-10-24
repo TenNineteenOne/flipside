@@ -444,6 +444,26 @@ describe("buildRecommendations — writeScored cooldown read error (#175 F17)", 
   })
 })
 
+// ── #175 F19: tier1 log fields keep their baseline meaning ──────────────────
+describe("buildRecommendations — tier1 log semantics (#175 F19)", () => {
+  it("cands counts pre-gate resolved ids; filtListened counts distinct listened ids", async () => {
+    const knownId = "f0000000-0000-4000-8000-000000000004"
+    seed({
+      seed_artists: [{ user_id: "u1", name: "SeedA" }],
+      artists: [artistsRow(knownId, "Known")],
+      listened_artists: [{ id: "l1", user_id: "u1", artist_id: knownId, play_count: 99 }],
+    })
+    lf.similars.set("SeedA", similarRefs(["Known", "Fresh0", "Fresh1"]))
+    const log = vi.spyOn(console, "log").mockImplementation(() => {})
+
+    await buildRecommendations(baseInput())
+
+    const tier1 = log.mock.calls.map((c) => String(c[0])).find((l) => l.startsWith("[engine] tier1"))
+    expect(tier1).toContain("filtListened=1 ")
+    expect(tier1).toContain("cands=3 ")
+  })
+})
+
 // ── #175 F15: genre seeds request the default tag limit ─────────────────────
 describe("buildRecommendations — genre seed tag limit (#175 F15)", () => {
   it("asks Last.fm for the default 20 artists per selected genre (not the array index)", async () => {
