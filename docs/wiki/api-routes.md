@@ -67,7 +67,7 @@ Which caches each taste change invalidates is decided in one place: `lib/taste-c
 
 | Route | Method | Notes |
 |---|---|---|
-| `/api/open/[platform]/[artistId]` | GET | **only `apple_music`** — resolves Apple Music URL via iTunes, caches 30d, 302 redirect |
+| `/api/open/[platform]/[artistId]` | GET | **only `apple_music`** — `linkFor` (`lib/external-links.ts`): MB-backfilled `artists.apple_id` → cached iTunes result (30d) → live iTunes (via `itunesFetch`, breaker-aware) → search URL; 302 redirect |
 | `/api/auth/[...nextauth]` | GET/POST | NextAuth handlers (Credentials only) |
 | `/api/cron/recommendations` | GET | **no session** — `CRON_SECRET` Bearer (timing-safe); expire >3d unseen, hard-delete >30d (keeps `skip_at`) |
 
