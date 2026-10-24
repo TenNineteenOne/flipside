@@ -16,7 +16,7 @@
 import { safeAuth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiUnauthorized, apiError } from "@/lib/errors"
-import { getSpotifyClientToken } from "@/lib/spotify-client-token"
+import { loadExploreInput } from "@/lib/explore-input"
 import { buildExploreRails } from "@/lib/recommendation/explore-engine"
 import { assembleRailPayloads } from "@/lib/recommendation/explore-rail-payloads"
 
@@ -27,35 +27,13 @@ export async function GET(): Promise<Response> {
   const userId = session.user.id
   const supabase = createServiceClient()
 
-  const [{ data: user, error: userError }, clientToken] = await Promise.all([
-    supabase
-      .from("users")
-      .select("id, adventurous, underground_mode, popularity_curve, play_threshold")
-      .eq("id", userId)
-      .maybeSingle(),
-    getSpotifyClientToken(),
-  ])
-
-  if (userError || !user) return apiError("User not found", 404)
-
-  const accessToken = clientToken ?? ""
+  const input = await loadExploreInput(supabase, userId)
+  if (!input) return apiError("User not found", 404)
 
   try {
     // Read-only: never regenerate. Returns partial/empty rails when cold.
     const [buildResult, generatedAtResult] = await Promise.all([
-      buildExploreRails(
-        {
-          userId: user.id,
-          accessToken,
-          adventurous: user.adventurous ?? false,
-          undergroundMode: user.underground_mode ?? false,
-          popularityCurve:
-            typeof user.popularity_curve === "number" ? user.popularity_curve : undefined,
-          playThreshold:
-            typeof user.play_threshold === "number" ? user.play_threshold : undefined,
-        },
-        { hydrate: true, regenerate: false },
-      ),
+      buildExploreRails(input, { hydrate: true, regenerate: false }),
       supabase
         .from("explore_cache")
         .select("generated_at")
