@@ -66,24 +66,40 @@ type QueryRows<T> = PromiseLike<{ data: T[] | null }>
 /** PostgREST's default max-rows cap; a plain select silently truncates past it. */
 const PAGE_SIZE = 1000
 
+/** The slice of a PostgREST select builder keyset paging needs. */
+interface KeysetQuery<T> {
+  order(column: "id", opts: { ascending: boolean }): KeysetQuery<T>
+  gt(column: "id", value: string): KeysetQuery<T>
+  limit(n: number): PromiseLike<{ data: T[] | null; error: { message: string } | null }>
+}
+
 /**
- * Read EVERY row of a per-user query, paging with `.range()` in chunks of
- * PAGE_SIZE until a short page (#175 F16 — a heavy Last.fm user easily has
- * >1000 listened rows, and a truncated read silently un-excludes the rest).
- * `page(from, to)` must build the full query (ordered by a unique column so
- * pages don't overlap) and apply `.range(from, to)`. On an error the rows read
- * so far are returned with it — callers already degrade an error to "fewer
- * exclusions".
+ * Read EVERY row of a per-user query in PAGE_SIZE pages (#175 F16 — a heavy
+ * Last.fm user easily has >1000 listened rows, and a truncated read silently
+ * un-excludes the rest). Keyset paging on `id` (#175 R8): offset paging over
+ * random-uuid order skips a row whenever an insert lands before the offset
+ * mid-read. `query()` builds a fresh filtered select that includes `id`;
+ * ordering, the `id > last` cursor and the limit are applied here. On a
+ * mid-read page error the rows read so far are returned with the error —
+ * callers already degrade that to "fewer exclusions" (logged by the caller).
  */
-export async function readAllRows<T>(
-  page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+export async function readAllRows<T extends { id: string }>(
+  query: () => KeysetQuery<T>,
 ): Promise<{ data: T[]; error: { message: string } | null }> {
   const rows: T[] = []
-  for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await page(from, from + PAGE_SIZE - 1)
-    if (error) return { data: rows, error }
-    rows.push(...(data ?? []))
-    if ((data ?? []).length < PAGE_SIZE) return { data: rows, error: null }
+  let last: string | null = null
+  for (;;) {
+    let q = query().order("id", { ascending: true })
+    if (last !== null) q = q.gt("id", last)
+    const { data, error } = await q.limit(PAGE_SIZE)
+    if (error) {
+      console.error(`[exclusions] page read failed after ${rows.length} rows: ${error.message}`)
+      return { data: rows, error }
+    }
+    const page = data ?? []
+    rows.push(...page)
+    if (page.length < PAGE_SIZE) return { data: rows, error: null }
+    last = page[page.length - 1].id
   }
 }
 
@@ -110,43 +126,25 @@ export async function loadExclusions(
   const none = Promise.resolve({ data: [] as { artist_id: string }[] })
   const [listened, thumbsDown, seen, skipped, thumbsUp, saved] = await Promise.all([
     preloaded.listened ??
-      readAllRows((from, to) =>
-        supabase
-          .from("listened_artists")
-          .select("artist_id, lastfm_artist_name, play_count")
-          .eq("user_id", userId)
-          .order("id", { ascending: true })
-          .range(from, to),
+      readAllRows<{ id: string; artist_id: string | null; lastfm_artist_name: string | null; play_count: number | null }>(() =>
+        supabase.from("listened_artists").select("id, artist_id, lastfm_artist_name, play_count").eq("user_id", userId),
       ),
     preloaded.thumbsDown ?? readFeedbackIds(supabase, userId, "thumbs_down"),
-    readAllRows((from, to) =>
+    readAllRows<{ id: string; artist_id: string }>(() =>
       supabase
         .from("recommendation_cache")
-        .select("artist_id")
+        .select("id, artist_id")
         .eq("user_id", userId)
         .not("seen_at", "is", null)
-        .gte("seen_at", cooldownStart)
-        .order("id", { ascending: true })
-        .range(from, to),
+        .gte("seen_at", cooldownStart),
     ),
-    readAllRows((from, to) =>
-      supabase
-        .from("recommendation_cache")
-        .select("artist_id")
-        .eq("user_id", userId)
-        .not("skip_at", "is", null)
-        .order("id", { ascending: true })
-        .range(from, to),
+    readAllRows<{ id: string; artist_id: string }>(() =>
+      supabase.from("recommendation_cache").select("id, artist_id").eq("user_id", userId).not("skip_at", "is", null),
     ),
     policy.liked ? readFeedbackIds(supabase, userId, "thumbs_up") : none,
     policy.liked
-      ? readAllRows<{ artist_id: string }>((from, to) =>
-          supabase
-            .from("saves")
-            .select("artist_id")
-            .eq("user_id", userId)
-            .order("id", { ascending: true })
-            .range(from, to),
+      ? readAllRows<{ id: string; artist_id: string }>(() =>
+          supabase.from("saves").select("id, artist_id").eq("user_id", userId),
         )
       : none,
   ])
@@ -181,14 +179,7 @@ export function readFeedbackIds(
   userId: string,
   signal: "thumbs_down" | "thumbs_up",
 ) {
-  return readAllRows<{ artist_id: string }>((from, to) =>
-    supabase
-      .from("feedback")
-      .select("artist_id")
-      .eq("user_id", userId)
-      .eq("signal", signal)
-      .is("deleted_at", null)
-      .order("id", { ascending: true })
-      .range(from, to),
+  return readAllRows<{ id: string; artist_id: string }>(() =>
+    supabase.from("feedback").select("id, artist_id").eq("user_id", userId).eq("signal", signal).is("deleted_at", null),
   )
 }

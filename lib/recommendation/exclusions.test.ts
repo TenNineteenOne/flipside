@@ -99,6 +99,36 @@ describe("loadExclusions — reads past the 1000-row cap (#175 F16)", () => {
   })
 })
 
+describe("loadExclusions — keyset paging (#175 R8)", () => {
+  it("a row removed before the cursor mid-read never makes a later row go missing", async () => {
+    const fake = createFakeSupabase({
+      listened_artists: Array.from({ length: 2000 }, (_, i) => ({
+        id: `r${String(i).padStart(5, "0")}`, user_id: "u1", artist_id: `l${i}`, play_count: 99,
+      })),
+      feedback: [],
+      recommendation_cache: [],
+    })
+    // After the first page is served, a row from that page is deleted (e.g. a
+    // re-sync). Offset paging would then start page 2 one row late and skip l1000.
+    const from = fake.client.from
+    let pages = 0
+    fake.client.from = (t: string) => {
+      const q = from(t)
+      if (t !== "listened_artists") return q
+      const then = q.then
+      q.then = (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) =>
+        then((v: unknown) => {
+          if (++pages === 1) fake.tables.listened_artists.shift()
+          return v
+        }).then(res, rej)
+      return q
+    }
+    const ex = await loadExclusions(fake.client, "u1", FEED, NOW)
+    expect(ex.reason(a("l1000"))).toBe("listened")
+    expect(ex.reason(a("l1999"))).toBe("listened")
+  })
+})
+
 describe("isEligibleForCooldown", () => {
   const now = new Date("2026-04-20T00:00:00Z")
 

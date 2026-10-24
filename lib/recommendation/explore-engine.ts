@@ -121,14 +121,12 @@ export function rankByCurve(
 function loadSharedRows(supabase: SupabaseClient, userId: string) {
   return {
     // Paged past the 1000-row cap (#175 F16); each is one promise, awaited twice.
-    listened: readAllRows((from, to) =>
+    listened: readAllRows<{ id: string; artist_id: string; play_count: number | null }>(() =>
       supabase
         .from('listened_artists')
-        .select('artist_id, play_count')
+        .select('id, artist_id, play_count')
         .eq('user_id', userId)
-        .not('artist_id', 'is', null)
-        .order('id', { ascending: true })
-        .range(from, to),
+        .not('artist_id', 'is', null),
     ),
     thumbsDown: readFeedbackIds(supabase, userId, 'thumbs_down'),
   }
