@@ -11,7 +11,7 @@ import { after, type NextRequest } from "next/server"
 import type { Artist } from "@/lib/music-provider/types"
 
 // The blocking buildRecommendations() call plus after()'s background
-// runSecondary()/color-extraction work can run long; give it the full
+// finish()/color-extraction work can run long; give it the full
 // Hobby/Fluid function budget (F-hardening).
 export const maxDuration = 300
 
@@ -183,7 +183,7 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
     // work runs after logging and is intentionally excluded.
     resetCalls()
     const genStart = Date.now()
-    const { count: recCount, runSecondary, flushConfirms, softenedFilters, metrics } = await buildRecommendations({
+    const { count: recCount, pending, finish, softenedFilters, metrics } = await buildRecommendations({
       userId: user.id,
       accessToken,
       playThreshold,
@@ -214,25 +214,14 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
     // raced the user and is gone). Missing colours fall back to a
     // deterministic name-hash hue.
     after(async () => {
-      // Finish primary-to-20 (tier-2) then secondary pool in the background.
-      // runSecondary handles both phases; it is null only when the pipeline
-      // failed early (empty pool / no candidates).
-      if (runSecondary) {
-        try {
-          await runSecondary()
-        } catch (err) {
-          console.error(`[generate] background-fail err=${err instanceof Error ? err.message : err}`)
-        }
-      }
-
-      // Persist every confirmed preview (tier-1 + tier-2 + secondary) to
-      // artist_tracks_cache in one batch, AFTER runSecondary so the collector
-      // has accumulated all phases. Runs even when runSecondary is null.
-      // flushConfirms never throws, but guard defensively. (#162)
+      // One continuation: finish primary-to-20 (tier-2) and the secondary
+      // pool (no-op when the pipeline failed early), then persist every
+      // confirmed preview — across all soften runs — to artist_tracks_cache
+      // (#162). The flush runs even when the secondary pass throws.
       try {
-        await flushConfirms?.()
+        await finish()
       } catch (err) {
-        console.error(`[generate] flush-confirms-fail err=${err instanceof Error ? err.message : err}`)
+        console.error(`[generate] background-fail err=${err instanceof Error ? err.message : err}`)
       }
 
       // Full-generation call counts (blocking + background). The [gen-timing]
@@ -258,7 +247,7 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
       }
     })
 
-    return Response.json({ success: true, count: recCount, softenedFilters, pending: runSecondary != null })
+    return Response.json({ success: true, count: recCount, softenedFilters, pending })
   } catch (err) {
     console.error(`[generate] fail err=${err instanceof Error ? err.message : err}`)
     return apiError("Recommendation generation failed", 500)

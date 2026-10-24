@@ -172,7 +172,7 @@ describe("buildRecommendations — happy path", () => {
     const result = await buildRecommendations(baseInput())
     // Tier 1 writes FIRST_BATCH_TARGET (8); drain the background pass for the rest.
     expect(result.count).toBeGreaterThan(0)
-    await result.runSecondary?.()
+    await result.finish()
 
     const rows = cacheRows()
     expect(rows.length).toBeGreaterThanOrEqual(8)
@@ -274,7 +274,7 @@ describe("buildRecommendations — listened + feedback filtering", () => {
     h.similars.set("SeedA", similarRefs(["ListenedHeavy", "Disliked", "Keeper"]))
 
     const result = await buildRecommendations(baseInput())
-    await result.runSecondary?.()
+    await result.finish()
 
     const writtenIds = new Set(cacheRows().map((r) => r.artist_id))
     expect(writtenIds.has(listenedId)).toBe(false)
@@ -300,7 +300,7 @@ describe("buildRecommendations — cooldown excluded before confirm", () => {
     h.similars.set("SeedA", similarRefs(["SeenRecently", "Dismissed", "Fresh0", "Fresh1"]))
 
     const result = await buildRecommendations(baseInput())
-    await result.runSecondary?.()
+    await result.finish()
 
     expect(h.calls.itunes).not.toContain("SeenRecently")
     expect(h.calls.itunes).not.toContain("Dismissed")
@@ -322,7 +322,7 @@ describe("buildRecommendations — degraded resolver", () => {
     h.enrichment.set("cand2", null)
 
     const result = await buildRecommendations(baseInput())
-    await result.runSecondary?.()
+    await result.finish()
 
     const writtenNames = new Set(cacheRows().map((r) => r.artist_data?.name))
     // The three not-found names never resolved → never written.
@@ -347,7 +347,7 @@ describe("buildRecommendations — cold start", () => {
     })
 
     const result = await buildRecommendations(baseInput())
-    await result.runSecondary?.()
+    await result.finish()
 
     expect(h.calls.similar.length).toBeGreaterThan(0) // cold-start seeds fanned out
     expect(cacheRows().length).toBeGreaterThan(0)
@@ -363,13 +363,12 @@ function tracksCacheRows(): Row[] {
 }
 
 describe("buildRecommendations — persist confirms (#162)", () => {
-  it("flushConfirms writes positive rows with source + fetched_at", async () => {
+  it("finish() writes positive rows with source + fetched_at", async () => {
     seed({ seed_artists: [{ user_id: "u1", name: "SeedA" }] })
     h.similars.set("SeedA", similarRefs(Array.from({ length: 6 }, (_, i) => `Pos${i}`)))
 
     const result = await buildRecommendations(baseInput())
-    await result.runSecondary?.()
-    await result.flushConfirms?.()
+    await result.finish()
 
     const rows = tracksCacheRows()
     expect(rows.length).toBeGreaterThan(0)
@@ -390,15 +389,14 @@ describe("buildRecommendations — persist confirms (#162)", () => {
 
     // Run 1 (cold): confirms via iTunes, persists positives to artist_tracks_cache.
     const r1 = await buildRecommendations(baseInput())
-    await r1.runSecondary?.()
-    await r1.flushConfirms?.()
+    await r1.finish()
     expect(h.calls.itunes.length).toBeGreaterThan(0)
     expect(tracksCacheRows().length).toBeGreaterThan(0)
 
     // Run 2 (warm): rehydrate short-circuits every confirm — no iTunes at all.
     h.calls.itunes = []
     const r2 = await buildRecommendations(baseInput())
-    await r2.runSecondary?.()
+    await r2.finish()
     expect(h.calls.itunes).toEqual([])
 
     rand.mockRestore()
@@ -424,7 +422,7 @@ describe("buildRecommendations — adjacent bleed is rehydrated (#175 D2)", () =
     for (const tag of adjacentGenres("indie-rock", "close")) h.tagArtists.set(tag, ["BleedArtist"])
 
     const result = await buildRecommendations(baseInput())
-    await result.runSecondary?.()
+    await result.finish()
 
     const bleedRow = cacheRows().find((r) => r.artist_id === bleedId)
     expect(bleedRow?.source).toBe("adjacent_bleed")

@@ -541,7 +541,21 @@ export interface RunPipelineOpts {
   userGenres?: string[]
 }
 
-async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
+/**
+ * One pipeline run, before composition into the public BuildResult: the
+ * tier-1 result plus its two halves of background work, kept apart because
+ * softening flushes EVERY run's confirms but finishes only the returned run.
+ */
+export interface PipelineRun {
+  count: number
+  metrics: BuildResult['metrics']
+  /** Tier-2 + secondary confirm/write; null when the run failed early. */
+  runSecondary: (() => Promise<number>) | null
+  /** Persist this run's confirm outcomes. Never throws. */
+  flush: () => Promise<void>
+}
+
+async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
   const {
     seedNames, accessToken, userId, playThreshold, popularityCurve, supabase,
     source, genre, undergroundMode, deepDiscovery, adventurous, userGenres = [],
@@ -550,9 +564,9 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
   // ONE pipeline (and so ONE outcome collector, #162) per run. Every resolve
   // (primary, secondary, bleed) shares its doorway; every confirm tier (tier-1
   // blocking, tier-2 deferred, secondary) records outcomes into it, flushed
-  // once in after() so a single batch-upsert covers all three phases.
+  // once by finish() (in after()) so a single batch-upsert covers all three phases.
   const candidates = new PlayableCandidates(supabase, livePlayablePorts(accessToken))
-  const flushConfirms = () => candidates.flush()
+  const flush = () => candidates.flush()
 
   const widenSeedCap = userGenres.length >= ADAPTIVE_BROADEN_THRESHOLD
   const seedCap = widenSeedCap ? 15 : 10
@@ -595,7 +609,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
 
   if (uniqueNames.length === 0) {
     console.error(`[engine] FAIL no_unique seeds=${capSeedNames.length} lfm=${lfmTotal} source=${source}`)
-    return { count: 0, runSecondary: null, flushConfirms, metrics: { primaryMs: 0, previewMs: 0, firstBatchMs: 0, misses: 0, retries: 0, rateLimited: false } }
+    return { count: 0, runSecondary: null, flush, metrics: { primaryMs: 0, previewMs: 0, firstBatchMs: 0, misses: 0, retries: 0, rateLimited: false } }
   }
 
   // The one exclusion policy (#175 D3): thumbs-down, listened over the play
@@ -722,7 +736,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
       `uniq=${uniqueNames.length} ok=${resolved.searchOk} fail=${resolved.searchFail} ` +
       `filtListened=${filtListened} cands=${candsCount} source=${source}`
     )
-    return { count: 0, runSecondary: null, flushConfirms, metrics: { primaryMs: Date.now() - primaryStart, previewMs, firstBatchMs: 0, misses: resolved.cacheMisses, retries: resolved.searchRetries, rateLimited: resolved.rateLimited } }
+    return { count: 0, runSecondary: null, flush, metrics: { primaryMs: Date.now() - primaryStart, previewMs, firstBatchMs: 0, misses: resolved.cacheMisses, retries: resolved.searchRetries, rateLimited: resolved.rateLimited } }
   }
 
   // Post-pipeline adjacent-genre bleed. Skipped when the user has filtered
@@ -865,7 +879,8 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
   )
 
   // ── Background continuation: tier-2 (finish primary to TARGET) + secondary pool ──
-  // runSecondary is the single function called by after() in the route. It:
+  // runSecondary is the run's background half; finish() (called by after() in
+  // the route) runs it, then flushes. It:
   //   1. Confirms ordered.slice(c1) up to (TARGET - firstBatch.length) more artists.
   //   2. Writes those via writeScored (deduped against writtenIds).
   //   3. Resolves + confirms + writes the secondary pool (unchanged from before).
@@ -947,7 +962,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
   return {
     count: tier1Written,
     runSecondary,
-    flushConfirms,
+    flush,
     metrics: {
       primaryMs,
       previewMs,
@@ -978,30 +993,44 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
  * `coldStartSeeds` deps, making the cascade order deterministically testable.
  */
 export interface SoftenDeps {
-  run: (opts: RunPipelineOpts) => Promise<BuildResult>
+  run: (opts: RunPipelineOpts) => Promise<PipelineRun>
   coldStartSeeds: () => string[]
+}
+
+/**
+ * Compose the public result. `finish` = the returned run's secondary pass,
+ * then EVERY run's flush (each run has its own collector; a softened retry
+ * must not discard the earlier runs' confirmed previews — #162, b3e402c).
+ */
+function composeResult(final: PipelineRun, runs: PipelineRun[], softenedFilters?: SoftenedFilters): BuildResult {
+  return {
+    count: final.count,
+    metrics: final.metrics,
+    pending: final.runSecondary != null,
+    ...(softenedFilters ? { softenedFilters } : {}),
+    finish: async () => {
+      try {
+        await final.runSecondary?.()
+      } finally {
+        await Promise.all(runs.map((r) => r.flush()))
+      }
+    },
+  }
 }
 
 export async function runWithSoftening(
   baseOpts: RunPipelineOpts,
   deps: SoftenDeps
 ): Promise<BuildResult> {
-  // Each deps.run() is a full runPipeline with its OWN confirm collector.
-  // Only the returned result's flushConfirms would ever be called, so a
-  // softened retry would silently discard the earlier runs' confirmed
-  // previews (#162 — e.g. tier-1 positives suppressed by cooldown still cost
-  // live iTunes calls worth persisting). Chain every run's flush onto the
-  // returned result so the route's single after() flush covers them all.
-  const flushes: Array<() => Promise<void>> = []
-  const withChainedFlush = (result: BuildResult): BuildResult => {
-    if (result.flushConfirms) flushes.push(result.flushConfirms)
-    if (flushes.length <= 1) return result
-    const all = [...flushes]
-    return { ...result, flushConfirms: async () => { await Promise.all(all.map((f) => f())) } }
+  const runs: PipelineRun[] = []
+  const run = async (opts: RunPipelineOpts) => {
+    const r = await deps.run(opts)
+    runs.push(r)
+    return r
   }
 
-  const primary = withChainedFlush(await deps.run(baseOpts))
-  if (primary.count > 0) return primary
+  const primary = await run(baseOpts)
+  if (primary.count > 0) return composeResult(primary, runs)
 
   const softened: SoftenedFilters = { playThreshold: false, coldStart: false }
   const originalPlayThreshold = baseOpts.playThreshold
@@ -1009,27 +1038,27 @@ export async function runWithSoftening(
   // Soften 1: bump play threshold.
   console.log(`[engine] soften_play_threshold userId=${baseOpts.userId} from=${originalPlayThreshold} to=${originalPlayThreshold + 5}`)
   softened.playThreshold = true
-  const r1 = withChainedFlush(await deps.run({
+  const r1 = await run({
     ...baseOpts,
     playThreshold: originalPlayThreshold + 5,
     source: 'soften_play_threshold',
-  }))
-  if (r1.count > 0) return { ...r1, softenedFilters: softened }
+  })
+  if (r1.count > 0) return composeResult(r1, runs, softened)
 
   // Soften 2: cold-start fallback. undergroundMode is intentionally off here —
   // cold-start is the degenerate escape hatch for users with no seeds; its
   // curated starter picks are treated as an exception to the cap promise.
   console.log(`[engine] soften_cold_start userId=${baseOpts.userId}`)
   softened.coldStart = true
-  const r3 = withChainedFlush(await deps.run({
+  const r3 = await run({
     ...baseOpts,
     seedNames: deps.coldStartSeeds(),
     playThreshold: originalPlayThreshold + 5,
     undergroundMode: false,
     source: 'soften_cold_start',
     userGenres: [],
-  }))
-  return { ...r3, softenedFilters: softened }
+  })
+  return composeResult(r3, runs, softened)
 }
 
 /**
@@ -1073,7 +1102,8 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
 
   console.log(`[engine] cold_start userId=${userId}`)
   const coldSeeds = sampleColdStartSeeds()
-  return runPipeline(makeBaseOpts({ seedNames: coldSeeds, source: 'cold_start', userGenres: [] }))
+  const run = await runPipeline(makeBaseOpts({ seedNames: coldSeeds, source: 'cold_start', userGenres: [] }))
+  return composeResult(run, [run])
 }
 
 function sampleColdStartSeeds(): string[] {

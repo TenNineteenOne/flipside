@@ -7,8 +7,9 @@ import {
   augmentWithAdjacent,
   runWithSoftening,
   type RunPipelineOpts,
+  type PipelineRun,
 } from "./engine"
-import type { BuildResult, ScoredArtist } from "./types"
+import type { ScoredArtist } from "./types"
 import type { Artist, ArtistWithTracks } from "@/lib/music-provider/types"
 import type { SimilarArtistRef } from "@/lib/music-provider"
 
@@ -530,12 +531,12 @@ describe("runWithSoftening cascade order", () => {
   }
 
   function makeRunner(results: number[]): {
-    run: (opts: RunPipelineOpts) => Promise<BuildResult>
+    run: (opts: RunPipelineOpts) => Promise<PipelineRun>
     calls: CallRecord[]
   } {
     const calls: CallRecord[] = []
     let idx = 0
-    const run = async (opts: RunPipelineOpts): Promise<BuildResult> => {
+    const run = async (opts: RunPipelineOpts): Promise<PipelineRun> => {
       calls.push({
         source: opts.source,
         playThreshold: opts.playThreshold,
@@ -543,7 +544,7 @@ describe("runWithSoftening cascade order", () => {
         seedNames: opts.seedNames,
       })
       const count = results[idx++] ?? 0
-      return { count, runSecondary: null, metrics: { primaryMs: 0, previewMs: 0, firstBatchMs: 0, misses: 0, retries: 0, rateLimited: false } }
+      return { count, runSecondary: null, flush: async () => {}, metrics: { primaryMs: 0, previewMs: 0, firstBatchMs: 0, misses: 0, retries: 0, rateLimited: false } }
     }
     return { run, calls }
   }
@@ -558,25 +559,48 @@ describe("runWithSoftening cascade order", () => {
     expect(result.softenedFilters).toBeUndefined()
   })
 
-  it("chains every run's flushConfirms so softening doesn't discard earlier runs' confirms (#162)", async () => {
-    const flushed: string[] = []
+  it("finish persists all runs: the returned run's secondary pass, then EVERY run's flush (#162, b3e402c)", async () => {
+    const events: string[] = []
     let idx = 0
     const counts = [0, 5]
-    const run = async (opts: RunPipelineOpts): Promise<BuildResult> => {
+    const run = async (opts: RunPipelineOpts): Promise<PipelineRun> => {
       const label = opts.source
       const count = counts[idx++] ?? 0
       return {
         count,
-        runSecondary: null,
-        flushConfirms: async () => { flushed.push(label) },
+        runSecondary: async () => { events.push(`secondary:${label}`); return 0 },
+        flush: async () => { events.push(`flush:${label}`) },
         metrics: { primaryMs: 0, previewMs: 0, firstBatchMs: 0, misses: 0, retries: 0, rateLimited: false },
       }
     }
     const result = await runWithSoftening(baseOpts, { run, coldStartSeeds: coldSeeds })
     expect(result.count).toBe(5)
-    await result.flushConfirms?.()
-    // BOTH the failed primary's and the successful soften run's collectors flush.
-    expect(flushed.sort()).toEqual(["multi_source", "soften_play_threshold"])
+    expect(result.pending).toBe(true)
+    await result.finish()
+    // Only the returned run finishes its secondary pass, and it runs FIRST;
+    // BOTH the failed primary's and the soften run's collectors then flush.
+    expect(events[0]).toBe("secondary:soften_play_threshold")
+    expect(events.slice(1).sort()).toEqual(["flush:multi_source", "flush:soften_play_threshold"])
+  })
+
+  it("finish still flushes when the secondary pass throws, then rethrows", async () => {
+    const flushed: string[] = []
+    const run = async (): Promise<PipelineRun> => ({
+      count: 3,
+      runSecondary: async () => { throw new Error("boom") },
+      flush: async () => { flushed.push("x") },
+      metrics: { primaryMs: 0, previewMs: 0, firstBatchMs: 0, misses: 0, retries: 0, rateLimited: false },
+    })
+    const result = await runWithSoftening(baseOpts, { run, coldStartSeeds: coldSeeds })
+    await expect(result.finish()).rejects.toThrow("boom")
+    expect(flushed).toEqual(["x"])
+  })
+
+  it("pending is false and finish only flushes when the run failed early", async () => {
+    const { run } = makeRunner([0, 0, 0])
+    const result = await runWithSoftening(baseOpts, { run, coldStartSeeds: coldSeeds })
+    expect(result.pending).toBe(false)
+    await expect(result.finish()).resolves.toBeUndefined()
   })
 
   it("applies playThreshold+5 first; stops when it succeeds", async () => {
