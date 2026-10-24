@@ -1,7 +1,17 @@
 import { createHash } from "crypto"
+import { isIPv4, isIPv6 } from "net"
 import { createServiceClient } from "@/lib/supabase/server"
 
-const MAX_ATTEMPTS = 10
+const MAX_ATTEMPTS = 10 // per IP address
+// Per IPv6 /64 (one subscriber/household on residential v6). Above the per-IP
+// cap so several devices behind one /64 still fit; stops one /64 rotating
+// through its 2^64 addresses for fresh per-IP buckets.
+const MAX_NETWORK_ATTEMPTS = 20
+// All sign-in attempts from every source. A friend group never comes close
+// (300 sign-ins in one minute); a distributed guesser hits it. Trade-off: an
+// attacker with enough addresses can exhaust it and block everyone until the
+// fixed 1-minute window rolls over after the flood stops.
+const MAX_GLOBAL_ATTEMPTS = 300
 const WINDOW_MS = 60_000 // 1 minute
 
 /** Hash an IP address with SHA-256 so raw IPs are never stored. */
@@ -37,32 +47,77 @@ export function evaluateRateLimit(
 }
 
 /**
- * Check whether the given IP is rate-limited, atomically recording the attempt.
+ * The network an address belongs to, for the per-network bucket.
+ * - IPv6 → its /64 prefix, normalised (`2001:db8:0:1::/64`). A /64 is what one
+ *   subscriber gets, so rotating addresses inside it no longer buys new buckets.
+ * - IPv4 (and IPv4-mapped IPv6) → the full address. IPv4 addresses are scarce,
+ *   so the address already is the unit an attacker pays for; a /24 would mostly
+ *   add false positives across shared NAT / campus / corporate ranges.
+ * - Anything unparseable (e.g. "unknown") → returned as-is.
+ */
+export function networkOf(ip: string): string {
+  const addr = ip.split("%")[0].toLowerCase() // drop any zone id
+  if (isIPv4(addr) || !isIPv6(addr)) return addr
+  const mapped = addr.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/)
+  if (mapped) return mapped[1]
+  const [head, tail] = addr.split("::")
+  const h = head ? head.split(":") : []
+  const t = tail ? tail.split(":") : []
+  const groups = tail === undefined
+    ? h
+    : [...h, ...Array<string>(Math.max(0, 8 - h.length - t.length)).fill("0"), ...t]
+  return groups.slice(0, 4).map((g) => parseInt(g, 16).toString(16)).join(":") + "::/64"
+}
+
+/**
+ * The buckets one sign-in attempt is charged to, checked in this order.
+ * All keys share the `login_attempts.ip_hash` column, so raw addresses are
+ * hashed. The per-IP key is unchanged from before, so existing rows carry over.
+ * IPv4 gets no separate network bucket: its network is the address itself.
+ */
+export function loginLimitBuckets(ip: string): { key: string; max: number }[] {
+  const buckets = [{ key: hashIp(ip), max: MAX_ATTEMPTS }]
+  const network = networkOf(ip)
+  if (network !== ip) buckets.push({ key: hashIp(`net:${network}`), max: MAX_NETWORK_ATTEMPTS })
+  buckets.push({ key: "global", max: MAX_GLOBAL_ATTEMPTS })
+  return buckets
+}
+
+/**
+ * Check whether a sign-in attempt from `ip` is rate-limited, atomically
+ * recording it against the per-IP, per-network (IPv6 /64) and global buckets.
  *
- * Delegates the read-modify-write to the `rpc_register_login_attempt` Postgres
- * function (migration 0035) so concurrent requests from one IP can't race past
- * the cap — the DB row lock serializes them. `evaluateRateLimit` above remains
- * the canonical decision logic the SQL mirrors (and what the unit tests cover).
+ * Each bucket goes through the `rpc_register_login_attempt` Postgres function
+ * (migration 0035) so concurrent requests can't race past a cap — the DB row
+ * lock serializes them. `evaluateRateLimit` above remains the canonical
+ * decision logic the SQL mirrors (and what the unit tests cover).
  *
- * Fails open on infra error: a DB hiccup must not lock everyone out of a
- * username-only login (no password to brute-force, so the abuse value is low).
+ * Buckets are checked in order and stop at the first full one, so an attempt
+ * already rejected per-IP is never charged to the global bucket: a single
+ * address hammering the form can't fill the global cap by itself.
+ *
+ * Fails open on infra error, per bucket: a DB hiccup must not lock everyone
+ * out of a username-only login. In practice a DB outage fails the sign-in
+ * anyway, since `authorize` reads the `users` table right after this.
  */
 export async function isRateLimited(ip: string): Promise<boolean> {
-  const ipHash = hashIp(ip)
   const supabase = createServiceClient()
 
-  const { data, error } = await supabase.rpc("rpc_register_login_attempt", {
-    p_ip_hash: ipHash,
-    p_window_ms: WINDOW_MS,
-    p_max_attempts: MAX_ATTEMPTS,
-  })
+  for (const { key, max } of loginLimitBuckets(ip)) {
+    const { data, error } = await supabase.rpc("rpc_register_login_attempt", {
+      p_ip_hash: key,
+      p_window_ms: WINDOW_MS,
+      p_max_attempts: max,
+    })
 
-  if (error) {
-    console.error("[rate-limiter] rpc_register_login_attempt failed:", error.message)
-    return false
+    if (error) {
+      console.error("[rate-limiter] rpc_register_login_attempt failed:", error.message)
+      continue
+    }
+    if (data === true) return true
   }
 
-  return data === true
+  return false
 }
 
 /**
