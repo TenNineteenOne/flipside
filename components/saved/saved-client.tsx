@@ -4,7 +4,7 @@ import Image from "next/image"
 import { X, Bookmark, Share2 } from "lucide-react"
 import { toast } from "sonner"
 import { hexToRgba } from "@/lib/color-utils"
-import { resolveArtistColor } from "@/lib/hooks/use-artist-color"
+import { resolveArtistColor } from "@/lib/color-utils"
 import { useArtistSaves } from "@/lib/hooks/use-artist-saves"
 import {
   PLATFORM_META,
@@ -21,7 +21,8 @@ export interface SavedArtistRow {
   name: string
   genres: string[]
   imageUrl: string | null
-  artistColor: string
+  /** Stored colour (null when none); resolved via resolveArtistColor. */
+  artistColor: string | null
 }
 
 interface SavedClientProps {

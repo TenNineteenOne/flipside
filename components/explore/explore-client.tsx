@@ -6,7 +6,7 @@ import { RefreshCw, Sparkles, Moon, Mountain, Flame, Dices, type LucideIcon } fr
 import { AnimatePresence } from "framer-motion"
 import { ChallengeCard } from "@/components/explore/challenge-card"
 import { ExploreArtistRow } from "@/components/explore/explore-artist-row"
-import type { RailArtist } from "@/components/explore/rail"
+import type { RailKey, RailPayload } from "@/lib/recommendation/explore-rail-payloads"
 import type { MusicPlatform } from "@/lib/music-links"
 import { Ambient } from "@/components/visual/ambient"
 import { useAdventurousMode } from "@/lib/hooks/use-adventurous-mode"
@@ -95,16 +95,6 @@ function ChallengeSlot({
       adventurous={adventurous}
     />
   )
-}
-
-export type RailKey = "adjacent" | "outside" | "wildcards" | "leftfield"
-
-export interface RailPayload {
-  railKey: RailKey
-  title: string
-  subtitle: string
-  artists: RailArtist[]
-  emptyCaption?: string
 }
 
 // Rail identity — icon + accent color. Module-scope so it isn't rebuilt per render.

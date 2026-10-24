@@ -16,8 +16,18 @@ import {
   type RailResult,
   type RailWhy,
 } from "@/lib/recommendation/explore-engine"
-import type { RailArtist } from "@/components/explore/rail"
-import type { RailPayload } from "@/components/explore/explore-client"
+import type { CardArtist } from "@/lib/cards/card-artist"
+
+export type { RailKey }
+
+/** One Explore rail as the client renders it. */
+export interface RailPayload {
+  railKey: RailKey
+  title: string
+  subtitle: string
+  artists: CardArtist[]
+  emptyCaption?: string
+}
 
 export const RAIL_TITLES: Record<RailKey, { title: string; subtitle: string; empty: string }> = {
   adjacent: {
@@ -49,17 +59,18 @@ export const WILDCARDS_FALLBACK_META = {
 } as const
 
 /**
- * Hydrate a list of artist IDs into RailArtist[] using the map returned by
+ * Hydrate a list of artist IDs into card artists using the map returned by
  * `buildExploreRails({ hydrate: true })`. Applies the same hasPlayablePreview
  * guard the page uses: legacy rows (topTracks=undefined) pass through; rows
- * with topTracks present but all unplayable are dropped.
+ * with topTracks present but all unplayable are dropped. A rail's provenance
+ * maps onto the card's why: `sourceArtist` → sourceArtists, `tag` → genres.
  */
 export function hydrateRailArtists(
   ids: string[],
   why: Record<string, RailWhy>,
   artistById: Map<string, HydratedRailArtist>,
-): RailArtist[] {
-  const out: RailArtist[] = []
+): CardArtist[] {
+  const out: CardArtist[] = []
   // Diagnostic (#162): distinguish drops with NO hydration row (id not in the
   // map — the artist_tracks_cache / artists read missed) from drops of a
   // confirmed-negative row (topTracks present but unplayable). The guard
@@ -72,22 +83,20 @@ export function hydrateRailArtists(
     // Defensive: drop only when topTracks is present AND confirmed unplayable.
     // Legacy cached rows have topTracks=undefined — keep those.
     if (a.topTracks !== undefined && !hasPlayablePreview(a.topTracks)) { droppedNegative++; continue }
+    const w = why[id]
     out.push({
       id: a.id,
+      spotifyId: null,
       name: a.name,
       genres: a.genres ?? [],
       imageUrl: a.imageUrl ?? null,
       popularity: a.popularity ?? 0,
       artistColor: a.artist_color ?? null,
       topTracks: a.topTracks ?? [],
-      why: why[id]
-        ? {
-            sourceArtist: why[id].sourceArtist,
-            chain: why[id].chain,
-            tag: why[id].tag,
-            anchor: why[id].anchor,
-          }
-        : undefined,
+      why: {
+        sourceArtists: w?.sourceArtist ? [w.sourceArtist] : [],
+        genres: w?.tag ? [w.tag] : [],
+      },
     })
   }
   if (droppedNoRow > 0 || droppedNegative > 0) {

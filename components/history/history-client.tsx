@@ -4,7 +4,7 @@ import { useState, useMemo, useRef } from "react"
 import Image from "next/image"
 import { toast } from "sonner"
 import { ThumbsUp, ThumbsDown, SkipForward, Bookmark, Undo2 } from "lucide-react"
-import { stringToVibrantHex, hexToRgba, sanitizeHex } from "@/lib/color-utils"
+import { hexToRgba, resolveArtistColor } from "@/lib/color-utils"
 import { useArtistFeedback } from "@/lib/hooks/use-artist-feedback"
 
 interface HistoryEntry {
@@ -282,7 +282,7 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
                 }}
               >
                 {items.map((entry, i) => {
-                  const artistColor = sanitizeHex(entry.artist_color) === "#8b5cf6" ? stringToVibrantHex(entry.artist_data.name) : sanitizeHex(entry.artist_color)
+                  const artistColor = resolveArtistColor(entry.artist_color, entry.artist_data.name)
                   const sig = entry.bookmarked
                     ? SIG_STYLES.bookmarked
                     : (SIG_STYLES[entry.signal] ?? SIG_STYLES.skip)

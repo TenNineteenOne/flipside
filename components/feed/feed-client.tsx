@@ -10,42 +10,10 @@ import type { MusicPlatform } from "@/lib/music-links"
 import { useArtistFeedback } from "@/lib/hooks/use-artist-feedback"
 import { useArtistSaves } from "@/lib/hooks/use-artist-saves"
 import { useFeedFill } from "@/lib/hooks/use-feed-fill"
-
-interface Track {
-  id: string
-  spotifyTrackId: string | null
-  name: string
-  previewUrl: string | null
-  durationMs: number
-  albumName: string
-  albumImageUrl: string | null
-  source: "itunes" | "spotify" | "deezer"
-}
-
-interface ArtistWithTracks {
-  id: string
-  spotifyId?: string | null
-  name: string
-  genres: string[]
-  imageUrl: string | null
-  popularity: number
-  topTracks: Track[]
-}
-
-interface Recommendation {
-  artist_id: string
-  artist_data: ArtistWithTracks
-  score: number
-  why: {
-    sourceArtists: string[]
-    genres: string[]
-    friendBoost: string[]
-  }
-  artist_color?: string | null
-}
+import type { CardArtist } from "@/lib/cards/card-artist"
 
 interface FeedClientProps {
-  recommendations: Recommendation[]
+  recommendations: CardArtist[]
   musicPlatform: MusicPlatform
   signalCount: number
 }
@@ -54,10 +22,10 @@ interface FeedClientProps {
 // Feed sequence builder
 // ---------------------------------------------------------------------------
 
-type FeedItem = { kind: "card"; rec: Recommendation; key: string }
+type FeedItem = { kind: "card"; rec: CardArtist; key: string }
 
-function buildSequence(recs: Recommendation[]): FeedItem[] {
-  return recs.map((rec) => ({ kind: "card", rec, key: `c-${rec.artist_id}` }))
+function buildSequence(recs: CardArtist[]): FeedItem[] {
+  return recs.map((rec) => ({ kind: "card", rec, key: `c-${rec.id}` }))
 }
 
 // Module-scope: zero prop/state deps, so identity stays stable across renders.
@@ -88,18 +56,18 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
   // grows this list in the background. Existing cards (earlier indices) are never
   // reordered or removed — appended recs land at the end. Keyed by
   // artist_id so React never remounts an existing card on append.
-  const [recs, setRecs] = useState<Recommendation[]>(recommendations)
+  const [recs, setRecs] = useState<CardArtist[]>(recommendations)
 
   // Append-poller: after first paint, poll for newly-confirmed cards that the
   // background after() block has written. Appends deduped, playable-only recs to
   // the end of the list without disturbing the current/earlier cards.
-  const { restart: restartFeedFill } = useFeedFill<Recommendation>({
-    initialIds: recommendations.map((r) => r.artist_id),
+  const { restart: restartFeedFill } = useFeedFill<CardArtist>({
+    initialIds: recommendations.map((r) => r.id),
     targetCount: 20,
     onAppend: (newRecs) => {
       setRecs((prev) => {
-        const seenIds = new Set(prev.map((r) => r.artist_id))
-        const deduped = newRecs.filter((r) => !seenIds.has(r.artist_id))
+        const seenIds = new Set(prev.map((r) => r.id))
+        const deduped = newRecs.filter((r) => !seenIds.has(r.id))
         if (deduped.length === 0) return prev
         return [...prev, ...deduped]
       })
@@ -220,7 +188,7 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
         <ColdStartBanner signalCount={signalCount} />
         {sequence.map((item, index) => {
           const { rec } = item
-          const id = rec.artist_id
+          const id = rec.id
           return (
             <FeedCardRow
               key={item.key}
@@ -254,7 +222,7 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
 // Memoized so a parent re-render (e.g. on save of a different card) doesn't
 // re-render this row unless its own props actually changed.
 interface FeedCardRowProps {
-  rec: Recommendation
+  rec: CardArtist
   musicPlatform: MusicPlatform
   isSaved: boolean
   dismissSignal: string | null
@@ -272,12 +240,12 @@ const FeedCardRow = memo(function FeedCardRow({
   onFeedbackAction,
   priority = false,
 }: FeedCardRowProps) {
-  const id = rec.artist_id
+  const id = rec.id
   const onSave = useCallback(() => { void onSaveAction(id) }, [id, onSaveAction])
   const onFeedback = useCallback((signal: string) => { void onFeedbackAction(id, signal) }, [id, onFeedbackAction])
   return (
     <ArtistCard
-      recommendation={rec}
+      artist={rec}
       musicPlatform={musicPlatform}
       isSaved={isSaved}
       dismissSignal={dismissSignal}

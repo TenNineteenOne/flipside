@@ -2,17 +2,10 @@
 
 import { useCallback, useEffect, useRef } from "react"
 
-// Minimal shape needed from the GET /api/recommendations response. Matches
-// the Recommendation interface in feed-client.tsx without coupling to it.
-// artist_data may have additional fields — we only care about topTracks.
+// Minimal shape needed from the GET /api/recommendations response (a
+// CardArtist[] — lib/cards/card-artist.ts) without coupling to it.
 export interface FeedRec {
-  artist_id: string
-  artist_data: ArtistDataWithTracks
-}
-
-// Structural interface: any object with an optional topTracks array satisfies
-// this. ArtistWithTracks in feed-client.tsx is a structural supertype.
-export interface ArtistDataWithTracks {
+  id: string
   topTracks?: ReadonlyArray<{ previewUrl: string | null }>
 }
 
@@ -22,7 +15,7 @@ export interface ArtistDataWithTracks {
  * inlined here so this module stays client-safe (no server-only deps).
  */
 export function isPlayable(rec: FeedRec): boolean {
-  const tracks = rec.artist_data?.topTracks
+  const tracks = rec.topTracks
   return !!tracks && tracks.some((t) => t.previewUrl != null && t.previewUrl !== "")
 }
 
@@ -33,7 +26,7 @@ export function isPlayable(rec: FeedRec): boolean {
  * Returned in the same order as `fetched`.
  */
 export function selectNewPlayable(seenIds: Set<string>, fetched: FeedRec[]): FeedRec[] {
-  return fetched.filter((r) => !seenIds.has(r.artist_id) && isPlayable(r))
+  return fetched.filter((r) => !seenIds.has(r.id) && isPlayable(r))
 }
 
 const POLL_INTERVAL_MS = 2500
@@ -153,7 +146,7 @@ export function createFeedFillController<R extends FeedRec>({
         idleCount = 0
 
         for (const r of newRecs) {
-          seenIds.add(r.artist_id)
+          seenIds.add(r.id)
         }
         shownCount += newRecs.length
 

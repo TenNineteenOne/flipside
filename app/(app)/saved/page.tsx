@@ -3,6 +3,7 @@ import { safeAuth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { getCachedUser } from "@/lib/user-cache"
 import { SavedClient, type SavedArtistRow } from "@/components/saved/saved-client"
+import { liftArtistColor } from "@/lib/cards/card-artist"
 import { DEFAULT_MUSIC_PLATFORM, isMusicPlatform, type MusicPlatform } from "@/lib/music-links"
 
 export default async function SavedPage() {
@@ -63,7 +64,6 @@ export default async function SavedPage() {
       spotifyId?: string | null;
       genres?: string[];
       imageUrl?: string;
-      artist_color?: string;
     } | undefined
 
     return {
@@ -72,7 +72,7 @@ export default async function SavedPage() {
       name: cached?.name ?? savedNameMap.get(artistId) ?? artistId,
       genres: cached?.genres ?? [],
       imageUrl: cached?.imageUrl ?? null,
-      artistColor: cached?.artist_color ?? "#8b5cf6",
+      artistColor: liftArtistColor(cached),
     }
   })
 
