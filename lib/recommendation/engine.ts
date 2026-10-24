@@ -440,6 +440,11 @@ export interface PipelineRun {
   runSecondary: (() => Promise<number>) | null
   /** Persist this run's confirm outcomes. Never throws. */
   flush: () => Promise<void>
+  /**
+   * The tier-1 write hit a DB error (#175 R7). A count of 0 then means "the
+   * write failed", not "nothing eligible", so softening must not kick in.
+   */
+  writeError?: boolean
 }
 
 async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
@@ -689,6 +694,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
   // writtenIds tracks all ids written across tier-1, tier-2, and secondary to
   // avoid duplicate confirms or upserts.
   const writtenIds = new Set<string>()
+  let writeError = false
 
   /**
    * Write a set of confirmed ScoredArtists to recommendation_cache, skipping
@@ -720,6 +726,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
     // nothing instead.
     if (readErr) {
       console.error(`[engine] cooldown_read_error source=${source} err=${readErr.message}`)
+      writeError = true
       return 0
     }
 
@@ -754,6 +761,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
         .upsert(inserts, { onConflict: 'user_id,artist_id' })
       if (error) {
         console.error(`[engine] upsert_error source=${source} err=${error.message}`)
+        writeError = true
       } else {
         for (const row of inserts) writtenIds.add(row.artist_id)
         written += inserts.length
@@ -777,7 +785,10 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
     )
     let resurfacedN = 0
     for (const [i, { data, error }] of results.entries()) {
-      if (error) console.error(`[engine] rewrite_error source=${source} err=${error.message}`)
+      if (error) {
+        console.error(`[engine] rewrite_error source=${source} err=${error.message}`)
+        writeError = true
+      }
       for (const r of data ?? []) {
         writtenIds.add(r.artist_id)
         written++
@@ -885,6 +896,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
 
   return {
     count: tier1Written,
+    writeError, // tier-1 only: snapshotted before the background tiers run
     runSecondary,
     flush,
     metrics: {
@@ -953,8 +965,12 @@ export async function runWithSoftening(
     return r
   }
 
+  // A failed write is not an empty pool (#175 R7): softening would widen the
+  // filters (cold-start even drops underground mode) for a transient DB error.
+  const done = (r: PipelineRun) => r.count > 0 || !!r.writeError
+
   const primary = await run(baseOpts)
-  if (primary.count > 0) return composeResult(primary, runs)
+  if (done(primary)) return composeResult(primary, runs)
 
   const softened: SoftenedFilters = { playThreshold: false, coldStart: false }
   const originalPlayThreshold = baseOpts.playThreshold
@@ -967,7 +983,7 @@ export async function runWithSoftening(
     playThreshold: originalPlayThreshold + 5,
     source: 'soften_play_threshold',
   })
-  if (r1.count > 0) return composeResult(r1, runs, softened)
+  if (done(r1)) return composeResult(r1, runs, softened)
 
   // Soften 2: cold-start fallback. undergroundMode is intentionally off here —
   // cold-start is the degenerate escape hatch for users with no seeds; its

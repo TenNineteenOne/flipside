@@ -439,6 +439,9 @@ describe("buildRecommendations — writeScored cooldown read error (#175 F17)", 
     await result.finish()
 
     expect(result.count).toBe(0)
+    // #175 R7: a failed write is not an empty pool — no soften runs, no toast.
+    expect(result.softenedFilters).toBeUndefined()
+    expect(lf.calls.similar).toEqual(["SeedA"])
     const rows = cacheRows()
     expect(rows).toHaveLength(1)
     expect(rows[0].seen_at).toBe(seenAt)
