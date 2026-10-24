@@ -34,8 +34,8 @@ before its 401) and the GETs owned elsewhere (`/api/history`, `/api/recommendati
 | Route | Method | Does | Calls |
 |---|---|---|---|
 | `/api/recommendations` | GET | read ≤40 unseen/unexpired `recommendation_cache`, underground re-filter, return 20 | cache only |
-| `/api/recommendations/generate` | POST | `buildRecommendations`; 30s cooldown; refuses if unseen ≥60 unless `?replace=true`; schedules `finish()` (secondary + preview flush) + color via `after()` | [[generation-engine]], Spotify, iTunes |
-| `/api/explore/generate` | POST | `buildExploreRails`; `?force=true` → background regen, returns `{regenerating}` | [[explore-engine]] |
+| `/api/recommendations/generate` | POST | `buildRecommendations`; refuses (429) if unexpired unseen ≥60 unless `?replace=true` (checked before the cooldown claim); 30s cooldown; schedules `finish()` (secondary + preview flush) + color via `after()` | [[generation-engine]], Spotify, iTunes |
+| `/api/explore/generate` | POST | `buildExploreRails`; `?force=true` → background regen, returns `{regenerating}`; both force and a non-force cold-cache build claim the 90s `last_explore_generated_at` cooldown (non-force cooling → `{success,regenerating}`, no build) | [[explore-engine]] |
 | `/api/explore/preload` | GET | background warm from Feed (`hydrate:true`) | [[explore-engine]] |
 | `/api/explore/rails` | GET | read-only snapshot + `generatedAt` for poll-swap | [[explore-engine]] |
 | `/api/artists/[id]/tracks` | GET | lazy tracks for a card; cache→iTunes; name/ID cross-check guards cache poisoning | **iTunes only** |
@@ -72,7 +72,7 @@ Which caches each taste change invalidates is decided in one place: `lib/taste-c
 |---|---|---|
 | `/api/open/[platform]/[artistId]` | GET | **only `apple_music`** — `linkFor` (`lib/external-links.ts`): cached iTunes result (30d) → live iTunes by the `artists` row name (never client `?name`; `itunesFetch` gate-only: no preview breaker, no counter) → search URL; 302 redirect; 404 unknown artist id. `artists.apple_id` is NOT trusted (MB name search, homonym risk) |
 | `/api/auth/[...nextauth]` | GET/POST | NextAuth handlers (Credentials only) |
-| `/api/cron/recommendations` | GET | **no session** — `CRON_SECRET` Bearer (timing-safe); expire >3d unseen, hard-delete >30d (keeps `skip_at`) |
+| `/api/cron/recommendations` | GET | **no session** — `CRON_SECRET` Bearer (timing-safe); expire >3d unseen not-yet-expired rows, hard-delete >30d expired (keeps `skip_at`) |
 
 ## The "Open in Spotify" path
 Spotify links are **client-side, zero-API**: `lib/music-links.getArtistLink('spotify', …)`
