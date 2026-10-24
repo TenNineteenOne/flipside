@@ -9,6 +9,8 @@
  * correctly when all values are `toISOString()` output. The recommendation
  * harness fake (lib/recommendation/__fixtures__) lacks lt/lte/count.
  */
+import { randomUUID } from "node:crypto"
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type Row = Record<string, any>
 
@@ -39,7 +41,7 @@ export function createRouteFakeDb(initial: Record<string, Row[]> = {}, fail: Rec
       if (op === "update") rows.forEach((r) => Object.assign(r, payload))
       else if (op === "delete") tables[table] = t.filter((r) => !rows.includes(r))
       else if (op === "insert" || op === "upsert") {
-        out = (Array.isArray(payload) ? payload : [payload!]).map((p) => ({ ...p }))
+        out = (Array.isArray(payload) ? payload : [payload!]).map((p) => ({ id: p.id ?? randomUUID(), ...p }))
         t.push(...out)
       }
       const data = out.map((r) => ({ ...r }))

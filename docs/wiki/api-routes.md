@@ -59,7 +59,7 @@ Which caches each taste change invalidates is decided in one place: `lib/taste-c
 | Route | Method | Does |
 |---|---|---|
 | `/api/onboarding/search` | GET | **Spotify search** (client-creds), 120/min per user; **falls back to `artist_search_cache` ILIKE on 429** (`degraded:true`) |
-| `/api/onboarding/resolve` | POST | resolves a Last.fm-sourced onboarding suggestion to the internal artist uuid: `artists`-table exact-name doorway lookup first, MusicBrainz mbid url-rels fallback → mint; 404 when unresolvable; 30/min per-user in-memory rate limit |
+| `/api/onboarding/resolve` | POST | resolves a Last.fm-sourced onboarding suggestion to the internal artist uuid: `artists`-table exact-name doorway lookup first, MusicBrainz mbid url-rels fallback → mint under MB's canonical name (client name must match it at ≥0.8 similarity, else 404); 404 when unresolvable; 30/min per-user in-memory rate limit |
 | `/api/onboarding/seeds` | POST | upsert `seed_artists` (3–200) |
 | `/api/onboarding/check` | GET | `{needsOnboarding}` |
 | `/api/settings` | PATCH | validate + encrypt usernames + update `users`; genre/mode change → explore + unseen-feed wipe; `popularityCurve` → explore only |
