@@ -86,7 +86,7 @@ search URL. The `open/[platform]` route 400s on anything but `apple_music`. See
   computed `hasMore`~~ **FIXED**: `hasMore` is now computed from a `limit + 1` overfetch in
   `lib/history/query.ts` (`getHistoryPage`), shared by `/api/history` and the `/history` page —
   exact at the boundary, no more spurious empty last page.
-- `onboarding/search` and `onboarding/resolve` rate limiters are **per serverless instance**
+- `onboarding/search` (120/min), `onboarding/resolve` (30/min), `artists/[id]/tracks` (120/min) and `open/...` (30/min) per-user rate limiters are **per serverless instance**
   (not global) — both now go through the shared `createWindowLimiter` factory in
   `lib/rate-limiter.ts` (fixed-window, in-memory `Map` per instance). See that file's JSDoc for
   why this is deliberate and what the upgrade path is if it ever needs to be a hard cap.

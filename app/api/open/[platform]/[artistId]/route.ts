@@ -3,16 +3,26 @@ import { apiError, apiNotFound } from "@/lib/errors"
 import { withAuthedRoute } from "@/lib/api/with-authed-route"
 import { isValidArtistId } from "@/lib/spotify-ids"
 import { linkFor } from "@/lib/external-links"
+import { createWindowLimiter } from "@/lib/rate-limiter"
 
 const NAME_MAX_LEN = 200
+
+// "Open in Apple Music" is a click; 30/min is far above human clicking but
+// stops a loop of cache-miss lookups against iTunes.
+// ponytail: per-instance in-memory (effective ceiling = 30 × warm instances);
+// move to the DB-backed limiter if this must be a hard cap.
+const isRateLimited = createWindowLimiter({ max: 30, windowMs: 60_000 })
 
 // proxy.ts already gates /api/* behind auth, but this route uses the service
 // role to touch a shared cache and redirect; withAuthedRoute requires an
 // explicit session so a future proxy config change can't silently expose it.
 export const GET = withAuthedRoute(async (
-  { request, supabase },
+  { userId, request, supabase },
   { params }: { params: Promise<{ platform: string; artistId: string }> }
 ) => {
+  if (isRateLimited(userId)) {
+    return apiError("Too many requests — slow down for a moment", 429)
+  }
   const { platform, artistId } = await params
 
   if (platform !== "apple_music") {

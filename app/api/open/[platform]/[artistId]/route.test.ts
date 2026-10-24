@@ -57,6 +57,16 @@ describe("GET /api/open/[platform]/[artistId]", () => {
     expect(itunesFetch.mock.calls[0][0]).toContain("term=Radiohead&")
   })
 
+  it("rate-limits per user at 30/min with the shared 429 shape", async () => {
+    vi.mocked(safeAuth).mockResolvedValue({ user: { id: "u-limit" } } as Awaited<ReturnType<typeof safeAuth>>)
+    for (let i = 0; i < 30; i++) expect((await call("apple_music", ID, "")).status).toBe(302)
+    const res = await call("apple_music", ID, "")
+    expect(res.status).toBe(429)
+    expect(await res.json()).toEqual({ error: "Too many requests — slow down for a moment" })
+    vi.mocked(safeAuth).mockResolvedValue({ user: { id: "u-other" } } as Awaited<ReturnType<typeof safeAuth>>)
+    expect((await call("apple_music", ID, "")).status).toBe(302)
+  })
+
   it("404s an unknown artist id without calling iTunes", async () => {
     const res = await call("apple_music", "22222222-2222-4222-8222-222222222222")
     expect(res.status).toBe(404)
