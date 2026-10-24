@@ -67,6 +67,17 @@ export async function onTasteChanged(
       invalidateExploreCache(userId, explore === "all" ? undefined : explore).catch((err) => {
         console.error(`[taste-change] explore-invalidate failed kind=${change.kind}`, err)
       }),
+    // Reset the Explore rebuild cooldown with the rails (owner decision D5, #175):
+    // a build already in flight when the taste changed writes old-settings
+    // rails, and a live cooldown would pin them; cleared, the next load rebuilds.
+    explore &&
+      supabase
+        .from("users")
+        .update({ last_explore_generated_at: null })
+        .eq("id", userId)
+        .then(({ error }) => {
+          if (error) console.error(`[taste-change] explore-cooldown-reset failed kind=${change.kind}`, error.message)
+        }),
     feed &&
       supabase
         .from("recommendation_cache")
