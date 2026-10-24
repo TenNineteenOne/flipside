@@ -18,9 +18,12 @@ const MIN_QUERY_LEN = 2
 const CACHE_SUFFICIENT = 5
 const RESULT_CAP = 10
 
-// Escape %/_/\ so user input can't turn into a wildcard in ILIKE.
+// Escape %/_/\ so user input can't turn into a wildcard in ILIKE. PostgREST
+// also rewrites EVERY `*` in a like/ilike value to `%` and has no escape for
+// it (`\*` would arrive as `\%`, a literal percent sign), so `*` becomes `_`:
+// a one-character wildcard that still matches a real `*` (e.g. "*NSYNC").
 function escapeIlike(s: string): string {
-  return s.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_")
+  return s.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_").replace(/\*/g, "_")
 }
 
 /**
