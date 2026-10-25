@@ -1,3 +1,4 @@
+import { LASTFM_USERNAME_RE, STATSFM_USERNAME_RE } from "@/lib/settings/patch-settings"
 import { revalidatePath } from "next/cache"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, dbError } from "@/lib/errors"
@@ -42,7 +43,7 @@ export const PATCH = withAuthedJsonRoute(async ({ userId, body: rawBody }) => {
   if (body.lastfmUsername !== undefined) {
     if (typeof body.lastfmUsername !== "string") return apiError("Invalid Last.fm username format", 400)
     const lfmUsername = body.lastfmUsername.trim()
-    if (lfmUsername && !/^[a-zA-Z][a-zA-Z0-9_-]{0,24}$/.test(lfmUsername)) {
+    if (lfmUsername && !LASTFM_USERNAME_RE.test(lfmUsername)) {
       return apiError("Invalid Last.fm username format", 400)
     }
     update.lastfm_username = encryptUsername(lfmUsername || null)
@@ -51,7 +52,7 @@ export const PATCH = withAuthedJsonRoute(async ({ userId, body: rawBody }) => {
   if (body.statsfmUsername !== undefined) {
     if (typeof body.statsfmUsername !== "string") return apiError("Invalid stats.fm username format", 400)
     const sfmUsername = body.statsfmUsername.trim()
-    if (sfmUsername && !/^[a-zA-Z0-9._-]{1,30}$/.test(sfmUsername)) {
+    if (sfmUsername && !STATSFM_USERNAME_RE.test(sfmUsername)) {
       return apiError("Invalid stats.fm username format", 400)
     }
     update.statsfm_username = encryptUsername(sfmUsername || null)

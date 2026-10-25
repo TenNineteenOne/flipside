@@ -1,5 +1,9 @@
 import type { MusicPlatform } from "@/lib/music-links"
 
+/** Username formats PATCH /api/settings accepts — shared so onboarding can block a submit the server would 400. */
+export const LASTFM_USERNAME_RE = /^[a-zA-Z][a-zA-Z0-9_-]{0,24}$/
+export const STATSFM_USERNAME_RE = /^[a-zA-Z0-9._-]{1,30}$/
+
 /** Every key PATCH /api/settings accepts (see app/api/settings/route.ts). */
 export interface SettingsPatch {
   playThreshold?: number

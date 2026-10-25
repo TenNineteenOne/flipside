@@ -252,3 +252,20 @@ describe("createMbLimiter (1 req/s)", () => {
     expect(ft.elapsed()).toBe(0)
   })
 })
+
+describe("lookupArtistExternalIds status classification", () => {
+  const limiter = { run: <T,>(fn: () => Promise<T>) => fn() } as unknown as ReturnType<typeof createMbLimiter>
+  const respond = (status: number) => (async () => new Response("{}", { status })) as unknown as typeof fetch
+
+  it("treats 404/400 (deleted or merged mbid) as a definitive empty result", async () => {
+    for (const status of [404, 400]) {
+      const r = await lookupArtistExternalIds("gone", { fetchImpl: respond(status), limiter })
+      expect(r).toEqual({ ok: true, value: { spotifyId: null, appleId: null, deezerId: null } })
+    }
+  })
+
+  it("keeps 503 transient", async () => {
+    const r = await lookupArtistExternalIds("busy", { fetchImpl: respond(503), limiter })
+    expect(r.ok).toBe(false)
+  })
+})

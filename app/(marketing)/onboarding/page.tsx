@@ -10,7 +10,7 @@ import { ArtistSearch, type SpotifyArtist } from "@/components/onboarding/artist
 import { PlatformPicker } from "@/components/settings/platform-picker"
 import { DEFAULT_MUSIC_PLATFORM, type MusicPlatform } from "@/lib/music-links"
 import { postGenerate } from "@/lib/client/feed-generation"
-import { MAX_SELECTED_GENRES, patchSettings, SettingsSaveError, type SettingsPatch } from "@/lib/settings/patch-settings"
+import { MAX_SELECTED_GENRES, patchSettings, SettingsSaveError, type SettingsPatch, LASTFM_USERNAME_RE, STATSFM_USERNAME_RE } from "@/lib/settings/patch-settings"
 
 const ARTIST_CAP = 200
 const GENRE_CAP = MAX_SELECTED_GENRES
@@ -70,6 +70,10 @@ export default function OnboardingPage() {
   // POST /api/onboarding/seeds rejects fewer than MIN_SEEDS, so 1–2 picks
   // would be silently dropped: block "Get started" until they add more or remove them.
   const artistsShort = selectedArtists.length > 0 && selectedArtists.length < MIN_SEEDS
+  // The settings PATCH is all-or-nothing: one malformed username 400s it and
+  // drops onboardingCompleted too, so the resume redirect would bounce back here.
+  const lastfmInvalid = lastfmUsername.trim() !== "" && !LASTFM_USERNAME_RE.test(lastfmUsername.trim())
+  const statsfmInvalid = statsfmUsername.trim() !== "" && !STATSFM_USERNAME_RE.test(statsfmUsername.trim())
 
   async function handleContinue(skip = false) {
     if (saving) return
@@ -247,8 +251,16 @@ export default function OnboardingPage() {
                   value={lastfmUsername}
                   onChange={(e) => setLastfmUsername(e.target.value)}
                   spellCheck={false}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  aria-invalid={lastfmInvalid || undefined}
                 />
               </div>
+              {lastfmInvalid && (
+                <div role="alert" style={{ fontSize: 11.5, color: "var(--dislike)" }}>
+                  That doesn&rsquo;t look like a Last.fm username.
+                </div>
+              )}
               <div className="muted" style={{ fontSize: 11.5, lineHeight: 1.5 }}>
                 We&rsquo;ll pull your top artists to filter out music you already know.
                 Your username is encrypted at rest. We keep it recoverable because we
@@ -275,8 +287,16 @@ export default function OnboardingPage() {
                   value={statsfmUsername}
                   onChange={(e) => setStatsfmUsername(e.target.value)}
                   spellCheck={false}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  aria-invalid={statsfmInvalid || undefined}
                 />
               </div>
+              {statsfmInvalid && (
+                <div role="alert" style={{ fontSize: 11.5, color: "var(--dislike)" }}>
+                  That doesn&rsquo;t look like a stats.fm username.
+                </div>
+              )}
               <div className="muted" style={{ fontSize: 11.5, lineHeight: 1.5 }}>
                 Your stats.fm profile must be public. We&rsquo;ll pull top artists to filter familiars.
                 Your username is encrypted at rest. We keep it recoverable because we
@@ -298,7 +318,7 @@ export default function OnboardingPage() {
           <button
             className="btn btn-primary btn-block"
             onClick={() => handleContinue(false)}
-            disabled={!hasAnyInput || artistsShort || saving}
+            disabled={!hasAnyInput || artistsShort || lastfmInvalid || statsfmInvalid || saving}
             style={{ height: 48, fontSize: 15 }}
           >
             {saving ? "Saving…" : "Get started →"}

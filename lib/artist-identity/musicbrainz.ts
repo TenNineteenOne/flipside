@@ -158,6 +158,9 @@ export async function fetchArtistRelations(
     headers: { "User-Agent": USER_AGENT },
     signal: AbortSignal.timeout(TIMEOUT_MS),
   })
+  // 404/400 = deleted/merged/invalid mbid: a definitive "no relations", not a
+  // transient failure (else mb-backfill requeues it every day).
+  if (res.status === 404 || res.status === 400) return []
   if (!res.ok) throw new Error(`musicbrainz ${res.status}`)
   const data = (await res.json()) as MbArtistResponse
   if (data.error) throw new Error(`musicbrainz error: ${data.error}`)
