@@ -181,6 +181,12 @@ export function GenrePicker({ selected, onToggle, cap }: GenrePickerProps) {
         )}
       </div>
 
+      {atCap && (
+        <div className="mono" role="status" style={{ fontSize: 11, color: "var(--text-muted)" }}>
+          Max {cap} genres — remove one to add another
+        </div>
+      )}
+
       {/* Related-genre chips — shown after the user just selected a leaf. */}
       {relatedChips.length > 0 && !searchMatches && (
         <div>

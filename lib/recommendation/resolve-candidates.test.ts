@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import { resolveArtistsByName, type ResolveDeps } from "./resolve-candidates"
 import type { Artist } from "@/lib/music-provider/types"
 import type { RateLimited } from "@/lib/music-provider"
-import type { ArtistEnrichment } from "./enrich-artist"
+import type { ArtistEnrichment } from "@/lib/lastfm"
 
 function artist(id: string, name: string, popularity = 50): Artist {
   return { id, name, genres: [], imageUrl: null, popularity }
@@ -33,9 +33,13 @@ function makeDeps(opts: {
       },
       write: async (name, a) => {
         writes.set(name.toLowerCase(), a)
+        return a
       },
     },
     searchArtists: opts.search ?? (async () => []),
+    // Identity mint stub: keep the adapter's id (the doorway is covered by
+    // lib/artist-identity/doorway.test.ts).
+    mintArtist: async (a) => a.id,
     enrichArtist: opts.enrichArtist,
     delayMs: 0,
     maxRetryBackoffMs: opts.maxRetryBackoffMs,
@@ -349,6 +353,14 @@ describe("resolveArtistsByName", () => {
     expect(r.resolved.get("Khruangbin")?.id).toBe("right")
   })
 
+  it("a punctuation variant is NOT an exact match — it goes through the fuzzy guard (#175 F3)", async () => {
+    // "M.I.A." vs "Mia" share a name key but are different artists; only a plain
+    // lowercase match bypasses the 0.8 similarity guard.
+    const search = async (): Promise<Artist[] | RateLimited> => [artist("mia-dot", "M.I.A.")]
+    const r = await resolveArtistsByName(["Mia"], makeDeps({ search }))
+    expect(r.resolved.has("Mia")).toBe(false)
+  })
+
   // ── mintArtist wiring ────────────────────────────────────────────────────
 
   it("mints the uuid identity: assigns the minted uuid to id, preserves the adapter's spotifyId", async () => {
@@ -384,7 +396,7 @@ describe("resolveArtistsByName", () => {
     const deps: ResolveDeps = { ...makeDeps({ search, cacheWrites: writes }), mintArtist }
     const r = await resolveArtistsByName(["A"], deps)
 
-    // mintArtist sees a null spotifyId → ensureArtist mints by name.
+    // mintArtist sees a null spotifyId → identity.ensure lands on the by-name row.
     expect(mintArtist.mock.calls[0][0].spotifyId).toBeNull()
     const resolved = r.resolved.get("A")!
     expect(resolved.id).toBe("uuid-lfm")

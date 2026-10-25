@@ -3,7 +3,7 @@ import { redirect } from "next/navigation"
 import { safeAuth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { getCachedUser } from "@/lib/user-cache"
-import { getSpotifyClientToken } from "@/lib/spotify-client-token"
+import { exploreAccessToken, exploreInputFromRow } from "@/lib/explore-input"
 import { buildExploreRails } from "@/lib/recommendation/explore-engine"
 import {
   ExploreClient,
@@ -18,7 +18,7 @@ import {
   buildApplicabilityCtx,
   ensureWeeklyChallenge,
 } from "@/lib/challenges/engine"
-import { assembleRailPayloads } from "@/lib/recommendation/explore-rail-payloads"
+import { assembleRailPayloads } from "@/lib/cards/explore-rail-payloads"
 import ExploreLoading from "./loading"
 
 export default async function ExplorePage() {
@@ -28,23 +28,20 @@ export default async function ExplorePage() {
   const userId = session.user.id
   const supabase = createServiceClient()
 
-  const [user, savesResult, accessTokenRaw] = await Promise.all([
+  const [user, savesResult, exploreToken] = await Promise.all([
     getCachedUser(userId),
     supabase.from("saves").select("artist_id").eq("user_id", userId),
-    getSpotifyClientToken(),
+    exploreAccessToken(),
   ])
 
-  if (!user) redirect("/sign-in")
+  if (!user) redirect("/sign-in?reauth=1") // stale JWT, row gone: the proxy lets this through
 
   const musicPlatform: MusicPlatform = isMusicPlatform(user.preferred_music_platform)
     ? user.preferred_music_platform
     : DEFAULT_MUSIC_PLATFORM
-  const adventurous = !!user.adventurous
-  const undergroundMode = !!user.underground_mode
-  const popularityCurve = typeof user.popularity_curve === "number" ? user.popularity_curve : undefined
-  const playThreshold = typeof user.play_threshold === "number" ? user.play_threshold : undefined
+  const { accessToken, adventurous, undergroundMode, popularityCurve, playThreshold } =
+    exploreInputFromRow(user, exploreToken)
   const initialSavedIds = (savesResult.data ?? []).map((r) => r.artist_id as string)
-  const accessToken = accessTokenRaw ?? ""
 
   return (
     <Suspense fallback={<ExploreLoading />}>
@@ -52,7 +49,7 @@ export default async function ExplorePage() {
         userId={user.id}
         accessToken={accessToken}
         adventurous={adventurous}
-        undergroundMode={undergroundMode}
+        undergroundMode={undergroundMode ?? false}
         popularityCurve={popularityCurve}
         playThreshold={playThreshold}
         musicPlatform={musicPlatform}

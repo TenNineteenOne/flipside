@@ -4,15 +4,14 @@ import {
   greedyPickTop,
   backfillToTarget,
   runDeepHop,
-  isEligibleForCooldown,
   augmentWithAdjacent,
   runWithSoftening,
-  rehydrateTopTracks,
   type RunPipelineOpts,
+  type PipelineRun,
 } from "./engine"
-import type { BuildResult, ScoredArtist } from "./types"
-import type { Artist, ArtistWithTracks, Track } from "@/lib/music-provider/types"
-import type { SimilarArtistRef } from "@/lib/music-provider"
+import type { ScoredArtist } from "./types"
+import type { Artist, ArtistWithTracks } from "@/lib/music-provider/types"
+import type { SimilarArtistRef } from "@/lib/lastfm"
 
 function artist(id: string, name: string, popularity = 50, genre = "rock"): ArtistWithTracks {
   return { id, name, genres: [genre], imageUrl: null, popularity, topTracks: [] }
@@ -350,41 +349,6 @@ describe("runDeepHop", () => {
   })
 })
 
-describe("isEligibleForCooldown", () => {
-  const now = new Date("2026-04-20T00:00:00Z")
-
-  it("allows candidates with no history", () => {
-    expect(isEligibleForCooldown(null, null, now)).toBe(true)
-    expect(isEligibleForCooldown(undefined, undefined, now)).toBe(true)
-  })
-
-  it("blocks when seen_at is within 7 days", () => {
-    const sixDays = new Date(now.getTime() - 6 * 86400_000).toISOString()
-    expect(isEligibleForCooldown(sixDays, null, now)).toBe(false)
-  })
-
-  it("allows when seen_at is past 7 days", () => {
-    const eightDays = new Date(now.getTime() - 8 * 86400_000).toISOString()
-    expect(isEligibleForCooldown(eightDays, null, now)).toBe(true)
-  })
-
-  it("blocks when skip_at is set recently (permanent dismiss)", () => {
-    const fifteenDays = new Date(now.getTime() - 15 * 86400_000).toISOString()
-    expect(isEligibleForCooldown(null, fifteenDays, now)).toBe(false)
-  })
-
-  it("blocks when skip_at is set long ago (permanent dismiss, no expiry)", () => {
-    const hundredDays = new Date(now.getTime() - 100 * 86400_000).toISOString()
-    expect(isEligibleForCooldown(null, hundredDays, now)).toBe(false)
-  })
-
-  it("skip cooldown outranks seen cooldown (any skip_at blocks regardless of age)", () => {
-    const seen = new Date(now.getTime() - 1 * 86400_000).toISOString()
-    const skip = new Date(now.getTime() - 28 * 86400_000).toISOString()
-    expect(isEligibleForCooldown(seen, skip, now)).toBe(false)
-  })
-})
-
 describe("greedyPickTop diversity strength", () => {
   it("homogeneous 40-rock pool produces ≤10 rocks in top 20 at 0.10 penalty", () => {
     // 40 candidates, 30 rock (score 0.5 descending) + 10 other genres (score 0.4 descending).
@@ -411,17 +375,12 @@ describe("augmentWithAdjacent", () => {
     )
   }
 
-  const emptySet = new Set<string>()
-
   it("non-adventurous: injects ≤4 adjacent picks at positions ≥5", async () => {
     const base = makeBase(20)
     const result = await augmentWithAdjacent(base, {
       userGenres: ["indie-rock"],
       adventurous: false,
       popularityCurve: 0.95,
-      thumbsDownIds: emptySet,
-      overThresholdIds: emptySet,
-      overThresholdNames: emptySet,
       fetchTagArtists: async () => ["adj1", "adj2", "adj3", "adj4", "adj5"],
       resolveArtists: async (names) => {
         const m = new Map<string, Artist>()
@@ -446,9 +405,6 @@ describe("augmentWithAdjacent", () => {
       userGenres: ["indie-rock"],
       adventurous: true,
       popularityCurve: 0.95,
-      thumbsDownIds: emptySet,
-      overThresholdIds: emptySet,
-      overThresholdNames: emptySet,
       fetchTagArtists: async () => adjNames,
       resolveArtists: async (names) => {
         const m = new Map<string, Artist>()
@@ -473,9 +429,6 @@ describe("augmentWithAdjacent", () => {
     const result = await augmentWithAdjacent(base, {
       userGenres: [],
       popularityCurve: 0.95,
-      thumbsDownIds: emptySet,
-      overThresholdIds: emptySet,
-      overThresholdNames: emptySet,
       fetchTagArtists,
       resolveArtists,
     })
@@ -496,9 +449,6 @@ describe("augmentWithAdjacent", () => {
     await augmentWithAdjacent(base, {
       userGenres: ["indie-rock", "indie-pop"],
       popularityCurve: 0.95,
-      thumbsDownIds: emptySet,
-      overThresholdIds: emptySet,
-      overThresholdNames: emptySet,
       fetchTagArtists,
       resolveArtists: async () => new Map<string, Artist>(),
     })
@@ -511,34 +461,11 @@ describe("augmentWithAdjacent", () => {
     const result = await augmentWithAdjacent(base, {
       userGenres: ["indie-rock"],
       popularityCurve: 0.95,
-      thumbsDownIds: emptySet,
-      overThresholdIds: emptySet,
-      overThresholdNames: emptySet,
       fetchTagArtists: async () => ["base5", "base10"],  // names collide with base[5], base[10]
       resolveArtists: async () => new Map<string, Artist>(),
     })
     // Name-level dedup happens before resolution, so nothing is resolved/injected.
     expect(result.every((r) => r.source === "test")).toBe(true)
-  })
-
-  it("filters thumbs-down candidates", async () => {
-    const base = makeBase(20)
-    const result = await augmentWithAdjacent(base, {
-      userGenres: ["indie-rock"],
-      popularityCurve: 0.95,
-      thumbsDownIds: new Set(["id_adj1"]),
-      overThresholdIds: emptySet,
-      overThresholdNames: emptySet,
-      fetchTagArtists: async () => ["adj1", "adj2"],
-      resolveArtists: async (names) => {
-        const m = new Map<string, Artist>()
-        for (const n of names) m.set(n, mkArtist(`id_${n}`, 30, "indie-pop"))
-        return m
-      },
-    })
-    const injected = result.filter((r) => r.source === "adjacent_bleed")
-    // id_adj1 was thumbs-down; only id_adj2 can be injected.
-    expect(injected.every((r) => r.artist.id !== "id_adj1")).toBe(true)
   })
 
   it("adventurous mainstream penalty orders low-pop injections ahead of high-pop", async () => {
@@ -549,9 +476,6 @@ describe("augmentWithAdjacent", () => {
       userGenres: ["indie-rock"],
       adventurous: true,
       popularityCurve: 0.95,
-      thumbsDownIds: emptySet,
-      overThresholdIds: emptySet,
-      overThresholdNames: emptySet,
       fetchTagArtists: async () => [...lowNames, ...highNames],
       resolveArtists: async (names) => {
         const m = new Map<string, Artist>()
@@ -572,9 +496,6 @@ describe("augmentWithAdjacent", () => {
     const result = await augmentWithAdjacent(tinyBase, {
       userGenres: ["indie-rock"],
       popularityCurve: 0.95,
-      thumbsDownIds: emptySet,
-      overThresholdIds: emptySet,
-      overThresholdNames: emptySet,
       fetchTagArtists: async () => ["x"],
       resolveArtists: async () => new Map([["x", mkArtist("id_x")]]),
     })
@@ -610,12 +531,12 @@ describe("runWithSoftening cascade order", () => {
   }
 
   function makeRunner(results: number[]): {
-    run: (opts: RunPipelineOpts) => Promise<BuildResult>
+    run: (opts: RunPipelineOpts) => Promise<PipelineRun>
     calls: CallRecord[]
   } {
     const calls: CallRecord[] = []
     let idx = 0
-    const run = async (opts: RunPipelineOpts): Promise<BuildResult> => {
+    const run = async (opts: RunPipelineOpts): Promise<PipelineRun> => {
       calls.push({
         source: opts.source,
         playThreshold: opts.playThreshold,
@@ -623,7 +544,7 @@ describe("runWithSoftening cascade order", () => {
         seedNames: opts.seedNames,
       })
       const count = results[idx++] ?? 0
-      return { count, runSecondary: null, metrics: { primaryMs: 0, previewMs: 0, firstBatchMs: 0, misses: 0, retries: 0, rateLimited: false } }
+      return { count, runSecondary: null, flush: async () => {}, metrics: { primaryMs: 0, previewMs: 0, firstBatchMs: 0, misses: 0, retries: 0, rateLimited: false } }
     }
     return { run, calls }
   }
@@ -638,25 +559,48 @@ describe("runWithSoftening cascade order", () => {
     expect(result.softenedFilters).toBeUndefined()
   })
 
-  it("chains every run's flushConfirms so softening doesn't discard earlier runs' confirms (#162)", async () => {
-    const flushed: string[] = []
+  it("finish persists all runs: the returned run's secondary pass, then EVERY run's flush (#162, b3e402c)", async () => {
+    const events: string[] = []
     let idx = 0
     const counts = [0, 5]
-    const run = async (opts: RunPipelineOpts): Promise<BuildResult> => {
+    const run = async (opts: RunPipelineOpts): Promise<PipelineRun> => {
       const label = opts.source
       const count = counts[idx++] ?? 0
       return {
         count,
-        runSecondary: null,
-        flushConfirms: async () => { flushed.push(label) },
+        runSecondary: async () => { events.push(`secondary:${label}`); return 0 },
+        flush: async () => { events.push(`flush:${label}`) },
         metrics: { primaryMs: 0, previewMs: 0, firstBatchMs: 0, misses: 0, retries: 0, rateLimited: false },
       }
     }
     const result = await runWithSoftening(baseOpts, { run, coldStartSeeds: coldSeeds })
     expect(result.count).toBe(5)
-    await result.flushConfirms?.()
-    // BOTH the failed primary's and the successful soften run's collectors flush.
-    expect(flushed.sort()).toEqual(["multi_source", "soften_play_threshold"])
+    expect(result.pending).toBe(true)
+    await result.finish()
+    // Only the returned run finishes its secondary pass, and it runs FIRST;
+    // BOTH the failed primary's and the soften run's collectors then flush.
+    expect(events[0]).toBe("secondary:soften_play_threshold")
+    expect(events.slice(1).sort()).toEqual(["flush:multi_source", "flush:soften_play_threshold"])
+  })
+
+  it("finish still flushes when the secondary pass throws, then rethrows", async () => {
+    const flushed: string[] = []
+    const run = async (): Promise<PipelineRun> => ({
+      count: 3,
+      runSecondary: async () => { throw new Error("boom") },
+      flush: async () => { flushed.push("x") },
+      metrics: { primaryMs: 0, previewMs: 0, firstBatchMs: 0, misses: 0, retries: 0, rateLimited: false },
+    })
+    const result = await runWithSoftening(baseOpts, { run, coldStartSeeds: coldSeeds })
+    await expect(result.finish()).rejects.toThrow("boom")
+    expect(flushed).toEqual(["x"])
+  })
+
+  it("pending is false and finish only flushes when the run failed early", async () => {
+    const { run } = makeRunner([0, 0, 0])
+    const result = await runWithSoftening(baseOpts, { run, coldStartSeeds: coldSeeds })
+    expect(result.pending).toBe(false)
+    await expect(result.finish()).resolves.toBeUndefined()
   })
 
   it("applies playThreshold+5 first; stops when it succeeds", async () => {
@@ -704,6 +648,18 @@ describe("runWithSoftening cascade order", () => {
     expect(result.softenedFilters).toEqual({ playThreshold: true, coldStart: true })
   })
 
+  it("a write error is not an empty pool: no softening (#175 R7)", async () => {
+    const calls: string[] = []
+    const run = async (opts: RunPipelineOpts): Promise<PipelineRun> => {
+      calls.push(opts.source)
+      return { count: 0, writeError: true, runSecondary: null, flush: async () => {}, metrics: { primaryMs: 0, previewMs: 0, firstBatchMs: 0, misses: 0, retries: 0, rateLimited: false } }
+    }
+    const result = await runWithSoftening(baseOpts, { run, coldStartSeeds: coldSeeds })
+    expect(calls).toEqual(["multi_source"])
+    expect(result.count).toBe(0)
+    expect(result.softenedFilters).toBeUndefined()
+  })
+
   it("returns zero from cold-start with flags still set when nothing works", async () => {
     const { run, calls } = makeRunner([0, 0, 0])
     const result = await runWithSoftening(baseOpts, { run, coldStartSeeds: coldSeeds })
@@ -711,108 +667,5 @@ describe("runWithSoftening cascade order", () => {
     expect(calls).toHaveLength(3)
     expect(result.count).toBe(0)
     expect(result.softenedFilters).toEqual({ playThreshold: true, coldStart: true })
-  })
-})
-
-describe("rehydrateTopTracks", () => {
-  function pTrack(id: string): Track {
-    return {
-      id,
-      spotifyTrackId: null,
-      name: `Track ${id}`,
-      previewUrl: `https://audio.example.com/${id}.m4a`,
-      durationMs: 30000,
-      albumName: "Album",
-      albumImageUrl: null,
-      source: "itunes",
-    }
-  }
-
-  // Minimal supabase stub: only the artist_tracks_cache read chain is exercised.
-  function makeSupabase(opts: {
-    rows?: Array<{ artist_id: string; tracks: Track[] | null }>
-    error?: { message: string }
-    capture?: { tables: string[]; inArgs: unknown[][] }
-  }) {
-    return {
-      from(table: string) {
-        opts.capture?.tables.push(table)
-        return {
-          select() {
-            return {
-              in(_col: string, ids: unknown[]) {
-                opts.capture?.inArgs.push(ids)
-                return Promise.resolve(
-                  opts.error
-                    ? { data: null, error: opts.error }
-                    : { data: opts.rows ?? [], error: null },
-                )
-              },
-            }
-          },
-        }
-      },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any
-  }
-
-  it("sets topTracks on candidates whose artist_id has a cached non-empty set", async () => {
-    const candidates = [
-      { artist: artist("warm-1", "Warm One") },
-      { artist: artist("cold-1", "Cold One") },
-    ]
-    const tracks = [pTrack("t1"), pTrack("t2")]
-    const supabase = makeSupabase({ rows: [{ artist_id: "warm-1", tracks }] })
-
-    await rehydrateTopTracks(supabase, candidates)
-
-    expect(candidates[0].artist.topTracks).toEqual(tracks)
-    // Cold artist keeps its original topTracks (the test fixture defaults to []).
-    expect(candidates[1].artist.topTracks).toEqual([])
-  })
-
-  it("leaves cold candidates' topTracks undefined when the cached set is empty", async () => {
-    // A cold artist (no cached set / empty cached set) keeps topTracks undefined,
-    // so it falls through to iTunes/Spotify at confirm time.
-    const candidates: Array<{ artist: Artist }> = [
-      { artist: { id: "warm-1", name: "Warm One", genres: ["rock"], imageUrl: null, popularity: 50 } },
-    ]
-    const supabase = makeSupabase({ rows: [{ artist_id: "warm-1", tracks: [] }] })
-
-    await rehydrateTopTracks(supabase, candidates)
-
-    expect((candidates[0].artist as ArtistWithTracks).topTracks).toBeUndefined()
-  })
-
-  it("degrades to no rehydration on read error (never throws)", async () => {
-    const candidates: Array<{ artist: Artist }> = [
-      { artist: { id: "warm-1", name: "Warm One", genres: ["rock"], imageUrl: null, popularity: 50 } },
-    ]
-    const supabase = makeSupabase({ error: { message: "boom" } })
-
-    await expect(rehydrateTopTracks(supabase, candidates)).resolves.toBeUndefined()
-    expect((candidates[0].artist as ArtistWithTracks).topTracks).toBeUndefined()
-  })
-
-  it("no-ops on empty candidate list (no query)", async () => {
-    const capture = { tables: [] as string[], inArgs: [] as unknown[][] }
-    const supabase = makeSupabase({ capture })
-    await rehydrateTopTracks(supabase, [])
-    expect(capture.tables).toHaveLength(0)
-  })
-
-  it("dedupes ids and queries artist_tracks_cache", async () => {
-    const capture = { tables: [] as string[], inArgs: [] as unknown[][] }
-    const candidates = [
-      { artist: artist("dup", "Dup") },
-      { artist: artist("dup", "Dup") },
-      { artist: artist("other", "Other") },
-    ]
-    const supabase = makeSupabase({ rows: [], capture })
-
-    await rehydrateTopTracks(supabase, candidates)
-
-    expect(capture.tables).toEqual(["artist_tracks_cache"])
-    expect(capture.inArgs[0]).toEqual(["dup", "other"])
   })
 })

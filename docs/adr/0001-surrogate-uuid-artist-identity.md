@@ -22,11 +22,30 @@ from Spotify so the resolver can later (#157) move off Spotify entirely.
 1. **One table (fold).** `artist_search_cache` is folded into a single canonical `artists` table
    and dropped — one book, no cross-table drift. Costs more app-file churn now (paid down while
    the dataset is tiny / pre-release), but eliminates a permanent drift bug class.
-2. **`name_lower` is a non-unique hint, not a key.** Two distinct real artists can share a name
-   (two bands called "Phoenix"). Dedup is on `spotify_id`/`mbid` (unique when present), never on
-   name. At the **doorway** (the resolve step, the only place names enter our UUID world), an
-   *ambiguous* exact-name lookup does **not** guess — it resolves fresh and dedups by ID. Same-name
-   artists with no `spotify_id` correctly get distinct UUIDs.
+2. **Same-name artists: ID evidence splits, a bare name reuses one stable row.** *(Revised
+   2026-10, #175 — supersedes "an ambiguous lookup resolves fresh; same-name artists with no
+   `spotify_id` get distinct UUIDs".)* `name_lower` stays a non-unique column. The rule,
+   enforced in ONE place — the artist-identity module (`lib/artist-identity/`, the doorway):
+   1. **Two artists with different Spotify IDs or validated MusicBrainz IDs never share an
+      `artists` row.** A seed carrying a `spotify_id` resolves only by `spotify_id` (unique),
+      never by name, so it can't land on a same-name row holding another ID. Only `mbid`s
+      validated by the MusicBrainz backfill count as evidence (decision 3); Last.fm's mbid never
+      does.
+   2. **A bare name with no distinguishing evidence reuses the one stable row**: exactly one
+      row → that row; several → a deterministic pick (`spotify_id` NOT NULL first, popularity
+      desc, id asc); none → mint a name-only row. An ambiguous name still runs the caller's
+      lookup first, because that lookup may *produce* evidence (e.g. MusicBrainz url-rels → a
+      Spotify id at onboarding); only a lookup that yields none lands on the pick.
+
+   *Why not mint fresh per ambiguous lookup?* Last.fm conflates homonyms onto one page, so a
+   bare Last.fm name carries no distinguishing evidence — a fresh mint can't be *more* right,
+   only different. In practice "resolve fresh" minted a new row on every ambiguous lookup
+   (#161: up to 16 rows for one name), and because the read then saw a different pile each
+   run, the resolved uuid flapped between generations — breaking thumbs-down and cooldown
+   filters keyed on `artist_id`. A stable (possibly conflated) row is strictly better than a
+   flapping one. **Splitting already-conflated rows** (one row standing for two real "Phoenix"
+   bands) is future work, tied to #168 — it needs evidence (validated mbid / Spotify id) to
+   split on, which the MusicBrainz backfill is accruing.
 3. **`mbid` is enrichment, populated only from validated MusicBrainz.** Live research showed
    Last.fm's mbid is *most wrong precisely on same-name collisions* (Last.fm conflates homonyms
    onto one page; ~5.5% of its mbids are invalid; `""` is its "absent" sentinel). MusicBrainz can
@@ -46,9 +65,11 @@ from Spotify so the resolver can later (#157) move off Spotify entirely.
 
 ## Consequences
 
-- The more resolution moves off Spotify (#157), the more the **name-cache / doorway dedup**
+- The more resolution moves off Spotify (#157), the more the **doorway's by-name rule**
   (decision 2) carries the load — because Spotify-free mints often have no `spotify_id` at mint
-  time. This is an accepted, deliberate coupling; it is why the doorway rule was pressure-tested.
+  time. This is an accepted, deliberate coupling; it is why the doorway rule was pressure-tested
+  and why it lives in one module with one test suite (`lib/artist-identity/doorway.test.ts`).
+- Homonyms with no ID evidence are conflated onto one row until #168 splits them.
 - Recovery during the cut is by reverting the Vercel deploy: 0036 is additive and keeps the old
   `spotify_artist_id` columns/constraints/RPCs alive; Migration B (0037) drops them later.
 

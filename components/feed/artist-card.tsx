@@ -12,6 +12,7 @@ import { hexToRgba } from "@/lib/color-utils"
 import { useArtistTracks } from "@/lib/hooks/use-artist-tracks"
 import { useArtistColor } from "@/lib/hooks/use-artist-color"
 import type { Track } from "@/lib/music-provider/types"
+import type { CardArtist } from "@/lib/cards/card-artist"
 import {
   PLATFORM_META,
   getArtistLink,
@@ -23,30 +24,8 @@ import {
 // Types
 // ---------------------------------------------------------------------------
 
-interface ArtistWithTracks {
-  id: string
-  spotifyId?: string | null
-  name: string
-  genres: string[]
-  imageUrl: string | null
-  popularity: number
-  topTracks: Track[]
-}
-
-interface Recommendation {
-  artist_id: string
-  artist_data: ArtistWithTracks
-  score: number
-  why: {
-    sourceArtists: string[]
-    genres: string[]
-    friendBoost: string[]
-  }
-  artist_color?: string | null
-}
-
 export interface ArtistCardProps {
-  recommendation: Recommendation
+  artist: CardArtist
   musicPlatform: MusicPlatform
   onSave: () => void
   onFeedback: (signal: string) => void
@@ -125,7 +104,7 @@ function signalCollapses(signal: string | null | undefined): boolean {
 }
 
 function ArtistCardImpl({
-  recommendation,
+  artist,
   musicPlatform,
   onSave,
   onFeedback,
@@ -135,17 +114,17 @@ function ArtistCardImpl({
 }: ArtistCardProps) {
   const isLiked = dismissSignal === "thumbs_up"
   const isCollapsed = signalCollapses(dismissSignal)
-  const { artist_data, why, artist_color } = recommendation
-  const artistColor = useArtistColor(artist_color, artist_data.name)
+  const { why } = artist
+  const artistColor = useArtistColor(artist.artistColor, artist.name)
 
   const { play } = useAudio()
 
   const { tracks: localTracks, isFetching: isFetchingTracks } = useArtistTracks({
     // The Show-Tracks route (/api/artists/[id]/tracks) is keyed on the internal
     // artist_id (Stage 2 re-key), so pass the surrogate uuid here.
-    artistId: recommendation.artist_id,
-    artistName: artist_data.name,
-    initialTracks: artist_data.topTracks,
+    artistId: artist.id,
+    artistName: artist.name,
+    initialTracks: artist.topTracks,
   })
 
   function handleSave(e: React.MouseEvent) {
@@ -155,17 +134,17 @@ function ArtistCardImpl({
 
   const handlePlay = useCallback(
     (track: Track) => {
-      play(track, artist_data.name, artist_data.imageUrl, artistColor)
+      play(track, artist.name, artist.imageUrl, artistColor)
     },
-    [play, artist_data.name, artist_data.imageUrl, artistColor],
+    [play, artist.name, artist.imageUrl, artistColor],
   )
 
   function handleShare(e: React.MouseEvent) {
     e.stopPropagation()
     const url = getShareableArtistLink(musicPlatform, {
-      artistId: recommendation.artist_id,
-      spotifyId: artist_data.spotifyId ?? null,
-      artistName: artist_data.name,
+      artistId: artist.id,
+      spotifyId: artist.spotifyId ?? null,
+      artistName: artist.name,
     })
     navigator.clipboard.writeText(url).then(() => toast.success("Link copied!")).catch(() => toast.error("Couldn't copy link"))
   }
@@ -209,7 +188,7 @@ function ArtistCardImpl({
         }}
       >
         <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-secondary)" }}>
-          {artist_data.name}
+          {artist.name}
         </span>
         <span
           className="mono"
@@ -257,10 +236,10 @@ function ArtistCardImpl({
     >
       {/* Hero image */}
       <div style={heroWrapStyle}>
-        {artist_data.imageUrl ? (
+        {artist.imageUrl ? (
           <Image
-            src={artist_data.imageUrl}
-            alt={artist_data.name}
+            src={artist.imageUrl}
+            alt={artist.name}
             fill
             sizes="(min-width: 900px) 680px, 100vw"
             priority={priority}
@@ -280,7 +259,7 @@ function ArtistCardImpl({
         )}
 
         {/* Color tint overlay */}
-        {artist_data.imageUrl && (
+        {artist.imageUrl && (
           <div
             style={{
               position: "absolute",
@@ -305,9 +284,9 @@ function ArtistCardImpl({
               textShadow: "0 4px 30px rgba(0,0,0,0.5)",
             }}
           >
-            {artist_data.name}
+            {artist.name}
           </div>
-          {(artist_data.genres?.length ?? 0) > 0 && artist_data.genres?.[0] && (
+          {(artist.genres?.length ?? 0) > 0 && artist.genres?.[0] && (
             <div
               className="mono"
               style={{
@@ -319,7 +298,7 @@ function ArtistCardImpl({
                 marginTop: 10,
               }}
             >
-              {artist_data.genres[0]} · popularity {artist_data.popularity}
+              {artist.genres[0]} · popularity {artist.popularity}
             </div>
           )}
         </div>
@@ -332,8 +311,6 @@ function ArtistCardImpl({
           <div onClick={(e) => e.stopPropagation()}>
             <TrackStrip
               tracks={localTracks}
-              artistId={recommendation.artist_id}
-              artistName={artist_data.name}
               artistColor={artistColor}
               onPlay={handlePlay}
             />
@@ -358,9 +335,9 @@ function ArtistCardImpl({
           <div style={{ display: "flex", gap: 8 }}>
             <a
               href={getArtistLink(musicPlatform, {
-                artistId: recommendation.artist_id,
-                spotifyId: artist_data.spotifyId ?? null,
-                artistName: artist_data.name,
+                artistId: artist.id,
+                spotifyId: artist.spotifyId ?? null,
+                artistName: artist.name,
               })}
               target="_blank"
               rel="noopener noreferrer"

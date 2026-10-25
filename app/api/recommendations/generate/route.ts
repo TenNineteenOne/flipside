@@ -1,19 +1,23 @@
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError } from "@/lib/errors"
 import { withAuthedCsrfRoute } from "@/lib/api/with-authed-route"
-import { getAccessToken } from "@/lib/get-access-token"
 import { getSpotifyClientToken } from "@/lib/spotify-client-token"
+import { claimCooldown } from "@/lib/cooldown"
 import { buildRecommendations } from "@/lib/recommendation/engine"
 import { formatGenTiming } from "@/lib/recommendation/gen-timing"
-import { resetCalls, snapshotCalls } from "@/lib/recommendation/api-call-counter"
+import { resetCalls, snapshotCalls } from "@/lib/metrics/api-call-counter"
 import { extractArtistColor } from "@/lib/colour-extraction"
 import { after, type NextRequest } from "next/server"
 import type { Artist } from "@/lib/music-provider/types"
 
 // The blocking buildRecommendations() call plus after()'s background
-// runSecondary()/color-extraction work can run long; give it the full
+// finish()/color-extraction work can run long; give it the full
 // Hobby/Fluid function budget (F-hardening).
 export const maxDuration = 300
+
+// Newest unseen rows the post-response colour pass decorates. The queue-full
+// gate caps the live queue near 60, so this only bounds pathological cases.
+const COLOR_PASS_LIMIT = 150
 
 /** Run an array of async tasks with a maximum concurrency of `limit`. */
 async function pLimit<T>(
@@ -47,10 +51,17 @@ async function runColorExtraction(
   cachedRecs: CachedRec[],
   artistIds: string[]
 ): Promise<void> {
-  const { data: cacheRows } = await supabase
+  const { data: cacheRows, error: colorReadErr } = await supabase
     .from("artists")
     .select("id, artist_color")
     .in("id", artistIds)
+
+  // An unreadable colour map would make every row "need colour" and refetch
+  // every image; skip this pass instead (missing colours fall back to a hue).
+  if (colorReadErr) {
+    console.error(`[generate] color-read-fail err=${colorReadErr.message}`)
+    return
+  }
 
   const colorMap = new Map<string, string | null>()
   for (const row of cacheRows ?? []) {
@@ -99,9 +110,6 @@ async function runColorExtraction(
 export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Response> => {
   const req = request as NextRequest
 
-  // User-level Spotify token (only available for spotify_authorized users)
-  const userAccessToken = await getAccessToken(req)
-
   const supabase = createServiceClient()
 
   // Warm the Spotify client token concurrently with the user-row read. On
@@ -113,7 +121,7 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
   // Read user row including play_threshold
   const { data: user, error: userError } = await supabase
     .from("users")
-    .select("id, play_threshold, popularity_curve, underground_mode, deep_discovery, adventurous, last_generated_at")
+    .select("id, play_threshold, popularity_curve, underground_mode, deep_discovery, adventurous")
     .eq("id", userId)
     .maybeSingle()
 
@@ -124,38 +132,23 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
   // Default to 0.95 (legacy hardcoded value) for pre-migration rows
   const popularityCurve: number = user.popularity_curve ?? 0.95
 
-  // Per-user cooldown: 30 seconds between generate requests
-  if (user.last_generated_at) {
-    const elapsed = Date.now() - new Date(user.last_generated_at).getTime()
-    if (elapsed < 30_000) {
-      return apiError("Please wait before generating more recommendations", 429)
-    }
-  }
-
-  // Update cooldown timestamp
-  await supabase.from("users").update({ last_generated_at: new Date().toISOString() }).eq("id", userId)
-
   // Replace mode: wipe unseen queue before regenerating. Powers the Settings
   // "Generate my feed" button so newly-added anchors take immediate effect.
   const replace = req.nextUrl.searchParams.get("replace") === "true"
 
-  if (replace) {
-    const { error: wipeErr } = await supabase
-      .from("recommendation_cache")
-      .delete()
-      .eq("user_id", user.id)
-      .is("seen_at", null)
-    if (wipeErr) {
-      console.error("[generate] replace wipe failed", wipeErr.message)
-    }
-  } else {
+  if (!replace) {
     // ── [SECURITY PATCH] Algorithmic Queue Capacity DoS limit ──
-    // Restricts bad actors from infinitely looping the background engine, but allows up to 60 unseen artists to queue
+    // Restricts bad actors from infinitely looping the background engine, but allows up to 60 unseen artists to queue.
+    // Counts only UNEXPIRED unseen rows — the same set the feed shows (feed-query,
+    // hasFreshRecs); counting expired rows left returning users stuck at an empty
+    // feed behind a "queue full" 429. Runs BEFORE the cooldown claim so a
+    // queue-full 429 doesn't burn the 30s cooldown.
     const { count, error: countErr } = await supabase
       .from("recommendation_cache")
       .select("id", { count: "exact", head: true })
       .eq("user_id", user.id)
       .is("seen_at", null)
+      .gt("expires_at", new Date().toISOString())
 
     if (countErr) {
       console.error("[generate] failed to check queue limit", countErr)
@@ -163,6 +156,24 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
 
     if (count && count >= 60) {
       return apiError("Your discovery queue is full. Please review some artists before generating more.", 429)
+    }
+  }
+
+  // Per-user cooldown: 30 seconds between generate requests (atomic claim —
+  // stamps last_generated_at in the same statement that checks it).
+  if ((await claimCooldown(supabase, userId, "last_generated_at", 30_000)) === "cooling") {
+    return apiError("Please wait before generating more recommendations", 429)
+  }
+
+  if (replace) {
+    const { error: wipeErr } = await supabase
+      .from("recommendation_cache")
+      .delete()
+      .eq("user_id", user.id)
+      .is("seen_at", null)
+      .is("skip_at", null) // never wipe a dismissal
+    if (wipeErr) {
+      console.error("[generate] replace wipe failed", wipeErr.message)
     }
   }
 
@@ -177,7 +188,7 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
     // via confirm), otherwise generate without it.
     // '' = no Spotify (the established RecommendationInput convention) — generation
     // runs Spotify-free (Last.fm resolver + iTunes previews).
-    const accessToken = userAccessToken ?? (await clientTokenPromise) ?? ""
+    const accessToken = (await clientTokenPromise) ?? ""
     if (!accessToken) {
       console.log("[generate] no Spotify token — generating Spotify-free (Last.fm resolver + iTunes previews)")
     }
@@ -191,7 +202,7 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
     // work runs after logging and is intentionally excluded.
     resetCalls()
     const genStart = Date.now()
-    const { count: recCount, runSecondary, flushConfirms, softenedFilters, metrics } = await buildRecommendations({
+    const { count: recCount, pending, finish, softenedFilters, metrics } = await buildRecommendations({
       userId: user.id,
       accessToken,
       playThreshold,
@@ -222,25 +233,14 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
     // raced the user and is gone). Missing colours fall back to a
     // deterministic name-hash hue.
     after(async () => {
-      // Finish primary-to-20 (tier-2) then secondary pool in the background.
-      // runSecondary handles both phases; it is null only when the pipeline
-      // failed early (empty pool / no candidates).
-      if (runSecondary) {
-        try {
-          await runSecondary()
-        } catch (err) {
-          console.error(`[generate] background-fail err=${err instanceof Error ? err.message : err}`)
-        }
-      }
-
-      // Persist every confirmed preview (tier-1 + tier-2 + secondary) to
-      // artist_tracks_cache in one batch, AFTER runSecondary so the collector
-      // has accumulated all phases. Runs even when runSecondary is null.
-      // flushConfirms never throws, but guard defensively. (#162)
+      // One continuation: finish primary-to-20 (tier-2) and the secondary
+      // pool (no-op when the pipeline failed early), then persist every
+      // confirmed preview — across all soften runs — to artist_tracks_cache
+      // (#162). The flush runs even when the secondary pass throws.
       try {
-        await flushConfirms?.()
+        await finish()
       } catch (err) {
-        console.error(`[generate] flush-confirms-fail err=${err instanceof Error ? err.message : err}`)
+        console.error(`[generate] background-fail err=${err instanceof Error ? err.message : err}`)
       }
 
       // Full-generation call counts (blocking + background). The [gen-timing]
@@ -254,6 +254,11 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
         .select("artist_id, artist_data")
         .eq("user_id", user.id)
         .is("seen_at", null)
+        // Only the live queue: expired unseen rows can pile up to ~1000 per
+        // user (F6), and `.in()` over all of them risks a 414 (#175 F-G).
+        .gt("expires_at", new Date().toISOString())
+        .order("created_at", { ascending: false })
+        .limit(COLOR_PASS_LIMIT)
 
       if (!cachedRecs || cachedRecs.length === 0) return
 
@@ -266,7 +271,7 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
       }
     })
 
-    return Response.json({ success: true, count: recCount, softenedFilters, pending: runSecondary != null })
+    return Response.json({ success: true, count: recCount, softenedFilters, pending })
   } catch (err) {
     console.error(`[generate] fail err=${err instanceof Error ? err.message : err}`)
     return apiError("Recommendation generation failed", 500)

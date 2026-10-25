@@ -6,52 +6,8 @@ import { FeedClient } from "@/components/feed/feed-client"
 import { ExplorePrewarm } from "@/components/feed/explore-prewarm"
 import { RecommendationsLoader } from "@/components/feed/recommendations-loader"
 import { DEFAULT_MUSIC_PLATFORM, isMusicPlatform, type MusicPlatform } from "@/lib/music-links"
-import { hasPlayablePreview } from "@/lib/recommendation/confirm-previews"
-import { getUnseenRecommendations } from "@/lib/recommendation/feed-query"
-
-interface Rec {
-  artist_id: string
-  artist_data: {
-    id: string;
-    spotifyId?: string | null;
-    name: string;
-    genres: string[]; 
-    imageUrl: string | null; 
-    popularity: number; 
-    topTracks: Array<{
-      id: string;
-      spotifyTrackId: string | null;
-      name: string;
-      previewUrl: string | null;
-      durationMs: number;
-      albumName: string;
-      albumImageUrl: string | null;
-      source: 'itunes' | 'spotify' | 'deezer';
-    }>;
-  }
-  score: number
-  why: { sourceArtists: string[]; genres: string[]; friendBoost: string[] }
-}
-
-/** Round-robin interleave by primary source artist so results aren't clustered. */
-function interleave(recs: Rec[]): Rec[] {
-  const buckets = new Map<string, Rec[]>()
-  for (const rec of recs) {
-    const key = rec.why?.sourceArtists?.[0] ?? "__none"
-    if (!buckets.has(key)) buckets.set(key, [])
-    buckets.get(key)!.push(rec)
-  }
-  const groups = Array.from(buckets.values())
-  const out: Rec[] = []
-  let i = 0
-  while (out.length < recs.length) {
-    const g = groups[i % groups.length]
-    if (g.length > 0) out.push(g.shift()!)
-    i++
-    if (groups.every((g) => g.length === 0)) break
-  }
-  return out
-}
+import { getUnseenRecommendations, type UnseenRecommendation } from "@/lib/recommendation/feed-query"
+import { isRenderableRow, loadFeedCards } from "@/lib/cards/feed-cards"
 
 export default async function FeedPage() {
   const session = await safeAuth()
@@ -65,18 +21,30 @@ export default async function FeedPage() {
   // Look up user row (request-scoped cache — layout.tsx already fetched this)
   const user = await getCachedUser(userId)
   if (!user) {
-    redirect("/sign-in")
+    redirect("/sign-in?reauth=1") // stale JWT, row gone: the proxy lets this through
+  }
+
+  // Resume onboarding: the proxy sends a signed-in "/" here, so this is the
+  // only way back for someone who signed up and left before finishing. Same
+  // rule as /api/onboarding/check; the onboarding PATCH stamps
+  // onboarding_completed_at (even on Skip), so finishing can't loop back.
+  if (!user.onboarding_completed_at && !user.lastfm_username) {
+    const { count } = await supabase
+      .from("seed_artists")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id)
+    if ((count ?? 0) === 0) redirect("/onboarding")
   }
 
   // Fetch cached recommendations, re-filtered by the user's current
   // underground_mode so a just-toggled setting is honored on first paint
   // instead of waiting for the client poll to replace the list.
-  let recs: Rec[]
+  let recs: UnseenRecommendation[]
   try {
-    recs = (await getUnseenRecommendations(supabase, user.id, {
+    recs = await getUnseenRecommendations(supabase, user.id, {
       limit: 20,
       undergroundMode: !!user.underground_mode,
-    })) as Rec[]
+    })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error(`[feed-page] recs err="${message}" userId=${user.id}`)
@@ -84,9 +52,7 @@ export default async function FeedPage() {
   }
 
   // Filter out entries missing essential artist data
-  const validRecs = (recs ?? []).filter(
-    (r: { artist_data?: { id?: string; name?: string } }) => r.artist_data?.id && r.artist_data?.name
-  ) as Rec[]
+  const validRecs = (recs ?? []).filter(isRenderableRow)
 
   const musicPlatform: MusicPlatform = isMusicPlatform(user.preferred_music_platform)
     ? user.preferred_music_platform
@@ -102,51 +68,25 @@ export default async function FeedPage() {
     )
   }
 
-  // Fetch tracks + signal counts in parallel — counts depend only on user.id,
-  // tracks fetch needs artistIds (already known). Saves one DB round-trip vs.
-  // running tracks sequentially before the count Promise.all.
-  const artistIds = validRecs.map((r) => r.artist_id)
-
+  // Assemble cards (tracks-cache fallback, colour lift, playable filter,
+  // interleave — see lib/cards/feed-cards) + signal counts in parallel.
   const [
-    { data: tracksCache },
+    cards,
     { count: artistCount },
     { count: feedbackCount },
     { count: saveCount },
   ] = await Promise.all([
-    supabase
-      .from("artist_tracks_cache")
-      .select("artist_id, tracks")
-      .in("artist_id", artistIds),
+    loadFeedCards(supabase, validRecs),
     supabase.from("listened_artists").select("*", { count: "exact", head: true }).eq("user_id", user.id),
     supabase.from("feedback").select("*", { count: "exact", head: true }).eq("user_id", user.id).is("deleted_at", null),
     supabase.from("saves").select("*", { count: "exact", head: true }).eq("user_id", user.id),
   ])
 
-  const tracksMap = new Map<string, Rec["artist_data"]["topTracks"]>()
-  for (const row of tracksCache ?? []) {
-    tracksMap.set(row.artist_id, (row.tracks as Rec["artist_data"]["topTracks"]) ?? [])
-  }
-
-  const recsWithColor = validRecs.map((rec) => {
-    // Prefer the previews baked into artist_data during resolution (#134); fall
-    // back to artist_tracks_cache for legacy rows written before the bake.
-    const baked = rec.artist_data.topTracks
-    rec.artist_data.topTracks =
-      baked && baked.length > 0 ? baked : tracksMap.get(rec.artist_id) ?? []
-    const artist_color = (rec.artist_data as Record<string, unknown>).artist_color as string | null ?? null
-    return { ...rec, artist_color }
-  })
-
-  // Defensive: never render a dead card. New rows are dropped at write time if
-  // they have no preview, but a legacy row (written before previews were baked)
-  // with no playable track in artist_data or the tracks cache is filtered here.
-  const playableRecs = recsWithColor.filter((rec) => hasPlayablePreview(rec.artist_data.topTracks))
-
   const signalCount = (artistCount ?? 0) + (feedbackCount ?? 0) + (saveCount ?? 0)
 
   return (
     <>
-      <FeedClient recommendations={interleave(playableRecs)} musicPlatform={musicPlatform} signalCount={signalCount} />
+      <FeedClient recommendations={cards} musicPlatform={musicPlatform} signalCount={signalCount} />
       <ExplorePrewarm />
     </>
   )

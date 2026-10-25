@@ -1,6 +1,6 @@
 import type { Track } from "./types"
 import { runItunes } from "@/lib/itunes-limit"
-import { incItunes } from "@/lib/recommendation/api-call-counter"
+import { incItunes } from "@/lib/metrics/api-call-counter"
 import { PreviewSourceBreaker } from "@/lib/preview-source-breaker"
 
 const ITUNES_BASE = "https://itunes.apple.com/search"
@@ -31,6 +31,55 @@ const itunesBreaker = new PreviewSourceBreaker({
   cooldownMs: 60_000,
 })
 
+export type ItunesFetchResult<T> =
+  | { ok: true; data: T }
+  /** breaker: skipped, no request made. http: non-2xx. network: fetch threw. parse: bad JSON. */
+  | { ok: false; reason: "breaker" | "http" | "network" | "parse"; status?: number; error?: unknown }
+
+/**
+ * The ONE outbound iTunes entry point. Every iTunes HTTP call goes through it
+ * so all of them share: the circuit breaker (short-circuits while open — no
+ * fetch, no counter increment), the process-wide concurrency/min-interval gate
+ * (`runItunes`), and the #141 call counter. Never throws.
+ *
+ * Breaker bookkeeping: 2xx records success; 403/429 and network/parse failures
+ * record failure; other HTTP errors (e.g. 404/500) are neutral.
+ *
+ * `gateOnly: true` (the /api/open link resolver) keeps the concurrency gate but
+ * bypasses the preview breaker and the call counter — user link clicks must
+ * not trip the breaker that blanks previews, nor inflate `[gen-timing]`
+ * counters, and an open breaker must not stop a link lookup (baseline parity).
+ */
+export async function itunesFetch<T>(
+  url: string,
+  timeoutMs = 8000,
+  { gateOnly = false }: { gateOnly?: boolean } = {},
+): Promise<ItunesFetchResult<T>> {
+  const breaker = gateOnly ? null : itunesBreaker
+  if (breaker && !breaker.canRequest()) return { ok: false, reason: "breaker" }
+  return runItunes(async (): Promise<ItunesFetchResult<T>> => {
+    if (!gateOnly) incItunes()
+    let res: Response
+    try {
+      res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) })
+    } catch (error) {
+      breaker?.recordFailure()
+      return { ok: false, reason: "network", error }
+    }
+    if (!res.ok) {
+      if (res.status === 403 || res.status === 429) breaker?.recordFailure()
+      return { ok: false, reason: "http", status: res.status }
+    }
+    breaker?.recordSuccess()
+    try {
+      return { ok: true, data: (await res.json()) as T }
+    } catch (error) {
+      breaker?.recordFailure()
+      return { ok: false, reason: "parse", error }
+    }
+  })
+}
+
 /**
  * Search iTunes for top tracks by an artist name. Free, no auth, no key.
  * Filters results to tracks whose artistName matches case-insensitively and
@@ -44,41 +93,27 @@ export async function searchTracksByArtist(
   market = "US",
   limit = 5
 ): Promise<Track[] | null> {
-  // Short-circuit while the breaker is open — no fetch, no counter increment.
-  if (!itunesBreaker.canRequest()) {
-    console.log(`[itunes] breaker open, skip artist="${artistName}"`)
-    return null
-  }
-
-  let items: ITunesResult[]
-  try {
-    const url =
-      `${ITUNES_BASE}?term=${encodeURIComponent(artistName)}` +
-      `&entity=song&limit=25&country=${encodeURIComponent(market)}`
-    items = await runItunes(async () => {
-      incItunes()
-      const res = await fetch(url, { signal: AbortSignal.timeout(8000) })
-      if (!res.ok) {
-        console.log(`[itunes] ${res.status} artist="${artistName}"`)
-        if (res.status === 403 || res.status === 429) {
-          itunesBreaker.recordFailure()
-        }
-        throw new Error(`itunes ${res.status}`)
-      }
-      itunesBreaker.recordSuccess()
-      const data = (await res.json()) as ITunesResponse
-      return data.results ?? []
-    })
-  } catch (err) {
-    // Network timeout or other throw (not an HTTP error we already handled above)
-    const msg = err instanceof Error ? err.message : String(err)
-    if (!msg.startsWith("itunes ")) {
-      // Non-HTTP throw (e.g. AbortError timeout) — record as unhealthy signal
-      itunesBreaker.recordFailure()
+  const url =
+    `${ITUNES_BASE}?term=${encodeURIComponent(artistName)}` +
+    `&entity=song&limit=25&country=${encodeURIComponent(market)}`
+  const r = await itunesFetch<ITunesResponse>(url)
+  if (!r.ok) {
+    if (r.reason === "breaker") {
+      console.log(`[itunes] breaker open, skip artist="${artistName}"`)
+    } else if (r.reason === "http") {
+      console.log(`[itunes] ${r.status} artist="${artistName}"`)
+      console.log(`[itunes] fail artist="${artistName}" err=itunes ${r.status}`)
+    } else {
+      const msg = r.error instanceof Error ? r.error.message : String(r.error)
+      console.log(`[itunes] fail artist="${artistName}" err=${msg}`)
     }
-    console.log(`[itunes] fail artist="${artistName}" err=${msg}`)
     return null
   }
+  if (!r.data || typeof r.data !== "object") {
+    console.log(`[itunes] fail artist="${artistName}" err=bad payload`)
+    return null
+  }
+  const items: ITunesResult[] = r.data.results ?? []
 
   const target = artistName.toLowerCase().trim()
   const seen = new Set<string>()

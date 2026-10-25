@@ -1,11 +1,11 @@
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, dbError } from "@/lib/errors"
 import { isValidArtistId } from "@/lib/spotify-ids"
-import { invalidateExploreCache } from "@/lib/recommendation/explore-engine"
-import type { RailKey } from "@/lib/recommendation/explore-engine"
+import { RAIL_KEYS, type RailKey } from "@/lib/recommendation/explore-engine"
+import { onTasteChanged } from "@/lib/taste-change"
 import { withAuthedJsonRoute } from "@/lib/api/with-authed-route"
+import { ensureCurrentChallenge } from "@/lib/challenges/engine"
 
-const RAIL_KEYS = ["adjacent", "outside", "wildcards", "leftfield"] as const
 function isRailKey(v: unknown): v is RailKey {
   return typeof v === "string" && (RAIL_KEYS as readonly string[]).includes(v)
 }
@@ -25,6 +25,15 @@ export const POST = withAuthedJsonRoute(async ({ userId, body }) => {
 
   const supabase = createServiceClient()
 
+  // The feedback RPC credits the weekly challenge but no-ops when this week's
+  // row doesn't exist yet (it was only created on /explore load), so assign
+  // it first. Best-effort: never fails the feedback write.
+  if (signal === "thumbs_up") {
+    await ensureCurrentChallenge(supabase, userId).catch((err) => {
+      console.error("[feedback] ensure-challenge failed", err instanceof Error ? err.message : err)
+    })
+  }
+
   const { error: rpcError } = await supabase.rpc("rpc_record_feedback_v2", {
     p_user_id: userId,
     p_artist_id: artistId,
@@ -33,16 +42,10 @@ export const POST = withAuthedJsonRoute(async ({ userId, body }) => {
 
   if (rpcError) return dbError(rpcError, "feedback/rpc")
 
-  // Thumbs change the user's taste signal. When the signal came from a specific
-  // Explore rail (railKey set), narrow-invalidate only that rail — the other
-  // rails pick up the feedback row on their natural 24h TTL rebuild. When no
-  // railKey is provided (Feed thumbs, non-Explore callers), fall back to the
-  // full-wipe so those contexts keep their existing semantics.
+  // Thumbs change the user's taste signal (narrowed to railKey when set — see
+  // lib/taste-change). A skip is not a taste change.
   if (signal === "thumbs_up" || signal === "thumbs_down") {
-    const rails = railKey ? [railKey] : undefined
-    await invalidateExploreCache(userId, rails).catch((err) => {
-      console.error("[feedback] explore-invalidate failed", err)
-    })
+    await onTasteChanged(supabase, userId, { kind: "feedback", railKey })
   }
 
   return Response.json({ success: true })

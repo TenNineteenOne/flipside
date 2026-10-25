@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef } from "react"
+import { useEffect } from "react"
 
 const SKIP_KEY = "explore-warmed-at"
 const SKIP_WINDOW_MS = 60_000
@@ -12,12 +12,10 @@ const SKIP_WINDOW_MS = 60_000
  * same client warmed it within the last minute (session-scoped guard).
  */
 export function ExplorePrewarm() {
-  const firedRef = useRef(false)
-
+  // No fired-once ref: the effect runs once per mount in production, and under
+  // StrictMode the first run's idle callback is cancelled by its cleanup, so a
+  // ref guard left the second run a no-op and the cache never warmed in dev.
   useEffect(() => {
-    if (firedRef.current) return
-    firedRef.current = true
-
     try {
       const last = sessionStorage.getItem(SKIP_KEY)
       if (last && Date.now() - Number(last) < SKIP_WINDOW_MS) return

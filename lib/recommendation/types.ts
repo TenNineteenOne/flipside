@@ -38,18 +38,18 @@ export const UNDERGROUND_MAX_POPULARITY = 50
 export interface BuildResult {
   count: number
   /**
-   * When present, callers should invoke this inside `after()` to resolve
-   * the remaining candidate pool in the background. Adds more unseen recs
-   * to `recommendation_cache` without blocking the initial response.
+   * True when background work remains (the tier-2 + secondary confirm/write
+   * pass); false only when the pipeline failed early (empty pool).
    */
-  runSecondary: (() => Promise<number>) | null
+  pending: boolean
   /**
-   * Flush confirmed-preview outcomes to `artist_tracks_cache` (#162). The route
-   * calls this inside `after()` AFTER `runSecondary` completes, so one batch
-   * upsert covers tier-1 + tier-2 + secondary confirms. Optional so pipeline
-   * mocks/early-fail shapes stay valid; a run with no confirms flushes a no-op.
+   * The one background continuation. Callers invoke it inside `after()`. It
+   * finishes the feed (tier-2 to target, then the secondary pool — only for
+   * the returned run) and THEN persists every run's confirmed previews to
+   * `artist_tracks_cache` (#162), including earlier soften runs'. The flush
+   * runs even if the secondary pass throws; the error is rethrown after.
    */
-  flushConfirms?: () => Promise<void>
+  finish: () => Promise<void>
   /**
    * Set when the pipeline auto-softened filters to avoid an empty pool.
    * `undefined` on normal (non-softened) runs.

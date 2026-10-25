@@ -1,10 +1,11 @@
 /**
- * Backfill real genres + popularity onto cached artists via MusicBrainz +
- * Last.fm. Does NOT touch Spotify — sidesteps Dev-Mode quota entirely.
+ * Backfill real genres + popularity onto artists via MusicBrainz + Last.fm.
+ * Does NOT touch Spotify — sidesteps Dev-Mode quota entirely.
  *
- * Both `artist_search_cache` and `recommendation_cache` store `artist_data`
- * JSON that was built from Spotify /search, which returns genres:[] and
- * popularity:0. This script fills in real values.
+ * Targets the canonical `artists` table (keyed by the uuid `id`; ADR-0001)
+ * rows missing genres or popularity, plus the `artist_data` JSON copies in
+ * `recommendation_cache` (keyed by `artist_id`). Ported off the dropped
+ * `artist_search_cache` / `spotify_artist_id` (#175 D4).
  *
  * Pipeline:
  *   Phase 1 (MusicBrainz, 1 req/s ≈ 62 min for 1,871 artists):
@@ -18,7 +19,9 @@
  *   Phase 3 (Merge + Write):
  *     genres = MB.genres || MB.tags || Last.fm.tags (filtered)
  *     popularity = clamp(round((log10(listeners+1) - 2) × 15), 0, 100)
- *     Update every row in both tables keyed by spotify_artist_id.
+ *     artists: fill-only (only empty genres / null-or-0 popularity are
+ *     written — never overwrites a value, matching the doorway's write policy).
+ *     recommendation_cache: artist_data genres/popularity for that artist_id.
  *
  * Every artist is checkpointed after its call — Ctrl+C is safe, re-run to
  * resume. Phase transitions are also checkpointed.
@@ -40,11 +43,11 @@ import { join } from 'path'
 import { config as loadEnv } from 'dotenv'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { Artist } from '../lib/music-provider'
+import { createMbLimiter } from '../lib/artist-identity/musicbrainz'
 
 // ── Config ───────────────────────────────────────────────────────────────
 
 const MB_BASE = 'https://musicbrainz.org/ws/2'
-const MB_RATE_MS = 1000                // MB enforces 1 req/s
 const MB_USER_AGENT = 'Flipside/0.1.0 ( fluxuate27@gmail.com )'
 const MB_MIN_SCORE = 85                // accept match if MB score >= this
 
@@ -54,8 +57,9 @@ const LASTFM_RATE_MS = 500             // 2 req/s
 const HTTP_TIMEOUT_MS = 12000
 const PAGE_SIZE = 1000                 // Supabase row page size
 const CHECKPOINT_EVERY_N_ARTISTS = 25
-const CHECKPOINT_PATH = join(process.cwd(), 'scripts', 'backfill-artist-genres.checkpoint.json')
-const CHECKPOINT_SCHEMA = 2
+const CHECKPOINT_PATH =
+  process.env.BACKFILL_CHECKPOINT_PATH ?? join(process.cwd(), 'scripts', 'backfill-artist-genres.checkpoint.json')
+const CHECKPOINT_SCHEMA = 3            // 3: keyed by artists.id (was spotify id)
 
 // Last.fm non-genre tag blocklist. Conservative — only obvious non-genre.
 const LASTFM_TAG_BLOCKLIST = new Set<string>([
@@ -72,7 +76,8 @@ const MAX_GENRES_PER_ARTIST = 5
 // ── Types ────────────────────────────────────────────────────────────────
 
 interface ArtistRef {
-  spotifyId: string
+  /** artists.id (uuid) */
+  id: string
   name: string
 }
 
@@ -88,25 +93,39 @@ interface LastfmResult {
   tags: string[]
 }
 
-interface Checkpoint {
+export interface Checkpoint {
   schema: number
   uniqueArtists: ArtistRef[]
   mbResults: Record<string, MbResult>
   lastfmResults: Record<string, LastfmResult>
   writtenIds: string[]
   stats: {
-    searchCacheRows: number
+    artistsRows: number
     recommendationCacheRows: number
     uniqueIds: number
     mbMatched: number
     mbUnresolved: number
     lastfmMatched: number
     lastfmUnresolved: number
-    searchCacheUpdated: number
+    artistsUpdated: number
     recCacheUpdated: number
   }
   startedAt: string
   lastSavedAt: string
+}
+
+interface ArtistsRow {
+  id: string
+  name: string
+  genres: string[] | null
+  popularity: number | null
+}
+
+/** One user's recommendation_cache row for an artist. */
+interface RecRow {
+  id: string
+  artist_id: string
+  artist_data: Artist
 }
 
 interface CliArgs {
@@ -202,23 +221,13 @@ async function readAllRows<T>(
   return out
 }
 
-// ── Name normalization for matching ──────────────────────────────────────
-
-function normalizeName(s: string): string {
-  return s
-    .toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')  // strip diacritics
-    .replace(/[^\w\s&-]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
 // ── MusicBrainz ──────────────────────────────────────────────────────────
 
-const mbGate = makeGate(MB_RATE_MS)
+// The shared MusicBrainz 1 req/s limiter (lib/artist-identity/musicbrainz.ts).
+const mbLimiter = createMbLimiter()
 
 async function mbFetch(pathAndQuery: string): Promise<unknown | null> {
-  return mbGate(async () => {
+  return mbLimiter.run(async () => {
     try {
       const res = await fetch(`${MB_BASE}${pathAndQuery}`, {
         headers: { 'User-Agent': MB_USER_AGENT, 'Accept': 'application/json' },
@@ -244,6 +253,20 @@ async function mbFetch(pathAndQuery: string): Promise<unknown | null> {
 }
 
 interface MbSearchArtist { id: string; name: string; score: number; disambiguation?: string }
+
+/**
+ * Diacritic-folding name normalizer for MB matching ("Björk" ≡ "Bjork").
+ * Deliberately NOT artistNameKey (which keeps diacritics); this script's
+ * original matcher, restored in #175 D4.
+ */
+function normalizeName(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')  // strip diacritics
+    .replace(/[^\w\s&-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
 
 async function mbSearchArtist(name: string): Promise<MbSearchArtist | null> {
   const q = `artist:"${name.replace(/"/g, '\\"')}"`
@@ -339,44 +362,65 @@ function mergeArtistData(existing: Artist, genres: string[], popularity: number)
 
 // ── Writers ──────────────────────────────────────────────────────────────
 
-async function updateSearchCacheBySpotifyId(
+/** Fill-only: write only the fields the artists row has empty. Returns rows updated. */
+async function fillArtistsRow(
   supabase: SupabaseClient,
-  spotifyId: string,
-  merged: Artist
+  row: ArtistsRow,
+  genres: string[],
+  popularity: number
 ): Promise<number> {
+  const patch: { genres?: string[]; popularity?: number } = {}
+  if (genres.length > 0 && !(row.genres?.length)) patch.genres = genres
+  if (popularity > 0 && !row.popularity) patch.popularity = popularity
+  if (Object.keys(patch).length === 0) return 0
   const { data, error } = await supabase
-    .from('artist_search_cache')
-    .update({ artist_data: merged })
-    .eq('spotify_artist_id', spotifyId)
-    .select('name_lower')
+    .from('artists')
+    .update(patch)
+    .eq('id', row.id)
+    .select('id')
   if (error) {
-    console.log(`[backfill] search_cache update fail id=${spotifyId} err="${error.message}"`)
+    console.log(`[backfill] artists update fail id=${row.id} err="${error.message}"`)
     return 0
   }
   return (data ?? []).length
 }
 
-async function updateRecCacheBySpotifyId(
+/**
+ * Patch genres/popularity into EACH user's own `artist_data` copy (by row id).
+ * One blob copied onto every user's row would overwrite each row's own baked
+ * previews (`topTracks`), `artist_color` and image with another row's (#175).
+ */
+async function updateRecCacheRows(
   supabase: SupabaseClient,
-  spotifyId: string,
-  merged: Artist
+  rows: RecRow[],
+  genres: string[],
+  popularity: number
 ): Promise<number> {
-  const { data, error } = await supabase
-    .from('recommendation_cache')
-    .update({ artist_data: merged })
-    .eq('spotify_artist_id', spotifyId)
-    .select('id')
-  if (error) {
-    console.log(`[backfill] rec_cache update fail id=${spotifyId} err="${error.message}"`)
-    return 0
+  let n = 0
+  for (const r of rows) {
+    const merged = mergeArtistData(
+      r.artist_data,
+      genres.length > 0 ? genres : r.artist_data.genres,
+      popularity || r.artist_data.popularity
+    )
+    const { data, error } = await supabase
+      .from('recommendation_cache')
+      .update({ artist_data: merged })
+      .eq('id', r.id)
+      .select('id')
+    if (error) {
+      console.log(`[backfill] rec_cache update fail row=${r.id} err="${error.message}"`)
+      continue
+    }
+    n += (data ?? []).length
   }
-  return (data ?? []).length
+  return n
 }
 
 // ── Phases ───────────────────────────────────────────────────────────────
 
 async function phaseMusicBrainz(cp: Checkpoint): Promise<void> {
-  const todo = cp.uniqueArtists.filter((a) => !(a.spotifyId in cp.mbResults))
+  const todo = cp.uniqueArtists.filter((a) => !(a.id in cp.mbResults))
   console.log(`[backfill] phase=mb start total=${cp.uniqueArtists.length} todo=${todo.length}`)
   const start = Date.now()
   let sinceCheckpoint = 0
@@ -400,7 +444,7 @@ async function phaseMusicBrainz(cp: Checkpoint): Promise<void> {
       result = { mbid: hit.id, score: hit.score ?? 0, genres, tags }
       cp.stats.mbMatched++
     }
-    cp.mbResults[a.spotifyId] = result
+    cp.mbResults[a.id] = result
     sinceCheckpoint++
 
     if (sinceCheckpoint >= CHECKPOINT_EVERY_N_ARTISTS || i === todo.length - 1) {
@@ -420,7 +464,7 @@ async function phaseMusicBrainz(cp: Checkpoint): Promise<void> {
 }
 
 async function phaseLastfm(cp: Checkpoint, apiKey: string): Promise<void> {
-  const todo = cp.uniqueArtists.filter((a) => !(a.spotifyId in cp.lastfmResults))
+  const todo = cp.uniqueArtists.filter((a) => !(a.id in cp.lastfmResults))
   console.log(`[backfill] phase=lastfm start total=${cp.uniqueArtists.length} todo=${todo.length}`)
   const start = Date.now()
   let sinceCheckpoint = 0
@@ -429,10 +473,10 @@ async function phaseLastfm(cp: Checkpoint, apiKey: string): Promise<void> {
     const a = todo[i]
     const hit = await lastfmGetInfo(a.name, apiKey)
     if (hit) {
-      cp.lastfmResults[a.spotifyId] = hit
+      cp.lastfmResults[a.id] = hit
       cp.stats.lastfmMatched++
     } else {
-      cp.lastfmResults[a.spotifyId] = { listeners: 0, tags: [] }
+      cp.lastfmResults[a.id] = { listeners: 0, tags: [] }
       cp.stats.lastfmUnresolved++
     }
     sinceCheckpoint++
@@ -453,14 +497,15 @@ async function phaseLastfm(cp: Checkpoint, apiKey: string): Promise<void> {
   }
 }
 
-async function phaseWrite(
+export async function phaseWrite(
   cp: Checkpoint,
   supabase: SupabaseClient,
-  existingById: Map<string, Artist>,
+  artistsById: Map<string, ArtistsRow>,
+  recRowsByArtist: Map<string, RecRow[]>,
   dryRun: boolean
 ): Promise<void> {
   const written = new Set(cp.writtenIds)
-  const todo = cp.uniqueArtists.filter((a) => !written.has(a.spotifyId))
+  const todo = cp.uniqueArtists.filter((a) => !written.has(a.id))
   console.log(`[backfill] phase=write start total=${cp.uniqueArtists.length} todo=${todo.length} dryRun=${dryRun}`)
   let sinceCheckpoint = 0
   let emptyGenres = 0
@@ -468,39 +513,38 @@ async function phaseWrite(
 
   for (let i = 0; i < todo.length; i++) {
     const a = todo[i]
-    const mb = cp.mbResults[a.spotifyId]
-    const lfm = cp.lastfmResults[a.spotifyId]
+    const mb = cp.mbResults[a.id]
+    const lfm = cp.lastfmResults[a.id]
     const genres = pickGenres(mb, lfm)
     const popularity = scaleListeners(lfm?.listeners ?? 0)
     if (genres.length === 0) emptyGenres++
     if (popularity === 0) zeroPopularity++
 
-    const existing = existingById.get(a.spotifyId)
-    if (!existing) {
-      // Shouldn't happen — existingById is built from the same rows we seeded from.
-      console.log(`[backfill] write skip id=${a.spotifyId} — no existing artist_data`)
-      written.add(a.spotifyId)
-      cp.writtenIds = Array.from(written)
+    const row = artistsById.get(a.id)
+    if (!row) {
+      // Row deleted since the checkpoint was taken.
+      console.log(`[backfill] write skip id=${a.id} — no artists row`)
       continue
     }
-    const merged = mergeArtistData(existing, genres, popularity)
 
+    // A dry run writes nothing — so it must checkpoint nothing as written
+    // either, or the next real run skips every id (#175).
     if (!dryRun) {
-      const searchUpd = await updateSearchCacheBySpotifyId(supabase, a.spotifyId, merged)
-      const recUpd = await updateRecCacheBySpotifyId(supabase, a.spotifyId, merged)
-      cp.stats.searchCacheUpdated += searchUpd
-      cp.stats.recCacheUpdated += recUpd
+      cp.stats.artistsUpdated += await fillArtistsRow(supabase, row, genres, popularity)
+      const recRows = recRowsByArtist.get(a.id) ?? []
+      if (genres.length > 0 || popularity > 0) {
+        cp.stats.recCacheUpdated += await updateRecCacheRows(supabase, recRows, genres, popularity)
+      }
+      written.add(a.id)
+      cp.writtenIds = Array.from(written)
     }
-
-    written.add(a.spotifyId)
-    cp.writtenIds = Array.from(written)
     sinceCheckpoint++
 
     if (sinceCheckpoint >= CHECKPOINT_EVERY_N_ARTISTS || i === todo.length - 1) {
       saveCheckpoint(cp)
       console.log(
         `[backfill] phase=write ${i + 1}/${todo.length} ` +
-        `search_upd=${cp.stats.searchCacheUpdated} rec_upd=${cp.stats.recCacheUpdated} ` +
+        `artists_upd=${cp.stats.artistsUpdated} rec_upd=${cp.stats.recCacheUpdated} ` +
         `emptyGenres=${emptyGenres} zeroPop=${zeroPopularity}`
       )
       sinceCheckpoint = 0
@@ -529,48 +573,33 @@ async function main() {
     { auth: { persistSession: false } }
   )
 
-  // ── Load rows from both tables ─────────────────────────────────────────
-  console.log(`[backfill] reading artist_search_cache…`)
-  const searchRows = await readAllRows<{
-    name_lower: string
-    spotify_artist_id: string
-    artist_data: Artist
-  }>(supabase, 'artist_search_cache', 'name_lower, spotify_artist_id, artist_data', 'name_lower')
+  // ── Load rows ──────────────────────────────────────────────────────────
+  console.log(`[backfill] reading artists…`)
+  const artistRows = await readAllRows<ArtistsRow>(supabase, 'artists', 'id, name, genres, popularity', 'id')
 
   console.log(`[backfill] reading recommendation_cache…`)
-  const recRows = await readAllRows<{
-    id: string
-    spotify_artist_id: string
-    artist_data: Artist
-  }>(supabase, 'recommendation_cache', 'id, spotify_artist_id, artist_data', 'id')
+  const recRows = await readAllRows<RecRow>(supabase, 'recommendation_cache', 'id, artist_id, artist_data', 'id')
 
-  // Build unique (spotifyId, name) list — prefer search_cache name, fall
-  // back to rec_cache artist_data.name. Also build existingById so phaseWrite
-  // can merge against an original Artist object.
-  const nameById = new Map<string, string>()
-  const existingById = new Map<string, Artist>()
-  for (const r of searchRows) {
-    if (!r.spotify_artist_id) continue
-    if (!nameById.has(r.spotify_artist_id)) {
-      nameById.set(r.spotify_artist_id, r.artist_data?.name ?? '')
-      existingById.set(r.spotify_artist_id, r.artist_data)
-    }
-  }
+  // Work list = artists rows still missing genres or popularity. artistsById
+  // feeds the fill-only write; recRowsByArtist holds every user's cache row
+  // per artist_id, each patched with its own artist_data.
+  const artistsById = new Map<string, ArtistsRow>()
+  for (const r of artistRows) artistsById.set(r.id, r)
+  const recRowsByArtist = new Map<string, RecRow[]>()
   for (const r of recRows) {
-    if (!r.spotify_artist_id) continue
-    if (!nameById.has(r.spotify_artist_id)) {
-      nameById.set(r.spotify_artist_id, r.artist_data?.name ?? '')
-      existingById.set(r.spotify_artist_id, r.artist_data)
-    }
+    if (!r.artist_id || !r.artist_data) continue
+    const list = recRowsByArtist.get(r.artist_id)
+    if (list) list.push(r)
+    else recRowsByArtist.set(r.artist_id, [r])
   }
 
-  const uniqueArtists: ArtistRef[] = Array.from(nameById.entries())
-    .filter(([, name]) => name.length > 0)
-    .map(([spotifyId, name]) => ({ spotifyId, name }))
+  const uniqueArtists: ArtistRef[] = artistRows
+    .filter((r) => r.name && (!(r.genres?.length) || !r.popularity))
+    .map((r) => ({ id: r.id, name: r.name }))
 
   console.log(
-    `[backfill] search_cache rows=${searchRows.length} rec_cache rows=${recRows.length} ` +
-    `unique artists=${uniqueArtists.length}`
+    `[backfill] artists rows=${artistRows.length} rec_cache rows=${recRows.length} ` +
+    `to backfill=${uniqueArtists.length}`
   )
 
   // ── Load or initialize checkpoint ──────────────────────────────────────
@@ -582,14 +611,14 @@ async function main() {
     lastfmResults: {},
     writtenIds: [],
     stats: {
-      searchCacheRows: searchRows.length,
+      artistsRows: artistRows.length,
       recommendationCacheRows: recRows.length,
       uniqueIds: uniqueArtists.length,
       mbMatched: 0,
       mbUnresolved: 0,
       lastfmMatched: 0,
       lastfmUnresolved: 0,
-      searchCacheUpdated: 0,
+      artistsUpdated: 0,
       recCacheUpdated: 0,
     },
     startedAt: new Date().toISOString(),
@@ -597,8 +626,8 @@ async function main() {
   }
   if (existing) {
     // If new artists appeared since the checkpoint, append them.
-    const known = new Set(existing.uniqueArtists.map((a) => a.spotifyId))
-    const added = uniqueArtists.filter((a) => !known.has(a.spotifyId))
+    const known = new Set(existing.uniqueArtists.map((a) => a.id))
+    const added = uniqueArtists.filter((a) => !known.has(a.id))
     if (added.length) {
       cp.uniqueArtists.push(...added)
       console.log(`[backfill] checkpoint: ${added.length} new artists since last run`)
@@ -618,7 +647,7 @@ async function main() {
     await phaseLastfm(cp, lastfmKey)
   }
   if (args.phase === 'all' || args.phase === 'write') {
-    await phaseWrite(cp, supabase, existingById, args.dryRun)
+    await phaseWrite(cp, supabase, artistsById, recRowsByArtist, args.dryRun)
   }
 
   saveCheckpoint(cp)
@@ -626,12 +655,15 @@ async function main() {
     `\n[backfill] complete.\n` +
     `  mb_matched=${cp.stats.mbMatched}/${cp.uniqueArtists.length}\n` +
     `  lastfm_matched=${cp.stats.lastfmMatched}/${cp.uniqueArtists.length}\n` +
-    `  search_cache_updated=${cp.stats.searchCacheUpdated}\n` +
+    `  artists_updated=${cp.stats.artistsUpdated}\n` +
     `  rec_cache_updated=${cp.stats.recCacheUpdated}`
   )
 }
 
-main().catch((err) => {
-  console.error(`[backfill] fatal: ${err instanceof Error ? err.stack : err}`)
-  process.exit(1)
-})
+// ponytail: env guard so the test can import phaseWrite without running main.
+if (!process.env.VITEST) {
+  main().catch((err) => {
+    console.error(`[backfill] fatal: ${err instanceof Error ? err.stack : err}`)
+    process.exit(1)
+  })
+}

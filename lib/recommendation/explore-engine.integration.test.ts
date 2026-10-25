@@ -7,24 +7,19 @@
  * and the explore_cache write.
  *
  * Seams: identical to engine.integration.test.ts —
- *   supabase/server, music-provider/provider, lastfm-cache, itunes mocked;
- *   LASTFM_API_KEY stubbed. getTagArtistNames is driven through the mocked
- *   cachedTagArtistNames (no network, no lastfm_cache table needed).
+ *   supabase/server, itunes mocked; Last.fm is the in-memory fake adapter
+ *   (`__fixtures__/fake-lastfm`), whose `tags` drives every tag-based rail.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { createFakeSupabase, type Tables, type Row } from "./__fixtures__/fake-supabase"
 import { isValidArtistId } from "@/lib/spotify-ids"
 import type { Track } from "@/lib/music-provider/types"
-import type { SimilarArtistRef } from "@/lib/music-provider"
+import { lastfm } from "@/lib/lastfm"
+import type { FakeLastfm } from "./__fixtures__/fake-lastfm"
 
 const h = vi.hoisted(() => ({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  fake: { client: null as any, tables: {} as Tables },
-  similars: new Map<string, SimilarArtistRef[]>(),
-  enrichment: new Map<string, { genres: string[]; popularity: number } | null>(),
-  /** When true, getSimilarArtistNames throws (drives the wildcards-rail failure). */
-  similarThrows: false,
-  calls: { enrich: [] as string[], similar: [] as string[] },
+  fake: { client: null as any, tables: {} as Tables, queries: [] as Array<{ table: string; op: string }> },
 }))
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -32,41 +27,15 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient: () => h.fake.client,
 }))
 
-vi.mock("@/lib/music-provider/provider", () => ({
-  musicProvider: {
-    getSimilarArtistNames: async (name: string): Promise<SimilarArtistRef[]> => {
-      h.calls.similar.push(name)
-      if (h.similarThrows) throw new Error("simulated Last.fm getSimilar failure")
-      return h.similars.get(name) ?? []
-    },
-    getArtistTopTracks: async (): Promise<Track[]> => [],
-  },
-}))
-
-vi.mock("@/lib/lastfm-cache", () => ({
-  // Every tag returns the same 10 shared "head" names + one tag-specific "mid"
-  // name at index 10. Adjacent reads the head (limit 8); outside/leftfield read
-  // slice(10, …) → the tag-specific mid. Keeps total unique names small (fast,
-  // deterministic) while still giving each rail distinct picks.
-  cachedTagArtistNames: async (tag: string, limit: number): Promise<string[]> => {
-    const base = [
-      ...Array.from({ length: 10 }, (_, i) => `H${i}`),
-      `MID_${tag}`,
-    ]
-    return base.slice(0, limit)
-  },
-  cachedArtistEnrichment: async (name: string) => {
-    h.calls.enrich.push(name)
-    const key = name.toLowerCase()
-    return h.enrichment.has(key) ? h.enrichment.get(key)! : { genres: ["indie"], popularity: 30 }
-  },
-  cachedSimilarArtistNames: async () => [],
-  cachedArtistSearch: async () => [],
+vi.mock("@/lib/lastfm", async () => ({
+  lastfm: (await import("./__fixtures__/fake-lastfm")).createFakeLastfm(),
 }))
 
 vi.mock("@/lib/music-provider/itunes", () => ({
   searchTracksByArtist: async (name: string): Promise<Track[]> => [track(name)],
 }))
+
+const lf = lastfm as FakeLastfm
 
 // Imported AFTER mocks are registered.
 import { buildExploreRails, RAIL_KEYS } from "./explore-engine"
@@ -123,12 +92,12 @@ function allRailIds(rails: { artistIds: string[] }[]): string[] {
 }
 
 beforeEach(() => {
-  vi.stubEnv("LASTFM_API_KEY", "test-key")
-  h.similars.clear()
-  h.enrichment.clear()
-  h.similarThrows = false
-  h.calls.enrich = []
-  h.calls.similar = []
+  lf.reset()
+  // Every tag returns the same 10 shared "head" names + one tag-specific "mid"
+  // name at index 10. Adjacent reads the head (limit 8); outside/leftfield read
+  // slice(10, …) → the tag-specific mid. Keeps total unique names small (fast,
+  // deterministic) while still giving each rail distinct picks.
+  lf.tags = (tag, limit) => [...Array.from({ length: 10 }, (_, i) => `H${i}`), `MID_${tag}`].slice(0, limit)
 })
 
 afterEach(() => {
@@ -150,7 +119,7 @@ function withLikedSeed(extra: Tables = {}): Tables {
 describe("buildExploreRails — shape and cache write", () => {
   it("returns all four rails with uuid ids and writes explore_cache", async () => {
     seed(withLikedSeed())
-    h.similars.set("LikedArtist", [
+    lf.similars.set("LikedArtist", [
       { name: "W0", match: 0.9 },
       { name: "W1", match: 0.3 },
       { name: "W2", match: 0.2 },
@@ -203,7 +172,7 @@ describe("buildExploreRails — listened + feedback exclusion", () => {
       }),
     )
     // Wildcards seed's similars include the two excluded artists plus a keeper.
-    h.similars.set("LikedArtist", [
+    lf.similars.set("LikedArtist", [
       { name: "BadArtist", match: 0.2 },
       { name: "DislikedArtist", match: 0.15 },
       { name: "GoodArtist", match: 0.1 },
@@ -219,6 +188,38 @@ describe("buildExploreRails — listened + feedback exclusion", () => {
     const goodRow = h.fake.tables.artists.find((a) => a.name_lower === "goodartist")
     expect(goodRow).toBeTruthy()
     expect(ids.has(goodRow!.id)).toBe(true)
+    // #175 E4b: listened_artists + feedback are read once each per side —
+    // listened once (shared), feedback twice (thumbs-up + the shared thumbs-down)
+    // plus once more at read time: the rail-scoped thumbs-down re-check (#175 F-D).
+    const selects = (t: string) => h.fake.queries.filter((q) => q.table === t && q.op === "select").length
+    expect(selects("listened_artists")).toBe(1)
+    expect(selects("feedback")).toBe(3)
+  }, 20000)
+
+  it("#175 F16: excludes a listened artist past row 1000, still reading the shared rows once (paged)", async () => {
+    const badId = "22222222-0000-4000-8000-000000000002"
+    const filler = Array.from({ length: 1100 }, (_, i) => ({
+      id: `r${String(i).padStart(5, "0")}`,
+      user_id: "u1",
+      artist_id: `44444444-0000-4000-8000-${String(i).padStart(12, "0")}`,
+      play_count: 1,
+    }))
+    seed(
+      withLikedSeed({
+        artists: [artistsRow(badId, "BadArtist")],
+        listened_artists: [...filler, { id: "r99999", user_id: "u1", artist_id: badId, play_count: 1 }],
+      }),
+    )
+    lf.similars.set("LikedArtist", [
+      { name: "BadArtist", match: 0.2 },
+      { name: "GoodArtist", match: 0.1 },
+    ])
+
+    const { rails } = await buildExploreRails(baseInput())
+    expect(new Set(allRailIds(rails)).has(badId)).toBe(false)
+    // 1101 rows → two pages, issued once and shared by user-context + exclusions.
+    const selects = (t: string) => h.fake.queries.filter((q) => q.table === t && q.op === "select").length
+    expect(selects("listened_artists")).toBe(2)
   }, 20000)
 })
 
@@ -226,9 +227,9 @@ describe("buildExploreRails — listened + feedback exclusion", () => {
 describe("buildExploreRails — rail failure isolation", () => {
   it("a throwing rail does not abort the others (allSettled)", async () => {
     seed(withLikedSeed())
-    // getSimilarArtistNames throws → wildcardsRail rejects. The three tag-driven
+    // similarArtists throws → wildcardsRail rejects. The three tag-driven
     // rails must still generate, and buildExploreRails must not throw.
-    h.similarThrows = true
+    lf.similarThrows = true
 
     const result = await buildExploreRails(baseInput())
 
@@ -247,7 +248,7 @@ describe("buildExploreRails — rail failure isolation", () => {
 describe("buildExploreRails — freshly confirmed picks hydrate with previews (#162)", () => {
   it("persists confirmed tracks BEFORE hydration reads them, so no rail pick is a dead card", async () => {
     seed(withLikedSeed())
-    h.similars.set("LikedArtist", [
+    lf.similars.set("LikedArtist", [
       { name: "W0", match: 0.9 },
       { name: "W1", match: 0.3 },
       { name: "W2", match: 0.2 },
@@ -269,5 +270,59 @@ describe("buildExploreRails — freshly confirmed picks hydrate with previews (#
       expect(rec).toBeTruthy()
       expect(rec!.topTracks?.some((t) => t.previewUrl)).toBe(true)
     }
+  }, 20000)
+})
+
+// ── 6e. #175 D2: casing drop — a cache hit spelled differently still shows ────
+describe("buildExploreRails — roster spelling differs from the Last.fm spelling (#175 D2)", () => {
+  it("surfaces a name-cache hit whose row is cased differently from the query", async () => {
+    const bocId = "b0c00000-0000-4000-8000-000000000001"
+    seed(withLikedSeed({ artists: [artistsRow(bocId, "Boards of Canada")] }))
+    // Last.fm spells it "Boards Of Canada"; the roster row says "Boards of Canada".
+    lf.similars.set("LikedArtist", [{ name: "Boards Of Canada", match: 0.1 }])
+
+    const { rails } = await buildExploreRails(baseInput())
+    const wildcards = rails.find((r) => r.railKey === "wildcards")!
+    // Old code keyed the confirmed map by the row's name → lookup by the query
+    // spelling missed → confirmed, persisted, never shown.
+    expect(wildcards.artistIds).toContain(bocId)
+  }, 20000)
+})
+
+// ── 6f. #175 F-D: feedback landing during an in-flight build ──────────────────
+describe("buildExploreRails — read-time feedback exclusions (#175 F-D)", () => {
+  it("a thumbs-down / dismiss landing mid-build is dropped from the fresh result AND every cache-hit read", async () => {
+    seed(withLikedSeed())
+    lf.similars.set("LikedArtist", [{ name: "W0", match: 0.9 }, { name: "W1", match: 0.3 }])
+    // The user acts while the build runs: just before the cache write, thumbs
+    // down the first pick of one rail and dismiss the first pick of another.
+    const victims: string[] = []
+    const from = h.fake.client.from
+    h.fake.client.from = (t: string) => {
+      const q = from(t)
+      if (t === "explore_cache") {
+        const upsert = q.upsert
+        q.upsert = (rows: Row[], o: unknown) => {
+          const [a, b] = rows.filter((r) => r.artist_ids.length > 0).map((r) => r.artist_ids[0] as string)
+          victims.push(a, b)
+          h.fake.tables.feedback.push({ id: "fd", user_id: "u1", artist_id: a, signal: "thumbs_down", deleted_at: null })
+          h.fake.tables.recommendation_cache.push({ id: "rc", user_id: "u1", artist_id: b, seen_at: new Date().toISOString(), skip_at: new Date().toISOString() })
+          return upsert(rows, o)
+        }
+      }
+      return q
+    }
+
+    const fresh = await buildExploreRails(baseInput(), { hydrate: true })
+    expect(victims.every(Boolean)).toBe(true)
+    for (const v of victims) expect(allRailIds(fresh.rails)).not.toContain(v)
+
+    h.fake.client.from = from
+    const hit = await buildExploreRails(baseInput(), { hydrate: true })
+    expect(hit.cacheHit).toBe(true)
+    expect(allRailIds(hit.rails).length).toBeGreaterThan(0)
+    for (const v of victims) expect(allRailIds(hit.rails)).not.toContain(v)
+    // Read-after-write intact: every remaining pick still hydrates with a preview.
+    for (const id of allRailIds(hit.rails)) expect(hit.hydrated!.get(id)?.topTracks?.length).toBeGreaterThan(0)
   }, 20000)
 })

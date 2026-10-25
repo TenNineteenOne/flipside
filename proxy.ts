@@ -5,7 +5,7 @@ export const proxy = auth((req) => {
   const { pathname } = req.nextUrl
   const session = req.auth
 
-  const isProtectedPage = ["/feed", "/settings", "/history", "/saved", "/stats", "/onboarding"].some((p) =>
+  const isProtectedPage = ["/feed", "/explore", "/settings", "/history", "/saved", "/stats", "/onboarding"].some((p) =>
     pathname.startsWith(p)
   )
   const isProtectedApi =
@@ -13,8 +13,14 @@ export const proxy = auth((req) => {
     !pathname.startsWith("/api/auth/") &&
     !pathname.startsWith("/api/cron/")
 
-  // Redirect authenticated users away from landing page
-  if (session && pathname === "/") {
+  // Redirect authenticated users away from the landing page and the sign-in
+  // form (Back after signing in; "New account" must not silently switch
+  // accounts). `?reauth=1` is the pages' escape hatch for a stale JWT whose
+  // user row is gone — without it /feed → /sign-in → /feed would loop.
+  if (
+    session &&
+    (pathname === "/" || (pathname === "/sign-in" && !req.nextUrl.searchParams.has("reauth")))
+  ) {
     return NextResponse.redirect(new URL("/feed", req.url))
   }
 

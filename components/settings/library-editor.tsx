@@ -7,8 +7,9 @@ import type { GenreNode } from "@/lib/types"
 import { GenrePicker, ALL_GENRES } from "@/components/onboarding/genre-picker"
 import { ArtistSearch, type SpotifyArtist } from "@/components/onboarding/artist-search"
 import { normalizeGenre } from "@/lib/genre/normalize"
+import { MAX_SELECTED_GENRES, patchSettings } from "@/lib/settings/patch-settings"
 
-const GENRE_CAP = 200
+const GENRE_CAP = MAX_SELECTED_GENRES
 const ARTIST_CAP = 200
 const GENRE_SAVE_DEBOUNCE_MS = 400
 
@@ -65,13 +66,7 @@ export function LibraryEditor({ initialGenreTags, initialSeedArtists, flat = fal
     const aborter = new AbortController()
     void (async () => {
       try {
-        const res = await fetch("/api/settings", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ selectedGenres: valid }),
-          signal: aborter.signal,
-        })
-        if (!res.ok) throw new Error("prune failed")
+        await patchSettings({ selectedGenres: valid }, { signal: aborter.signal })
         toast.info(
           `Cleaned up ${orphanCount} old genre tag${orphanCount === 1 ? "" : "s"} from the updated taxonomy.`,
         )
@@ -101,13 +96,7 @@ export function LibraryEditor({ initialGenreTags, initialSeedArtists, flat = fal
       const aborter = new AbortController()
       saveAborter.current = aborter
       try {
-        const res = await fetch("/api/settings", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ selectedGenres: next.map((g) => g.lastfmTag) }),
-          signal: aborter.signal,
-        })
-        if (!res.ok) throw new Error("save failed")
+        await patchSettings({ selectedGenres: next.map((g) => g.lastfmTag) }, { signal: aborter.signal })
       } catch (err) {
         if ((err as { name?: string } | null)?.name === "AbortError") return
         toast.error("Couldn't save genres")

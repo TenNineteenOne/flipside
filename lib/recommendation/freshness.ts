@@ -15,6 +15,7 @@ export async function hasFreshRecs(userId: string): Promise<boolean> {
     .select("artist_id", { count: "exact", head: true })
     .eq("user_id", userId)
     .is("seen_at", null)
+    .is("skip_at", null) // same set the feed shows (feed-query, #175 R4)
     .gt("expires_at", new Date().toISOString())
 
   return (count ?? 0) >= MIN_FRESH

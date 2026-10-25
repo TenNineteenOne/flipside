@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
+import { postGenerate } from "@/lib/client/feed-generation"
 
 type Status = "idle" | "generating" | "error"
 
@@ -18,7 +19,6 @@ export function SplashClient() {
 
   useEffect(() => {
     if (status !== "generating") return
-    setStepIndex(0)
     const id = setInterval(() => {
       setStepIndex((i) => Math.min(i + 1, PROGRESS_STEPS.length - 1))
     }, 2500)
@@ -26,20 +26,18 @@ export function SplashClient() {
   }, [status])
 
   async function handleGenerate() {
+    setStepIndex(0)
     setStatus("generating")
-    try {
-      const res = await fetch("/api/recommendations/generate", { method: "POST" })
-      // 429 = a generation is already in flight (e.g. proactive pre-gen). Hand
-      // off to /feed, whose loader polls for the result.
-      if (res.ok || res.status === 429) {
-        router.push("/feed")
-        return
-      }
-      throw new Error(`http_${res.status}`)
-    } catch (err) {
-      console.error("[splash] generate failed", err)
-      setStatus("error")
+    const r = await postGenerate()
+    // 429 (cooldown or full queue) = a generation is already in flight (e.g.
+    // proactive pre-gen) or recs already exist. Hand off to /feed, whose
+    // loader polls for the result.
+    if (r.ok || r.kind === "cooldown" || r.kind === "queue-full") {
+      router.push("/feed")
+      return
     }
+    console.error("[splash] generate failed", r.status === 0 ? r.error : new Error(`http_${r.status}`))
+    setStatus("error")
   }
 
   return (

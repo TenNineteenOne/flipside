@@ -9,9 +9,13 @@ import { GenrePicker } from "@/components/onboarding/genre-picker"
 import { ArtistSearch, type SpotifyArtist } from "@/components/onboarding/artist-search"
 import { PlatformPicker } from "@/components/settings/platform-picker"
 import { DEFAULT_MUSIC_PLATFORM, type MusicPlatform } from "@/lib/music-links"
+import { postGenerate } from "@/lib/client/feed-generation"
+import { MAX_SELECTED_GENRES, patchSettings, SettingsSaveError, type SettingsPatch, LASTFM_USERNAME_RE, STATSFM_USERNAME_RE } from "@/lib/settings/patch-settings"
 
 const ARTIST_CAP = 200
-const GENRE_CAP = 200
+const GENRE_CAP = MAX_SELECTED_GENRES
+/** app/api/onboarding/seeds validates `{ min: 3 }`. */
+const MIN_SEEDS = 3
 
 // ── Main component ────────────────────────────────────────────────────────────
 
@@ -63,15 +67,24 @@ export default function OnboardingPage() {
     selectedGenres.length > 0 ||
     lastfmUsername.trim().length > 0 ||
     statsfmUsername.trim().length > 0
+  // POST /api/onboarding/seeds rejects fewer than MIN_SEEDS, so 1–2 picks
+  // would be silently dropped: block "Get started" until they add more or remove them.
+  const artistsShort = selectedArtists.length > 0 && selectedArtists.length < MIN_SEEDS
+  // The settings PATCH is all-or-nothing: one malformed username 400s it and
+  // drops onboardingCompleted too, so the resume redirect would bounce back here.
+  const lastfmInvalid = lastfmUsername.trim() !== "" && !LASTFM_USERNAME_RE.test(lastfmUsername.trim())
+  const statsfmInvalid = statsfmUsername.trim() !== "" && !STATSFM_USERNAME_RE.test(statsfmUsername.trim())
 
   async function handleContinue(skip = false) {
     if (saving) return
     setSaving(true)
 
     try {
-      const promises: Promise<Response>[] = []
+      // Each write resolves to whether the server accepted it; a network
+      // failure rejects (→ the generic error below).
+      const promises: Promise<boolean>[] = []
 
-      const settingsPayload: Record<string, unknown> = {}
+      const settingsPayload: SettingsPatch = {}
       // Always persist the platform choice (even on skip) so outbound links
       // reflect the user's selection on the very first feed view. Default is
       // Spotify so the value is never unexpected if the user didn't touch it.
@@ -85,37 +98,41 @@ export default function OnboardingPage() {
         settingsPayload.selectedGenres = selectedGenres.map((g) => g.lastfmTag)
       }
       if (Object.keys(settingsPayload).length > 0) {
-        promises.push(fetch("/api/settings", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(settingsPayload),
-        }))
+        promises.push(
+          patchSettings(settingsPayload).then(
+            () => true,
+            (err) => {
+              if (err instanceof SettingsSaveError) return false
+              throw err
+            },
+          ),
+        )
       }
 
       const artistsToSave = selectedArtists.slice(0, ARTIST_CAP)
-      if (!skip && artistsToSave.length >= 3) {
+      if (!skip && artistsToSave.length >= MIN_SEEDS) {
         promises.push(fetch("/api/onboarding/seeds", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             artists: artistsToSave.map((a) => ({ id: a.id, name: a.name, imageUrl: a.imageUrl })),
           }),
-        }))
+        }).then((r) => r.ok))
       }
 
       const results = await Promise.all(promises)
-      const failed = results.find((r) => !r.ok)
-      if (failed) {
+      if (results.includes(false)) {
         toast.error("Some settings couldn't be saved — you can update them later")
       }
 
       // Kick off recommendation generation now (non-awaited) so it overlaps with
       // navigation and is underway/done by the time the feed mounts. Cooldown-
       // safe: if the feed's loader also fires, it gets a 429 and polls (see
-      // classifyGenerateResponse / RecommendationsLoader). If seeds were saved
-      // above (non-skip path) the engine sees them on this run; on skip it
+      // loaderAction / RecommendationsLoader). If seeds were saved above
+      // (non-skip path) the engine sees them on this run; on skip it
       // cold-starts, which is the intended "show something" behavior.
-      void fetch("/api/recommendations/generate", { method: "POST" }).catch(() => {})
+      // postGenerate never throws; the result is deliberately ignored.
+      void postGenerate()
 
       router.push("/feed")
     } catch {
@@ -234,8 +251,16 @@ export default function OnboardingPage() {
                   value={lastfmUsername}
                   onChange={(e) => setLastfmUsername(e.target.value)}
                   spellCheck={false}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  aria-invalid={lastfmInvalid || undefined}
                 />
               </div>
+              {lastfmInvalid && (
+                <div role="alert" style={{ fontSize: 11.5, color: "var(--dislike)" }}>
+                  That doesn&rsquo;t look like a Last.fm username.
+                </div>
+              )}
               <div className="muted" style={{ fontSize: 11.5, lineHeight: 1.5 }}>
                 We&rsquo;ll pull your top artists to filter out music you already know.
                 Your username is encrypted at rest. We keep it recoverable because we
@@ -262,8 +287,16 @@ export default function OnboardingPage() {
                   value={statsfmUsername}
                   onChange={(e) => setStatsfmUsername(e.target.value)}
                   spellCheck={false}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  aria-invalid={statsfmInvalid || undefined}
                 />
               </div>
+              {statsfmInvalid && (
+                <div role="alert" style={{ fontSize: 11.5, color: "var(--dislike)" }}>
+                  That doesn&rsquo;t look like a stats.fm username.
+                </div>
+              )}
               <div className="muted" style={{ fontSize: 11.5, lineHeight: 1.5 }}>
                 Your stats.fm profile must be public. We&rsquo;ll pull top artists to filter familiars.
                 Your username is encrypted at rest. We keep it recoverable because we
@@ -277,10 +310,15 @@ export default function OnboardingPage() {
 
         {/* Actions */}
         <div className="col gap-10" style={{ marginTop: 28 }}>
+          {artistsShort && (
+            <div className="muted" role="status" style={{ fontSize: 11, textAlign: "center" }}>
+              Add {MIN_SEEDS - selectedArtists.length} more artist{MIN_SEEDS - selectedArtists.length === 1 ? "" : "s"} to use that path, or remove {selectedArtists.length === 1 ? "it" : "them"}
+            </div>
+          )}
           <button
             className="btn btn-primary btn-block"
             onClick={() => handleContinue(false)}
-            disabled={!hasAnyInput || saving}
+            disabled={!hasAnyInput || artistsShort || lastfmInvalid || statsfmInvalid || saving}
             style={{ height: 48, fontSize: 15 }}
           >
             {saving ? "Saving…" : "Get started →"}

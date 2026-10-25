@@ -11,16 +11,13 @@
  * `seen_at` cooldown applies globally across both tabs.
  */
 
-import { musicProvider } from '@/lib/music-provider/provider'
+import { lastfm } from '@/lib/lastfm'
 import type { Artist, Track } from '@/lib/music-provider/types'
 import { createServiceClient } from '@/lib/supabase/server'
-import { ArtistNameCache } from './artist-name-cache'
-import { resolveArtistsByName } from './resolve-candidates'
-import { buildEnrichArtist } from './enrich-artist'
-import { getTagArtistNames, buildConfirmPreview, buildMintArtist, lastfmResolve, rehydrateTopTracks } from './engine'
-import { confirmToTarget } from './confirm-previews'
-import { createConfirmCollector, resetPersisted, snapshotPersisted } from './persist-confirms'
-import { resetCalls, snapshotCalls } from './api-call-counter'
+import { PlayableCandidates, livePlayablePorts } from './playable-candidates'
+import { ArtistIdentity } from '@/lib/artist-identity'
+import { PreviewStore, resetPersisted, snapshotPersisted } from './preview-store'
+import { resetCalls, snapshotCalls } from '@/lib/metrics/api-call-counter'
 import {
   allLeavesWithAnchor,
   genreToAnchor,
@@ -28,6 +25,7 @@ import {
   listAnchors,
 } from '@/lib/genre/adjacency'
 import { UNDERGROUND_MAX_POPULARITY } from './types'
+import { loadExclusions, readAllRows, readFeedbackIds, type Exclusions } from './exclusions'
 import { cacheWindowSeed, seededShuffle, sampleLikes } from './window'
 import { applyCrossRailClusterCap, primaryGenreOf } from './cluster-cap'
 
@@ -80,8 +78,9 @@ export interface BuildRailsInput {
    */
   popularityCurve?: number
   /**
-   * users.play_threshold. Threaded through for future use; Explore today
-   * excludes all listened artists regardless, so it's a no-op in rails.
+   * users.play_threshold. Threaded through for future use; Explore's exclusion
+   * policy is `playThreshold: 'any'` (any listened play hides — owner decision
+   * #3), so it's a no-op in rails.
    */
   playThreshold?: number
 }
@@ -111,13 +110,35 @@ export function rankByCurve(
   return scored.map((s) => s.n)
 }
 
-async function loadUserContext(supabase: SupabaseClient, userId: string) {
+/**
+ * The listened (with an artist_id) and thumbs-down reads, issued ONCE and
+ * shared by `loadUserContext` (genre anchors, wildcard seeds) and
+ * `loadExclusions` (#175 E4b). Each is a single promise (the paged read starts
+ * once), so awaiting it twice never re-sends the requests. Explore's exclusion
+ * policy (any play, ids only) needs no null-id rows, so the not-null filter
+ * changes nothing there.
+ */
+function loadSharedRows(supabase: SupabaseClient, userId: string) {
+  return {
+    // Paged past the 1000-row cap (#175 F16); each is one promise, awaited twice.
+    listened: readAllRows<{ id: string; artist_id: string; play_count: number | null }>(() =>
+      supabase
+        .from('listened_artists')
+        .select('id, artist_id, play_count')
+        .eq('user_id', userId)
+        .not('artist_id', 'is', null),
+    ),
+    thumbsDown: readFeedbackIds(supabase, userId, 'thumbs_down'),
+  }
+}
+
+async function loadUserContext(supabase: SupabaseClient, userId: string, shared: ReturnType<typeof loadSharedRows>) {
   const [{ data: user }, { data: seedArtists }, { data: listenedRows }, { data: thumbsUp }, { data: thumbsDown }] = await Promise.all([
     supabase.from('users').select('id, selected_genres, adventurous').eq('id', userId).maybeSingle(),
     supabase.from('seed_artists').select('artist_id, name').eq('user_id', userId),
-    supabase.from('listened_artists').select('artist_id, play_count').eq('user_id', userId).not('artist_id', 'is', null),
-    supabase.from('feedback').select('artist_id').eq('user_id', userId).eq('signal', 'thumbs_up').is('deleted_at', null),
-    supabase.from('feedback').select('artist_id').eq('user_id', userId).eq('signal', 'thumbs_down').is('deleted_at', null),
+    shared.listened,
+    readFeedbackIds(supabase, userId, 'thumbs_up'),
+    shared.thumbsDown,
   ])
 
   // Hydrate listened artists with their genres via the canonical `artists`
@@ -161,7 +182,6 @@ async function loadUserContext(supabase: SupabaseClient, userId: string) {
     selectedGenres: ((user?.selected_genres ?? []) as string[]),
     seedArtists: (seedArtists ?? []) as Array<{ artist_id: string; name: string }>,
     listened,
-    listenedIds: new Set(listenedIds),
     thumbsUpIds: new Set(sampleLikes(allThumbsUp, userId)),
     thumbsDownIds: new Set((thumbsDown ?? []).map((r) => r.artist_id as string)),
   }
@@ -192,108 +212,54 @@ export function computeTopAnchors(
 }
 
 /**
- * Resolve a flat list of Last.fm artist names to Spotify Artists + cache them.
- * Honors the same listened/thumbs-down/seen filters the main engine uses so
- * rails stay consistent with For You.
+ * Explore's pass through the shared PlayableCandidates pipeline: resolve the
+ * names, drop excluded (Explore policy) and — under undergroundMode — pop>50
+ * artists, rehydrate, confirm up to `confirmTarget` playable, and flush the
+ * confirm outcomes to artist_tracks_cache BEFORE returning. That awaited flush
+ * is the #162 read-after-write: hydrateRailArtists reads those rows in the
+ * same request, and without them a freshly-confirmed pick would hydrate with
+ * no previews and be dropped.
  *
- * `confirmTarget` is how many confirmed-playable artists to stop at. Pass
- * `Math.min(railDisplayTarget + HEADROOM, 30)` from each rail so smaller rails
- * confirm fewer candidates while never exceeding the old 30-cap.
+ * Returns confirmed artists keyed by the INPUT name (the Last.fm spelling the
+ * rail looks up by), so a roster row spelled differently ("Boards Of Canada"
+ * vs "Boards of Canada") is still found (#175 D2).
+ *
+ * `confirmTarget`: pass `Math.min(railDisplayTarget + HEADROOM, 30)` from each
+ * rail so smaller rails confirm fewer candidates.
  */
-async function resolveAndFilter(
+/**
+ * One doorway per request's Supabase client (#175 F25): rails resolve in
+ * parallel and often share names, so they must share the in-flight mint
+ * dedupe or two rails can mint the same name twice.
+ */
+const identities = new WeakMap<SupabaseClient, ArtistIdentity>()
+function identityFor(supabase: SupabaseClient): ArtistIdentity {
+  let identity = identities.get(supabase)
+  if (!identity) identities.set(supabase, (identity = new ArtistIdentity(supabase)))
+  return identity
+}
+
+function resolveAndFilter(
   names: string[],
   accessToken: string,
   supabase: SupabaseClient,
   filters: {
-    listenedIds: Set<string>
-    thumbsDownIds: Set<string>
-    excludedIds: Set<string>
+    exclusions: Exclusions
     undergroundMode?: boolean
   },
   confirmTarget: number,
-): Promise<Artist[]> {
-  const unique = [...new Set(names.filter(Boolean))]
-  if (unique.length === 0) return []
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const nameCache = new ArtistNameCache(supabase as any)
-  const resolved = await resolveArtistsByName(unique, {
-    cache: nameCache,
-    searchArtists: (name) => lastfmResolve(name),
-    enrichArtist: buildEnrichArtist(),
-    mintArtist: buildMintArtist(supabase),
-  })
-
-  // Playability guarantee (#143): confirm previews for only the artists that
-  // pass all filters (listen/thumbs-down/seen) and are about to be shown.
-  // This avoids confirming artists that will be filtered out anyway. Carry the
-  // resolver's original name alongside each artist so the confirmed tracks can
-  // be written back under the SAME name-cache key (see write-back below).
-  const candidates: Array<{ artist: Artist; name: string }> = []
-  for (const [name, artist] of resolved.resolved) {
-    if (filters.listenedIds.has(artist.id)) continue
-    if (filters.thumbsDownIds.has(artist.id)) continue
-    if (filters.excludedIds.has(artist.id)) continue
-    if (filters.undergroundMode && (artist.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) continue
-    candidates.push({ artist, name })
-  }
-
-  // Pre-confirm rehydrate (#162): warm positives from artist_tracks_cache skip
-  // iTunes entirely, and fresh confirmed-empty negatives short-circuit (dropped
-  // without a re-query). The generation path has always done this; the Explore
-  // confirm slice never did.
-  await rehydrateTopTracks(supabase, candidates)
-
-  // Confirm up to `confirmTarget` artists. Per-rail callers set this to
-  // displayTarget + HEADROOM so smaller rails confirm fewer candidates. The
-  // collector records each live confirm so the flush below persists them.
-  const collector = createConfirmCollector()
-  const { kept } = await confirmToTarget(candidates, confirmTarget, buildConfirmPreview(accessToken, collector.onConfirmOutcome))
-
-  // Write the confirmed topTracks back into artist_search_cache under the
-  // resolver's name key (#145/#143 fix) AND persist confirmed previews to
-  // artist_tracks_cache (#162). The tracks-cache write MUST land before
-  // hydrateRailArtists reads it in the same request — that read-after-write is
-  // the fix for the 76% cached-pick drop. Both flush inside this one awaited
-  // Promise.all. Explore persists only artist IDs in explore_cache and
-  // re-hydrates artist_data by id, so without these writes every freshly-
-  // resolved rail card hydrated with topTracks:[] → a dead card.
-  await Promise.all([
-    ...kept.map((k) => nameCache.write(k.name, k.artist).catch(() => {})),
-    collector.flush(supabase),
-  ])
-
-  return kept.map((k) => k.artist)
+): Promise<Map<string, Artist>> {
+  return new PlayableCandidates(supabase, livePlayablePorts(accessToken), identityFor(supabase)).playable(
+    names,
+    confirmTarget,
+    (artist) =>
+      !filters.exclusions.reason(artist) &&
+      !(filters.undergroundMode && (artist.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY),
+  )
 }
 
 /** Headroom added to each rail's display target when computing confirmTarget. */
 const CONFIRM_HEADROOM = 10
-
-/**
- * IDs the explore engine should never resurface this generation:
- *   - seen_at within the 7-day passive cooldown
- *   - skip_at set (permanent dismiss via the Dismiss button; undo lives on
- *     the History page and clears skip_at via rpc_clear_dismiss)
- */
-async function loadExcludedIds(supabase: SupabaseClient, userId: string): Promise<Set<string>> {
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
-  const [seenRes, skipRes] = await Promise.all([
-    supabase
-      .from('recommendation_cache')
-      .select('artist_id')
-      .eq('user_id', userId)
-      .not('seen_at', 'is', null)
-      .gte('seen_at', sevenDaysAgo),
-    supabase
-      .from('recommendation_cache')
-      .select('artist_id')
-      .eq('user_id', userId)
-      .not('skip_at', 'is', null),
-  ])
-  const ids = new Set<string>()
-  for (const r of seenRes.data ?? []) ids.add(r.artist_id as string)
-  for (const r of skipRes.data ?? []) ids.add(r.artist_id as string)
-  return ids
-}
 
 // ── Rail implementations ────────────────────────────────────────────────────
 //
@@ -338,7 +304,7 @@ export async function adjacentRail(
   input: BuildRailsInput,
   ctx: Awaited<ReturnType<typeof loadUserContext>>,
   supabase: SupabaseClient,
-  excludedIds: Set<string>,
+  exclusions: Exclusions,
 ): Promise<RailResult> {
   const target = input.adventurous ? AFTERHOURS_TARGET_ADVENTUROUS : AFTERHOURS_TARGET
   const perTag = AFTERHOURS_PER_TAG
@@ -351,7 +317,7 @@ export async function adjacentRail(
   }
 
   const perTagResults = await Promise.all(
-    chosenTags.map((tag) => getTagArtistNames(tag, perTag + 2)),
+    chosenTags.map((tag) => lastfm.tagTopArtists(tag, perTag + 2)),
   )
   const tagToNames = new Map<string, string[]>()
   for (let i = 0; i < chosenTags.length; i++) {
@@ -383,15 +349,12 @@ export async function adjacentRail(
     idx++
   }
 
-  const resolved = await resolveAndFilter(namesRoundRobin, input.accessToken, supabase, {
-    listenedIds: ctx.listenedIds,
-    thumbsDownIds: ctx.thumbsDownIds,
-    excludedIds,
+  // Confirmed artists keyed by INPUT name (#175 D2).
+  const artistByName = await resolveAndFilter(namesRoundRobin, input.accessToken, supabase, {
+    exclusions,
     undergroundMode: input.undergroundMode,
   }, Math.max(target, Math.min(target + CONFIRM_HEADROOM, 30)))
 
-  const artistByName = new Map<string, Artist>()
-  for (const a of resolved) artistByName.set(a.name, a)
 
   const ranked = rankByCurve(namesRoundRobin, artistByName, input.popularityCurve)
 
@@ -442,7 +405,7 @@ export async function outsideRail(
   input: BuildRailsInput,
   ctx: Awaited<ReturnType<typeof loadUserContext>>,
   supabase: SupabaseClient,
-  excludedIds: Set<string>,
+  exclusions: Exclusions,
 ): Promise<RailResult> {
   void supabase
   const target = input.adventurous ? OUTSIDE_TARGET_ADVENTUROUS : OUTSIDE_TARGET
@@ -491,7 +454,7 @@ export async function outsideRail(
   const tagList = [...anchorToTag.entries()]
   const perAnchor = await Promise.all(
     tagList.map(async ([, tag]) => {
-      const names = await getTagArtistNames(tag, OUTSIDE_MID_END)
+      const names = await lastfm.tagTopArtists(tag, OUTSIDE_MID_END)
       return names.slice(OUTSIDE_MID_START, OUTSIDE_MID_END)
     }),
   )
@@ -519,15 +482,12 @@ export async function outsideRail(
     idx++
   }
 
-  const resolved = await resolveAndFilter(namesRoundRobin, input.accessToken, supabase, {
-    listenedIds: ctx.listenedIds,
-    thumbsDownIds: ctx.thumbsDownIds,
-    excludedIds,
+  // Confirmed artists keyed by INPUT name (#175 D2).
+  const artistByName = await resolveAndFilter(namesRoundRobin, input.accessToken, supabase, {
+    exclusions,
     undergroundMode: input.undergroundMode,
   }, Math.max(target, Math.min(target + CONFIRM_HEADROOM, 30)))
 
-  const artistByName = new Map<string, Artist>()
-  for (const a of resolved) artistByName.set(a.name, a)
 
   const ranked = rankByCurve(namesRoundRobin, artistByName, input.popularityCurve)
 
@@ -577,7 +537,7 @@ export async function wildcardsRail(
   input: BuildRailsInput,
   ctx: Awaited<ReturnType<typeof loadUserContext>>,
   supabase: SupabaseClient,
-  excludedIds: Set<string>,
+  exclusions: Exclusions,
 ): Promise<RailResult> {
   const target = input.adventurous ? WILDCARDS_TARGET_ADVENTUROUS : WILDCARDS_TARGET
   const seedCount = input.adventurous ? WILDCARDS_SEED_COUNT_ADVENTUROUS : WILDCARDS_SEED_COUNT
@@ -629,7 +589,7 @@ export async function wildcardsRail(
   // Fetch similars per seed in parallel. Tail-bias = sort ascending by match.
   const perSeed = await Promise.all(
     seedPairs.map(async (seed) => {
-      const similars = await musicProvider.getSimilarArtistNames(seed.name)
+      const similars = await lastfm.similarArtists(seed.name)
       const tailFirst = [...similars].sort((a, b) => a.match - b.match).slice(0, perSeedCount)
       return { seed, tailFirst }
     }),
@@ -659,14 +619,11 @@ export async function wildcardsRail(
     idx++
   }
 
-  const resolved = await resolveAndFilter(namesRoundRobin, input.accessToken, supabase, {
-    listenedIds: ctx.listenedIds,
-    thumbsDownIds: ctx.thumbsDownIds,
-    excludedIds,
+  // Confirmed artists keyed by INPUT name (#175 D2).
+  const artistByName = await resolveAndFilter(namesRoundRobin, input.accessToken, supabase, {
+    exclusions,
     undergroundMode: input.undergroundMode,
   }, Math.max(target, Math.min(target + CONFIRM_HEADROOM, 30)))
-  const artistByName = new Map<string, Artist>()
-  for (const a of resolved) artistByName.set(a.name, a)
 
   const ranked = rankByCurve(namesRoundRobin, artistByName, input.popularityCurve)
 
@@ -755,7 +712,7 @@ export async function leftfieldRail(
   input: BuildRailsInput,
   ctx: Awaited<ReturnType<typeof loadUserContext>>,
   supabase: SupabaseClient,
-  excludedIds: Set<string>,
+  exclusions: Exclusions,
   opts: { seedKey?: string; excludeIds?: Set<string> } = {},
 ): Promise<RailResult> {
   try {
@@ -781,7 +738,7 @@ export async function leftfieldRail(
     // top-N list so the rail still produces picks.
     const perTag = await Promise.all(
       sampled.map(async (leaf) => {
-        const names = await getTagArtistNames(leaf.lastfmTag, LEFTFIELD_MID_END)
+        const names = await lastfm.tagTopArtists(leaf.lastfmTag, LEFTFIELD_MID_END)
         if (names.length === 0) return null
         const mid = names.slice(LEFTFIELD_MID_START, LEFTFIELD_MID_END)
         const slice = mid.length > 0 ? mid : names
@@ -820,15 +777,14 @@ export async function leftfieldRail(
     const resolveCap = input.adventurous ? LEFTFIELD_RESOLVE_CAP_ADVENTUROUS : LEFTFIELD_RESOLVE_CAP
     const namesToResolve = namesRoundRobin.slice(0, resolveCap)
 
-    const resolved = await resolveAndFilter(namesToResolve, input.accessToken, supabase, {
-      listenedIds: ctx.listenedIds,
-      thumbsDownIds: ctx.thumbsDownIds,
-      excludedIds,
+    // Confirmed artists keyed by INPUT name (#175 D2).
+    const artistByName = await resolveAndFilter(namesToResolve, input.accessToken, supabase, {
+      exclusions,
       undergroundMode: input.undergroundMode,
     }, Math.max(target, Math.min(target + CONFIRM_HEADROOM, 30)))
 
     // Best-effort background warm of a bounded slice of the deferred tail: it
-    // writes through to artist_search_cache so a later shuffle / next-window
+    // mints `artists` rows and persists previews so a later shuffle / next-window
     // generation finds those artists already resolved. Not awaited — failures
     // and rate limits never touch this render (guarded against unhandled
     // rejection). Only on the PRIMARY pass: the wildcards-fallback and the
@@ -837,15 +793,10 @@ export async function leftfieldRail(
     const namesDeferred = namesRoundRobin.slice(resolveCap, resolveCap + LEFTFIELD_BG_WARM_CAP)
     if (seedKey === 'leftfield' && namesDeferred.length > 0) {
       void resolveAndFilter(namesDeferred, input.accessToken, supabase, {
-        listenedIds: ctx.listenedIds,
-        thumbsDownIds: ctx.thumbsDownIds,
-        excludedIds,
+        exclusions,
         undergroundMode: input.undergroundMode,
       }, Math.max(target, Math.min(target + CONFIRM_HEADROOM, 30))).catch(() => {})
     }
-
-    const artistByName = new Map<string, Artist>()
-    for (const a of resolved) artistByName.set(a.name, a)
 
     const railPicks: Artist[] = []
     const railLeftover: Artist[] = []
@@ -908,7 +859,10 @@ export interface HydratedRailArtist {
   imageUrl?: string | null
   popularity?: number
   artist_color?: string | null
-  /** Baked playable previews from artist_data; carried through to the card. */
+  /**
+   * Stored previews from artist_tracks_cache. `undefined` = no row for this
+   * artist; `[]`/all-unplayable = confirmed negative. Either way the card drops.
+   */
   topTracks?: Track[]
 }
 
@@ -924,9 +878,8 @@ export interface BuildRailsResult {
  *
  * Metadata (name / genres / image / popularity / color) comes from the
  * canonical `artists` table. Track previews come SEPARATELY from
- * `artist_tracks_cache` (decision A1: explore previews are sourced from the
- * tracks cache now, not a folded artist_data blob) and merged in as
- * `topTracks`. Both reads key on `artist_id` (= artists.id). The returned map
+ * `artist_tracks_cache` via the PreviewStore display read (decision A1) and
+ * merged in as `topTracks`. Both reads key on `artist_id` (= artists.id). The returned map
  * is keyed by artist_id → record.
  */
 async function hydrateRailArtists(
@@ -937,23 +890,13 @@ async function hydrateRailArtists(
   const byId = new Map<string, HydratedRailArtist>()
   if (allIds.length === 0) return byId
 
-  const [metaRes, tracksRes] = await Promise.all([
+  const [metaRes, tracksById] = await Promise.all([
     supabase
       .from('artists')
       .select('id, name, genres, image_url, popularity, artist_color')
       .in('id', allIds),
-    supabase
-      .from('artist_tracks_cache')
-      .select('artist_id, tracks')
-      .in('artist_id', allIds),
+    new PreviewStore(supabase).readForDisplay(allIds),
   ])
-
-  const tracksById = new Map<string, Track[]>()
-  for (const row of tracksRes.data ?? []) {
-    const id = row.artist_id as string | null
-    if (!id) continue
-    tracksById.set(id, (row.tracks as Track[] | null) ?? [])
-  }
 
   for (const row of metaRes.data ?? []) {
     const id = row.id as string
@@ -964,7 +907,8 @@ async function hydrateRailArtists(
       imageUrl: (row.image_url as string | null) ?? null,
       popularity: (row.popularity as number | null) ?? 0,
       artist_color: (row.artist_color as string | null) ?? null,
-      topTracks: tracksById.get(id) ?? [],
+      // undefined = no tracks row (never confirmed); the payload guard drops it.
+      topTracks: tracksById.get(id),
     })
   }
   return byId
@@ -972,8 +916,8 @@ async function hydrateRailArtists(
 
 /**
  * Belt-and-braces pop cap. Runs after hydration so it catches (a) stale
- * explore_cache rows from before filter fixes, (b) artist_search_cache
- * popularity drift from ≤50 → >50 after caching, and (c) any future filter
+ * explore_cache rows from before filter fixes, (b) `artists.popularity`
+ * drift from ≤50 → >50 after caching, and (c) any future filter
  * bypass we haven't thought of. Purely DB-local — zero Spotify/Last.fm calls.
  * No-op without hydration data or when undergroundMode is off.
  */
@@ -994,13 +938,52 @@ function enforceUndergroundCap(
 }
 
 /**
+ * Read-time feedback exclusions (#175 F-D). A build loads its exclusions once,
+ * at the start, and the cache then serves its rails for 24h — so a thumbs-down
+ * or dismiss landing mid-build (or after it) would keep showing. Drops rail ids
+ * with an active thumbs-down or a `skip_at`, scoped to the ids on the rails.
+ * Feedback only: "any play" listened exclusion and the 7-day seen cooldown stay
+ * build-time (an Explore save/like stamps seen_at; hiding on that would yank
+ * the artist the user just acted on). A failed read degrades to no filtering.
+ */
+async function dropFeedbackExcluded(supabase: SupabaseClient, userId: string, rails: RailResult[]): Promise<void> {
+  const ids = [...new Set(rails.flatMap((r) => r.artistIds))]
+  if (ids.length === 0) return
+  const [down, skipped] = await Promise.all([
+    supabase.from('feedback').select('artist_id').eq('user_id', userId).eq('signal', 'thumbs_down').is('deleted_at', null).in('artist_id', ids),
+    supabase.from('recommendation_cache').select('artist_id').eq('user_id', userId).not('skip_at', 'is', null).in('artist_id', ids),
+  ])
+  for (const { error } of [down, skipped]) {
+    if (error) console.error('[explore-engine] read-time exclusion read failed', error.message)
+  }
+  const out = new Set([...(down.data ?? []), ...(skipped.data ?? [])].map((r) => r.artist_id as string))
+  if (out.size === 0) return
+  for (const r of rails) r.artistIds = r.artistIds.filter((id) => !out.has(id))
+}
+
+/** Hydrate (when asked) in parallel with the read-time exclusion filter. */
+async function finishRails(
+  supabase: SupabaseClient,
+  input: BuildRailsInput,
+  rails: RailResult[],
+  hydrate: boolean | undefined,
+): Promise<Map<string, HydratedRailArtist> | undefined> {
+  const [hydrated] = await Promise.all([
+    hydrate ? hydrateRailArtists(supabase, rails) : Promise.resolve(undefined),
+    dropFeedbackExcluded(supabase, input.userId, rails),
+  ])
+  enforceUndergroundCap(rails, hydrated, input.undergroundMode)
+  return hydrated
+}
+
+/**
  * Top-level entrypoint. Reads `explore_cache`, returns cached rails when
  * fresh, otherwise runs all four rail generators in parallel, writes the
  * results, and returns them.
  *
  * `force = true` bypasses the cache (used by the Regenerate button).
  * `hydrate = true` additionally resolves each rail's artist IDs against
- * `artist_search_cache` and returns a `hydrated` Map, in parallel with the
+ * `artists` + the preview store and returns a `hydrated` Map, in parallel with the
  * cache upsert so it doesn't add serial latency on cache misses.
  */
 export async function buildExploreRails(
@@ -1034,8 +1017,7 @@ export async function buildExploreRails(
         artistIds: (row.artist_ids ?? []) as string[],
         why: (row.why ?? {}) as Record<string, RailWhy>,
       }))
-      const hydrated = opts.hydrate ? await hydrateRailArtists(supabase, rails) : undefined
-      enforceUndergroundCap(rails, hydrated, input.undergroundMode)
+      const hydrated = await finishRails(supabase, input, rails, opts.hydrate)
       return { cacheHit: true, rails, hydrated }
     }
 
@@ -1051,25 +1033,28 @@ export async function buildExploreRails(
         artistIds: (row.artist_ids ?? []) as string[],
         why: (row.why ?? {}) as Record<string, RailWhy>,
       }))
-      const hydrated = opts.hydrate ? await hydrateRailArtists(supabase, rails) : undefined
-      enforceUndergroundCap(rails, hydrated, input.undergroundMode)
+      const hydrated = await finishRails(supabase, input, rails, opts.hydrate)
       return { cacheHit: false, rails, hydrated }
     }
   }
 
-  const [ctx, excludedIds] = await Promise.all([
-    loadUserContext(supabase, input.userId),
-    loadExcludedIds(supabase, input.userId),
+  // Explore's exclusion policy (#175 D3): any listened play hides (owner
+  // decision #3 — explicit, not an accident), ids only; plus thumbs-down and
+  // the 7-day seen / dismissed cooldown — all applied before confirm.
+  const shared = loadSharedRows(supabase, input.userId)
+  const [ctx, exclusions] = await Promise.all([
+    loadUserContext(supabase, input.userId, shared),
+    loadExclusions(supabase, input.userId, { playThreshold: 'any', nameFallback: false }, undefined, shared),
   ])
 
   // allSettled so one rail throwing doesn't nuke the whole explore generation.
   // Each rail already has its own internal try/catch for Last.fm calls; this is
   // belt-and-braces against unexpected DB / null-deref errors.
   const railFns: Array<{ key: RailKey; run: () => Promise<RailResult> }> = [
-    { key: "adjacent", run: () => adjacentRail(input, ctx, supabase, excludedIds) },
-    { key: "outside", run: () => outsideRail(input, ctx, supabase, excludedIds) },
-    { key: "wildcards", run: () => wildcardsRail(input, ctx, supabase, excludedIds) },
-    { key: "leftfield", run: () => leftfieldRail(input, ctx, supabase, excludedIds) },
+    { key: "adjacent", run: () => adjacentRail(input, ctx, supabase, exclusions) },
+    { key: "outside", run: () => outsideRail(input, ctx, supabase, exclusions) },
+    { key: "wildcards", run: () => wildcardsRail(input, ctx, supabase, exclusions) },
+    { key: "leftfield", run: () => leftfieldRail(input, ctx, supabase, exclusions) },
   ]
   const settled = await Promise.allSettled(railFns.map((r) => r.run()))
   const rails: RailResult[] = settled.map((s, i) => {
@@ -1085,7 +1070,7 @@ export async function buildExploreRails(
   if (ctx.thumbsUpIds.size === 0) {
     const primaryLeftfield = rails.find((r) => r.railKey === 'leftfield')
     const excludeIds = new Set(primaryLeftfield?.artistIds ?? [])
-    const fallback = await leftfieldRail(input, ctx, supabase, excludedIds, {
+    const fallback = await leftfieldRail(input, ctx, supabase, exclusions, {
       seedKey: 'wildcards-fallback',
       excludeIds,
     })
@@ -1151,7 +1136,7 @@ export async function buildExploreRails(
     for (const r of shortRails) {
       const need = MIN_PICKS_FLOOR - r.artistIds.length
       if (need <= 0) continue
-      const topup = await leftfieldRail(input, ctx, supabase, excludedIds, {
+      const topup = await leftfieldRail(input, ctx, supabase, exclusions, {
         seedKey: `${r.railKey}-topup`,
         excludeIds: existingIds,
       })
@@ -1181,17 +1166,17 @@ export async function buildExploreRails(
     expires_at: expiresAt,
   }))
 
-  // Upsert + hydration are independent — fire in parallel to save a roundtrip.
+  // Upsert + hydration (+ read-time exclusions) are independent — fire in
+  // parallel to save a roundtrip. The cache keeps any id excluded mid-build;
+  // every read filters it again.
   const [{ error }, hydrated] = await Promise.all([
     supabase.from('explore_cache').upsert(rows, { onConflict: 'user_id,rail_key' }),
-    opts.hydrate ? hydrateRailArtists(supabase, rails) : Promise.resolve(undefined),
+    finishRails(supabase, input, rails, opts.hydrate),
   ])
 
   if (error) {
     console.error('[explore-engine] cache upsert failed', error.message)
   }
-
-  enforceUndergroundCap(rails, hydrated, input.undergroundMode)
 
   const calls = snapshotCalls()
   console.log(
@@ -1221,9 +1206,3 @@ export async function invalidateExploreCache(
   if (error) console.error('[explore-engine] invalidate failed', error.message)
 }
 
-// Internal helpers exposed for rail implementations in subsequent commits.
-export const _internal = {
-  loadUserContext,
-  resolveAndFilter,
-  buildEnrichArtist,
-}

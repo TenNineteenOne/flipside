@@ -6,11 +6,12 @@
  * `buildExploreRails`) and their helpers exercise:
  *
  *   .from(table)
- *     .select(cols)[.eq/.is/.not/.gt/.gte/.in/.order/.limit][.maybeSingle/.single]
- *     .insert(row).select(cols).single()
+ *     .select(cols)[.eq/.is/.not/.gt/.gte/.in/.or/.order/.limit/.range][.maybeSingle/.single]
+ *     .insert(row | rows)[.select(cols).single()]
  *     .upsert(rows, { onConflict, ignoreDuplicates })
  *     .update(patch).eq(col, val)
  *     .delete().eq(col, val)
+ *   .rpc(name, args)   — dispatched to the `rpcs` handlers passed in (optional)
  *
  * Every builder node is a thenable (implements `.then`), so both
  * `await query` and `query.then(cb)` resolve to `{ data, error }` — matching
@@ -30,9 +31,22 @@ export interface FakeSupabase {
   client: any
   /** Live view of the in-memory tables (mutated by writes). */
   tables: Tables
+  /** Every executed query, in order: table, op, and the last `.in()` values. */
+  queries: Array<{ table: string; op: string; in?: unknown[] }>
 }
 
-export function createFakeSupabase(initial: Tables = {}): FakeSupabase {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type RpcHandler = (args: any, tables: Tables) => { data?: unknown; error: { message: string } | null }
+
+export function createFakeSupabase(
+  initial: Tables = {},
+  opts: {
+    rpcs?: Record<string, RpcHandler>
+    /** Per-table failure injection: "error" → `{ error }` result, "throw" → rejected promise. */
+    fail?: Record<string, "error" | "throw">
+  } = {},
+): FakeSupabase {
+  const queries: FakeSupabase["queries"] = []
   const tables: Tables = {}
   for (const k of Object.keys(initial)) tables[k] = initial[k].map((r) => ({ ...r }))
   const ensure = (t: string): Row[] => (tables[t] ??= [])
@@ -48,6 +62,8 @@ export function createFakeSupabase(initial: Tables = {}): FakeSupabase {
     let maybeSingle = false
     let orderSpec: { col: string; ascending: boolean } | null = null
     let limitN: number | null = null
+    let rangeSpec: [number, number] | null = null
+    let inVals: unknown[] | undefined
 
     function matching(): Row[] {
       let rows = ensure(table).filter((r) => filters.every((f) => f(r)))
@@ -61,19 +77,30 @@ export function createFakeSupabase(initial: Tables = {}): FakeSupabase {
         })
       }
       if (limitN != null) rows = rows.slice(0, limitN)
+      if (rangeSpec) rows = rows.slice(rangeSpec[0], rangeSpec[1] + 1)
       return rows
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function run(): any {
+      queries.push({ table, op, in: inVals })
+      const failure = opts.fail?.[table]
+      if (failure === "throw") throw new Error(`fake ${table} ${op} threw`)
+      if (failure === "error") return { data: null, error: { message: `fake ${table} ${op} failed` } }
       const t = ensure(table)
       if (op === "select") {
-        const rows = matching()
+        // PostgREST's max-rows cap: a select never returns more than 1000 rows.
+        const rows = matching().slice(0, 1000)
         if (single) return { data: rows[0] ?? null, error: rows.length ? null : { message: "no rows" } }
         if (maybeSingle) return { data: rows[0] ?? null, error: null }
         return { data: rows.map((r) => ({ ...r })), error: null }
       }
       if (op === "insert") {
+        if (Array.isArray(payload)) {
+          const rows = payload.map((p: Row) => ({ id: p.id ?? randomUUID(), ...p }))
+          t.push(...rows)
+          return { data: rows.map((r: Row) => ({ ...r })), error: null }
+        }
         const row = { id: payload.id ?? randomUUID(), ...payload }
         t.push(row)
         if (single || maybeSingle) return { data: { ...row }, error: null }
@@ -94,8 +121,9 @@ export function createFakeSupabase(initial: Tables = {}): FakeSupabase {
         return { error: null }
       }
       if (op === "update") {
-        for (const r of matching()) Object.assign(r, payload)
-        return { error: null }
+        const rows = matching()
+        for (const r of rows) Object.assign(r, payload)
+        return { data: rows.map((r) => ({ ...r })), error: null }
       }
       if (op === "delete") {
         tables[table] = t.filter((r) => !(filters.length > 0 && filters.every((f) => f(r))))
@@ -161,8 +189,23 @@ export function createFakeSupabase(initial: Tables = {}): FakeSupabase {
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       in(col: string, vals: any[]) {
+        inVals = vals
         const s = new Set(vals)
         filters.push((r) => s.has(r[col]))
+        return q
+      },
+      // PostgREST `or` filter — supports `col.is.null` and `col.{eq,lt,gt}.value` terms.
+      or(expr: string) {
+        const terms = expr.split(",").map((term) => {
+          const [col, cmp, ...rest] = term.split(".")
+          const val = rest.join(".")
+          return (r: Row) =>
+            cmp === "is" && val === "null"
+              ? r[col] == null
+              : r[col] != null &&
+                (cmp === "eq" ? String(r[col]) === val : cmp === "lt" ? r[col] < val : cmp === "gt" ? r[col] > val : false)
+        })
+        filters.push((r) => terms.some((f) => f(r)))
         return q
       },
       order(col: string, opts: { ascending: boolean }) {
@@ -171,6 +214,11 @@ export function createFakeSupabase(initial: Tables = {}): FakeSupabase {
       },
       limit(n: number) {
         limitN = n
+        return q
+      },
+      /** Inclusive offsets, like PostgREST `Range`. */
+      range(from: number, to: number) {
+        rangeSpec = [from, to]
         return q
       },
       maybeSingle() {
@@ -191,5 +239,11 @@ export function createFakeSupabase(initial: Tables = {}): FakeSupabase {
     return q
   }
 
-  return { client: { from: (t: string) => makeQuery(t) }, tables }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rpc = async (name: string, args: any) => {
+    const handler = opts.rpcs?.[name]
+    return handler ? { data: null, ...handler(args, tables) } : { data: null, error: { message: `no rpc ${name}` } }
+  }
+
+  return { client: { from: (t: string) => makeQuery(t), rpc }, tables, queries }
 }

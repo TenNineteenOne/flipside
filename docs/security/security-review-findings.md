@@ -62,3 +62,22 @@ Severity reflects the verifier's corrected grade, leading with **reachability**.
 5. **`error.tsx` leaks `error.message`** — no route outside `(app)/` throws dynamic messages; `(app)/error.tsx` renders a static string.
 6. **Login limiter lacks per-username limiting** — username-only auth means no brute-force surface; per-username limiting would *add* a lockout-DoS.
 7. **history/accumulate cooldown race** — self-only blast radius, double-guarded by resolution idempotency + cache.
+
+---
+
+## Update 2026-10-24 — login guessing hardening (#175 D3)
+
+Sweep 1 found that every wrong-username sign-in silently created an account, so guessing friends' usernames was free and the only signal was a hit; and the 10/min limiter keyed on the full IP, so an IPv6 /64 or a proxy pool got a fresh bucket per address.
+
+- **No more auto-create.** Sign-in now has explicit **Existing account** (default) and **New account** modes. Existing never creates; an unknown name gets the same generic error as an invalid one. New never signs into a taken name and says it's taken (an accepted enumeration signal, rate-limited like everything else). Logic: `lib/auth-sign-in.ts`.
+- **Rate limits** (same atomic RPC, migration 0035, no new migration: the RPC takes any key string and per-call limits): per IP 10/min (unchanged), per IPv6 /64 20/min, global 300/min. Checked in order, stopping at the first full bucket, so one blocked address can't fill the global cap alone.
+- **Still open:** all buckets fail open on DB error (baseline; a DB outage fails sign-in anyway at the `users` lookup). A distributed attacker can exhaust the global cap and block sign-in for everyone for about a minute after the flood. Session `maxAge` is still the NextAuth default (30 days); shortening it, or invite codes for New account, remain options.
+
+## Update 2026-10-24 — sweep 2 server/security fixes (#175 Y1)
+
+- **Explore cooldown bypass closed again (S1).** Sweep 1's D5 nulled `users.last_explore_generated_at` on every taste change, so a thumb followed by `POST /api/explore/generate?force=true` could start unlimited overlapping builds. Reverted; taste changes no longer touch `users`. Known race kept: a settings change during an in-flight Explore build can leave old-settings rails until TTL. The proper fix (a version stamp) is deferred with #168.
+- **Image optimizer off (S5).** `images.unoptimized: true`. Anonymous `/_next/image` requests over many distinct allowed-CDN URLs could exhaust the Vercel Hobby transformation quota. Art now loads straight from the Spotify/Apple CDNs, which CSP `img-src` already allows.
+- **Onboarding seed cap (S6).** `POST /api/onboarding/seeds` now enforces the 200 total-seed cap (existing + new), shared with `/api/settings/seed-artists` via `lib/api/seed-cap.ts`.
+- **node-vibrant parser loop (S7).** Colour extraction only hands JPEG/PNG/WebP magic bytes to node-vibrant. This sidesteps the `file-type` ASF loop (GHSA-5v7r-6r5c-r473), which the 5s `setTimeout` race can't interrupt because it blocks the event loop. The dependency is still flagged by `npm audit`.
+- **Type guards (S8).** Non-string `lastfmUsername`/`statsfmUsername` and JSON `null` bodies on the seed and resolve routes return the route's 400 instead of a 500.
+- **`/open` negative cache (R5).** Only an answered iTunes no-match is cached as NULL. An iTunes failure, such as a 403 storm, no longer pins artists to the search URL for 30 days across all users.

@@ -2,7 +2,6 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
-import { toast } from "sonner"
 import { ArtistCard } from "@/components/feed/artist-card"
 import { ColdStartBanner } from "@/components/feed/cold-start-banner"
 import { Ambient } from "@/components/visual/ambient"
@@ -10,42 +9,12 @@ import type { MusicPlatform } from "@/lib/music-links"
 import { useArtistFeedback } from "@/lib/hooks/use-artist-feedback"
 import { useArtistSaves } from "@/lib/hooks/use-artist-saves"
 import { useFeedFill } from "@/lib/hooks/use-feed-fill"
-
-interface Track {
-  id: string
-  spotifyTrackId: string | null
-  name: string
-  previewUrl: string | null
-  durationMs: number
-  albumName: string
-  albumImageUrl: string | null
-  source: "itunes" | "spotify" | "deezer"
-}
-
-interface ArtistWithTracks {
-  id: string
-  spotifyId?: string | null
-  name: string
-  genres: string[]
-  imageUrl: string | null
-  popularity: number
-  topTracks: Track[]
-}
-
-interface Recommendation {
-  artist_id: string
-  artist_data: ArtistWithTracks
-  score: number
-  why: {
-    sourceArtists: string[]
-    genres: string[]
-    friendBoost: string[]
-  }
-  artist_color?: string | null
-}
+import { useFeedGeneration } from "@/lib/hooks/use-feed-generation"
+import type { CardArtist } from "@/lib/cards/card-artist"
+import type { GenerateResult } from "@/lib/client/feed-generation"
 
 interface FeedClientProps {
-  recommendations: Recommendation[]
+  recommendations: CardArtist[]
   musicPlatform: MusicPlatform
   signalCount: number
 }
@@ -54,10 +23,10 @@ interface FeedClientProps {
 // Feed sequence builder
 // ---------------------------------------------------------------------------
 
-type FeedItem = { kind: "card"; rec: Recommendation; key: string }
+type FeedItem = { kind: "card"; rec: CardArtist; key: string }
 
-function buildSequence(recs: Recommendation[]): FeedItem[] {
-  return recs.map((rec) => ({ kind: "card", rec, key: `c-${rec.artist_id}` }))
+function buildSequence(recs: CardArtist[]): FeedItem[] {
+  return recs.map((rec) => ({ kind: "card", rec, key: `c-${rec.id}` }))
 }
 
 // Module-scope: zero prop/state deps, so identity stays stable across renders.
@@ -77,29 +46,28 @@ const TOPUP_THRESHOLD = 8
 // ---------------------------------------------------------------------------
 
 export function FeedClient({ recommendations, musicPlatform, signalCount }: FeedClientProps) {
-  const [isGenerating, setIsGenerating] = useState(false)
-  // Synchronous guard: React state updates are batched, so a hair-trigger
-  // double-click can slip past `disabled={isGenerating}` and fire two requests
-  // before the first render commits. The ref blocks the second call instantly.
-  const isGeneratingRef = useRef(false)
+  // Generate requests (mount top-up + Load more) share one re-entry guard, so
+  // a user's own "Load more" can't collide with the background top-up.
+  const generation = useFeedGeneration()
+  const isGenerating = generation.generating
   const router = useRouter()
 
   // Stateful rec list: seeded from the prop on mount. The append-poller below
   // grows this list in the background. Existing cards (earlier indices) are never
   // reordered or removed — appended recs land at the end. Keyed by
   // artist_id so React never remounts an existing card on append.
-  const [recs, setRecs] = useState<Recommendation[]>(recommendations)
+  const [recs, setRecs] = useState<CardArtist[]>(recommendations)
 
   // Append-poller: after first paint, poll for newly-confirmed cards that the
   // background after() block has written. Appends deduped, playable-only recs to
   // the end of the list without disturbing the current/earlier cards.
-  const { restart: restartFeedFill } = useFeedFill<Recommendation>({
-    initialIds: recommendations.map((r) => r.artist_id),
+  const { restart: restartFeedFill } = useFeedFill<CardArtist>({
+    initialIds: recommendations.map((r) => r.id),
     targetCount: 20,
     onAppend: (newRecs) => {
       setRecs((prev) => {
-        const seenIds = new Set(prev.map((r) => r.artist_id))
-        const deduped = newRecs.filter((r) => !seenIds.has(r.artist_id))
+        const seenIds = new Set(prev.map((r) => r.id))
+        const deduped = newRecs.filter((r) => !seenIds.has(r.id))
         if (deduped.length === 0) return prev
         return [...prev, ...deduped]
       })
@@ -107,40 +75,46 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
   })
 
   // Background top-up: when the unseen queue is low, generate more on mount and
-  // surface the results via router.refresh() once done. We reflect the in-flight
-  // run on the button (shared isGeneratingRef + isGenerating state) so a user's
-  // own "Load more" can't silently collide with it or trip the 30s-cooldown
-  // error path — and the refresh means their implicit "I want more" intent is
-  // fulfilled. Cooldown-safe: a 429 just no-ops, then refresh shows whatever's
-  // available. router.refresh() is a soft refresh (preserves scroll/state), and
-  // it doesn't remount this client component, so the mount-only effect won't loop.
+  // surface the results via router.refresh() once done. The in-flight run is
+  // reflected on the button (shared generation guard). Silent: a 429 / failure
+  // just no-ops, then refresh shows whatever's available. router.refresh() is a
+  // soft refresh (preserves scroll/state), and it doesn't remount this client
+  // component, so the mount-only effect won't loop.
+  // StrictMode (dev) re-runs this effect on the same instance: the second run
+  // reuses the first run's POST instead of firing another (which would 429 and
+  // skip restartFeedFill). Production runs it once, so the ref starts empty.
+  const topUpRef = useRef<Promise<GenerateResult | null> | null>(null)
   useEffect(() => {
     if (recommendations.length >= TOPUP_THRESHOLD) return
-    if (isGeneratingRef.current) return
-    isGeneratingRef.current = true
-    setIsGenerating(true)
     let cancelled = false
-    fetch("/api/recommendations/generate", { method: "POST" })
-      .then((res) => {
-        // New cards land server-side; restart the poller so they surface
-        // without waiting for a hard navigation (router.refresh() alone
-        // doesn't re-arm an already-stopped/never-started poller).
-        if (!cancelled && res.ok) restartFeedFill()
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (cancelled) return
-        isGeneratingRef.current = false
-        setIsGenerating(false)
-        router.refresh()
-      })
+    topUpRef.current ??= generation.requestMore({ silent: true })
+    void topUpRef.current.then((r) => {
+      if (r === null || cancelled) return
+      // New cards land server-side; restart the poller so they surface
+      // without waiting for a hard navigation (router.refresh() alone
+      // doesn't re-arm an already-stopped/never-started poller).
+      if (r.ok) restartFeedFill()
+      router.refresh()
+    })
     return () => {
       cancelled = true
-      isGeneratingRef.current = false
     }
     // Mount-only: deliberately not re-firing on recommendations identity change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Unmount (navigation): release the generation guard so a run still in
+  // flight stays quiet, and don't refresh the page the user moved to. Separate
+  // from the top-up effect, which returns early on a full queue.
+  const aliveRef = useRef(true)
+  const releaseGeneration = generation.release
+  useEffect(() => {
+    aliveRef.current = true
+    return () => {
+      aliveRef.current = false
+      releaseGeneration()
+    }
+  }, [releaseGeneration])
 
   const sequence = useMemo(() => buildSequence(recs), [recs])
 
@@ -156,52 +130,18 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
   // Saved-artist IDs. Serialization and rollback are handled inside the hook.
   const { savedIds, toggleSave } = useArtistSaves()
 
-  const handleFeedback = useCallback(
-    (artistId: string, signal: string) => setSignal(artistId, signal),
-    [setSignal],
-  )
-
-  const handleSave = useCallback(
-    (artistId: string) => toggleSave(artistId),
-    [toggleSave],
-  )
-
   async function handleGenerateMore() {
-    if (isGeneratingRef.current) return
-    isGeneratingRef.current = true
-    setIsGenerating(true)
-    try {
-      const res = await fetch("/api/recommendations/generate", { method: "POST" })
-      if (res.status === 401) {
-        window.location.href = "/sign-in"
-        return
-      }
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error((data as { error?: string }).error ?? "Generation failed")
-      }
-      const data = (await res.json().catch(() => ({}))) as {
-        softenedFilters?: { playThreshold?: boolean; coldStart?: boolean }
-      }
-      if (data.softenedFilters) {
-        const s = data.softenedFilters
-        const bits: string[] = []
-        if (s.coldStart) bits.push("falling back to starter picks")
-        else if (s.playThreshold) bits.push("loosening the familiarity cap")
-        if (bits.length > 0) {
-          toast(`Widened the search for this batch — ${bits.join(" and ")}.`)
-        }
-      }
+    const r = await generation.requestMore()
+    if (r === null || !aliveRef.current) return
+    if (r.kind === "unauthorized") {
+      window.location.href = "/sign-in"
+      return
+    }
+    if (r.ok) {
       // New cards land server-side; restart the poller so they surface
-      // without waiting for a hard navigation (router.refresh() alone
-      // doesn't re-arm an already-stopped/never-started poller).
+      // without waiting for a hard navigation.
       restartFeedFill()
       router.refresh()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Generation failed")
-    } finally {
-      isGeneratingRef.current = false
-      setIsGenerating(false)
     }
   }
 
@@ -220,7 +160,7 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
         <ColdStartBanner signalCount={signalCount} />
         {sequence.map((item, index) => {
           const { rec } = item
-          const id = rec.artist_id
+          const id = rec.id
           return (
             <FeedCardRow
               key={item.key}
@@ -228,8 +168,8 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
               musicPlatform={musicPlatform}
               isSaved={savedIds.has(id)}
               dismissSignal={dismissedSignals.get(id) ?? null}
-              onSaveAction={handleSave}
-              onFeedbackAction={handleFeedback}
+              onSaveAction={toggleSave}
+              onFeedbackAction={setSignal}
               priority={index === 0}
             />
           )
@@ -254,12 +194,12 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
 // Memoized so a parent re-render (e.g. on save of a different card) doesn't
 // re-render this row unless its own props actually changed.
 interface FeedCardRowProps {
-  rec: Recommendation
+  rec: CardArtist
   musicPlatform: MusicPlatform
   isSaved: boolean
   dismissSignal: string | null
-  onSaveAction: (artistId: string) => Promise<void> | void
-  onFeedbackAction: (artistId: string, signal: string) => Promise<void> | void
+  onSaveAction: (artistId: string) => unknown
+  onFeedbackAction: (artistId: string, signal: string) => unknown
   priority?: boolean
 }
 
@@ -272,12 +212,12 @@ const FeedCardRow = memo(function FeedCardRow({
   onFeedbackAction,
   priority = false,
 }: FeedCardRowProps) {
-  const id = rec.artist_id
+  const id = rec.id
   const onSave = useCallback(() => { void onSaveAction(id) }, [id, onSaveAction])
   const onFeedback = useCallback((signal: string) => { void onFeedbackAction(id, signal) }, [id, onFeedbackAction])
   return (
     <ArtistCard
-      recommendation={rec}
+      artist={rec}
       musicPlatform={musicPlatform}
       isSaved={isSaved}
       dismissSignal={dismissSignal}

@@ -1,9 +1,8 @@
 "use client"
 
-import { useRef, useState } from "react"
 import { Ambient } from "@/components/visual/ambient"
 import { hexToRgba } from "@/lib/color-utils"
-import { regenerateFeedAndExplore } from "@/lib/settings/regenerate"
+import { useFeedGeneration } from "@/lib/hooks/use-feed-generation"
 import { ACCENT, MINT, ROSE } from "@/lib/settings/obscurity"
 import { ProfilePanel } from "@/components/settings/panels/profile-panel"
 import { AccountPanel } from "@/components/settings/panels/account-panel"
@@ -47,11 +46,9 @@ export function SettingsForm({
 }: SettingsFormProps) {
   // Shared regeneration gate — multiple panels can trigger a rebuild, but only
   // one may be in-flight at a time. isGenerating drives the UI (disabled button
-  // in ObscurityPanel); isGeneratingRef is the synchronous guard inside
-  // regenerateFeedAndExplore so two rapid toggle-handlers can't both pass the
-  // re-entry check before React commits the first setIsGenerating(true).
-  const [isGenerating, setIsGenerating] = useState(false)
-  const isGeneratingRef = useRef(false)
+  // in ObscurityPanel); the controller's synchronous guard stops two rapid
+  // toggle-handlers both passing the re-entry check.
+  const { generating: isGenerating, rebuild } = useFeedGeneration()
 
   const palette = `
     radial-gradient(50% 40% at 18% 20%, ${hexToRgba(ACCENT, 0.20)} 0%, transparent 70%),
@@ -60,7 +57,7 @@ export function SettingsForm({
   `
 
   async function handleRegenerateBoth() {
-    await regenerateFeedAndExplore({ isGeneratingRef, setGenerating: setIsGenerating })
+    await rebuild()
   }
 
   return (

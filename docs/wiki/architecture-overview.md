@@ -1,6 +1,6 @@
 ---
 title: Architecture Overview
-updated: 2026-06-06
+updated: 2026-10-24
 related: [[generation-engine]], [[api-routes]], [[music-providers]], [[data-model]]
 ---
 
@@ -38,7 +38,8 @@ resolver/confirm core:
 
 ```
 seeds ─▶ Last.fm similarity / tag fan-out ─▶ candidate names
-      ─▶ resolve names → artists (cache → Spotify search, + Last.fm enrichment)
+      ─▶ resolve names → artist uuids (the doorway, lib/artist-identity:
+         `artists` name read → Last.fm artist.getInfo → mint/reuse row)
       ─▶ filter (listened / thumbs-down / cooldown / underground cap)
       ─▶ score (k^popularity) + diversity (greedy + 25% cluster cap)
       ─▶ confirm playable preview (iTunes first → Spotify fallback)
@@ -58,13 +59,27 @@ Key design properties:
 - **Resilience** comes from per-provider circuit breakers + concurrency limiters so one
   generation can't self-DDoS the shared keys. See [[music-providers]].
 
+## Module layering
+
+Dependencies point one way (no import cycles, #175 E3):
+
+```
+app/ ─▶ lib/cards (card assembly) · lib/client (framework-free UI controllers)
+     ─▶ lib/recommendation (engines, PlayableCandidates, PreviewStore, Exclusions)
+     ─▶ lib/lastfm (one Last.fm adapter) · lib/music-provider (iTunes, Spotify)
+        · lib/artist-identity (the doorway)
+     ─▶ lib/limiter · lib/metrics · lib/supabase
+```
+
+See [[index]] for the full module map.
+
 ## External dependencies
 
 | Service | Role | Page |
 |---|---|---|
 | Last.fm | similar artists, genre tags, enrichment (genres/popularity), history | [[external-apis]] |
 | iTunes / Apple | 30s preview audio (primary), Apple Music links | [[external-apis]] |
-| Spotify Web API | artist search (name→ID+image), user history (optional), "open in Spotify" | [[external-apis]], [[spotify-dependency]] |
+| Spotify Web API | client-credentials top-tracks preview fallback only (`lib/music-provider/spotify.ts`); no user token, no library actions, no name resolution (#157, #175). "Open in Spotify" is a URL, not an API call | [[external-apis]], [[spotify-dependency]] |
 | stats.fm | optional listening-history source | [[external-apis]] |
 | Supabase | all persistence | [[data-model]] |
 

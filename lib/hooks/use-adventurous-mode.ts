@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { patchSettings } from "@/lib/settings/patch-settings"
 
 // ─── Public constants ────────────────────────────────────────────────────────
 // Centralises the magic strings that were previously duplicated across four
@@ -61,18 +62,11 @@ export function dispatchAdventurousEvent(): void {
 }
 
 /**
- * PATCH /api/settings with { adventurous: next }.
- * Throws if the response is not ok.
+ * PATCH /api/settings with { adventurous: next } via patchSettings.
+ * Rejects if the response is not ok (callers toast their own copy).
  */
 export async function patchAdventurousSetting(next: boolean): Promise<void> {
-  const res = await fetch("/api/settings", {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ adventurous: next }),
-  })
-  if (!res.ok) {
-    throw new Error("Failed to save adventurous setting")
-  }
+  await patchSettings({ adventurous: next })
 }
 
 // ─── Public interface ─────────────────────────────────────────────────────────
