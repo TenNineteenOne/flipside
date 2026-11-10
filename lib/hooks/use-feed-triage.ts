@@ -103,11 +103,12 @@ export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatfor
     [owns, playArtist, audio.isPlaying, pause, resume],
   )
 
-  /** Play track `index` of the artist's playable tracks; the playing one toggles pause/resume. */
+  /** Play track `index` of the artist's playable tracks; the playing one toggles pause/resume; a missing one does nothing. */
   const playTrack = useCallback(
     (a: CardArtist, index: number) => {
       const t = tracksOf(a).filter((x) => x.previewUrl)[index]
-      if (!t || current?.id !== t.id) playArtist(a, index)
+      if (!t) return // no such track (e.g. "3" on a one-preview artist): leave playback alone
+      if (current?.id !== t.id) playArtist(a, index)
       else if (audio.isPlaying) pause()
       else resume()
     },
