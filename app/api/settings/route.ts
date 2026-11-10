@@ -91,8 +91,8 @@ export const PATCH = withAuthedJsonRoute(async ({ userId, body: rawBody }) => {
   // re-render so navigating back doesn't resurrect stale toggle/slider values.
   revalidatePath("/settings")
 
-  // Settings the Feed queue derives from wipe its unseen rows so the next
-  // load regenerates under the new settings (lib/taste-change).
+  // A genre-filter change wipes the unseen Feed queue; every other setting
+  // (fame, Wander farther) applies to the next batch only (lib/taste-change).
   await onTasteChanged(supabase, userId, {
     kind: "settings",
     fields: Object.keys(body).filter((k) => body[k as keyof typeof body] !== undefined),

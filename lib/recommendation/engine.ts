@@ -25,6 +25,15 @@ const ADVENTUROUS_MAINSTREAM_PENALTY = 0.08
 const ADJACENT_BLEED_BONUS = 0.08
 /** User needs this many selected_genres before seed cap widens 10 → 15 and medium adjacency opens up. */
 const ADAPTIVE_BROADEN_THRESHOLD = 10
+/** Longest tier 1's bleed step waits on the far pool; past it this run's bleed is adjacent-only. */
+export const FAR_WAIT_BUDGET_MS = 1500
+
+/** `p`'s value, or undefined if it hasn't settled within `ms`. The timer is always cleared. */
+export function withinBudget<T>(p: Promise<T>, ms: number): Promise<T | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<undefined>((resolve) => { timer = setTimeout(() => resolve(undefined), ms) })
+  return Promise.race([p, timeout]).finally(() => clearTimeout(timer))
+}
 
 /**
  * Resolver tuning (safe-C). Conservative bump over the resolver defaults
@@ -572,6 +581,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
   const farLabels = new Map<string, string>()
   let farMs: number | undefined
   let farWaitMs: number | undefined
+  let farTimedOut = false
   const farResolved: Promise<Map<string, Artist> | null> | null = o.farNames && !genre
     ? o.farNames.then(async ({ names, ms }) => {
         farMs = ms
@@ -711,7 +721,13 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
       far: farResolved
         ? {
             // Bleed-step start → far pool ready (≈0 when it finished during the primary resolve).
-            resolved: farResolved.then((r) => { farWaitMs = Date.now() - augmentStart; return r }),
+            // A far pool slower than FAR_WAIT_BUDGET_MS is dropped for this run (adjacent bleed only).
+            resolved: withinBudget(farResolved, FAR_WAIT_BUDGET_MS).then((r) => {
+              farWaitMs = Date.now() - augmentStart
+              if (r !== undefined) return r
+              farTimedOut = true
+              return null
+            }),
             labelOf: (name) => farLabels.get(name.toLowerCase()),
           }
         : undefined,
@@ -970,6 +986,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
       rateLimited: resolved.rateLimited,
       ...(farMs !== undefined ? { farMs } : {}),
       ...(farWaitMs !== undefined ? { farWaitMs } : {}),
+      ...(farTimedOut ? { farTimedOut } : {}),
     },
   }
 }

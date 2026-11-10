@@ -70,7 +70,9 @@ Wander farther far pool (step 11).
       `tag.gettopartists` lookups** (+ ≤30 `getInfo` for resolve misses); Curveballs sampled
       34–60 tags. Far names resolve through the same `PlayableCandidates` gate (exclusions +
       underground cap) **in parallel with the primary resolve**, so tier 1 only blocks if the
-      far path is slower than the whole primary path. Far picks carry
+      far path is slower than the whole primary path, and then for at most
+      `FAR_WAIT_BUDGET_MS` (1500 ms); past that the run's bleed is adjacent-only and
+      `[gen-timing]` logs `farTimeout=1`. Far picks carry
       `source: 'far_pool'` and `why.outsideUsual = <genre label>` (the card's "Outside your
       usual: <genre>"); adjacent bleed never does. `why` is stored verbatim in
       `recommendation_cache.why` and lifted onto `CardArtist.why.outsideUsual` by
@@ -109,7 +111,7 @@ Wander farther far pool (step 11).
 | `scoring` (in engine) | `k^popularity` tier multiplier + relevance |
 | `window.ts` | weekly-stable seeds: `cacheWindowSeed`, `seededShuffle`, `sampleLikes` |
 | `far-picks.ts` | the Wander farther far pool: outside-anchor + leftfield tag pickers, `fetchFarNames` (≤8 tag lookups), `loadListenedGenres` |
-| `gen-timing.ts` (+ `lib/metrics/api-call-counter.ts`) | instrumentation (`[gen-timing]` logs; `far=` far fetch wall-clock and `farWait=` bleed-step start until the far pool was ready, when Wander farther ran) |
+| `gen-timing.ts` (+ `lib/metrics/api-call-counter.ts`) | instrumentation (`[gen-timing]` logs; `far=` far fetch wall-clock and `farWait=` bleed-step start until the far pool was ready or the wait budget ran out (`farTimeout=1`), when Wander farther ran) |
 
 Outside this folder: Last.fm calls go through `lib/lastfm` (one adapter), name → uuid
 through `lib/artist-identity` (with `lastfm-lookup.ts` = `lastfmResolve`, `buildEnrichArtist`,
@@ -142,7 +144,7 @@ through `lib/artist-identity` (with `lastfm-lookup.ts` = `lastfmResolve`, `build
 - `FIRST_BATCH_TARGET = 8` is hardcoded; not per-user settable.
 - `chain-walker.ts` (speculative multi-hop BFS) was deleted 2026-07-11 — it had zero callers.
 - Toggling Wander farther changes the **next batch only**: `adventurous` no longer wipes the
-  unseen queue (`lib/taste-change.ts`); `fameLevel` and `selectedGenres` still do.
+  unseen queue (`lib/taste-change.ts`), and neither does `fameLevel`; only `selectedGenres` does.
 - Last.fm tags hyphenated in flipside's tree (e.g. `dutch-black-metal`) may return 0 from
   Last.fm; `lastfm.tagTopArtists` retries with spaces (a second sequential call) — this was
   the old Explore leftfield-rail latency cause, and why the far pool caps tag lookups at 8.

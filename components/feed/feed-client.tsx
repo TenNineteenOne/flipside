@@ -85,6 +85,11 @@ export function flipWander(on: boolean, save: (next: boolean) => Promise<void>):
   })
 }
 
+/** Queue a flip behind `prev` so rapid toggles save in click order. flipWander never rejects, so one failure can't break the chain. */
+export function queueWander(prev: Promise<void>, on: boolean, save: (next: boolean) => Promise<void>): Promise<void> {
+  return prev.then(() => flipWander(on, save))
+}
+
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
@@ -196,9 +201,10 @@ export function FeedClient({ recommendations, musicPlatform, signalCount, initia
   }, [mounted])
 
   const { adventurous, setAdventurous } = useAdventurousMode(initialAdventurous)
-  // A Load more right after a flip waits for the save, so it generates with the new value.
+  // Flips save in order (queueWander); a Load more right after one waits for the whole chain,
+  // so it generates with the latest value.
   const wanderSave = useRef<Promise<void>>(Promise.resolve())
-  const wander = { on: adventurous, toggle: () => void (wanderSave.current = flipWander(adventurous, setAdventurous)) }
+  const wander = { on: adventurous, toggle: () => void (wanderSave.current = queueWander(wanderSave.current, adventurous, setAdventurous)) }
 
   async function handleGenerateMore() {
     await wanderSave.current

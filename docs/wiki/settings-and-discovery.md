@@ -10,8 +10,9 @@ User discovery preferences live as columns on the `users` row (see [[data-model]
 via `PATCH /api/settings` (`lib/settings/patch-settings.ts` — the only client writer, with
 typed keys, abort support and `SettingsSaveError`). Nothing regenerates on save: the route
 calls `onTasteChanged` (`lib/taste-change.ts`), which wipes the user's unseen Feed queue when
-`selectedGenres` or `fameLevel` changed, so the next Feed load generates under the new
-settings. Wander farther (`adventurous`) only shapes the next batch and wipes nothing.
+`selectedGenres` changed, so the next Feed load generates under the new genres. "How
+famous?" (`fameLevel`) and Wander farther (`adventurous`) only shape the next batch and wipe
+nothing; the slider saves only when its value differs from the last saved one.
 
 ## The settings
 

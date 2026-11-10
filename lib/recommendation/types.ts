@@ -77,5 +77,7 @@ export interface BuildResult {
     farMs?: number
     /** Bleed-step start → far pool ready (ms); the bleed step overlaps it with the adjacent fetch. */
     farWaitMs?: number
+    /** True when tier 1 gave up on the far pool after FAR_WAIT_BUDGET_MS (adjacent bleed only). */
+    farTimedOut?: boolean
   }
 }

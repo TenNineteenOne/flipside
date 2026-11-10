@@ -40,8 +40,8 @@ before its 401) and the GETs owned elsewhere (`/api/history`, `/api/recommendati
 ## Feedback, saves, history
 
 Which caches each taste change invalidates is decided in one place: `lib/taste-change.ts`
-(`onTasteChanged` / `invalidationFor`). Today only a settings change to `selectedGenres` or
-`fameLevel` wipes anything (the user's unseen Feed rows); thumbs, saves, undismiss and seed
+(`onTasteChanged` / `invalidationFor`). Today only a settings change to `selectedGenres`
+wipes anything (the user's unseen Feed rows); `fameLevel`, `adventurous`, thumbs, saves, undismiss and seed
 changes reach the next batch through the engine's normal reads. A `skip` is not a taste change.
 The `/api/explore/*` routes were removed with the Explore page (2026-11-10, #205).
 
@@ -62,7 +62,7 @@ The `/api/explore/*` routes were removed with the Explore page (2026-11-10, #205
 | `/api/onboarding/resolve` | POST | resolves a Last.fm-sourced onboarding suggestion to the internal artist uuid: `artists`-table exact-name doorway lookup first, MusicBrainz mbid url-rels fallback → mint under MB's canonical name (client name must match it at ≥0.8 similarity after folding diacritics, else 404; the check is skipped when exactly one name has Latin letters, e.g. "BTS" vs "방탄소년단"); 404 when unresolvable; 30/min per-user in-memory rate limit |
 | `/api/onboarding/seeds` | POST | upsert `seed_artists` (3–200 per request; existing + new ≤ 200 total, same check as settings) |
 | `/api/onboarding/check` | GET | `{needsOnboarding}` |
-| `/api/settings` | PATCH | validate + encrypt usernames + update `users`; `selectedGenres` / `fameLevel` change → unseen-feed wipe; `adventurous` → nothing (next batch only) |
+| `/api/settings` | PATCH | validate + encrypt usernames + update `users`; `selectedGenres` change → unseen-feed wipe; `fameLevel` / `adventurous` → nothing (next batch only) |
 | `/api/settings/seed-artists` | GET/POST/DELETE | manage seeds |
 | `/api/account` | DELETE | delete user (cascade) + sign out |
 

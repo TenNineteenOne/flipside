@@ -53,6 +53,16 @@ export function writeAdventurousToStorage(next: boolean): void {
 }
 
 /**
+ * Mount reconciliation: the server-rendered value is authoritative, so it
+ * overwrites whatever an earlier session left in storage (a stale "0" must not
+ * flip a server `true` off, or the reverse). Returns the value to show.
+ */
+export function adoptServerAdventurous(initial: boolean): boolean {
+  writeAdventurousToStorage(initial)
+  return initial
+}
+
+/**
  * Dispatch the in-tab sync event so other mounted hook instances update.
  */
 export function dispatchAdventurousEvent(): void {
@@ -81,9 +91,9 @@ export interface UseAdventurousModeResult {
  * the app shell (adventurous line on the rail / under the top bar), the
  * Settings discovery panel and the Feed's Wander farther switch.
  *
- * SSR-safe: the initial render uses `initial` (from the server).  On mount the
- * hook reconciles with localStorage in case another tab wrote a newer value
- * before this component mounted.
+ * SSR-safe: the initial render uses `initial` (from the server), and on mount
+ * that value is written to localStorage (server-authoritative). Storage is only
+ * read for in-tab and cross-tab sync events after that.
  *
  * The hook does NOT toast on failure and does NOT call any rebuild helpers —
  * those are caller responsibilities so each surface can react differently.
@@ -91,18 +101,16 @@ export interface UseAdventurousModeResult {
 export function useAdventurousMode(initial: boolean): UseAdventurousModeResult {
   const [adventurous, setAdventurousState] = useState(initial)
 
-  // ── Mount effect: reconcile with localStorage + subscribe to sync events ──
+  // ── Mount effect: adopt the server value + subscribe to sync events ──
   useEffect(() => {
-    // Re-read localStorage and update state from it.  Used for both the initial
-    // reconciliation and for in-tab / cross-tab event-driven updates.
+    // Re-read localStorage on in-tab / cross-tab sync events.
     const syncFromStorage = () => {
       setAdventurousState(readAdventurousFromStorage(initial))
     }
-
-    // Reconcile: another tab or a previous session may have written a newer
-    // value before this component mounted.  We call syncFromStorage as a
-    // callback (not inline) to satisfy the react-hooks/set-state-in-effect rule.
-    syncFromStorage()
+    // The server value wins on mount (a changed `initial` prop re-adopts it).
+    // Called as a callback (not inline) to satisfy react-hooks/set-state-in-effect.
+    const adopt = () => setAdventurousState(adoptServerAdventurous(initial))
+    adopt()
 
     const handleStorageEvent = (e: StorageEvent) => {
       if (e.key === ADVENTUROUS_STORAGE_KEY) {

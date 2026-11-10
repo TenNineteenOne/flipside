@@ -1,17 +1,29 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { toast } from "sonner"
 import { WanderNote, WanderSwitch } from "@/components/feed/wander-switch"
 import { useAdventurousMode } from "@/lib/hooks/use-adventurous-mode"
 import { patchSettings } from "@/lib/settings/patch-settings"
 import { FAME_LEVELS, MAX_FAME_LEVEL } from "@/lib/settings/fame"
 
-/** Save "How famous?" (users.fame_level). Applies to the next batch; nothing is rebuilt. */
-export async function saveFameLevel(fameLevel: number): Promise<void> {
+/**
+ * Save "How famous?" (users.fame_level) when `next` differs from the last saved stop, so a
+ * click or key that didn't move the slider sends nothing. On failure the slider rolls back to
+ * the last saved stop. Applies to the next batch; nothing on screen is rebuilt.
+ */
+export async function saveFameLevel(next: number, saved: { current: number }, rollback: (stop: number) => void): Promise<void> {
+  const prev = saved.current
+  if (next === prev) return
+  saved.current = next
   try {
-    await patchSettings({ fameLevel })
+    await patchSettings({ fameLevel: next })
   } catch {
+    // A newer save owns the slider now; only the latest one rolls back.
+    if (saved.current === next) {
+      saved.current = prev
+      rollback(prev)
+    }
     toast.error("Failed to save How famous?")
   }
 }
@@ -24,7 +36,8 @@ export function DiscoveryPanel({ initialFameLevel, initialAdventurous }: { initi
   const [fame, setFame] = useState(initialFameLevel)
   const { adventurous, setAdventurous } = useAdventurousMode(initialAdventurous)
   const pct = (fame / MAX_FAME_LEVEL) * 100
-  const save = () => void saveFameLevel(fame)
+  const saved = useRef(initialFameLevel)
+  const save = () => void saveFameLevel(fame, saved, setFame)
 
   return (
     <div>

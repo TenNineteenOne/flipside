@@ -10,7 +10,7 @@ type SupabaseClient = ReturnType<typeof createServiceClient>
  *  - seeds:    add or remove seed artists.
  *  - settings: a settings PATCH; `fields` are the body keys that were sent.
  *
- * Only settings the Feed queue is filtered by wipe it today; the other kinds
+ * Only the genre filter (selectedGenres) wipes the Feed queue today; the other kinds
  * reach the next batch through the engine's normal reads. The callers stay
  * wired so a new cache only needs a rule here.
  */
@@ -26,9 +26,10 @@ export interface Invalidation {
   feed: boolean
 }
 
-// Settings the queued Feed cards were built from. Wander farther (adventurous)
-// changes the NEXT batch only, never the queued cards (#205 decision 4).
-const FEED_SETTINGS = ["selectedGenres", "fameLevel"]
+// Settings that wipe the unseen Feed queue. Only the genre filter does
+// (pre-#205 behaviour); "How famous?" (fameLevel) and Wander farther
+// (adventurous) change the NEXT batch only, never the queued cards (#205).
+const FEED_SETTINGS = ["selectedGenres"]
 
 /** The invalidation policy: which caches a taste change makes stale. Pure. */
 export function invalidationFor(change: TasteChange): Invalidation {

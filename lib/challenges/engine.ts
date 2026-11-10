@@ -125,7 +125,7 @@ export function pickWeeklyTemplate(ctx: ChallengeApplicabilityCtx, weekStart: st
  * concurrent assigns on Monday morning can't spawn duplicates. `ctx` may be a
  * loader so callers that usually find an existing row skip its reads.
  */
-export async function ensureWeeklyChallenge(
+async function ensureWeeklyChallenge(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: SupabaseClient<any, any, any>,
   userId: string,
@@ -190,10 +190,6 @@ export interface UserChallenge {
 }
 
 /**
- * Build the ChallengeApplicabilityCtx from the user's selected genres,
- * listened primary genres and likes. Synchronous + pure.
- */
-/**
  * Ensure the user's current-week challenge row exists, loading the
  * applicability ctx only when it has to assign one (selected genres, ≤500
  * listened artists' primary genres, any live thumbs-up).
@@ -226,7 +222,11 @@ export function ensureCurrentChallenge(
   }, now)
 }
 
-export function buildApplicabilityCtx(args: {
+/**
+ * Build the ChallengeApplicabilityCtx from the user's selected genres,
+ * listened primary genres and likes. Synchronous + pure.
+ */
+function buildApplicabilityCtx(args: {
   selectedGenres: string[]
   listened: Array<{ genres: string[] }>
   hasThumbsUp: boolean

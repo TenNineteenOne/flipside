@@ -25,6 +25,7 @@ import {
   writeAdventurousToStorage,
   patchAdventurousSetting,
   dispatchAdventurousEvent,
+  adoptServerAdventurous,
 } from "./use-adventurous-mode"
 
 // ─── localStorage stub ────────────────────────────────────────────────────────
@@ -256,5 +257,24 @@ describe("failure path: no localStorage write and no event dispatch", () => {
     expect(lsStub.setItem).not.toHaveBeenCalled()
     expect(windowStub.dispatchEvent).not.toHaveBeenCalled()
     writeSpy.mockRestore()
+  })
+})
+
+// ─── Mount: the server value is authoritative over a stale stored value ──────
+
+describe("adoptServerAdventurous", () => {
+  it("overwrites a stale stored value with the server value, so later reads agree", () => {
+    lsStub.setItem(ADVENTUROUS_STORAGE_KEY, "0")
+    expect(adoptServerAdventurous(true)).toBe(true)
+    expect(readAdventurousFromStorage(false)).toBe(true)
+
+    lsStub.setItem(ADVENTUROUS_STORAGE_KEY, "1")
+    expect(adoptServerAdventurous(false)).toBe(false)
+    expect(readAdventurousFromStorage(true)).toBe(false)
+  })
+
+  it("still returns the server value when storage is blocked", () => {
+    lsStub.setItem.mockImplementation(() => { throw new Error("SecurityError") })
+    expect(adoptServerAdventurous(true)).toBe(true)
   })
 })

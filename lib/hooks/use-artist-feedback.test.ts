@@ -8,7 +8,6 @@
  *
  *   classifyFeedbackOp     — covers delete path, post path
  *   buildFeedbackDeleteUrl — covers URL encoding for DELETE
- *   buildFeedbackPostBody  — covers the POST body
  *   DEFAULT_FEEDBACK_MESSAGES — covers default error message strings
  *
  * Network behavior (fetch + toast rollback) is covered via fetch mock + toast
@@ -19,7 +18,6 @@ import { describe, it, expect, vi, afterEach } from "vitest"
 import {
   classifyFeedbackOp,
   buildFeedbackDeleteUrl,
-  buildFeedbackPostBody,
   DEFAULT_FEEDBACK_MESSAGES,
 } from "@/lib/client/artist-signals"
 
@@ -73,23 +71,6 @@ describe("buildFeedbackDeleteUrl", () => {
   })
 })
 
-// ─── buildFeedbackPostBody ────────────────────────────────────────────────────
-
-describe("buildFeedbackPostBody", () => {
-  it("is exactly { artistId, signal }", () => {
-    const body = buildFeedbackPostBody("artist1", "thumbs_up")
-    expect(body).toEqual({
-      artistId: "artist1",
-      signal: "thumbs_up",
-    })
-  })
-
-  it("includes thumbs_down signal correctly", () => {
-    const body = buildFeedbackPostBody("artist2", "thumbs_down")
-    expect(body.signal).toBe("thumbs_down")
-  })
-})
-
 // ─── DEFAULT_FEEDBACK_MESSAGES ────────────────────────────────────────────────
 
 // Test 8: default error messages used when not provided
@@ -113,7 +94,7 @@ describe("POST path — network success", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true })
     vi.stubGlobal("fetch", mockFetch)
 
-    const body = buildFeedbackPostBody("artist1", "thumbs_up")
+    const body = { artistId: "artist1", signal: "thumbs_up" }
     const res = await fetch("/api/feedback", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -164,7 +145,7 @@ describe("POST failure path", () => {
       const res = await fetch("/api/feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildFeedbackPostBody("artist1", "thumbs_up")),
+        body: JSON.stringify({ artistId: "artist1", signal: "thumbs_up" }),
       })
       if (!res.ok) throw new Error("Server error")
     } catch {

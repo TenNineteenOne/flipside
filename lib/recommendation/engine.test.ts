@@ -6,6 +6,8 @@ import {
   runDeepHop,
   augmentWithAdjacent,
   runWithSoftening,
+  withinBudget,
+  FAR_WAIT_BUDGET_MS,
   type RunPipelineOpts,
   type PipelineRun,
 } from "./engine"
@@ -562,6 +564,40 @@ describe("augmentWithAdjacent", () => {
         far: { resolved: Promise.resolve(null), labelOf: () => "x" },
       })
       expect(result.filter((r) => r.source === "adjacent_bleed")).toHaveLength(2)
+    })
+
+    it("a far pool slower than the budget is dropped: tier 1 gets adjacent only, no hang", async () => {
+      vi.useFakeTimers()
+      try {
+        let settleFar!: (m: Map<string, Artist>) => void
+        const slowFar = new Promise<Map<string, Artist>>((r) => { settleFar = r })
+        const run = augmentWithAdjacent(makeBase(20), {
+          userGenres: ["indie-rock"],
+          adventurous: true,
+          popularityCurve: 0.95,
+          fetchTagArtists: async () => ["adj0", "adj1"],
+          resolveArtists: resolveAs("indie-pop"),
+          far: { resolved: withinBudget(slowFar, FAR_WAIT_BUDGET_MS).then((r) => r ?? null), labelOf: () => "x" },
+        })
+        await vi.advanceTimersByTimeAsync(FAR_WAIT_BUDGET_MS)
+        const result = await run
+        expect(result.some((r) => r.source === "far_pool")).toBe(false)
+        expect(result.filter((r) => r.source === "adjacent_bleed")).toHaveLength(2)
+        settleFar(new Map()) // a late far result is ignored
+        expect(vi.getTimerCount()).toBe(0)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it("withinBudget passes a fast value through and clears its timer", async () => {
+      vi.useFakeTimers()
+      try {
+        await expect(withinBudget(Promise.resolve("ok"), FAR_WAIT_BUDGET_MS)).resolves.toBe("ok")
+        expect(vi.getTimerCount()).toBe(0)
+      } finally {
+        vi.useRealTimers()
+      }
     })
   })
 

@@ -226,6 +226,7 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
         // Far pool (Wander farther): fetch wall-clock, and how long tier 1 blocked on it.
         ...(metrics.farMs !== undefined ? { far: metrics.farMs } : {}),
         ...(metrics.farWaitMs !== undefined ? { farWait: metrics.farWaitMs } : {}),
+        ...(metrics.farTimedOut ? { farTimeout: 1 } : {}),
       },
       totalMs: Date.now() - genStart,
       misses: metrics.misses,

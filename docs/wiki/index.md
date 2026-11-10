@@ -130,7 +130,7 @@ graph TD
 | `metrics/api-call-counter.ts` | per-upstream live-call counters for `[gen-timing]` |
 | `limiter.ts` | generic gate (`createLimiter`) behind the Last.fm and iTunes limiters |
 | `cooldown.ts` | atomic per-user generation cooldown claim |
-| `taste-change.ts` | taste-change invalidation policy (genre / fame settings → unseen Feed wipe) |
+| `taste-change.ts` | taste-change invalidation policy (genre filter → unseen Feed wipe) |
 | `external-links.ts` | `linkFor`: "Open in Apple Music" link resolution |
 
 **Removed in #175:** the Spotify user-token surface (`/api/spotify/*`, history syncer,

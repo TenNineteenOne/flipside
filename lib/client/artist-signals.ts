@@ -26,8 +26,6 @@ export interface OptimisticStore<V> {
   optimistic(key: string, target: V | undefined, send: () => Promise<void>): Promise<boolean>
   /** Run `send` in per-key order; only on success show + confirm `target`. */
   confirmedOp(key: string, target: V | undefined, send: () => Promise<void>): Promise<boolean>
-  /** Bulk local replacement (visible and confirmed) — no network. */
-  replace(updater: (prev: ReadonlyMap<string, V>) => ReadonlyMap<string, V>): void
 }
 
 export function createOptimisticStore<V>(initial: Iterable<[string, V]> = []): OptimisticStore<V> {
@@ -90,14 +88,6 @@ export function createOptimisticStore<V>(initial: Iterable<[string, V]> = []): O
         return true
       })
     },
-
-    replace(updater) {
-      const next = updater(visible)
-      confirmed = updater(confirmed)
-      if (next === visible) return
-      visible = next
-      for (const l of listeners) l()
-    },
   }
 }
 
@@ -115,11 +105,6 @@ export const DEFAULT_FEEDBACK_MESSAGES = {
 /** Build the DELETE URL for an undo operation. */
 export function buildFeedbackDeleteUrl(artistId: string): string {
   return `/api/feedback/${encodeURIComponent(artistId)}`
-}
-
-/** Build the POST body for a feedback signal. */
-export function buildFeedbackPostBody(artistId: string, signal: string): Record<string, string> {
-  return { artistId, signal }
 }
 
 /**
@@ -202,7 +187,7 @@ export function createArtistFeedback({
     const res = await fetchImpl("/api/feedback", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildFeedbackPostBody(artistId, signal)),
+      body: JSON.stringify({ artistId, signal }),
     })
     if (!res.ok) throw new Error("Server error")
   }

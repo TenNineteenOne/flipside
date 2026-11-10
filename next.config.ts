@@ -66,8 +66,9 @@ const nextConfig: NextConfig = {
     optimizePackageImports: ["lucide-react", "framer-motion", "sonner"],
   },
   // Explore was folded into Feed (#205). `:path*` also matches bare /explore.
+  // Temporary (307), not permanent: browsers cache a 308, which would outlive a rollback.
   async redirects() {
-    return [{ source: "/explore/:path*", destination: "/feed", permanent: true }]
+    return [{ source: "/explore/:path*", destination: "/feed", permanent: false }]
   },
   async headers() {
     return [
