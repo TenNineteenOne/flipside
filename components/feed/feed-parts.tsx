@@ -66,10 +66,18 @@ export function EndState({ triage, onLoadMore, generating }: { triage: FeedTriag
   )
 }
 
-/** "Load more artists": the end state's primary button, and always available at the end of the queue / Up next list. */
+/**
+ * "Load more artists": the end state's primary button, and always available at the end of the queue / Up next list.
+ * While generating it is aria-disabled (not disabled), so keyboard focus stays on it; clicks are ignored.
+ */
 export function LoadMore({ onLoadMore, generating, primary = false }: { onLoadMore: () => void; generating: boolean; primary?: boolean }) {
   return (
-    <button type="button" className={`ev-btn ${primary ? "ev-btn-primary" : "ev-btn-ghost"}`} onClick={onLoadMore} disabled={generating}>
+    <button
+      type="button"
+      className={`ev-btn ${primary ? "ev-btn-primary" : "ev-btn-ghost"}`}
+      onClick={generating ? undefined : onLoadMore}
+      aria-disabled={generating || undefined}
+    >
       {generating ? "Generating…" : "Load more artists"}
     </button>
   )

@@ -76,3 +76,14 @@ describe("FeedDesktop server render", () => {
     expect(html).toContain("<strong>0</strong> of 3 left")
   })
 })
+
+describe("LoadMore", () => {
+  it("stays focusable while generating: aria-disabled, not disabled, with the Generating label", async () => {
+    const { LoadMore } = await import("./feed-parts")
+    const busy = renderToString(<LoadMore onLoadMore={() => {}} generating />)
+    expect(busy).toContain('aria-disabled="true"')
+    expect(busy).not.toMatch(/\sdisabled=""/)
+    expect(busy).toContain("Generating…")
+    expect(renderToString(<LoadMore onLoadMore={() => {}} generating={false} />)).not.toContain("aria-disabled")
+  })
+})

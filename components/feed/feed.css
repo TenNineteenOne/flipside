@@ -247,7 +247,7 @@
 .ev-feed .ev-queue-more { padding: 16px 12px 0; }
 .ev-feed .ev-m-rail > li.ev-m-rail-more { padding: 10px 6px 0; }
 .ev-feed .ev-m-rail-more .ev-btn { width: 100%; padding: 0 12px; font-size: 14px; }
-.ev-feed .ev-btn-ghost:disabled { cursor: default; opacity: 0.7; }
+.ev-feed .ev-btn-ghost:disabled, .ev-feed .ev-btn-ghost[aria-disabled="true"] { cursor: default; opacity: 0.7; }
 
 /* end of queue */
 .ev-feed .ev-end { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; padding: 48px 28px; animation: ev-feed-in 220ms var(--ease); }
@@ -260,10 +260,10 @@
 .ev-feed .ev-end-body strong { color: var(--fg); font-weight: 600; }
 .ev-feed .ev-end-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .ev-feed .ev-btn-primary { background: var(--violet-fill); color: #fff; }
-.ev-feed .ev-btn-primary:hover:not(:disabled) { background: color-mix(in oklch, var(--violet) 86%, black); }
-.ev-feed .ev-btn-primary:disabled { cursor: default; opacity: 0.7; }
+.ev-feed .ev-btn-primary:hover:not(:disabled, [aria-disabled="true"]) { background: color-mix(in oklch, var(--violet) 86%, black); }
+.ev-feed .ev-btn-primary:disabled, .ev-feed .ev-btn-primary[aria-disabled="true"] { cursor: default; opacity: 0.7; }
 .ev-feed .ev-btn-ghost { border: 1px solid var(--line-strong); color: var(--fg); text-decoration: none; }
-.ev-feed .ev-btn-ghost:hover { background: var(--raise); }
+.ev-feed .ev-btn-ghost:hover:not([aria-disabled="true"]) { background: var(--raise); }
 
 /* loading skeleton (components/feed/feed-skeleton.tsx): desktop panes ≥900px wide and ≥540px tall,
    tablet 640–899px wide and ≥680px tall, Snap otherwise (the layout rule in feed-client.tsx) */
@@ -656,7 +656,7 @@ body:has(.ev-snap) [data-sonner-toaster][data-y-position="top"] {
   .ev-feed .ev-seg[data-v="passed"], .ev-feed .ev-seg[data-v="dismissed"] { background: var(--line-strong); }
   .ev-feed button.ev-tri:hover, .ev-feed .ev-m-tri:active, .ev-feed .ev-track:hover, .ev-feed .ev-track[data-current] { background: var(--raise); }
   .ev-feed .ev-track[data-current] .ev-track-name, .ev-feed .ev-track[data-current] .ev-track-n { color: var(--fg); }
-  .ev-feed .ev-btn-primary:hover:not(:disabled) { background: var(--violet-fill); }
+  .ev-feed .ev-btn-primary:hover:not(:disabled, [aria-disabled="true"]) { background: var(--violet-fill); }
   .ev-feed .ev-m-verdict-more { background: rgba(139, 92, 246, 0.42); }
   .ev-feed .ev-m-tri-like { background: var(--raise); }
 }
