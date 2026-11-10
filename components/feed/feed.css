@@ -448,15 +448,27 @@ html:has(.ev-snap), html:has(.ev-snap) body { overflow: hidden; }
   .ev-feed .ev-m-why { display: none; }
   .ev-feed .ev-m-art { height: min(100cqw - 52px, 100cqh - 145px, 460px); }
 }
+/* Sideways arrangement: Snap pages only (the tablet stage is also an ev-page container). */
 @container ev-page (width >= 560px) and (height < 356px) {
   .ev-feed .ev-m-page > .ev-m-card { width: min(100%, 680px); flex-direction: row; align-items: center; gap: 14px; }
-  .ev-feed .ev-m-art { flex-shrink: 0; height: max(64px, min(100cqh - 32px, 300px)); min-height: 0; aspect-ratio: 1; }
-  .ev-feed .ev-m-info { flex: 1; }
+  .ev-feed .ev-m-page .ev-m-art { flex-shrink: 0; height: max(64px, min(100cqh - 32px, 300px)); min-height: 0; aspect-ratio: 1; }
+  .ev-feed .ev-m-page .ev-m-info { flex: 1; }
 }
-@container ev-page (width >= 560px) and (height < 200px) { .ev-feed .ev-m-chips { display: none; } }
+@container ev-page (width >= 560px) and (height < 200px) { .ev-feed .ev-m-page .ev-m-chips { display: none; } }
 @container ev-page (width >= 560px) and (height < 150px) {
-  .ev-feed .ev-m-why { display: none; }
+  .ev-feed .ev-m-page .ev-m-why { display: none; }
   .ev-feed .ev-m-page > .ev-m-card { padding-block: 4px; }
+}
+/* The tablet stage keeps the card upright at any width, so a wide short stage (888-899px wide
+   with the player bar and the cold-start line showing) shrinks it as a narrow page does. */
+@container ev-page (width >= 560px) and (height < 356px) { .ev-feed .ev-m-stage .ev-m-art { min-height: 76px; } }
+@container ev-page (width >= 560px) and (height < 312px) {
+  .ev-feed .ev-m-stage .ev-m-chips { display: none; }
+  .ev-feed .ev-m-stage .ev-m-art { height: min(100cqw - 52px, 100cqh - 186px, 460px); }
+}
+@container ev-page (width >= 560px) and (height < 262px) {
+  .ev-feed .ev-m-stage .ev-m-why { display: none; }
+  .ev-feed .ev-m-stage .ev-m-art { height: min(100cqw - 52px, 100cqh - 145px, 460px); }
 }
 /* The play button stays whole on a small artwork (this queries the artwork itself). */
 @container (height < 88px) { .ev-feed .ev-m-play { bottom: calc((100cqh - 64px) / 2); right: calc((100cqh - 64px) / 2); } }
