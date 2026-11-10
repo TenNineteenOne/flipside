@@ -416,7 +416,7 @@ export function ExploreClient({
             textAlign: "center",
             border: "1px dashed var(--border)",
             borderRadius: 12,
-            background: "rgba(15,15,15,0.45)",
+            background: "var(--panel)",
           }}
         >
           {isRegenerating ? (

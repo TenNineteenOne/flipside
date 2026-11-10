@@ -105,7 +105,7 @@ export function ObscurityPanel({
       <div
         className="fs-card col gap-16"
         style={{
-          background: `linear-gradient(135deg, ${hexToRgba(obsColor, 0.12)} 0%, rgba(15,15,15,0.65) 70%)`,
+          background: `linear-gradient(135deg, ${hexToRgba(obsColor, 0.12)} 0%, var(--panel) 70%)`,
           borderColor: hexToRgba(obsColor, 0.24),
           transition: "background 0.6s, border-color 0.6s",
         }}
