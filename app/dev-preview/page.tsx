@@ -2,7 +2,7 @@ import Link from "next/link"
 
 const PAGES = [
   { href: "/dev-preview/shell", label: "Shell", note: "Rail, top bar, tab bar and avatar menu around tall filler content" },
-  { href: "/dev-preview/legacy-feed", label: "Legacy feed", note: "Current production FeedClient with fixture artists inside the shell" },
+  { href: "/dev-preview/feed", label: "Feed", note: "Production FeedClient with the 19 fixture artists: desktop feed at 900px and wider, card list below" },
 ]
 
 export default function DevPreviewIndex() {

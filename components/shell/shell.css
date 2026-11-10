@@ -26,6 +26,10 @@
   display: flex;
   justify-content: center;
 }
+/* A page whose root has .shell-fill (the desktop feed) fills the whole area right of
+   the rail at viewport height: no padding, no 520px column, no page scroll. */
+.shell-main:has(.shell-fill) { height: 100dvh; padding: 0 0 0 var(--rail-w); }
+.shell-main:has(.shell-fill) > .app-col { max-width: none; min-width: 0; }
 
 /* ---------- rail (desktop) ---------- */
 .shell-rail {

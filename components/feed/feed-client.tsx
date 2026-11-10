@@ -1,15 +1,15 @@
 "use client"
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { useRouter } from "next/navigation"
 import { ArtistCard } from "@/components/feed/artist-card"
 import { ColdStartBanner } from "@/components/feed/cold-start-banner"
+import { FeedDesktop } from "@/components/feed/feed-desktop"
 import { Ambient } from "@/components/visual/ambient"
 import type { MusicPlatform } from "@/lib/music-links"
-import { useArtistFeedback } from "@/lib/hooks/use-artist-feedback"
-import { useArtistSaves } from "@/lib/hooks/use-artist-saves"
 import { useFeedFill } from "@/lib/hooks/use-feed-fill"
 import { useFeedGeneration } from "@/lib/hooks/use-feed-generation"
+import { useFeedTriage } from "@/lib/hooks/use-feed-triage"
 import type { CardArtist } from "@/lib/cards/card-artist"
 import type { GenerateResult } from "@/lib/client/feed-generation"
 
@@ -40,6 +40,17 @@ const FEED_PALETTE = `
 // next visit hits the warm redirect path (hasFreshRecs stays true). The visible
 // feed is unchanged this load; new recs land server-side for next time.
 const TOPUP_THRESHOLD = 8
+
+// ≥900px renders the desktop feed; below, the card list (until the phone and
+// tablet feeds replace it). One tree at a time; the server renders the list.
+const WIDE = "(min-width: 900px)"
+const subscribeWide = (cb: () => void) => {
+  const m = matchMedia(WIDE)
+  m.addEventListener("change", cb)
+  return () => m.removeEventListener("change", cb)
+}
+const isWide = () => matchMedia(WIDE).matches
+const notWide = () => false
 
 // ---------------------------------------------------------------------------
 // Main component
@@ -118,17 +129,11 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
 
   const sequence = useMemo(() => buildSequence(recs), [recs])
 
-  // Feedback signals (thumbs_up / thumbs_down / skip) per artist.
-  // Serialization and rollback are handled inside the hook.
-  const { signals: dismissedSignals, setSignal } = useArtistFeedback({
-    errorMessages: {
-      undoFailed: "Couldn't undo — try again",
-      saveFailed: "Couldn't save feedback — try again",
-    },
-  })
-
-  // Saved-artist IDs. Serialization and rollback are handled inside the hook.
-  const { savedIds, toggleSave } = useArtistSaves()
+  // Selection, verdicts (feedback signals), saves and playback, shared by both
+  // layouts. Serialization and rollback live in the feedback/saves hooks.
+  const triage = useFeedTriage(recs)
+  const { signals: dismissedSignals, setSignal, savedIds, toggleSave } = triage
+  const wide = useSyncExternalStore(subscribeWide, isWide, notWide)
 
   async function handleGenerateMore() {
     const r = await generation.requestMore()
@@ -144,6 +149,8 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
       router.refresh()
     }
   }
+
+  if (wide) return <FeedDesktop triage={triage} />
 
   return (
     <div style={{ position: "relative" }}>

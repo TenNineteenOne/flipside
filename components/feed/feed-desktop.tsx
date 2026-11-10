@@ -1,0 +1,164 @@
+"use client"
+
+import "./feed.css"
+import { useEffect, useState, type CSSProperties } from "react"
+import Image from "next/image"
+import { Heart, Pause, Play, ThumbsDown, X } from "lucide-react"
+import { artworkFor } from "@/lib/feed/artwork"
+import { listSeparator, popularityLabel, whyParts, whyText } from "@/lib/feed/card-copy"
+import { resolveArtistColor } from "@/lib/color-utils"
+import { useArtistTracks } from "@/lib/hooks/use-artist-tracks"
+import type { FeedTriage } from "@/lib/hooks/use-feed-triage"
+import type { CardArtist } from "@/lib/cards/card-artist"
+
+const VERDICT: Record<string, string> = { thumbs_up: "liked", thumbs_down: "passed", skip: "dismissed" }
+
+/** Per-artist colour as `--a`; feed.css derives `--a-dark` / `--a-light` from it. */
+const artistVar = (a: CardArtist) => ({ "--a": resolveArtistColor(a.artistColor, a.name) }) as CSSProperties
+
+/** Artwork, or a colour panel with the first letter when there is none (never a broken image). */
+function Art({ a, src, size, className, alt = "", eager = false }: {
+  a: CardArtist; src: string | null; size: number; className: string; alt?: string; eager?: boolean
+}) {
+  if (!src) return <span className={`${className} ev-letter`} aria-hidden>{a.name.trim().charAt(0).toUpperCase()}</span>
+  return <Image className={className} src={src} alt={alt} width={size} height={size} loading={eager ? "eager" : "lazy"} />
+}
+
+/**
+ * Desktop feed (≥900px): queue column + focus pane, filling the shell's main
+ * area (the `shell-fill` class opts out of the 520px column; see shell.css).
+ * Presentation only: every decision goes through the triage hook.
+ */
+export function FeedDesktop({ triage }: { triage: FeedTriage }) {
+  const { visible, selected, selectedId, signals, remaining, total } = triage
+  return (
+    <div className="ev-feed ev-app shell-fill">
+      <main className="ev-queue" aria-labelledby="ev-queue-title">
+        <header className="ev-queue-head">
+          <div>
+            <h1 id="ev-queue-title" className="ev-queue-title">Today&rsquo;s flipside</h1>
+            <p className="ev-queue-sub">{total} artists you&rsquo;ve never played, picked from what you told us.</p>
+          </div>
+          <div className="ev-progress" aria-label={`${remaining} of ${total} left`}>
+            <span className="ev-progress-text"><strong>{remaining}</strong> of {total} left</span>
+            <ol className="ev-strip" aria-hidden>
+              {triage.ids.map((id) => (
+                <li key={id} className="ev-seg" data-v={VERDICT[signals.get(id) ?? ""] ?? "none"} data-sel={id === selectedId || undefined} />
+              ))}
+            </ol>
+          </div>
+        </header>
+
+        <ul className="ev-rows" aria-label="Artist queue">
+          {visible.map((a, i) => {
+            const sel = a.id === selectedId
+            const liked = signals.get(a.id) === "thumbs_up"
+            const playing = triage.isPlaying(a)
+            return (
+              <li key={a.id} id={`ev-row-${a.id}`} className="ev-row" data-sel={sel || undefined} data-liked={liked || undefined} style={artistVar(a)}>
+                <button type="button" className="ev-row-select" onClick={() => triage.select(a.id)} aria-label={`Select ${a.name}`} aria-current={sel || undefined} />
+                <button
+                  type="button"
+                  className="ev-row-art"
+                  onClick={() => { triage.select(a.id); triage.togglePlay(a) }}
+                  aria-label={playing ? `Pause ${a.name}` : `Play ${a.name}`}
+                  data-playing={playing || undefined}
+                >
+                  <Art a={a} src={artworkFor(a)} size={48} className="ev-row-img" eager={i === 0} />
+                  <span className="ev-row-art-icon" aria-hidden>
+                    {playing ? <Pause size={16} fill="currentColor" strokeWidth={0} /> : <Play size={16} fill="currentColor" strokeWidth={0} />}
+                  </span>
+                </button>
+                <div className="ev-row-text">
+                  <span className="ev-row-name">
+                    {a.name}
+                    {playing && <span className="ev-eq" aria-label="Playing"><i /><i /><i /></span>}
+                  </span>
+                  <span className="ev-row-why">{whyText(a.why)}</span>
+                </div>
+                <span className="ev-row-genre">{a.genres[0]}</span>
+                <span className="ev-row-pop" title={`Popularity ${a.popularity}/100`}>
+                  <span className="ev-meter" aria-hidden><span style={{ width: `${a.popularity}%` }} /></span>
+                  <span className="ev-row-pop-n">{a.popularity}</span>
+                </span>
+                <span className="ev-row-state">
+                  {liked && <span className="ev-liked-tag"><Heart size={13} fill="currentColor" strokeWidth={0} aria-hidden />Liked</span>}
+                </span>
+              </li>
+            )
+          })}
+        </ul>
+      </main>
+
+      <section className="ev-focus" aria-live="polite" aria-label="Selected artist">
+        <div className="ev-focus-scroll">
+          {selected && <FocusCard key={selected.id} a={selected} triage={triage} />}
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function FocusCard({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
+  // Artists that arrived without tracks fetch them here, as the old card did (selected artist only).
+  const { tracks, isFetching } = useArtistTracks({ artistId: a.id, artistName: a.name, initialTracks: a.topTracks })
+  const { addTracks } = triage
+  useEffect(() => {
+    if (a.topTracks.length === 0 && tracks.length > 0) addTracks(a.id, tracks)
+  }, [a.id, a.topTracks.length, tracks, addTracks])
+  // The fetch starts in an effect, so the first frame is "loading" too, not "no preview".
+  const [started, setStarted] = useState(a.topTracks.length > 0)
+  if (isFetching && !started) setStarted(true)
+
+  const liked = triage.signals.get(a.id) === "thumbs_up"
+  const playing = triage.isPlaying(a)
+  const canPlay = tracks.some((t) => t.previewUrl)
+  const loading = !canPlay && (isFetching || !started)
+  const why = whyParts(a.why)
+  const art = artworkFor({ imageUrl: a.imageUrl, topTracks: tracks })
+  const judge = (signal: "thumbs_up" | "thumbs_down" | "skip") => triage.judge(a.id, signal, { toggle: true, advance: true })
+
+  return (
+    <article className="ev-card" style={artistVar(a)}>
+      <div className="ev-card-hero">
+        <Art a={a} src={art} size={600} className="ev-card-art" alt={`${tracks[0]?.albumName || a.name} cover art`} eager />
+        <div className="ev-card-id">
+          <h2 className="ev-card-name">{a.name}</h2>
+          {a.genres.length > 0 && <p className="ev-card-genres">{a.genres.join(" · ")}</p>}
+          {why && (
+            <p className="ev-card-why">
+              {why.lead}
+              {why.names.length > 0
+                ? why.names.map((n, i) => <span key={n}>{listSeparator(i, why.names.length)}<strong>{n}</strong></span>)
+                : why.genres.join(", ")}
+            </p>
+          )}
+          <p className="ev-card-pop">
+            <span className="ev-meter" aria-hidden><span style={{ width: `${a.popularity}%` }} /></span>
+            {popularityLabel(a.popularity)} · popularity {a.popularity}
+          </p>
+        </div>
+      </div>
+
+      <div className="ev-card-actions">
+        <button type="button" className="ev-btn ev-btn-play" onClick={() => triage.togglePlay(a)} aria-pressed={playing} disabled={!canPlay}>
+          {canPlay && (playing ? <Pause size={18} fill="currentColor" strokeWidth={0} aria-hidden /> : <Play size={18} fill="currentColor" strokeWidth={0} aria-hidden />)}
+          {loading ? "Loading tracks…" : !canPlay ? "No preview available" : playing ? "Pause" : "Play preview"}
+        </button>
+
+        <div className="ev-triage" role="group" aria-label="Tell flipside what you think">
+          <button type="button" className="ev-tri" onClick={() => judge("thumbs_down")}>
+            <ThumbsDown size={16} strokeWidth={1.75} aria-hidden /><span>Less like this</span>
+          </button>
+          <button type="button" className="ev-tri" onClick={() => judge("skip")}>
+            <X size={16} strokeWidth={1.75} aria-hidden /><span>Dismiss</span>
+          </button>
+          <button type="button" className="ev-tri ev-tri-like" onClick={() => judge("thumbs_up")} aria-pressed={liked}>
+            <Heart size={16} strokeWidth={1.75} fill={liked ? "currentColor" : "none"} aria-hidden />
+            <span>{liked ? "Liked" : "More like this"}</span>
+          </button>
+        </div>
+      </div>
+    </article>
+  )
+}
