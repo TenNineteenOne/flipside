@@ -23,8 +23,8 @@ them, so untouched pages follow. Two fonts (`next/font`): Familjen Grotesk for a
 Mono for key hints, durations and counts. Each artist's colour is `--a` on its card or row, with
 `--a-dark` / `--a-light` derived in CSS. No glow, blur, grain or blend layers. A base
 `:focus-visible` rule draws a 2px `--violet-ink` ring on everything focusable; components may
-refine it. Untouched legacy pages (Explore, History, Saved, Stats, Settings) still use the
-`components/visual/ambient.tsx` radial page backgrounds.
+refine it. The old per-page radial "ambient" backgrounds (Explore, Saved, Settings) are gone; those
+pages sit on the plain `--bg`.
 
 ## Screens (`app/(app)` + `app/(marketing)`)
 
@@ -64,8 +64,12 @@ refine it. Untouched legacy pages (Explore, History, Saved, Stats, Settings) sti
   `/dev-preview/feed-loading` show the empty-feed loader and the loading skeleton;
   `/dev-preview/explore-card` renders Explore's `ExploreArtistRow` / `ArtistCard` in every
   state (expanded, liked + saved, no image, no tracks, passed, dismissed; buttons toggle
-  locally); `/dev-preview/shell` shows the shell around filler. The layout calls `notFound()`
-  when `NODE_ENV === "production"`; a production build answers 404 for every harness route.
+  locally); `/dev-preview/shell` shows the shell around filler. Its route files are
+  `page.dev.tsx` / `layout.dev.tsx`, and `next.config.ts` adds `dev.tsx` to `pageExtensions`
+  only outside production, so `next build` never compiles the harness (no route, no fixture
+  data in any chunk); the layout's `notFound()` in production is a second guard. `tsconfig.json`
+  excludes `.next/dev` because the dev route types (which include the harness) would otherwise
+  clash with a production build's route types in `tsc` and in `next build`'s type check.
 - **`ArtistCard`** (`components/feed/artist-card.tsx`) — Explore's card (the feed no longer
   uses it): `--panel` surface, `--line` border (violet when liked), 16px radius, 340px hero
   image with a plain artist-colour gradient tint and a dark scrim, name + "genre · popularity",

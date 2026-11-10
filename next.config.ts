@@ -47,6 +47,10 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // The /dev-preview harness is written as page.dev.tsx / layout.dev.tsx, which are routes only
+  // outside production, so `next build` never compiles it (its layout's notFound() is a second
+  // guard). The defaults stay, so proxy.ts, route handlers and metadata files are unaffected.
+  pageExtensions: isProd ? ["tsx", "ts", "jsx", "js"] : ["dev.tsx", "tsx", "ts", "jsx", "js"],
   productionBrowserSourceMaps: false,
   images: {
     // Serve CDN art as-is: /_next/image is anonymous, so distinct allowed-CDN

@@ -7,7 +7,6 @@ import { ChallengeCard } from "@/components/explore/challenge-card"
 import { ExploreArtistRow } from "@/components/explore/explore-artist-row"
 import type { RailKey, RailPayload } from "@/lib/cards/explore-rail-payloads"
 import type { MusicPlatform } from "@/lib/music-links"
-import { Ambient } from "@/components/visual/ambient"
 import { useArtistFeedback } from "@/lib/hooks/use-artist-feedback"
 import { useArtistSaves } from "@/lib/hooks/use-artist-saves"
 import { useRailSession } from "@/lib/hooks/use-rail-session"
@@ -141,37 +140,8 @@ export function ExploreClient({
     [orderedRails],
   )
 
-  const activeAccentRgb = activeRail ? RAIL_META[activeRail.railKey].rgb : "139, 92, 246"
-
-  // OFF — rail color dominant, rainbow whisper. Two large rail-color anchors
-  // drive the page mood; two small warm hints (amber + magenta) keep it from
-  // feeling monochromatic.
-  const palette = useMemo(
-    () => `
-    radial-gradient(75% 60% at 18% 14%, rgba(${activeAccentRgb}, 0.40) 0%, transparent 70%),
-    radial-gradient(55% 48% at 84% 26%, rgba(${activeAccentRgb}, 0.30) 0%, transparent 72%),
-    radial-gradient(40% 32% at 50% 92%, rgba(255,138,46,0.14) 0%, transparent 75%),
-    radial-gradient(38% 30% at 10% 86%, rgba(236,111,181,0.14) 0%, transparent 72%)
-  `,
-    [activeAccentRgb],
-  )
-
-  // ON — rainbow sunset takes the lead, rail color is one of many voices.
-  // The warm amber/hot-pink/coral glow dominates; rail tints the bottom.
-  const adventurousPalette = useMemo(
-    () => `
-    radial-gradient(65% 50% at 18% 10%, rgba(255,138,46,0.40) 0%, transparent 72%),
-    radial-gradient(58% 48% at 85% 26%, rgba(255,74,130,0.36) 0%, transparent 72%),
-    radial-gradient(60% 48% at 50% 92%, rgba(${activeAccentRgb}, 0.32) 0%, transparent 75%),
-    radial-gradient(50% 40% at 10% 86%, rgba(255,184,92,0.28) 0%, transparent 72%)
-  `,
-    [activeAccentRgb],
-  )
-
   return (
     <div>
-      <Ambient palette={palette} adventurousPalette={adventurousPalette} adventurous={adventurous} />
-
       <div className="page-head">
         <h1>Explore</h1>
         <span className="sub">
