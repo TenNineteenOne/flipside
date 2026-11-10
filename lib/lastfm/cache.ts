@@ -65,6 +65,17 @@ const supabaseStore: CacheStore = {
   write: writeCacheRow,
 }
 
+/**
+ * Fire-and-forget cache write: the caller already has the fresh payload, so
+ * the request path never waits on the upsert. The write still completes (the
+ * request keeps running); a failure is logged, never thrown.
+ */
+function writeBehind(store: CacheStore, kind: Kind, key: string, payload: unknown): void {
+  store.write(kind, key, payload).catch((err) => {
+    console.error(`[lfm-cache] write failed kind=${kind} err=${err instanceof Error ? err.message : err}`)
+  })
+}
+
 function freshWithin(row: CacheRow, ttlMs: number): boolean {
   const age = Date.now() - new Date(row.fetched_at).getTime()
   return age < ttlMs
@@ -103,7 +114,7 @@ export async function cachedTagArtistNames(
     }
     // Cache both hits and genuine empties (negative caching). Empties carry the
     // shorter TTL via the read path above.
-    await store.write('tag_top', cacheKey, fresh)
+    writeBehind(store, 'tag_top', cacheKey, fresh)
     return fresh
   })()
 
@@ -134,7 +145,7 @@ export async function cachedSimilarArtistNames(
       return row.payload as SimilarArtistRef[]
     }
     const fresh = await fetchFn(artistName)
-    if (fresh.length > 0) await store.write('similar', cacheKey, fresh)
+    if (fresh.length > 0) writeBehind(store, 'similar', cacheKey, fresh)
     return fresh
   })()
 
@@ -180,7 +191,7 @@ export async function cachedArtistEnrichment(
       return null
     }
     // Cache both a found artist and a genuine not-found (null payload, short TTL).
-    await store.write('getInfo', cacheKey, fresh)
+    writeBehind(store, 'getInfo', cacheKey, fresh)
     return fresh
   })()
 
@@ -223,7 +234,7 @@ export async function cachedArtistSearch<T>(
       // an empty here would suppress a live search for the negative TTL.
       return []
     }
-    await store.write('search', cacheKey, fresh)
+    writeBehind(store, 'search', cacheKey, fresh)
     return fresh
   })()
 
