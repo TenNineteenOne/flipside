@@ -1,12 +1,13 @@
 "use client"
 
 import "./feed.css"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type CSSProperties } from "react"
 import { motion, useMotionValue, useReducedMotion, useTransform, type PanInfo } from "framer-motion"
 import { Bookmark, Heart, Pause, Play, Share2, ThumbsDown, X } from "lucide-react"
 import { PlatformIcon } from "@/components/platform-icon"
 import { Art, artistVar } from "@/components/feed/feed-parts"
 import { useAudio } from "@/lib/audio-context"
+import { chipColors, resolveArtistColor } from "@/lib/color-utils"
 import { artworkFor } from "@/lib/feed/artwork"
 import { listSeparator, whyParts } from "@/lib/feed/card-copy"
 import { SWIPE_THRESHOLD, swipeDirection } from "@/lib/feed/swipe"
@@ -70,6 +71,7 @@ export function SnapCard({ a, triage, eager = false, enter = false }: {
 }) {
   const tracks = triage.tracksOf(a)
   const playable = tracks.filter((t) => t.previewUrl).slice(0, 3)
+  const chips = chipColors(resolveArtistColor(a.artistColor, a.name))
   const playing = triage.isPlaying(a)
   const saved = triage.savedIds.has(a.id)
   const platform = PLATFORM_META[triage.musicPlatform]
@@ -148,7 +150,7 @@ export function SnapCard({ a, triage, eager = false, enter = false }: {
               const cur = triage.isCurrentTrack(a, t)
               const on = cur && playing
               return (
-                <button key={t.id} type="button" className="ev-m-chip" data-current={cur || undefined} aria-pressed={on} aria-label={`${on ? "Pause" : "Play"} ${t.name}`} onClick={() => triage.playTrack(a, i)}>
+                <button key={t.id} type="button" className="ev-m-chip" style={{ "--c": chips[i] } as CSSProperties} data-current={cur || undefined} aria-pressed={on} aria-label={`${on ? "Pause" : "Play"} ${t.name}`} onClick={() => triage.playTrack(a, i)}>
                   <span className="ev-m-chip-ico" aria-hidden>{on ? <Pause size={12} fill="currentColor" strokeWidth={0} /> : <Play size={12} fill="currentColor" strokeWidth={0} />}</span>
                   <span>{t.name}</span>
                 </button>

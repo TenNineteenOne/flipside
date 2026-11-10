@@ -64,3 +64,38 @@ export function readableTextOn(hex: string): "#ffffff" | "#14121a" {
   const ink = luminance("#14121a")
   return (1.05) / (L + 0.05) >= (L + 0.05) / (ink + 0.05) ? "#ffffff" : "#14121a"
 }
+
+// Track-chip colours: hand-picked hues at one lightness/chroma, skipping yellow-green (~90–150),
+// which turns muddy at this lightness.
+const CHIP_HUES = [25, 65, 160, 230, 290, 340]
+
+/** OKLCH hue and chroma of a hex colour. */
+function oklchOf(hex: string): { h: number; c: number } {
+  const lin = (i: number) => {
+    const v = parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16) / 255
+    return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+  }
+  const [r, g, b] = [lin(0), lin(1), lin(2)]
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b)
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b)
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b)
+  const A = 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s
+  const B = 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s
+  return { h: ((Math.atan2(B, A) * 180) / Math.PI + 360) % 360, c: Math.hypot(A, B) }
+}
+
+/**
+ * Three distinct chip colours turned away from the artist's hue (+100°, +180°, +260°), each snapped
+ * to the nearest unused CHIP_HUES entry so every artist gets colours from the same family.
+ */
+export function chipColors(artistHex: string): [string, string, string] {
+  const { h, c } = oklchOf(sanitizeHex(artistHex))
+  const base = c < 0.03 ? 65 : h // greys have no real hue: use the orange case (mint, sky, orchid)
+  const dist = (x: number, y: number) => Math.min(Math.abs(x - y), 360 - Math.abs(x - y))
+  const used: number[] = []
+  for (const turn of [100, 180, 260]) {
+    const target = (base + turn) % 360
+    used.push(CHIP_HUES.filter((x) => !used.includes(x)).sort((x, y) => dist(x, target) - dist(y, target))[0])
+  }
+  return used.map((hue) => `oklch(0.7 0.14 ${hue})`) as [string, string, string]
+}

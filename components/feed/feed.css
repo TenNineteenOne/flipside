@@ -469,19 +469,12 @@ html:has(.ev-snap), html:has(.ev-snap) body { overflow: hidden; }
 }
 .ev-feed .ev-m-chip span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ev-feed .ev-m-chip svg { flex-shrink: 0; }
-/* Track chips: each a different colour turned away from the artist's on the colour wheel (so they
-   never blend into the card), as a tint with a bold edge and a coloured play circle. Playing = white ring. */
+/* Track chips: a tint with a bold edge and a round play icon, each in its own colour (`--c`, set inline
+   from chipColors in lib/color-utils.ts: turned away from the artist's hue). Playing = white ring. */
 .ev-feed button.ev-m-chip {
-  --c: oklch(0.68 0.15 255); padding-left: 6px; gap: 8px; color: var(--fg);
+  --c: oklch(0.7 0.14 230); padding-left: 6px; gap: 8px; color: var(--fg);
   background: color-mix(in oklch, var(--c) 18%, transparent); box-shadow: inset 0 0 0 2px var(--c);
   transition: background-color 120ms var(--ease), transform 120ms var(--ease);
-}
-.ev-feed button.ev-m-chip:nth-child(2) { --c: oklch(0.68 0.15 330); }
-.ev-feed button.ev-m-chip:nth-child(3) { --c: oklch(0.68 0.15 40); }
-@supports (color: oklch(from red l c h)) {
-  .ev-feed button.ev-m-chip { --c: oklch(from var(--a, var(--violet)) 0.68 0.15 calc(h + 100)); }
-  .ev-feed button.ev-m-chip:nth-child(2) { --c: oklch(from var(--a, var(--violet)) 0.68 0.15 calc(h + 180)); }
-  .ev-feed button.ev-m-chip:nth-child(3) { --c: oklch(from var(--a, var(--violet)) 0.68 0.15 calc(h + 260)); }
 }
 .ev-feed button.ev-m-chip:active { transform: scale(0.96); }
 .ev-feed .ev-m-chip-ico { display: grid; place-items: center; flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%; background: var(--c); color: #fff; }
