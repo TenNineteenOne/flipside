@@ -91,10 +91,8 @@ Idempotent (already-encrypted passes through). One-time backfill:
 
 ## Supabase clients (`lib/supabase/`)
 
-- `client.ts` — browser client (anon key).
-- `server.ts` — `createClient()` (anon + cookie bridging for RSC/Server Actions) and
-  `createServiceClient()` (service-role key, bypasses RLS) used for privileged writes
-  (auth, cron, scripts). See [[data-model]].
+- `server.ts` — `createServiceClient()` (plain `@supabase/supabase-js`, service-role key,
+  no session, bypasses RLS) used for all server reads/writes (auth, pages, API, cron, scripts). See [[data-model]].
 
 ## Account deletion
 
