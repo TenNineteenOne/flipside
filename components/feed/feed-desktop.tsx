@@ -26,10 +26,10 @@ const EASE = [0.16, 1, 0.3, 1] as const
 const ROW_EXIT = { opacity: 0, x: -32, transition: { duration: 0.2, ease: EASE } }
 
 /** Per-artist colour as `--a`; feed.css derives `--a-dark` / `--a-light` from it. */
-const artistVar = (a: CardArtist) => ({ "--a": resolveArtistColor(a.artistColor, a.name) }) as CSSProperties
+export const artistVar = (a: CardArtist) => ({ "--a": resolveArtistColor(a.artistColor, a.name) }) as CSSProperties
 
 /** Artwork, or a colour panel with the first letter when there is none (never a broken image). */
-function Art({ a, src, size, className, alt = "", eager = false }: {
+export function Art({ a, src, size, className, alt = "", eager = false }: {
   a: CardArtist; src: string | null; size: number; className: string; alt?: string; eager?: boolean
 }) {
   if (!src) {

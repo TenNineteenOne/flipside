@@ -168,13 +168,15 @@
     left: 0;
     right: 0;
     display: flex;
-    align-items: center;
-    gap: 12px;
-    height: calc(var(--top-h) + var(--safe-t));
-    padding: var(--safe-t) 12px 0 16px;
+    flex-direction: column;
+    padding-top: var(--safe-t);
     background: var(--bg);
     border-bottom: 1px solid var(--line);
   }
+  .shell-top-row { display: flex; align-items: center; gap: 12px; height: var(--top-h); padding: 0 12px 0 16px; }
+  /* A page's second row (ShellSlot "topSub"); the bar grows by its height. */
+  .shell-top-sub { padding: 0 12px 0 16px; }
+  .shell-top-sub:empty { display: none; }
   .shell-top-brand { border-radius: 6px; }
   .shell-top-slot { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: flex-end; }
   .shell-avatar {

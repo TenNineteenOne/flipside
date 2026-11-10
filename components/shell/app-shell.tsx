@@ -49,6 +49,7 @@ export function AppShell({ userSeed, initialAdventurous, pathPrefix, children }:
   const [badges, setBadges] = useState<Record<string, number | undefined>>({})
   const [shortcuts, setShortcutsState] = useState<(() => void) | undefined>(undefined)
   const [topSlot, setTopSlot] = useState<HTMLElement | null>(null)
+  const [topSubSlot, setTopSubSlot] = useState<HTMLElement | null>(null)
   const [railSlot, setRailSlot] = useState<HTMLElement | null>(null)
 
   const setBadge = useCallback(
@@ -60,8 +61,8 @@ export function AppShell({ userSeed, initialAdventurous, pathPrefix, children }:
   const setShortcuts = useCallback((open: (() => void) | undefined) => setShortcutsState(() => open), [])
 
   const api = useMemo<ShellApi>(
-    () => ({ slots: { top: topSlot, rail: railSlot }, setBadge, setShortcuts }),
-    [topSlot, railSlot, setBadge, setShortcuts],
+    () => ({ slots: { top: topSlot, topSub: topSubSlot, rail: railSlot }, setBadge, setShortcuts }),
+    [topSlot, topSubSlot, railSlot, setBadge, setShortcuts],
   )
 
   const closeMenu = () => menuRef.current?.hidePopover()
@@ -110,18 +111,22 @@ export function AppShell({ userSeed, initialAdventurous, pathPrefix, children }:
         </div>
 
         <header className="shell-top">
-          <Link href="/feed" className="shell-top-brand" aria-label="flipside, go to Feed">
-            <Wordmark />
-          </Link>
-          <div className="shell-top-slot" ref={setTopSlot} />
-          <button
-            type="button"
-            className="shell-avatar"
-            popoverTarget="shell-menu"
-            aria-label="Account and settings"
-          >
-            <IdenticonAvatar seed={userSeed} size={30} />
-          </button>
+          <div className="shell-top-row">
+            <Link href="/feed" className="shell-top-brand" aria-label="flipside, go to Feed">
+              <Wordmark />
+            </Link>
+            <div className="shell-top-slot" ref={setTopSlot} />
+            <button
+              type="button"
+              className="shell-avatar"
+              popoverTarget="shell-menu"
+              aria-label="Account and settings"
+            >
+              <IdenticonAvatar seed={userSeed} size={30} />
+            </button>
+          </div>
+          {/* Optional second row (empty → hidden): the phone feed's progress strip. */}
+          <div className="shell-top-sub" ref={setTopSubSlot} />
         </header>
         <div id="shell-menu" ref={menuRef} popover="auto" className="shell-menu">
           <Link

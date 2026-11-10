@@ -17,7 +17,7 @@ server component that queries Supabase, then hands data to a `"use client"` shel
 | `/` (landing) | nothing: static, prerendered; never reads session, cookies or headers | `app/page.tsx` + `app/landing.css` (scoped under `.ev-landing`). Hero is `HeroStack` (`components/landing/hero-stack.tsx`) inside its own `AudioProvider`: six sample artists from `data/landing-sample.json` (regenerate with `npm run build:landing-sample`; `validateLandingSample` in `lib/landing/sample.ts` keeps every URL on the CSP's iTunes hosts). Signed-in visitors never see it: the proxy redirects `/` to `/feed` |
 | `/sign-in` | — | username-only `signIn("credentials")` (Existing / New mode, `?mode=new` from the landing CTA), then `/api/onboarding/check` → onboarding or feed (`router.replace`); signed-in users are bounced to `/feed` by the proxy |
 | `/onboarding` | — | artist search + genre picker + Last.fm/stats.fm usernames + platform; saves via `patchSettings` (`PATCH /api/settings`) + `POST /api/onboarding/seeds` (a different route from Settings' `/api/settings/seed-artists`); fire-and-forget first generate (`postGenerate`). Genres cap at 50; "Get started" is disabled while 1–2 artists are picked (the seeds route needs ≥3). `/feed` redirects here until onboarding is done |
-| `/feed` | `recommendation_cache` (unseen, scored, ≤20), tracks cache, signal counts; empty → `RecommendationsLoader` + `ExplorePrewarm` | `FeedClient`: ≥900px renders `FeedDesktop` (queue + focus pane), below 900px the `ArtistCard` list (one tree, picked by a `matchMedia` `useSyncExternalStore`, server = list); both read `useFeedTriage`. Renders `CardArtist[]` from `loadFeedCards` (`lib/cards/feed-cards.ts`: tracks-cache fallback, colour lift, drop no-preview cards, `interleave()`); `useFeedFill` poll-append (same assembler via `GET /api/recommendations`), low-queue auto-generate |
+| `/feed` | `recommendation_cache` (unseen, scored, ≤20), tracks cache, signal counts; empty → `RecommendationsLoader` + `ExplorePrewarm` | `FeedClient`: ≥900px renders `FeedDesktop` (queue + focus pane), below 640px `FeedSnap`, 640–899px the `ArtistCard` list (one tree, picked by `matchMedia` `useSyncExternalStore`s, server = list); all read `useFeedTriage`. Renders `CardArtist[]` from `loadFeedCards` (`lib/cards/feed-cards.ts`: tracks-cache fallback, colour lift, drop no-preview cards, `interleave()`); `useFeedFill` poll-append (same assembler via `GET /api/recommendations`), low-queue auto-generate |
 | `/explore` | `buildExploreRails({hydrate, regenerate:false})` (never blocks); challenge streamed via React 19 `use()` | `ExploreClient`: JSX over `useRailSession` (`lib/client/rail-session.ts`: rails, active rail, adventurous ordering, shuffle/apply, poll-swap after shuffle/settings; a regen POST 429 means a build is already running → poll; Shuffle/Apply/cold start write `explore-regen-at` so a later visit resumes the poll; a thrown final GET is retried once after 1.5s) |
 | `/history` | seen recs + feedback/saves, derived `signal` | `HistoryClient`: filter tabs, time grouping; signal changes + undo/unblock via `useArtistFeedback` (`setSignal` / `removeSignal` / `dismiss`) |
 | `/saved` | `saves` enriched from `recommendation_cache` | `SavedClient`: grid, optimistic unsave, open-in-platform + share |
@@ -34,7 +34,7 @@ server component that queries Supabase, then hands data to a `"use client"` shel
   `aria-current="page"` when the path equals a link or starts with it plus `/`. Adventurous
   mode (`useAdventurousMode`) draws a 2px gradient on the rail edge / under the top bar.
   Pages hook in via `components/shell/shell-context.tsx`: `useShellBadge(href, n)` (nav count),
-  `useShellShortcuts(fn)` (shows the rail's Shortcuts button), `<ShellSlot name="top"|"rail">`
+  `useShellShortcuts(fn)` (shows the rail's Shortcuts button), `<ShellSlot name="top"|"topSub"|"rail">` (topSub: an optional full-width second row under the phone top bar, hidden when empty)
   (portal into the top bar / under the rail nav). Page content keeps its 520px `.app-col`,
   unless its root has `.shell-fill` (desktop feed): then `.shell-main:has(.shell-fill)` drops the
   padding and column and is exactly viewport-high, so the page body never scrolls.
@@ -68,6 +68,18 @@ server component that queries Supabase, then hands data to a `"use client"` shel
   the queue, and the rail "Tuning" block
   via `<ShellSlot name="rail">`. No decision logic. `FeedClient` sets the Saved badge
   (`useShellBadge`) to saves made since the feed opened.
+- **`FeedSnap`** (`components/feed/feed-snap.tsx`) — phones below 640px: a fixed column between
+  the shell top bar and tab bar (the page body does not scroll) holding a vertical scroller with
+  mandatory snapping, one full-height page per loaded artist (decided ones included, feed order),
+  and a three-button triage bar acting on the selected artist. "N of M left" goes in
+  `<ShellSlot name="top">`, the segment strip in `<ShellSlot name="topSub">` (a second top-bar
+  row). An `IntersectionObserver` (scroller root, threshold 0.6) calls the hook's
+  `becomeCurrent(id)`; any other selection change (decision advance, J/K, undo) scrolls that page
+  into view, with observer callbacks for other pages ignored until `scrollend` (timeout fallback).
+  Each page renders **`SnapCard`** (`components/feed/snap-card.tsx`, shared with the tablet
+  layout): artwork sized `min(100cqw - 52px, 100cqh - 236px, 460px)` on an artist-colour mat,
+  64px play button with a 30-second ring, name, genres + save / open / share, why, up to three
+  track chips; artists without tracks fetch them (`useArtistTracks`) only while selected.
 - **`FeedShortcuts`** (`components/feed/feed-shortcuts.tsx`) — mounted by `FeedClient` at every
   width: one window `keydown` listener mapped by the pure `feedAction` (`lib/feed/feed-keymap.ts`)
   onto the triage hook, and the "?" sheet (native `<dialog>`, also opened by the rail's Shortcuts
