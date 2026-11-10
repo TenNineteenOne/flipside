@@ -1,7 +1,7 @@
 "use client"
 
 import "./feed.css"
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Heart, ThumbsDown, X } from "lucide-react"
 import { ColdStartBanner } from "@/components/feed/cold-start-banner"
 import { EndState } from "@/components/feed/feed-parts"
@@ -50,7 +50,36 @@ export function FeedSnap({ triage, signalCount, onLoadMore, generating, onShown 
   const target = useRef<string | null>(null)
   const first = useRef(true)
   const becomeCurrent = useRef(triage.becomeCurrent)
-  useEffect(() => { becomeCurrent.current = triage.becomeCurrent })
+  const keyRef = useRef(key)
+  useEffect(() => {
+    becomeCurrent.current = triage.becomeCurrent
+    keyRef.current = key
+  })
+
+  /**
+   * Put the selected page exactly in view, instantly. Browsers don't re-snap a scroller whose
+   * size changed during or after a smooth scroll (the player bar showing for a moment while
+   * playback hands over after J/K), which left it stuck between pages. Skipped while a
+   * programmatic scroll is in flight (its end calls this). The observer then only reports the
+   * selected page again, which changes nothing.
+   */
+  const align = useCallback(() => {
+    const root = scrollerRef.current
+    const k = keyRef.current
+    if (!root || !k || target.current) return
+    const el = root.querySelector<HTMLElement>(`[data-id="${CSS.escape(k)}"]`)
+    if (!el) return
+    const top = el.offsetTop - root.offsetTop
+    if (Math.abs(root.scrollTop - top) >= 1) root.scrollTo({ top, behavior: "instant" })
+  }, [])
+
+  useEffect(() => {
+    const root = scrollerRef.current
+    if (!root) return
+    const ro = new ResizeObserver(() => align())
+    ro.observe(root)
+    return () => ro.disconnect()
+  }, [align])
 
   useEffect(() => {
     const root = scrollerRef.current
@@ -93,7 +122,7 @@ export function FeedSnap({ triage, signalCount, onLoadMore, generating, onShown 
       if (id && id !== key) {
         fromScroll.current = id
         becomeCurrent.current(id === END ? null : id)
-      }
+      } else align()
     }
     root.addEventListener("scrollend", done)
     timer = window.setTimeout(done, smooth ? SCROLL_GUARD_MS : 100)
@@ -103,7 +132,7 @@ export function FeedSnap({ triage, signalCount, onLoadMore, generating, onShown 
       root.removeEventListener("scrollend", done)
       clearTimeout(timer)
     }
-  }, [key])
+  }, [key, align])
 
   return (
     <div className="ev-feed ev-snap">
