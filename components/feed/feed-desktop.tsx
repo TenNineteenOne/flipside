@@ -1,7 +1,7 @@
 "use client"
 
 import "./feed.css"
-import { useEffect, useState, type CSSProperties } from "react"
+import { useEffect, type CSSProperties } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion"
@@ -172,14 +172,11 @@ function FocusCard({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
   useEffect(() => {
     if (a.topTracks.length === 0 && tracks.length > 0) addTracks(a.id, tracks)
   }, [a.id, a.topTracks.length, tracks, addTracks])
-  // The fetch starts in an effect, so the first frame is "loading" too, not "no preview".
-  const [started, setStarted] = useState(a.topTracks.length > 0)
-  if (isFetching && !started) setStarted(true)
 
   const liked = triage.signals.get(a.id) === "thumbs_up"
   const playing = triage.isPlaying(a)
   const canPlay = tracks.some((t) => t.previewUrl)
-  const loading = !canPlay && (isFetching || !started)
+  const loading = !canPlay && isFetching
   const why = whyParts(a.why)
   const art = artworkFor({ imageUrl: a.imageUrl, topTracks: tracks })
   const { currentTrack, progress } = useAudio()
@@ -278,7 +275,7 @@ function FocusCard({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
 }
 
 /** Focus pane when nothing is left to decide (PRD "End of queue"). */
-function EndState({ triage, onLoadMore, generating }: { triage: FeedTriage; onLoadMore: () => void; generating: boolean }) {
+export function EndState({ triage, onLoadMore, generating }: { triage: FeedTriage; onLoadMore: () => void; generating: boolean }) {
   const { counts, total, tuning, visible, signals } = triage
   const liked = visible.filter((a) => signals.get(a.id) === "thumbs_up").slice(0, 4)
   const lean = tuning.more.slice(0, 2)

@@ -1,25 +1,49 @@
 "use client"
 
 import "./feed.css"
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Heart, ThumbsDown, X } from "lucide-react"
+import { ColdStartBanner } from "@/components/feed/cold-start-banner"
+import { EndState } from "@/components/feed/feed-desktop"
 import { SnapCard } from "@/components/feed/snap-card"
+import { MiniPlayer, useSuppressFloatingPlayer } from "@/components/player/mini-player"
 import { ShellSlot } from "@/components/shell/shell-context"
+import { useAudio } from "@/lib/audio-context"
 import type { FeedTriage } from "@/lib/hooks/use-feed-triage"
 
 const VERDICT: Record<string, string> = { thumbs_up: "liked", thumbs_down: "passed", skip: "dismissed" }
 /** Fallback for browsers without `scrollend` (Safari): longest smooth scroll we expect. */
 const SCROLL_GUARD_MS = 900
+/** data-id of the end-of-queue page (artist ids are UUIDs). */
+const END = "__end"
 
 /**
  * Phone feed below 640px ("Snap", PRD #182): a vertical scroller with one
  * full-height page per loaded artist (decided ones included, in feed order),
  * the three-button triage bar, and "N of M left" + strip in the shell top bar.
  * The page at least 60% in view is the selected artist; any other selection
- * change (a decision's advance, J/K, undo) scrolls its page into view.
+ * change (a decision's advance, J/K, undo, an append after the end) scrolls
+ * its page into view. When nothing is left, a final page holds the end state.
  */
-export function FeedSnap({ triage }: { triage: FeedTriage }) {
+interface FeedSnapProps {
+  triage: FeedTriage
+  /** Cold-start hint input (shown as a dismissible line until the listener has a few signals). */
+  signalCount: number
+  /** "Load more artists" on the end page, and its in-flight state. */
+  onLoadMore: () => void
+  generating: boolean
+}
+
+export function FeedSnap({ triage, signalCount, onLoadMore, generating }: FeedSnapProps) {
   const { ids, selected, selectedId } = triage
+  const ended = triage.remaining === 0
+  /** The page that should be in view: the selected artist, else the end page. */
+  const key = selectedId ?? (ended ? END : null)
+  const [coldHidden, setColdHidden] = useState(false)
+  // The phone feed has its own small player bar, shown only while the loaded track (playing or
+  // paused) is not the artist on screen; the floating pill stays hidden here.
+  useSuppressFloatingPlayer()
+  const showPlayer = !!useAudio().currentTrack && triage.nowPlayingArtist?.id !== selectedId
   const scrollerRef = useRef<HTMLDivElement>(null)
   const ioRef = useRef<IntersectionObserver | null>(null)
   /** Selection the observer just reported (no scroll needed for it). */
@@ -38,29 +62,28 @@ export function FeedSnap({ triage }: { triage: FeedTriage }) {
         const id = (e.target as HTMLElement).dataset.id
         if (!e.isIntersecting || !id || (target.current && id !== target.current)) continue
         fromScroll.current = id
-        becomeCurrent.current(id)
+        becomeCurrent.current(id === END ? null : id)
       }
     }, { root, threshold: 0.6 })
     ioRef.current = io
     return () => io.disconnect()
   }, [])
 
-  // Observe every page, including appended ones (observing a page twice is a no-op).
+  // Observe every page, including appended ones and the end page (observing a page twice is a no-op).
   useEffect(() => {
     scrollerRef.current?.querySelectorAll<HTMLElement>("[data-id]").forEach((el) => ioRef.current?.observe(el))
-  }, [ids])
+  }, [ids, ended])
 
   useEffect(() => {
     const root = scrollerRef.current
-    const came = fromScroll.current === selectedId
+    const came = fromScroll.current === key
     fromScroll.current = null
-    // No selection (end of queue, #192): the scroller stays where it is.
-    if (!root || !selectedId || came) return
-    const el = root.querySelector<HTMLElement>(`[data-id="${CSS.escape(selectedId)}"]`)
+    if (!root || !key || came) return
+    const el = root.querySelector<HTMLElement>(`[data-id="${CSS.escape(key)}"]`)
     if (!el) return
     const smooth = !first.current && !matchMedia("(prefers-reduced-motion: reduce)").matches
     first.current = false
-    target.current = selectedId
+    target.current = key
     let timer = 0
     const done = () => {
       root.removeEventListener("scrollend", done)
@@ -69,9 +92,9 @@ export function FeedSnap({ triage }: { triage: FeedTriage }) {
       // If the user scrolled elsewhere meanwhile, the page now in view wins.
       const page = root.children[Math.round(root.scrollTop / root.clientHeight)] as HTMLElement | undefined
       const id = page?.dataset.id
-      if (id && id !== selectedId) {
+      if (id && id !== key) {
         fromScroll.current = id
-        becomeCurrent.current(id)
+        becomeCurrent.current(id === END ? null : id)
       }
     }
     root.addEventListener("scrollend", done)
@@ -81,7 +104,7 @@ export function FeedSnap({ triage }: { triage: FeedTriage }) {
       root.removeEventListener("scrollend", done)
       clearTimeout(timer)
     }
-  }, [selectedId])
+  }, [key])
 
   const liked = !!selected && triage.signals.get(selected.id) === "thumbs_up"
   const judge = (signal: "thumbs_up" | "thumbs_down" | "skip") => {
@@ -99,6 +122,8 @@ export function FeedSnap({ triage }: { triage: FeedTriage }) {
         </ol>
       </ShellSlot>
 
+      {!coldHidden && <ColdStartBanner signalCount={signalCount} onDismiss={() => setColdHidden(true)} />}
+
       <main className="ev-m-snap" ref={scrollerRef} aria-label="Artists">
         {triage.ids.map((id, i) => {
           const a = triage.byId.get(id)!
@@ -108,10 +133,23 @@ export function FeedSnap({ triage }: { triage: FeedTriage }) {
             </section>
           )
         })}
+        {ended && (
+          <section className="ev-m-page" data-id={END} aria-label="End of today's artists">
+            <EndState triage={triage} onLoadMore={onLoadMore} generating={generating} />
+          </section>
+        )}
       </main>
 
-      {selected && (
-        <div className="ev-m-triage" role="group" aria-label={`Tell flipside what you think of ${selected.name}`}>
+      {showPlayer && <div className="ev-m-mini"><MiniPlayer docked /></div>}
+
+      {/* Hidden, not removed, with no artist selected (end page): keeps every page the same height. */}
+      <div
+        className="ev-m-triage"
+        role="group"
+        aria-label={selected ? `Tell flipside what you think of ${selected.name}` : "Tell flipside what you think"}
+        data-hidden={!selected || undefined}
+        inert={!selected}
+      >
           <button type="button" className="ev-m-tri" onClick={() => judge("thumbs_down")}>
             <ThumbsDown size={22} strokeWidth={1.75} aria-hidden /><span>Less like this</span>
           </button>
@@ -122,8 +160,7 @@ export function FeedSnap({ triage }: { triage: FeedTriage }) {
             <Heart size={22} strokeWidth={1.75} fill={liked ? "currentColor" : "none"} aria-hidden />
             <span>{liked ? "Liked" : "More like this"}</span>
           </button>
-        </div>
-      )}
+      </div>
     </div>
   )
 }

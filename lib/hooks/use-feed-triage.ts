@@ -9,6 +9,7 @@ import { decide, type Plan } from "@/lib/feed/decision"
 import { whyText } from "@/lib/feed/card-copy"
 import { counts, firstUndecided, reconcileSelection, remaining, step, visibleQueue, type Signal } from "@/lib/feed/triage-queue"
 import { tuning } from "@/lib/feed/tuning"
+import { shouldHandOver } from "@/lib/feed/hand-over"
 import { getArtistLink, getShareableArtistLink, type MusicPlatform } from "@/lib/music-links"
 import { resolveArtistColor } from "@/lib/color-utils"
 import { useArtistFeedback } from "@/lib/hooks/use-artist-feedback"
@@ -212,9 +213,19 @@ export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatfor
     [ids, signals, selectedId],
   )
 
-  /** Snap: the artist scrolled into view becomes the selection, decided or not. */
-  // Playback hand-over to that artist is issue #192.
-  const becomeCurrent = useCallback((id: string) => setSelectedId(id), [])
+  /**
+   * Snap: the artist scrolled into view becomes the selection, decided or not
+   * (null: the end page). If another artist's track is playing, this artist's
+   * first track takes over; paused or silent audio is left alone.
+   */
+  const becomeCurrent = useCallback(
+    (id: string | null) => {
+      setSelectedId(id)
+      const a = id ? byId.get(id) : undefined
+      if (a && shouldHandOver(a.id, audio.isPlaying, nowPlayingArtist?.id ?? null)) playArtist(a)
+    },
+    [byId, audio.isPlaying, nowPlayingArtist, playArtist],
+  )
 
   const visible = useMemo(
     () => visibleQueue(ids, signals).map((id) => byId.get(id)!),

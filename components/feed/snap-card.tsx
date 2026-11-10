@@ -2,18 +2,52 @@
 
 import "./feed.css"
 import { useEffect, useState } from "react"
-import { Bookmark, Pause, Play, Share2 } from "lucide-react"
+import { motion, useMotionValue, useReducedMotion, useTransform, type PanInfo } from "framer-motion"
+import { Bookmark, Heart, Pause, Play, Share2, ThumbsDown, X } from "lucide-react"
 import { PlatformIcon } from "@/components/platform-icon"
 import { Art, artistVar } from "@/components/feed/feed-desktop"
 import { useAudio } from "@/lib/audio-context"
 import { artworkFor } from "@/lib/feed/artwork"
 import { listSeparator, whyParts } from "@/lib/feed/card-copy"
+import { SWIPE_THRESHOLD, swipeDirection } from "@/lib/feed/swipe"
 import { PLATFORM_META } from "@/lib/music-links"
 import { useArtistTracks } from "@/lib/hooks/use-artist-tracks"
 import type { FeedTriage } from "@/lib/hooks/use-feed-triage"
 import type { CardArtist } from "@/lib/cards/card-artist"
 
 const RING = 2 * Math.PI * 29
+const VERDICT: Record<string, "liked" | "passed" | "dismissed"> = { thumbs_up: "liked", thumbs_down: "passed", skip: "dismissed" }
+
+/**
+ * Horizontal swipe on a card that stays where it is (the scroller moves on):
+ * a release past the threshold commits at once and the card springs back to
+ * rest (dragSnapToOrigin); it ignores new drags until it is back. Reduced
+ * motion: no rotation, no spring, the card jumps back.
+ */
+function useSwipe(onCommit: (dir: 1 | -1) => void) {
+  const reduce = !!useReducedMotion()
+  const x = useMotionValue(0)
+  const rotate = useTransform(x, [-240, 240], [-7, 7])
+  const more = useTransform(x, [24, SWIPE_THRESHOLD], [0, 1])
+  const less = useTransform(x, [-24, -SWIPE_THRESHOLD], [0, 1])
+  const [busy, setBusy] = useState(false)
+  const onDragEnd = (_: unknown, info: PanInfo) => {
+    const dir = swipeDirection(info.offset.x, info.velocity.x)
+    if (reduce) x.jump(0)
+    else if (dir) setBusy(true)
+    if (dir) onCommit(dir)
+  }
+  return {
+    reduce,
+    style: { x, rotate: reduce ? 0 : rotate, touchAction: "pan-y" as const },
+    drag: busy ? false : ("x" as const),
+    dragSnapToOrigin: !reduce,
+    onDragEnd,
+    onDragTransitionEnd: () => setBusy(false),
+    more,
+    less,
+  }
+}
 
 /**
  * One artist as a phone card (PRD #182 "Snap behaviour details"): artwork with
@@ -34,11 +68,38 @@ export function SnapCard({ a, triage, eager = false }: { a: CardArtist; triage: 
   // Artists that arrived without tracks fetch them once selected, as the desktop focus pane does.
   const fetchTracks = a.topTracks.length === 0 && a.id === triage.selectedId
 
+  const v = VERDICT[triage.signals.get(a.id) ?? ""]
+  const sw = useSwipe((dir) => triage.judge(a.id, dir > 0 ? "thumbs_up" : "thumbs_down", { toggle: false, advance: true }))
+
   return (
-    <article className="ev-m-card" style={artistVar(a)} aria-label={a.name}>
+    <motion.article
+      className="ev-m-card"
+      data-v={v}
+      style={{ ...artistVar(a), ...sw.style }}
+      drag={sw.drag}
+      dragDirectionLock
+      dragMomentum={false}
+      dragSnapToOrigin={sw.dragSnapToOrigin}
+      onDragEnd={sw.onDragEnd}
+      onDragTransitionEnd={sw.onDragTransitionEnd}
+      aria-label={`${a.name}. Swipe right for more like this, left for less.`}
+    >
       <div className="ev-m-art">
         <Art a={a} src={art} size={600} className="ev-m-img" alt={`${tracks[0]?.albumName || a.name} cover art`} eager={eager} />
+        <motion.div className="ev-m-verdict ev-m-verdict-more" style={{ opacity: sw.more }} aria-hidden>
+          <span><Heart size={18} fill="currentColor" strokeWidth={0} />More like this</span>
+        </motion.div>
+        <motion.div className="ev-m-verdict ev-m-verdict-less" style={{ opacity: sw.less }} aria-hidden>
+          <span><ThumbsDown size={18} strokeWidth={2} />Less like this</span>
+        </motion.div>
         <PlayRing a={a} playing={playing} progress={mine ? progress : 0} disabled={playable.length === 0} onClick={() => triage.togglePlay(a)} />
+        {v === "liked" && <span className="ev-m-liked"><Heart size={13} fill="currentColor" strokeWidth={0} aria-hidden />Liked</span>}
+        {(v === "passed" || v === "dismissed") && (
+          <span className="ev-m-judged">
+            {v === "passed" ? <ThumbsDown size={13} aria-hidden /> : <X size={13} aria-hidden />}
+            {v === "passed" ? "Less like this" : "Dismissed"}
+          </span>
+        )}
       </div>
 
       <div className="ev-m-info">
@@ -84,7 +145,7 @@ export function SnapCard({ a, triage, eager = false }: { a: CardArtist; triage: 
           <p className="ev-m-chips ev-m-chips-note">{a.topTracks.length === 0 ? "Loading tracks…" : "No preview available"}</p>
         )}
       </div>
-    </article>
+    </motion.article>
   )
 }
 
@@ -95,15 +156,7 @@ function TrackFetch({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
   useEffect(() => {
     if (tracks.length > 0) addTracks(a.id, tracks)
   }, [a.id, tracks, addTracks])
-  // The fetch starts in the hook's effect (which runs before this one), so until this component has
-  // committed (plus a tick) it is "loading", not "no preview". A fast response can settle before any render sees
-  // isFetching, so watching for isFetching=true alone is not enough.
-  const [started, setStarted] = useState(false)
-  useEffect(() => {
-    const t = setTimeout(() => setStarted(true), 0)
-    return () => clearTimeout(t)
-  }, [])
-  return <p className="ev-m-chips ev-m-chips-note">{isFetching || !started ? "Loading tracks…" : "No preview available"}</p>
+  return <p className="ev-m-chips ev-m-chips-note">{isFetching ? "Loading tracks…" : "No preview available"}</p>
 }
 
 /** 64px play button on the artwork; the ring fills over the 30-second preview of this artist's track. */
