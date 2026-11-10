@@ -79,13 +79,16 @@
 /* artist table */
 .st-table { margin-top: 20px; }
 .st-thead, .st-row { display: grid; grid-template-columns: minmax(0, 1fr) 76px 88px; gap: 8px; align-items: center; }
-.st .st-thead {
-  width: 100%; min-height: 44px; border-bottom: 1px solid var(--line);
-  font-size: 13px; font-weight: 500; color: var(--fg-3); text-align: left;
+.st-thead {
+  min-height: 44px; border-bottom: 1px solid var(--line);
+  font-size: 13px; font-weight: 500; color: var(--fg-3);
 }
-.st .st-thead:hover { color: var(--fg-2); }
 .st-thead > span:not(:first-child) { text-align: right; }
-.st-thead-sort { display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px; }
+.st .st-sort {
+  display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px; width: 100%; min-height: 44px;
+  font-size: 13px; font-weight: 500; color: var(--fg-2);
+}
+.st .st-sort:hover { color: var(--fg); }
 .st-rows { max-height: 360px; overflow-y: auto; scrollbar-gutter: stable; }
 .st-rows:focus-visible { outline-offset: -2px; }
 .st-row { min-height: 44px; padding: 6px 0; border-bottom: 1px solid color-mix(in oklch, var(--line) 60%, var(--panel)); }

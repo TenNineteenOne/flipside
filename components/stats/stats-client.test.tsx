@@ -22,6 +22,13 @@ describe("StatsClient server render", () => {
     expect((html.match(/class="st-row"/g) ?? []).length).toBe(21)
     expect((html.match(/<circle/g) ?? []).length).toBe(21)
     for (const tick of [0, 20, 40, 60, 80, 100]) expect(html).toContain(`>${tick}</span>`)
+    // table semantics: Popularity is the only sort control, its name starts with its visible text, aria-sort says the order
+    expect(html).toContain('role="table"')
+    expect((html.match(/role="columnheader"/g) ?? []).length).toBe(3)
+    expect(html).toMatch(/role="columnheader" aria-sort="ascending"><button type="button" class="st-sort" aria-label="Popularity, sorted lowest first\. Activate to sort highest first\.">Popularity<svg/)
+    expect((html.match(/<button/g) ?? []).length).toBe(1)
+    const pops = [...html.matchAll(/class="st-row-pop st-n" role="cell" title="[^"]*">(\d+)</g)].map((m) => Number(m[1]))
+    expect(pops).toEqual([...pops].sort((a, b) => a - b))
     expect(html).not.toContain("uppercase")
     expect(html).not.toMatch(/style="[^"]*(color|font|padding|margin|background)/)
   })

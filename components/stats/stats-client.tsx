@@ -2,7 +2,7 @@
 
 import "./stats.css"
 import Link from "next/link"
-import { ArrowUpDown } from "lucide-react"
+import { ArrowDown, ArrowUp } from "lucide-react"
 import { useId, useMemo, useState } from "react"
 
 interface SavedArtist {
@@ -182,32 +182,38 @@ function TasteProfileView({
             <p className="st-axis-title" aria-hidden>Popularity</p>
           </figure>
 
-          <div className="st-table">
-            <button
-              type="button"
-              className="st-thead"
-              onClick={() => setSortDesc((v) => !v)}
-              aria-label={`Sort by popularity, ${sortDesc ? "lowest" : "highest"} first`}
-            >
-              <span>Artist</span>
-              <span>Kind</span>
-              <span className="st-thead-sort">
-                Popularity
-                <ArrowUpDown size={12} aria-hidden />
-              </span>
-            </button>
+          {/* ARIA table: the header row's Popularity cell is the sort control and carries aria-sort. */}
+          <div className="st-table" role="table" aria-label="Saved and liked artists by popularity">
+            <div role="rowgroup">
+              <div className="st-thead" role="row">
+                <span role="columnheader">Artist</span>
+                <span role="columnheader">Kind</span>
+                <span role="columnheader" aria-sort={sortDesc ? "descending" : "ascending"}>
+                  <button
+                    type="button"
+                    className="st-sort"
+                    onClick={() => setSortDesc((v) => !v)}
+                    aria-label={`Popularity, sorted ${sortDesc ? "highest" : "lowest"} first. Activate to sort ${sortDesc ? "lowest" : "highest"} first.`}
+                  >
+                    Popularity
+                    {sortDesc ? <ArrowDown size={12} aria-hidden /> : <ArrowUp size={12} aria-hidden />}
+                  </button>
+                </span>
+              </div>
+            </div>
 
-            <div className="st-rows" tabIndex={0} role="region" aria-label="Saved and liked artists by popularity">
+            {/* the scrolling body is focusable so keyboard users can scroll it */}
+            <div className="st-rows" role="rowgroup" tabIndex={0} aria-label="Artists">
               {sorted.map((a) => (
-                <div key={`${a.kind}-${a.name}`} className="st-row">
-                  <span className="st-row-name" title={a.name}>{a.name}</span>
-                  <span className="st-row-kind">
+                <div key={`${a.kind}-${a.name}`} className="st-row" role="row">
+                  <span className="st-row-name" role="cell" title={a.name}>{a.name}</span>
+                  <span className="st-row-kind" role="cell">
                     <span className={`st-kind st-kind-${a.kind}`}>
                       <Mark kind={a.kind} />
                       {KIND_LABEL[a.kind]}
                     </span>
                   </span>
-                  <span className="st-row-pop st-n" title={popularityTier(a.popularity)}>
+                  <span className="st-row-pop st-n" role="cell" title={popularityTier(a.popularity)}>
                     {a.popularity}
                   </span>
                 </div>
