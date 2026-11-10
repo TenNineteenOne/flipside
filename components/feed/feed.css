@@ -407,6 +407,9 @@ html:has(.ev-snap), html:has(.ev-snap) body { overflow: hidden; }
 .ev-feed .ev-m-ring-svg { position: absolute; inset: 0; transform: rotate(-90deg); fill: none; stroke-width: 4; }
 .ev-feed .ev-m-ring-bg { stroke: rgba(0, 0, 0, 0.1); }
 .ev-feed .ev-m-ring { stroke: var(--violet); stroke-linecap: round; transition: stroke-dashoffset 250ms linear; }
+.ev-feed .ev-m-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ev-feed .ev-m-title > .ev-m-name { min-width: 0; }
+.ev-feed .ev-m-badge-side { position: static; display: none; flex-shrink: 0; }
 .ev-feed .ev-m-info { display: flex; flex-direction: column; gap: 2px; padding: 2px 4px 0; min-width: 0; }
 .ev-feed .ev-m-name { font-size: 24px; line-height: 1.15; letter-spacing: -0.025em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ev-feed .ev-m-meta { display: flex; align-items: center; gap: 8px; margin-right: -8px; }
@@ -453,6 +456,8 @@ html:has(.ev-snap), html:has(.ev-snap) body { overflow: hidden; }
   .ev-feed .ev-m-page > .ev-m-card { width: min(100%, 680px); flex-direction: row; align-items: center; gap: 14px; }
   .ev-feed .ev-m-page .ev-m-art { flex-shrink: 0; height: max(64px, min(100cqh - 32px, 300px)); min-height: 0; aspect-ratio: 1; }
   .ev-feed .ev-m-page .ev-m-info { flex: 1; }
+  .ev-feed .ev-m-page .ev-m-art > .ev-m-liked, .ev-feed .ev-m-page .ev-m-art > .ev-m-judged { display: none; }
+  .ev-feed .ev-m-page .ev-m-badge-side { display: inline-flex; }
 }
 @container ev-page (width >= 560px) and (height < 200px) { .ev-feed .ev-m-page .ev-m-chips { display: none; } }
 @container ev-page (width >= 560px) and (height < 150px) {
