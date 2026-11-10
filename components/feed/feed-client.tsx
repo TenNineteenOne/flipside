@@ -17,10 +17,24 @@ import type { FeedLayout } from "@/lib/feed/layout-guess"
 // Each layout is its own chunk, so a device downloads only the one it shows (the Snap
 // layout also brings the swipe code). The layout the server rendered has its chunk
 // preloaded by the page; switching to another (a wrong guess, a resize) shows the
-// skeleton while that chunk loads.
-const FeedDesktop = dynamic(() => import("@/components/feed/feed-desktop").then((m) => m.FeedDesktop), { loading: FeedSkeleton })
-const FeedTablet = dynamic(() => import("@/components/feed/feed-tablet").then((m) => m.FeedTablet), { loading: FeedSkeleton })
-const FeedSnap = dynamic(() => import("@/components/feed/feed-snap").then((m) => m.FeedSnap), { loading: FeedSkeleton })
+// skeleton while that chunk loads. Once the first layout is up, the other two are
+// fetched when the browser is idle (FeedClient), so a later switch needs no network.
+// A chunk that still fails to load (offline, or gone after a new deploy) is tried again
+// every few seconds while the skeleton stays, instead of the feed turning into the error page.
+const RETRY_MS = 4000
+function retry<T>(load: () => Promise<T>): Promise<T> {
+  return load().catch(() => new Promise<T>((resolve) => setTimeout(() => resolve(retry(load)), RETRY_MS)))
+}
+// The loaders are kept for preloading. The import() must stay inside each dynamic() call: Next
+// compiles it there as the layout's own chunk (and preloads it when server-rendered); a plain
+// import() elsewhere would fetch a separate copy.
+const loaders: (() => Promise<unknown>)[] = []
+const keep = <T,>(load: () => Promise<T>) => (loaders.push(load), load)
+const FeedDesktop = dynamic(keep(() => retry(() => import("@/components/feed/feed-desktop")).then((m) => m.FeedDesktop)), { loading: FeedSkeleton })
+const FeedTablet = dynamic(keep(() => retry(() => import("@/components/feed/feed-tablet")).then((m) => m.FeedTablet)), { loading: FeedSkeleton })
+const FeedSnap = dynamic(keep(() => retry(() => import("@/components/feed/feed-snap")).then((m) => m.FeedSnap)), { loading: FeedSkeleton })
+/** Load every layout chunk now (the one on screen costs nothing), so a later layout switch needs no network. */
+const preloadLayouts = () => loaders.forEach((load) => void load())
 
 interface FeedClientProps {
   recommendations: CardArtist[]
@@ -148,6 +162,24 @@ export function FeedClient({ recommendations, musicPlatform, signalCount, initia
   // The layout whose tree is mounted and showing (set by the layout itself); until it is the
   // current one (a layout's chunk still loading) the keyboard shortcuts stay inert.
   const [shown, setShown] = useState<Layout | null>(null)
+  const mounted = shown !== null
+  // After the page's load event (artwork, fonts) and then when the browser is idle.
+  useEffect(() => {
+    if (!mounted) return
+    let idle = 0
+    let timer = 0
+    const schedule = () => {
+      if (typeof requestIdleCallback === "function") idle = requestIdleCallback(preloadLayouts, { timeout: 5000 })
+      else timer = window.setTimeout(preloadLayouts, 2000) // Safari before 18 has no requestIdleCallback
+    }
+    if (document.readyState === "complete") schedule()
+    else window.addEventListener("load", schedule, { once: true })
+    return () => {
+      window.removeEventListener("load", schedule)
+      if (idle) cancelIdleCallback(idle)
+      clearTimeout(timer)
+    }
+  }, [mounted])
 
   async function handleGenerateMore() {
     const r = await generation.requestMore()
