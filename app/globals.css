@@ -425,3 +425,15 @@
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 999px; }
 ::-webkit-scrollbar-track { background: transparent; }
+/* ── Floating mini player (components/player/mini-player.tsx) ─── */
+/* Rests 24px above its bottom offset; slides in from 150% of its height below and leaves the
+   same way while fading. Reduced motion: it appears in place and only fades out. */
+.mini-player-pill { transform: translate(-50%, -24px); animation: mini-player-in 0.35s cubic-bezier(0.3, 0.7, 0.4, 1) both; }
+.mini-player-pill[data-state="closed"] { animation: mini-player-out 0.3s cubic-bezier(0.3, 0.7, 0.4, 1) both; }
+@keyframes mini-player-in { from { transform: translate(-50%, 150%); } }
+@keyframes mini-player-out { to { transform: translate(-50%, 150%); opacity: 0; } }
+@keyframes mini-player-fade { to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .mini-player-pill { animation: none; }
+  .mini-player-pill[data-state="closed"] { animation: mini-player-fade 0.3s ease both; }
+}
