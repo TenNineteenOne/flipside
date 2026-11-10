@@ -40,8 +40,15 @@ export function popularityLabel(popularity: number): string {
   return POPULARITY_LABELS.find((t) => popularity < t.below)?.label ?? "Cult following"
 }
 
-/** Track duration in milliseconds as m:ss. */
-export function formatDuration(ms: number): string {
+/**
+ * Track duration in milliseconds as m:ss (h:mm:ss from an hour). Empty when
+ * there is no real duration (iTunes tracks without one are stored as 0).
+ */
+export function formatDuration(ms: number | null | undefined): string {
+  if (typeof ms !== "number" || !Number.isFinite(ms) || ms <= 0) return ""
   const s = Math.round(ms / 1000)
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`
+  const pad = (n: number) => String(n).padStart(2, "0")
+  const h = Math.floor(s / 3600)
+  const m = Math.floor(s / 60) % 60
+  return h > 0 ? `${h}:${pad(m)}:${pad(s % 60)}` : `${m}:${pad(s % 60)}`
 }
