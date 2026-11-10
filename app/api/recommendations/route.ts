@@ -2,6 +2,7 @@ import { safeAuth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiUnauthorized, dbError } from "@/lib/errors"
 import { getUnseenRecommendations } from "@/lib/recommendation/feed-query"
+import { loadFeedCards } from "@/lib/cards/feed-cards"
 
 export async function GET(): Promise<Response> {
   const session = await safeAuth()
@@ -14,7 +15,10 @@ export async function GET(): Promise<Response> {
   // parallel with the cache fetch.
   let recommendations
   try {
-    recommendations = await getUnseenRecommendations(supabase, userId, { limit: 20 })
+    const rows = await getUnseenRecommendations(supabase, userId, { limit: 20 })
+    // Same assembler as the feed page's first paint, so appended cards carry
+    // their extracted colour, tracks-cache fallback and interleave order.
+    recommendations = await loadFeedCards(supabase, rows)
   } catch (err) {
     return dbError(err as { message: string }, "recommendations/fetch")
   }

@@ -1,69 +1,17 @@
 "use client"
 
-import { Suspense, use, useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { toast } from "sonner"
+import { Suspense, use, useCallback, useMemo } from "react"
 import { RefreshCw, Sparkles, Moon, Mountain, Flame, Dices, type LucideIcon } from "lucide-react"
 import { AnimatePresence } from "framer-motion"
-import { ChallengeCard } from "@/components/explore/challenge-card"
+import "./explore.css"
+import { ChallengeCard, ChallengeSkeleton } from "@/components/explore/challenge-card"
+import { SkeletonCard } from "@/components/explore/skeleton-card"
 import { ExploreArtistRow } from "@/components/explore/explore-artist-row"
-import type { RailArtist } from "@/components/explore/rail"
+import type { RailKey, RailPayload } from "@/lib/cards/explore-rail-payloads"
 import type { MusicPlatform } from "@/lib/music-links"
-import { Ambient } from "@/components/visual/ambient"
-import { useAdventurousMode } from "@/lib/hooks/use-adventurous-mode"
 import { useArtistFeedback } from "@/lib/hooks/use-artist-feedback"
 import { useArtistSaves } from "@/lib/hooks/use-artist-saves"
-
-// ---------------------------------------------------------------------------
-// Poll-swap helpers — pure functions, exported for unit tests
-// ---------------------------------------------------------------------------
-
-/** True when `latest` is strictly after `captured`, meaning the regen landed. */
-export function hasRegenCompleted(
-  captured: string | null,
-  latest: string | null,
-): boolean {
-  if (latest === null) return false
-  if (captured === null) return true // first paint was cold; any value is new
-  return new Date(latest) > new Date(captured)
-}
-
-/**
- * The ceiling (ms) after which the poller gives up and shows a soft toast.
- * Regen takes 54-74s; 90s ceiling gives comfortable headroom.
- */
-export const POLL_CEILING_MS = 90_000
-
-/** Polling cadence (ms). */
-export const POLL_INTERVAL_MS = 2_500
-
-/**
- * How long (ms) after Settings fires explore-regen-at we treat a background
- * regen as potentially still in flight. 120s gives generous headroom over the
- * 54-74s regen window.
- */
-export const SETTINGS_REGEN_WINDOW_MS = 120_000
-
-/** localStorage key written by Settings when a background explore regen fires. */
-export const EXPLORE_REGEN_AT_KEY = "explore-regen-at"
-
-/**
- * Pure helper — true when the stored flag value indicates a background explore
- * regen is likely still in flight relative to `now`.
- *
- * @param flagValue - raw string value from localStorage (or null if absent)
- * @param now       - current epoch ms (Date.now())
- * @param maxAgeMs  - maximum age to treat as in-flight (default SETTINGS_REGEN_WINDOW_MS)
- */
-export function shouldPollOnArrival(
-  flagValue: string | null,
-  now: number,
-  maxAgeMs: number = SETTINGS_REGEN_WINDOW_MS,
-): boolean {
-  if (flagValue === null) return false
-  const ts = Number(flagValue)
-  if (!Number.isFinite(ts)) return false
-  return now - ts <= maxAgeMs
-}
+import { useRailSession } from "@/lib/hooks/use-rail-session"
 
 export interface ChallengePayload {
   title: string
@@ -97,22 +45,12 @@ function ChallengeSlot({
   )
 }
 
-export type RailKey = "adjacent" | "outside" | "wildcards" | "leftfield"
-
-export interface RailPayload {
-  railKey: RailKey
-  title: string
-  subtitle: string
-  artists: RailArtist[]
-  emptyCaption?: string
-}
-
-// Rail identity — icon + accent color. Module-scope so it isn't rebuilt per render.
-const RAIL_META: Record<RailKey, { icon: LucideIcon; rgb: string }> = {
-  adjacent:  { icon: Moon,     rgb: "129, 140, 248" },  // indigo (After hours)
-  outside:   { icon: Mountain, rgb: "139, 92, 246" },   // violet
-  wildcards: { icon: Flame,    rgb: "245, 176, 71" },   // amber
-  leftfield: { icon: Dices,    rgb: "236, 111, 181" },  // magenta
+// Rail identity icon. Module-scope so it isn't rebuilt per render.
+const RAIL_ICON: Record<RailKey, LucideIcon> = {
+  adjacent: Moon,
+  outside: Mountain,
+  wildcards: Flame,
+  leftfield: Dices,
 }
 
 export interface ExploreClientProps {
@@ -136,53 +74,47 @@ export function ExploreClient({
   generatedAt: initialGeneratedAt = null,
   coldStart = false,
 }: ExploreClientProps) {
-  const [rails, setRails] = useState<RailPayload[]>(initialRails)
-  const [isRegenerating, setIsRegenerating] = useState(false)
-  const { adventurous, setAdventurous } = useAdventurousMode(initialAdventurous)
-  const [isTogglingAdv, setIsTogglingAdv] = useState(false)
-  const [isAdvDirty, setIsAdvDirty] = useState(false)
-  const [isApplyingAdv, setIsApplyingAdv] = useState(false)
-
-  async function handleAdventurousToggle() {
-    if (isTogglingAdv) return
-    setIsTogglingAdv(true)
-    try {
-      await setAdventurous(!adventurous)
-      setIsAdvDirty(true)
-    } catch {
-      toast.error("Couldn't toggle — try again")
-    } finally {
-      setIsTogglingAdv(false)
-    }
-  }
-
-  // Adventurous rail ordering — default-off order is adjacent/wildcards/outside/leftfield.
-  // When ON, flip to serendipity-first: outside/leftfield/wildcards/adjacent. The server
-  // also inflates Left-field count when Adventurous is set. Rails with fewer than
-  // MIN_PICKS artists are hidden so every visible tab has real depth to browse.
-  const orderedRails = useMemo(() => {
-    const MIN_PICKS = 5
-    const order: RailKey[] = adventurous
-      ? ["outside", "leftfield", "wildcards", "adjacent"]
-      : ["adjacent", "wildcards", "outside", "leftfield"]
-    const byKey = new Map(rails.map((r) => [r.railKey, r] as const))
-    return order
-      .map((k) => byKey.get(k))
-      .filter((r): r is RailPayload => !!r && r.artists.length >= MIN_PICKS)
-  }, [rails, adventurous])
-
-  const [activeKey, setActiveKey] = useState<RailKey>(orderedRails[0]?.railKey ?? "adjacent")
-  const activeRail = useMemo(
-    () => orderedRails.find((r) => r.railKey === activeKey) ?? orderedRails[0],
-    [orderedRails, activeKey],
-  )
+  // Rails, active rail, adventurous ordering, shuffle / apply rebuilds and the
+  // poll-swap all live in the RailSession controller (lib/client/rail-session).
+  const {
+    adventurous,
+    orderedRails,
+    activeKey,
+    activeRail,
+    isRegenerating,
+    isTogglingAdv,
+    isAdvDirty,
+    isApplyingAdv,
+    select: setActiveKey,
+    toggleAdventurous: handleAdventurousToggle,
+    shuffle: handleShuffle,
+    applyAdventurous: handleApplyAdventurous,
+  } = useRailSession({
+    initialRails,
+    initialGeneratedAt,
+    initialAdventurous,
+    coldStart,
+    // Shuffle drops stale thumbs_up on the active rail before the swap.
+    dropThumbsUp: (ids) =>
+      setSignals((prev) => {
+        let changed = false
+        const n = new Map(prev)
+        for (const id of ids) {
+          if (n.get(id) === "thumbs_up") {
+            n.delete(id)
+            changed = true
+          }
+        }
+        return changed ? n : prev
+      }),
+    // Applying an Adventurous change rebuilds every rail — drop all signals.
+    clearSignals: () => setSignals(new Map()),
+  })
 
   // Feedback signals (thumbs_up / thumbs_down / skip) per artist.
   // railKey lets the server narrow-invalidate only the owning rail; other
   // rails pick up the signal on their own TTL via the persisted feedback row.
   // "skip" is local-only — no server call, no recommendation_cache write.
-  // setSignals exposes bulk replacement so handleShuffle / handleApplyAdventurous
-  // can drop stale thumbs_up entries without triggering individual setSignal calls.
   const { signals: dismissedSignals, setSignal, setSignals } = useArtistFeedback({
     railKey: activeKey,
     // Explore treats "skip" as a session-local dismiss — no /api/feedback
@@ -205,616 +137,219 @@ export function ExploreClient({
     },
   })
 
+  // Passed / dismissed artists leave the grid for the compact "Decided" group below it, so the grid
+  // closes up instead of keeping a 56px bar in a card-sized cell.
+  const isDecided = (id: string) => {
+    const s = dismissedSignals.get(id)
+    return s != null && s !== "thumbs_up"
+  }
+  const railArtists = activeRail?.artists ?? []
+  const open = railArtists.filter((a) => !isDecided(a.id))
+  const decided = railArtists.filter((a) => isDecided(a.id))
+
+  // Keyboard focus would be lost with the card that leaves: hand it to the next card (or the
+  // previous one, or the Decided group when the grid empties). Order is read from the grid's DOM.
   const handleFeedback = useCallback(
-    (artistId: string, signal: string) => setSignal(artistId, signal),
+    (artistId: string, signal: string) => {
+      setSignal(artistId, signal)
+      if (signal !== "thumbs_down" && signal !== "skip") return
+      const cells = [...document.querySelectorAll<HTMLElement>(".ex-grid > [data-artist]")]
+      const i = cells.findIndex((c) => c.dataset.artist === artistId)
+      if (i < 0 || !cells[i].contains(document.activeElement)) return
+      const next = (cells[i + 1] ?? cells[i - 1])?.dataset.artist
+      requestAnimationFrame(() => {
+        const cell = next ? document.querySelector(`.ex-grid > [data-artist="${CSS.escape(next)}"]`) : null
+        const target = cell?.querySelector<HTMLElement>("button, a[href]") ?? document.getElementById("ex-decided-title")
+        target?.focus()
+      })
+    },
     [setSignal],
   )
-
-  const handleSave = useCallback(
-    (artistId: string) => toggleSave(artistId),
-    [toggleSave],
-  )
-
-  // -------------------------------------------------------------------------
-  // Poll-swap machinery
-  // -------------------------------------------------------------------------
-
-  // Ref holding the latest generatedAt we've seen — updated whenever rails swap
-  // in. Using a ref rather than state so poll callbacks capture the latest
-  // value without needing to be recreated each render.
-  const generatedAtRef = useRef<string | null>(initialGeneratedAt)
-  // Pointer to the active interval so we can clear it from anywhere.
-  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  // Absolute deadline so we don't poll forever.
-  const pollDeadlineRef = useRef<number>(0)
-  // Ref to the latest orderedRails so poll callbacks can drop thumbs_up without
-  // stale closure issues. Declared here (before regenAndPoll) so the closure
-  // sees it during regen calls.
-  const orderedRailsRef = useRef(orderedRails)
-  // Ref to the latest activeKey so regenAndPoll's dropThumbsUp path reads the
-  // rail the user is actually looking at, even if they switch tabs while the
-  // regen request is in flight (B4).
-  const activeKeyRef = useRef(activeKey)
-
-  function stopPolling() {
-    if (pollTimerRef.current !== null) {
-      clearInterval(pollTimerRef.current)
-      pollTimerRef.current = null
-    }
-  }
-
-  /**
-   * Fetch the latest rails from GET /api/explore/rails and swap them in when
-   * the generatedAt timestamp has advanced. Returns true if the swap landed.
-   * Never throws — network/parse errors are silently skipped so the poller
-   * stays alive until the ceiling.
-   */
-  async function pollOnce(captured: string | null): Promise<boolean> {
-    try {
-      const res = await fetch("/api/explore/rails")
-      if (!res.ok) return false
-      const json = await res.json() as { rails: RailPayload[]; generatedAt: string | null }
-      if (!hasRegenCompleted(captured, json.generatedAt)) return false
-      // Regen landed — swap rails in.
-      generatedAtRef.current = json.generatedAt
-      setRails(json.rails)
-      // Preserve activeKey if the refreshed rails contain it; otherwise fall
-      // back to whatever orderedRails[0] will resolve to after state update.
-      setActiveKey((prev) => {
-        const keys = new Set(json.rails.map((r: RailPayload) => r.railKey))
-        return keys.has(prev) ? prev : (json.rails[0]?.railKey ?? "adjacent")
-      })
-      return true
-    } catch {
-      // Swallow — next tick will retry
-      return false
-    }
-  }
-
-  /**
-   * Poll GET /api/explore/rails every POLL_INTERVAL_MS until generatedAt
-   * advances past `capturedGeneratedAt` (or the ceiling is hit). Calls
-   * `onSettle()` when done — either after a successful swap or on ceiling.
-   * Reuses the shared stopPolling / pollTimerRef / pollDeadlineRef machinery.
-   *
-   * This is intentionally a poll-only path: it does NOT POST force=true.
-   * Call regenAndPoll (which wraps this) when you also need to kick off the
-   * regen; call this directly when the regen was already requested externally
-   * (e.g., by Settings).
-   */
-  function pollUntilFresh(opts: {
-    capturedGeneratedAt: string | null
-    onSettle: () => void
-    clearRegenFlag?: boolean
-  }) {
-    stopPolling()
-    pollDeadlineRef.current = Date.now() + POLL_CEILING_MS
-
-    pollTimerRef.current = setInterval(async () => {
-      const expired = Date.now() >= pollDeadlineRef.current
-      if (expired) {
-        stopPolling()
-        if (opts.clearRegenFlag) {
-          try { localStorage.removeItem(EXPLORE_REGEN_AT_KEY) } catch { /* private mode */ }
-        }
-        opts.onSettle()
-        toast("Still building — refresh in a moment", { duration: 4000 })
-        return
-      }
-      const swapped = await pollOnce(opts.capturedGeneratedAt)
-      if (swapped) {
-        stopPolling()
-        if (opts.clearRegenFlag) {
-          try { localStorage.removeItem(EXPLORE_REGEN_AT_KEY) } catch { /* private mode */ }
-        }
-        opts.onSettle()
-      }
-    }, POLL_INTERVAL_MS)
-  }
-
-  /**
-   * Kick off a background regen then poll until rails swap in (or ceiling).
-   * `onSettle` is called (no-arg) when the poller stops, regardless of reason.
-   * `dropThumbsUp` — when true, clears thumbs_up entries from the current
-   * active rail's artists before the swap (used by handleShuffle).
-   */
-  async function regenAndPoll(opts: {
-    onSettle: () => void
-    dropThumbsUp?: boolean
-    clearAdvDirty?: boolean
-  }) {
-    try {
-      const res = await fetch("/api/explore/generate?force=true", { method: "POST" })
-      if (!res.ok) throw new Error("generate failed")
-    } catch {
-      toast.error("Couldn't start rebuild — try again")
-      opts.onSettle()
-      return
-    }
-
-    // Capture the timestamp AFTER the POST so we don't prematurely accept
-    // a stale cache row that was written before the regen started.
-    const captured = generatedAtRef.current
-
-    if (opts.dropThumbsUp) {
-      setSignals((prev) => {
-        // Active rail, not orderedRails[0] — this used to hardcode the first
-        // rail regardless of which tab the user was viewing (B4).
-        const active = orderedRailsRef.current.find((r) => r.railKey === activeKeyRef.current)
-        if (!active) return prev
-        let changed = false
-        const n = new Map(prev)
-        for (const a of active.artists) {
-          if (n.get(a.id) === "thumbs_up") {
-            n.delete(a.id)
-            changed = true
-          }
-        }
-        return changed ? n : prev
-      })
-    }
-
-    if (opts.clearAdvDirty) {
-      setSignals(new Map())
-      setIsAdvDirty(false)
-    }
-
-    pollUntilFresh({ capturedGeneratedAt: captured, onSettle: opts.onSettle })
-  }
-
-  // Cleanup on unmount
-  useEffect(() => () => { stopPolling() }, [])
-
-  // Cold-start: on mount, if coldStart is true, kick off a regen+poll so the
-  // page populates without ever having blocked the server render.
-  // We use a ref to ensure this fires at most once even in StrictMode.
-  const coldStartFiredRef = useRef(false)
-  useEffect(() => {
-    if (!coldStart || coldStartFiredRef.current) return
-    coldStartFiredRef.current = true
-    setIsRegenerating(true)
-    regenAndPoll({
-      onSettle: () => setIsRegenerating(false),
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [coldStart])
-
-  // Settings-arrival: if Settings fired a background explore regen and the user
-  // navigated here before it finished, start a poll-only (no re-POST) so rails
-  // refresh automatically. The localStorage flag is the cross-navigation signal.
-  // Fires at most once (ref guard); only runs when NOT coldStart (the cold-start
-  // path already triggers a regenAndPoll above which subsumes polling).
-  const settingsArrivalFiredRef = useRef(false)
-  useEffect(() => {
-    if (coldStart || settingsArrivalFiredRef.current) return
-    let flagValue: string | null = null
-    try { flagValue = localStorage.getItem(EXPLORE_REGEN_AT_KEY) } catch { /* private mode */ }
-    if (!shouldPollOnArrival(flagValue, Date.now())) return
-    settingsArrivalFiredRef.current = true
-    setIsRegenerating(true)
-    pollUntilFresh({
-      capturedGeneratedAt: generatedAtRef.current,
-      clearRegenFlag: true,
-      onSettle: () => setIsRegenerating(false),
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // Keep orderedRailsRef current on every render.
-  useEffect(() => { orderedRailsRef.current = orderedRails }, [orderedRails])
-  // Keep activeKeyRef current on every render (B4).
-  useEffect(() => { activeKeyRef.current = activeKey }, [activeKey])
-
-  // B5: activeKey is only seeded once from orderedRails[0] at mount. When
-  // Adventurous flips post-mount, orderedRails reorders/refilters and the
-  // stale activeKey can point at a rail that's no longer visible — no tab
-  // renders as active even though activeRail silently falls back to
-  // orderedRails[0]. Re-point activeKey whenever it drops out of the visible
-  // set; this never fires from a normal tab click since clicks always set
-  // activeKey to a key that's currently in orderedRails.
-  useEffect(() => {
-    if (orderedRails.length === 0) return
-    if (!orderedRails.some((r) => r.railKey === activeKey)) {
-      setActiveKey(orderedRails[0].railKey)
-    }
-  }, [orderedRails, activeKey])
-
-  async function handleApplyAdventurous() {
-    if (!isAdvDirty || isApplyingAdv) return
-    setIsApplyingAdv(true)
-    await regenAndPoll({
-      clearAdvDirty: true,
-      onSettle: () => setIsApplyingAdv(false),
-    })
-  }
-
-  async function handleShuffle() {
-    if (isRegenerating) return
-    setIsRegenerating(true)
-    await regenAndPoll({
-      dropThumbsUp: true,
-      onSettle: () => setIsRegenerating(false),
-    })
-  }
 
   const totalDiscoveries = useMemo(
     () => orderedRails.reduce((n, r) => n + r.artists.length, 0),
     [orderedRails],
   )
 
-  const activeAccentRgb = activeRail ? RAIL_META[activeRail.railKey].rgb : "139, 92, 246"
-
-  // OFF — rail color dominant, rainbow whisper. Two large rail-color anchors
-  // drive the page mood; two small warm hints (amber + magenta) keep it from
-  // feeling monochromatic.
-  const palette = useMemo(
-    () => `
-    radial-gradient(75% 60% at 18% 14%, rgba(${activeAccentRgb}, 0.40) 0%, transparent 70%),
-    radial-gradient(55% 48% at 84% 26%, rgba(${activeAccentRgb}, 0.30) 0%, transparent 72%),
-    radial-gradient(40% 32% at 50% 92%, rgba(255,138,46,0.14) 0%, transparent 75%),
-    radial-gradient(38% 30% at 10% 86%, rgba(236,111,181,0.14) 0%, transparent 72%)
-  `,
-    [activeAccentRgb],
-  )
-
-  // ON — rainbow sunset takes the lead, rail color is one of many voices.
-  // The warm amber/hot-pink/coral glow dominates; rail tints the bottom.
-  const adventurousPalette = useMemo(
-    () => `
-    radial-gradient(65% 50% at 18% 10%, rgba(255,138,46,0.40) 0%, transparent 72%),
-    radial-gradient(58% 48% at 85% 26%, rgba(255,74,130,0.36) 0%, transparent 72%),
-    radial-gradient(60% 48% at 50% 92%, rgba(${activeAccentRgb}, 0.32) 0%, transparent 75%),
-    radial-gradient(50% 40% at 10% 86%, rgba(255,184,92,0.28) 0%, transparent 72%)
-  `,
-    [activeAccentRgb],
-  )
+  const building = orderedRails.length === 0 && isRegenerating
 
   return (
-    <div>
-      <Ambient palette={palette} adventurousPalette={adventurousPalette} adventurous={adventurous} />
-
-      <div className="page-head">
-        <h1>Explore</h1>
-        <span className="sub">
-          {totalDiscoveries} discoveries
-          {adventurous ? " · Adventurous on" : ""}
-        </span>
-      </div>
-
-      <button
-        type="button"
-        onClick={handleAdventurousToggle}
-        disabled={isTogglingAdv}
-        aria-pressed={adventurous}
-        style={{
-          position: "relative",
-          overflow: "hidden",
-          width: "100%",
-          padding: "18px 20px",
-          marginBottom: 16,
-          textAlign: "left",
-          borderRadius: 18,
-          border: adventurous
-            ? "1px solid rgba(245,176,71,0.35)"
-            : "1px solid rgba(255,255,255,0.08)",
-          background: adventurous
-            ? "linear-gradient(135deg, rgba(245,176,71,0.22) 0%, rgba(236,111,181,0.18) 40%, rgba(125,217,198,0.14) 75%, rgba(168,199,250,0.12) 100%)"
-            : "rgba(15,15,15,0.55)",
-          backdropFilter: "blur(18px)",
-          WebkitBackdropFilter: "blur(18px)",
-          color: "var(--text-primary)",
-          cursor: isTogglingAdv ? "default" : "pointer",
-          opacity: isTogglingAdv ? 0.75 : 1,
-          transition: "background 0.3s, border-color 0.3s",
-          display: "flex",
-          alignItems: "center",
-          gap: 16,
-        }}
-      >
-        {adventurous && (
-          <div
-            aria-hidden
-            style={{
-              position: "absolute",
-              inset: 0,
-              pointerEvents: "none",
-              background: `
-                radial-gradient(3px 3px at 18% 28%, rgba(255,255,255,0.7), transparent 70%),
-                radial-gradient(2px 2px at 72% 22%, rgba(255,255,255,0.5), transparent 70%),
-                radial-gradient(2px 2px at 42% 78%, rgba(255,255,255,0.55), transparent 70%),
-                radial-gradient(3px 3px at 88% 68%, rgba(255,255,255,0.6), transparent 70%)
-              `,
-            }}
-          />
-        )}
-        <div
-          style={{
-            width: 42,
-            height: 42,
-            borderRadius: 14,
-            background: adventurous
-              ? "rgba(255,255,255,0.14)"
-              : "rgba(139,92,246,0.14)",
-            border: adventurous
-              ? "1px solid rgba(255,255,255,0.2)"
-              : "1px solid rgba(139,92,246,0.3)",
-            display: "grid",
-            placeItems: "center",
-            color: adventurous ? "#fff" : "var(--accent)",
-            flexShrink: 0,
-          }}
-        >
-          <Sparkles size={18} />
+    <div className="ev-explore shell-wide" data-adventurous={adventurous || undefined}>
+      <header className="ex-head">
+        <div>
+          <h1 className="ex-title">Explore</h1>
+          <p className="ex-lede">Artists further out from your usual, in rails you can shuffle whenever you like.</p>
         </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div
-            style={{
-              fontSize: 18,
-              fontWeight: 600,
-              lineHeight: 1.15,
-              color: adventurous ? "#fff" : "var(--text-primary)",
-            }}
-          >
-            {adventurous ? "Adventurous mode — on" : "Adventurous mode"}
-          </div>
-          <div
-            style={{
-              fontSize: 12.5,
-              color: adventurous ? "rgba(255,255,255,0.8)" : "var(--text-muted)",
-              marginTop: 4,
-              lineHeight: 1.4,
-            }}
-          >
-            {adventurous
-              ? "Serendipity up top. Left-field inflated. Expect unfamiliar."
-              : "Bias the mix toward serendipity and left-field picks."}
-          </div>
-        </div>
-        <div
-          aria-hidden
-          style={{
-            width: 40,
-            height: 24,
-            borderRadius: 999,
-            background: adventurous ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.08)",
-            border: "1px solid " + (adventurous ? "rgba(255,255,255,0.6)" : "rgba(255,255,255,0.12)"),
-            position: "relative",
-            flexShrink: 0,
-            transition: "background 0.25s",
-          }}
-        >
-          <div
-            style={{
-              position: "absolute",
-              top: 2,
-              left: adventurous ? 18 : 2,
-              width: 18,
-              height: 18,
-              borderRadius: "50%",
-              background: adventurous ? "#f5b047" : "rgba(255,255,255,0.6)",
-              transition: "left 0.25s, background 0.25s",
-            }}
-          />
-        </div>
-      </button>
+        <p className="ex-tally">
+          <strong>{totalDiscoveries}</strong> discoveries
+          {adventurous && <span className="ex-tally-adv"> · Adventurous on</span>}
+        </p>
+      </header>
 
-      {isAdvDirty && (
+      <div className="ex-controls">
         <button
           type="button"
-          onClick={handleApplyAdventurous}
-          disabled={isApplyingAdv}
-          aria-label="Rebuild Explore rails to apply Adventurous mode change"
-          className="adv-apply-cta"
-          style={{
-            position: "relative",
-            overflow: "hidden",
-            width: "100%",
-            padding: "14px 20px",
-            marginBottom: 16,
-            textAlign: "left",
-            borderRadius: 18,
-            border: "1px solid rgba(245,176,71,0.45)",
-            background: "linear-gradient(135deg, rgba(245,176,71,0.28) 0%, rgba(236,111,181,0.24) 45%, rgba(125,217,198,0.18) 80%, rgba(168,199,250,0.16) 100%)",
-            backdropFilter: "blur(18px)",
-            WebkitBackdropFilter: "blur(18px)",
-            color: "#fff",
-            cursor: isApplyingAdv ? "default" : "pointer",
-            opacity: isApplyingAdv ? 0.75 : 1,
-            display: "flex",
-            alignItems: "center",
-            gap: 14,
-            animation: isApplyingAdv ? undefined : "adv-apply-pulse 2s ease-in-out infinite",
-            boxShadow: "0 0 28px rgba(245,176,71,0.22)",
-          }}
+          className="ex-adv"
+          onClick={handleAdventurousToggle}
+          disabled={isTogglingAdv}
+          aria-pressed={adventurous}
         >
-          <div
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 12,
-              background: "rgba(255,255,255,0.18)",
-              border: "1px solid rgba(255,255,255,0.24)",
-              display: "grid",
-              placeItems: "center",
-              color: "#fff",
-              flexShrink: 0,
-            }}
-          >
-            <Sparkles size={16} />
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 15, fontWeight: 600, lineHeight: 1.15 }}>
-              {isApplyingAdv ? "Rebuilding\u2026" : `Rebuild rails with Adventurous ${adventurous ? "on" : "off"}`}
-            </div>
-            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", marginTop: 3, lineHeight: 1.4 }}>
-              Apply your Adventurous change to get fresh picks.
-            </div>
-          </div>
-          <RefreshCw size={18} style={{ opacity: 0.9, flexShrink: 0 }} />
+          <span className="ex-switch" aria-hidden>
+            <span />
+          </span>
+          <span className="ex-adv-text">
+            <span className="ex-adv-label">Adventurous mode</span>
+            <span className="ex-adv-hint">
+              {isAdvDirty
+                ? "Apply your Adventurous change to get fresh picks."
+                : adventurous
+                  ? "Serendipity up top. Left-field inflated. Expect unfamiliar."
+                  : "Bias the mix toward serendipity and left-field picks."}
+            </span>
+          </span>
         </button>
-      )}
+        {(isAdvDirty || activeRail) && (
+          <div className="ex-actions">
+            {isAdvDirty && (
+              <button
+                type="button"
+                onClick={handleApplyAdventurous}
+                disabled={isApplyingAdv}
+                aria-label="Rebuild Explore rails to apply Adventurous mode change"
+                className="ex-btn ex-btn-primary"
+              >
+                <RefreshCw size={16} className={isApplyingAdv ? "ex-spin" : undefined} aria-hidden />
+                {isApplyingAdv ? "Rebuilding\u2026" : `Rebuild rails with Adventurous ${adventurous ? "on" : "off"}`}
+              </button>
+            )}
+            {activeRail && (
+              <button
+                type="button"
+                onClick={handleShuffle}
+                disabled={isRegenerating}
+                aria-label={`Shuffle ${activeRail.title}`}
+                className="ex-btn ex-btn-ghost"
+              >
+                <RefreshCw size={16} className={isRegenerating ? "ex-spin" : undefined} aria-hidden />
+                {isRegenerating ? "Shuffling…" : "Shuffle"}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
 
-      <Suspense fallback={null}>
+      <Suspense fallback={<ChallengeSkeleton />}>
         <ChallengeSlot challengePromise={challengePromise} adventurous={adventurous} />
       </Suspense>
 
-      <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 6,
-          marginTop: 16,
-          marginBottom: 14,
-        }}
-      >
-        {orderedRails.map((rail) => {
-          const active = rail.railKey === activeKey
-          const count = rail.artists.length
-          const meta = RAIL_META[rail.railKey]
-          const Icon = meta.icon
-          return (
-            <button
-              key={rail.railKey}
-              type="button"
-              onClick={() => setActiveKey(rail.railKey)}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "8px 14px",
-                fontSize: 13,
-                fontWeight: 600,
-                borderRadius: 999,
-                border: active ? `1px solid rgba(${meta.rgb}, 0.55)` : "1px solid var(--border)",
-                background: active ? `rgba(${meta.rgb}, 0.12)` : "transparent",
-                color: active ? `rgb(${meta.rgb})` : "var(--text-muted)",
-                cursor: "pointer",
-                transition: "background 0.15s, border-color 0.15s, color 0.15s",
-              }}
-            >
-              <Icon size={13} />
-              <span>{rail.title}</span>
-              <span
-                className="mono"
-                style={{
-                  fontSize: 11,
-                  padding: "1px 7px",
-                  borderRadius: 999,
-                  background: active ? `rgba(${meta.rgb}, 0.25)` : "rgba(255,255,255,0.05)",
-                  color: active ? `rgb(${meta.rgb})` : "var(--text-faint)",
-                }}
+      {orderedRails.length > 0 && (
+        <nav className="ex-tabs" aria-label="Explore rails">
+          {orderedRails.map((rail) => {
+            const Icon = RAIL_ICON[rail.railKey]
+            return (
+              <button
+                key={rail.railKey}
+                type="button"
+                className="ex-tab"
+                aria-pressed={rail.railKey === activeKey}
+                aria-label={`${rail.title}, ${rail.artists.length} artists`}
+                onClick={() => setActiveKey(rail.railKey)}
               >
-                {count}
-              </span>
-            </button>
-          )
-        })}
-      </div>
+                <Icon size={15} aria-hidden />
+                <span>{rail.title}</span>
+                <span className="ex-tab-n">{rail.artists.length}</span>
+              </button>
+            )
+          })}
+        </nav>
+      )}
 
       {orderedRails.length === 0 && (
-        <div
-          className="muted"
-          style={{
-            padding: "48px 18px",
-            fontSize: 13,
-            lineHeight: 1.5,
-            textAlign: "center",
-            border: "1px dashed var(--border)",
-            borderRadius: 12,
-            background: "rgba(15,15,15,0.45)",
-          }}
-        >
+        <div className="ex-empty" role="status">
           {isRegenerating ? (
             <>
-              <div style={{ fontWeight: 600, color: "var(--text-primary)", marginBottom: 6 }}>
-                Building your exploration rails…
-              </div>
-              This takes about a minute. Rails will appear automatically when ready.
+              <p className="ex-empty-title">Building your exploration rails…</p>
+              <p>This takes about a minute. Rails will appear automatically when ready.</p>
+              <span className="ex-empty-bar" aria-hidden>
+                <span />
+              </span>
             </>
           ) : (
             <>
-              <div style={{ fontWeight: 600, color: "var(--text-primary)", marginBottom: 6 }}>
-                Not enough signal yet
-              </div>
-              Save a few artists or mark some thumbs-up in your feed, then shuffle to generate richer rails here.
+              <p className="ex-empty-title">Not enough signal yet</p>
+              <p>Save a few artists or mark some thumbs-up in your feed, then shuffle to generate richer rails here.</p>
             </>
           )}
         </div>
       )}
 
+      {building && (
+        <div className="ex-grid ex-building" aria-hidden>
+          {[0, 1, 2].map((i) => (
+            <SkeletonCard key={i} />
+          ))}
+        </div>
+      )}
+
       {activeRail && (
-        <div>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "flex-end",
-              justifyContent: "space-between",
-              gap: 12,
-              marginBottom: 12,
-            }}
-          >
-            <div>
-              <div className="muted" style={{ fontSize: 13, lineHeight: 1.4 }}>
-                {activeRail.subtitle}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={handleShuffle}
-              disabled={isRegenerating}
-              aria-label={`Shuffle ${activeRail.title}`}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "8px 14px",
-                fontSize: 13,
-                fontWeight: 600,
-                borderRadius: 8,
-                background: "rgba(139,92,246,0.10)",
-                border: "1px solid rgba(139,92,246,0.35)",
-                color: "var(--accent)",
-                cursor: isRegenerating ? "default" : "pointer",
-                opacity: isRegenerating ? 0.7 : 1,
-                whiteSpace: "nowrap",
-              }}
-            >
-              <RefreshCw size={13} className={isRegenerating ? "spin" : undefined} />
-              <span>{isRegenerating ? "Shuffling…" : "Shuffle"}</span>
-            </button>
+        <section aria-labelledby="ex-rail-title">
+          <div className="ex-rail-head">
+            <h2 id="ex-rail-title" className="ex-rail-title">{activeRail.title}</h2>
+            {/* The Adventurous note shares the subtitle's line (reserved in the skeleton, explore.css). */}
+            <p className="ex-rail-sub">
+              {activeRail.subtitle}
+              {adventurous && " "}
+              {adventurous && (
+                <span className="ex-rail-adv">
+                  <Sparkles size={13} aria-hidden /> Adventurous order: furthest-out rails first
+                </span>
+              )}
+            </p>
           </div>
 
           {activeRail.artists.length === 0 ? (
-            <div
-              className="muted"
-              style={{
-                padding: "36px 18px",
-                fontSize: 13,
-                textAlign: "center",
-                border: "1px dashed var(--border)",
-                borderRadius: 12,
-              }}
-            >
-              {activeRail.emptyCaption ?? "Nothing here yet — tap Shuffle."}
+            <div className="ex-empty">
+              <p>{activeRail.emptyCaption ?? "Nothing here yet — tap Shuffle."}</p>
             </div>
           ) : (
-            <div className="col gap-16">
+            <div className="ex-grid">
               <AnimatePresence initial={false}>
-                {activeRail.artists.map((artist) => (
+                {open.map((artist) => (
                   <ExploreArtistRow
                     key={artist.id}
                     artist={artist}
                     musicPlatform={musicPlatform}
                     isSaved={savedIds.has(artist.id)}
                     dismissSignal={dismissedSignals.get(artist.id) ?? null}
-                    onSave={handleSave}
+                    onSave={toggleSave}
                     onFeedback={handleFeedback}
                   />
                 ))}
               </AnimatePresence>
             </div>
           )}
-        </div>
+
+          {decided.length > 0 && (
+            <section className="ex-decided" aria-labelledby="ex-decided-title">
+              <h3 id="ex-decided-title" className="ex-decided-title" tabIndex={-1}>Decided in this rail</h3>
+              <div className="ex-decided-list">
+                <AnimatePresence initial={false}>
+                  {decided.map((artist) => (
+                    <ExploreArtistRow
+                      key={artist.id}
+                      artist={artist}
+                      musicPlatform={musicPlatform}
+                      isSaved={savedIds.has(artist.id)}
+                      dismissSignal={dismissedSignals.get(artist.id) ?? null}
+                      onSave={toggleSave}
+                      onFeedback={handleFeedback}
+                    />
+                  ))}
+                </AnimatePresence>
+              </div>
+            </section>
+          )}
+        </section>
       )}
     </div>
   )

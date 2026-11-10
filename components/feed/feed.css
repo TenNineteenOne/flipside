@@ -1,0 +1,703 @@
+/* Desktop feed (PRD #182 "Desktop feed"), ported from the design-lab prototype's evolved.css
+   (.ev-app, .ev-queue*, .ev-row*, .ev-focus*, .ev-card*, .ev-triage*, .ev-strip*).
+   Every rule is scoped under .ev-feed; tokens and fonts are global. */
+
+.ev-feed {
+  color: var(--fg);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "ss01";
+}
+/* Per-artist tint: only --a is set inline, the two shades are derived here. */
+.ev-feed .ev-row, .ev-feed .ev-card {
+  --a-dark: color-mix(in oklch, var(--a) 45%, black);
+  --a-light: color-mix(in oklch, var(--a) 55%, white);
+}
+.ev-feed *, .ev-feed *::before, .ev-feed *::after { box-sizing: border-box; }
+.ev-feed h1, .ev-feed h2, .ev-feed h3 { margin: 0; text-wrap: balance; font-weight: 600; }
+.ev-feed p { margin: 0; text-wrap: pretty; }
+.ev-feed ul, .ev-feed ol { margin: 0; padding: 0; list-style: none; }
+.ev-feed button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+.ev-feed img { display: block; }
+/* Long names (one 40-letter word, three long source artists, six long genres) wrap instead of
+   widening a pane; single-line ones keep their ellipsis. */
+.ev-feed .ev-card-name, .ev-feed .ev-card-genres, .ev-feed .ev-card-why, .ev-feed .ev-m-name, .ev-feed .ev-m-why,
+.ev-feed .ev-row-name, .ev-feed .ev-m-thumb-text, .ev-feed .ev-end-title, .ev-feed .ev-end-body, .ev-feed .ev-player-text,
+.ev-feed .ev-cold-sub, [data-sonner-toast].ev-toast { overflow-wrap: anywhere; }
+.ev-feed .ev-card-hero, .ev-feed .ev-card-id, .ev-feed .ev-tuning, .ev-feed .ev-tune-group { min-width: 0; }
+.ev-feed :focus-visible { outline: 2px solid var(--violet-ink); outline-offset: 2px; border-radius: 6px; }
+
+.ev-feed .ev-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 44px; padding: 0 18px; border-radius: 10px; font-weight: 600; font-size: 15px;
+  transition: background-color 150ms var(--ease), transform 150ms var(--ease), border-color 150ms var(--ease);
+}
+.ev-feed .ev-btn:active { transform: scale(0.98); }
+.ev-feed .ev-meter { display: inline-block; width: 44px; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; vertical-align: middle; }
+.ev-feed .ev-meter > span { display: block; height: 100%; background: var(--a-light, var(--fg-3)); border-radius: inherit; }
+
+/* No artwork: a colour panel with the first letter. */
+.ev-feed .ev-letter {
+  display: grid; place-items: center; background: var(--a);
+  font-weight: 650; letter-spacing: -0.03em; line-height: 1; user-select: none;
+}
+
+/* triage control */
+.ev-feed .ev-tri {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px; flex: 1;
+  min-height: 44px; padding: 0 12px; border-radius: 9px; font-size: 14px; font-weight: 550; color: var(--fg-2);
+  background: var(--raise); border: 1px solid transparent; white-space: nowrap;
+  transition: background-color 150ms var(--ease), color 150ms var(--ease), transform 120ms var(--ease);
+}
+.ev-feed button.ev-tri:hover { color: var(--fg); background: color-mix(in oklch, var(--raise), white 6%); }
+.ev-feed button.ev-tri:active { transform: scale(0.97); }
+.ev-feed .ev-tri-like { color: var(--violet-ink); }
+.ev-feed .ev-tri-like[aria-pressed="true"] { background: var(--violet-fill); color: #fff; }
+
+/* Two panes filling the shell's main area (the rail is the shell's). */
+.ev-feed.ev-app {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(400px, 32vw, 500px);
+  grid-template-areas: "queue focus";
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* queue */
+.ev-feed .ev-queue {
+  grid-area: queue; min-height: 0; overflow-y: auto; padding: 0 28px 96px; scrollbar-gutter: stable;
+  container: ev-queue / inline-size;
+  /* Focus scrolling, undo reselect and scrollIntoView all stop below the sticky header + column row. */
+  scroll-padding-top: calc(var(--ev-head-h, 0px) + var(--ev-cols-h) + 2px);
+}
+/* Header: the title block takes the width; count + strip sit on their own full-width line below it,
+   or in a fixed 260px column beside it once the queue is wide enough (a container query, not content
+   wrapping, so the skeleton, which has the same structure, always matches). */
+.ev-feed .ev-queue-head {
+  position: sticky; top: 0; z-index: 10; display: grid; grid-template-columns: minmax(0, 1fr); align-items: end; gap: 12px 24px;
+  padding: 28px 0 18px; margin-bottom: 6px; background: var(--bg); border-bottom: 1px solid var(--line);
+}
+.ev-feed .ev-queue-title { font-size: 26px; letter-spacing: -0.025em; line-height: 1.15; }
+.ev-feed .ev-queue-sub { margin-top: 4px; color: var(--fg-3); font-size: 14px; }
+.ev-feed .ev-progress { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.ev-feed .ev-progress-text { flex: none; font-size: 13px; line-height: 16px; color: var(--fg-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ev-feed .ev-progress-text strong { color: var(--fg); font-weight: 600; }
+/* One row of flexible segments for any count (--n): 2–9px wide, gaps shrink to 0 past ~80 artists. */
+.ev-feed .ev-strip {
+  display: flex; justify-content: flex-end; flex: 0 1 320px; min-width: 0; margin-left: auto; overflow: hidden;
+  gap: clamp(0px, round(down, (100% - var(--n, 20) * 2px) / var(--n, 20), 1px), 3px);
+}
+.ev-feed .ev-seg { flex: 1 1 0; min-width: 2px; max-width: 9px; height: 14px; border-radius: 2px; background: var(--line); transition: background-color 200ms var(--ease), transform 200ms var(--ease); }
+.ev-feed .ev-seg[data-v="liked"] { background: var(--violet); }
+.ev-feed .ev-seg[data-v="passed"], .ev-feed .ev-seg[data-v="dismissed"] { background: color-mix(in oklch, var(--fg-3) 30%, var(--bg)); transform: scaleY(0.45); }
+.ev-feed .ev-seg[data-sel] { background: var(--fg); }
+@container ev-queue (width >= 660px) {
+  .ev-feed .ev-queue-head { grid-template-columns: minmax(0, 1fr) 260px; }
+  .ev-feed .ev-progress { flex-direction: column; align-items: flex-end; gap: 8px; }
+  .ev-feed .ev-strip { flex: none; width: 100%; margin-left: 0; }
+}
+
+.ev-feed .ev-rows { display: flex; flex-direction: column; gap: 2px; }
+/* One grid for the rows and their column labels (.ev-cols), so a label can't drift off its column.
+   --ev-head-h is the sticky queue header's height (set by feed-desktop.tsx). */
+.ev-feed .ev-queue { --ev-cols-h: 32px; }
+/* Columns follow the QUEUE's width (container ev-queue, content box), not the viewport, so the
+   Artist column never drops below ~260px: Popularity from 530px, Genre from 680px (so a 1440px window keeps it). --ev-cols is set
+   on the queue's children (a container can't query itself); labels and cells hide together. */
+.ev-feed .ev-queue > * { --ev-cols: 48px minmax(0, 1fr) 76px; }
+.ev-feed .ev-row-genre, .ev-feed .ev-col-genre, .ev-feed .ev-row-pop, .ev-feed .ev-col-pop { display: none; }
+@container ev-queue (width >= 530px) {
+  .ev-feed .ev-queue > * { --ev-cols: 48px minmax(0, 1fr) 80px 76px; }
+  .ev-feed .ev-row-pop { display: flex; }
+  .ev-feed .ev-col-pop { display: block; }
+}
+@container ev-queue (width >= 680px) {
+  .ev-feed .ev-queue > * { --ev-cols: 48px minmax(0, 1fr) 150px 80px 76px; }
+  .ev-feed .ev-row-genre, .ev-feed .ev-col-genre { display: block; }
+}
+.ev-feed .ev-row, .ev-feed .ev-cols {
+  display: grid; align-items: center; gap: 14px; grid-template-columns: var(--ev-cols);
+  padding: 8px 12px 8px 8px; border: 1px solid transparent;
+}
+.ev-feed .ev-row {
+  position: relative; border-radius: 10px;
+  transition: background-color 120ms var(--ease), border-color 120ms var(--ease);
+  content-visibility: auto; contain-intrinsic-size: auto 66px;
+}
+.ev-feed .ev-cols {
+  position: sticky; top: var(--ev-head-h, 0px); z-index: 5; height: var(--ev-cols-h); padding-top: 0; padding-bottom: 0;
+  margin-bottom: 4px; background: var(--bg); border-bottom-color: var(--line); font-size: 12px; line-height: 1; color: var(--fg-3);
+}
+.ev-feed .ev-cols > :first-child { grid-column: 2; }
+/* "Popularity 0–100" is wider than its 80px column: it also takes the unlabelled state column. */
+.ev-feed .ev-col-pop { grid-column: span 2; white-space: nowrap; }
+.ev-feed .ev-col-scale { font-family: var(--font-mono); font-size: 11px; }
+.ev-feed .ev-row:hover { background: var(--panel); }
+/* A decided row leaving the queue (feed-desktop.tsx, useLeaving): fades and slides 32px left. */
+.ev-feed .ev-row[data-leaving] { animation: ev-row-out 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards; pointer-events: none; }
+@keyframes ev-row-out { to { opacity: 0; transform: translateX(-32px); } }
+.ev-feed .ev-row[data-sel] { background: var(--raise); border-color: var(--line-strong); }
+.ev-feed .ev-row-select { position: absolute; inset: 0; border-radius: 10px; }
+.ev-feed .ev-row-select:focus-visible { outline-offset: -2px; }
+.ev-feed .ev-row-art { position: relative; z-index: 1; width: 48px; height: 48px; border-radius: 7px; overflow: hidden; background: var(--a-dark); }
+.ev-feed .ev-row-img { width: 100%; height: 100%; object-fit: cover; }
+.ev-feed .ev-row-art .ev-letter { font-size: 20px; }
+.ev-feed .ev-row-art-icon {
+  position: absolute; inset: 0; display: grid; place-items: center; color: #fff;
+  background: color-mix(in oklch, var(--a-dark) 70%, transparent); opacity: 0; transition: opacity 120ms var(--ease);
+}
+.ev-feed .ev-row-art:hover .ev-row-art-icon, .ev-feed .ev-row-art:focus-visible .ev-row-art-icon, .ev-feed .ev-row-art[data-playing] .ev-row-art-icon { opacity: 1; }
+.ev-feed .ev-row[data-sel] .ev-row-art { box-shadow: 0 0 0 2px var(--a); }
+.ev-feed .ev-row-text { display: flex; flex-direction: column; min-width: 0; pointer-events: none; }
+.ev-feed .ev-row-name { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev-feed .ev-row-name-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.ev-feed .ev-row-why { font-size: 13px; color: var(--fg-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev-feed .ev-row-genre { font-size: 13px; color: var(--fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.ev-feed .ev-row-pop { align-items: center; gap: 8px; pointer-events: none; }
+.ev-feed .ev-row-pop-n { font: 400 11px/1 var(--font-mono); color: var(--fg-3); }
+.ev-feed .ev-row-state { display: flex; justify-content: flex-end; pointer-events: none; }
+.ev-feed .ev-saved-tag { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; border-radius: 6px; font-size: 12px; font-weight: 600; color: var(--fg-2); background: var(--raise); }
+.ev-feed .ev-liked-tag { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; border-radius: 6px; font-size: 12px; font-weight: 600; color: #fff; background: var(--violet-fill); }
+.ev-feed .ev-row[data-liked] .ev-row-name { color: var(--fg); }
+
+.ev-feed .ev-eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 12px; }
+.ev-feed .ev-eq i { width: 3px; height: 100%; background: var(--a-light); border-radius: 1px; transform-origin: bottom; animation: ev-feed-eq 900ms var(--ease) infinite alternate; }
+.ev-feed .ev-eq i:nth-child(2) { animation-delay: -300ms; }
+.ev-feed .ev-eq i:nth-child(3) { animation-delay: -600ms; }
+@keyframes ev-feed-eq { from { transform: scaleY(0.25); } to { transform: scaleY(1); } }
+
+/* focus pane */
+.ev-feed .ev-focus { grid-area: focus; display: flex; flex-direction: column; min-height: 0; background: var(--panel); border-left: 1px solid var(--line); }
+.ev-feed .ev-focus-scroll { flex: 1; min-height: 0; overflow-y: auto; }
+.ev-feed .ev-card {
+  display: flex; flex-direction: column; gap: 22px; padding: 24px 24px 28px; min-height: 100%;
+  /* tint from the artist's own colour, flat and fading out (not a glow) */
+  background: linear-gradient(to bottom, color-mix(in oklch, var(--a-dark) 42%, var(--panel)) 0, var(--panel) 420px);
+}
+.ev-feed .ev-card-hero { display: flex; flex-direction: column; gap: 18px; }
+/* Height-aware: on short windows (down to 900x500) the play button and the triage control stay
+   above the fold; 372px is the pane's other content plus the docked player. Below that the pane scrolls. */
+.ev-feed .ev-card-art { width: max(96px, min(100%, 40vh, 100vh - 372px)); height: auto; aspect-ratio: 1; object-fit: cover; border-radius: 12px; box-shadow: 0 18px 40px -18px color-mix(in oklch, var(--a-dark) 80%, black); }
+.ev-feed .ev-card-art.ev-letter { font-size: min(40cqw, 16vh); }
+.ev-feed .ev-card-hero { container-type: inline-size; }
+.ev-feed .ev-card-name { font-size: 32px; line-height: 1.05; letter-spacing: -0.03em; }
+.ev-feed .ev-card-genres { margin-top: 6px; color: var(--fg-2); font-size: 14px; }
+.ev-feed .ev-card-why { margin-top: 12px; font-size: 15px; color: var(--fg-2); }
+.ev-feed .ev-card-why strong { color: var(--fg); font-weight: 600; }
+.ev-feed .ev-card-pop { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 13px; color: var(--fg-3); }
+
+.ev-feed .ev-card-actions { display: flex; flex-direction: column; gap: 10px; container-type: inline-size; }
+@container (width < 361px) {
+  .ev-feed .ev-tri { padding: 0 6px; gap: 5px; font-size: 13px; }
+}
+.ev-feed .ev-btn-play { width: 100%; min-height: 50px; background: var(--fg); color: oklch(0.16 0.01 293); border-radius: 11px; font-size: 16px; }
+.ev-feed .ev-btn-play:hover:not(:disabled) { background: white; }
+.ev-feed .ev-btn-play[aria-pressed="true"] { background: var(--a-light); }
+.ev-feed .ev-btn-play:disabled { cursor: default; background: var(--raise); color: var(--fg-3); }
+.ev-feed .ev-triage { display: flex; gap: 6px; }
+
+.ev-feed .ev-card { animation: ev-feed-in 220ms var(--ease); }
+/* Entrance moves only; it never starts transparent. */
+@keyframes ev-feed-in { from { transform: translateY(8px); } }
+
+.ev-feed .ev-kbd {
+  display: inline-grid; place-items: center; min-width: 1.6em; height: 1.6em; padding: 0 0.4em;
+  font: 500 10px/1 var(--font-mono); color: var(--fg-3);
+  border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 5px; background: var(--bg);
+}
+
+.ev-feed .ev-btn-play .ev-kbd { margin-left: 6px; color: oklch(0.42 0.01 293); background: transparent; border-color: oklch(0.8 0.01 293); }
+.ev-feed .ev-hints { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 14px; font-size: 12px; color: var(--fg-3); }
+.ev-feed .ev-hints > span { display: inline-flex; align-items: center; gap: 5px; }
+.ev-feed .ev-hints .ev-kbd + .ev-kbd { margin-left: -2px; }
+.ev-feed .ev-icon-btn { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 8px; color: var(--fg-2); }
+.ev-feed .ev-icon-btn:hover { background: var(--raise); color: var(--fg); }
+
+/* shortcut sheet (native dialog) */
+.ev-feed.ev-sheet {
+  width: min(420px, calc(100vw - 32px)); margin: auto; padding: 0; border: 1px solid var(--line-strong); border-radius: 14px;
+  background: var(--panel); color: var(--fg); box-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.7);
+}
+.ev-feed.ev-sheet::backdrop { background: rgba(8, 7, 10, 0.6); }
+.ev-feed.ev-sheet[open] { animation: ev-feed-pop 180ms var(--ease); }
+/* Pops in by transform only; never starts transparent. */
+@keyframes ev-feed-pop { from { transform: translateY(8px) scale(0.98); } }
+.ev-feed .ev-sheet-inner { padding: 16px 18px 18px; }
+.ev-feed .ev-sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.ev-feed .ev-sheet-head h2 { font-size: 16px; }
+.ev-feed .ev-sheet-list { margin: 0; }
+.ev-feed .ev-sheet-row { display: flex; align-items: center; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.ev-feed .ev-sheet-row dd { display: flex; gap: 4px; margin: 0; }
+.ev-feed .ev-sheet-row .ev-kbd { font-size: 11px; height: 22px; min-width: 22px; color: var(--fg-2); }
+.ev-feed .ev-sheet-note { margin-top: 12px; font-size: 13px; color: var(--fg-3); }
+
+/* secondary actions */
+.ev-feed .ev-secondary { display: flex; gap: 4px; }
+.ev-feed .ev-sec {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: 1; min-height: 44px; border-radius: 8px;
+  font-size: 13px; color: var(--fg-2); text-decoration: none; transition: background-color 120ms var(--ease), color 120ms var(--ease);
+}
+.ev-feed .ev-sec:hover { background: var(--raise); color: var(--fg); }
+.ev-feed .ev-sec[aria-pressed="true"] { color: var(--violet-ink); }
+
+/* track list */
+.ev-feed .ev-tracks-title { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; color: var(--fg-3); padding: 0 8px 6px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.ev-feed .ev-tracks-title span { font-weight: 400; }
+.ev-feed .ev-track { position: relative; display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; min-height: 48px; padding: 6px 8px; border-radius: 8px; text-align: left; overflow: hidden; }
+.ev-feed .ev-track:hover { background: color-mix(in oklch, var(--raise), transparent 30%); }
+.ev-feed .ev-track[data-current] { background: color-mix(in oklch, var(--raise), transparent 30%); }
+.ev-feed .ev-track-n { position: relative; display: grid; place-items: center; height: 20px; font: 400 12px/1 var(--font-mono); color: var(--fg-3); }
+.ev-feed .ev-track-hover { position: absolute; opacity: 0; color: var(--fg); }
+.ev-feed .ev-track:hover .ev-track-hover { opacity: 1; }
+.ev-feed .ev-track:hover .ev-track-i { opacity: 0; }
+/* Text uses a lighter mix than --a-light so dark artist colours still reach 4.5:1 on the pane. */
+.ev-feed .ev-track[data-current] .ev-track-name, .ev-feed .ev-track[data-current] .ev-track-n { color: color-mix(in oklch, var(--a) 35%, white); }
+.ev-feed .ev-track-name { display: flex; flex-direction: column; min-width: 0; font-size: 14px; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev-feed .ev-track-album { font-size: 12px; font-weight: 400; color: var(--fg-3); overflow: hidden; text-overflow: ellipsis; }
+.ev-feed .ev-track-dur { font: 400 11px/1 var(--font-mono); color: var(--fg-3); }
+.ev-feed .ev-track-bar { position: absolute; left: 8px; right: 8px; bottom: 0; height: 2px; }
+.ev-feed .ev-track-bar span { display: block; height: 100%; background: var(--a-light); transform-origin: left; transition: transform 250ms linear; }
+
+/* docked player (components/player/mini-player.tsx, docked variant) */
+.ev-feed .ev-player { --a-light: color-mix(in oklch, var(--a, var(--violet)) 55%, white); position: relative; display: flex; align-items: center; gap: 12px; padding: 12px 16px 14px; background: var(--rail); border-top: 1px solid var(--line); min-height: 68px; }
+.ev-feed .ev-player-blank.ev-letter { font-size: 18px; }
+.ev-feed .ev-player img, .ev-feed .ev-player-blank { width: 40px; height: 40px; border-radius: 6px; object-fit: cover; background: var(--a, var(--raise)); flex-shrink: 0; }
+.ev-feed .ev-player-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.ev-feed .ev-player-track { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev-feed .ev-player-artist { font-size: 13px; color: var(--fg-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev-feed .ev-player-btn { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--fg); color: oklch(0.16 0.01 293); flex-shrink: 0; }
+.ev-feed .ev-player-btn:hover { background: #fff; }
+.ev-feed .ev-player-bar { position: absolute; left: 0; right: 0; top: -1px; height: 2px; }
+.ev-feed .ev-player-bar span { display: block; height: 100%; background: var(--a-light); transform-origin: left; transition: transform 250ms linear; }
+.ev-feed .ev-player-idle { font-size: 13px; color: var(--fg-3); }
+.ev-feed .ev-idle-touch { display: none; }
+
+/* rail tuning block (portalled into the shell rail; the shell hides its slot below 1100px) */
+.ev-feed.ev-tuning { display: flex; flex-direction: column; gap: 8px; }
+.ev-feed .ev-rail-heading { font-size: 13px; font-weight: 600; color: var(--fg-3); padding: 0 10px 2px; }
+.ev-feed .ev-tune-group { display: flex; flex-direction: column; gap: 6px; padding: 0 10px 4px; }
+.ev-feed .ev-tune-label { font: 500 11px/1.4 var(--font-mono); color: var(--fg-3); }
+.ev-feed .ev-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+/* A long genre is cut with an ellipsis (full name in the title) rather than widening the rail. */
+.ev-feed .ev-chip { display: block; max-width: 100%; height: 24px; line-height: 24px; padding: 0 9px; border-radius: 6px; font-size: 13px; color: var(--fg-2); background: var(--raise); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev-feed .ev-chip-more { color: var(--violet-ink); background: var(--violet-wash); }
+
+/* cold-start banner (existing component) at the top of the queue column */
+.ev-feed .ev-coldstart:not(:empty) { margin: 6px 0 12px; }
+.ev-feed .ev-queue-foot { padding: 20px 12px; color: var(--fg-3); font-size: 14px; }
+/* "Load more artists" at the end of the queue column and the tablet Up next list: always there. */
+.ev-feed .ev-queue-more { padding: 16px 12px 0; }
+.ev-feed .ev-m-rail > li.ev-m-rail-more { padding: 10px 6px 0; }
+.ev-feed .ev-m-rail-more .ev-btn { width: 100%; padding: 0 12px; font-size: 14px; }
+.ev-feed .ev-btn-ghost:disabled, .ev-feed .ev-btn-ghost[aria-disabled="true"] { cursor: default; opacity: 0.7; }
+
+/* end of queue */
+.ev-feed .ev-end { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; padding: 48px 28px; animation: ev-feed-in 220ms var(--ease); }
+.ev-feed .ev-end-art { display: flex; margin-bottom: 10px; }
+.ev-feed .ev-end-img { width: 84px; height: 84px; border-radius: 10px; object-fit: cover; border: 3px solid var(--panel); margin-left: -18px; }
+.ev-feed .ev-end-img:first-child { margin-left: 0; }
+.ev-feed .ev-end-img.ev-letter { font-size: 34px; }
+.ev-feed .ev-end-title { font-size: 28px; letter-spacing: -0.03em; }
+.ev-feed .ev-end-body { color: var(--fg-2); max-width: 36ch; }
+.ev-feed .ev-end-body strong { color: var(--fg); font-weight: 600; }
+.ev-feed .ev-end-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.ev-feed .ev-btn-primary { background: var(--violet-fill); color: #fff; }
+.ev-feed .ev-btn-primary:hover:not(:disabled, [aria-disabled="true"]) { background: color-mix(in oklch, var(--violet) 86%, black); }
+.ev-feed .ev-btn-primary:disabled, .ev-feed .ev-btn-primary[aria-disabled="true"] { cursor: default; opacity: 0.7; }
+.ev-feed .ev-btn-ghost { border: 1px solid var(--line-strong); color: var(--fg); text-decoration: none; }
+.ev-feed .ev-btn-ghost:hover:not([aria-disabled="true"]) { background: var(--raise); }
+
+/* loading skeleton (components/feed/feed-skeleton.tsx): desktop panes ≥900px wide and ≥540px tall,
+   tablet 640–899px wide and ≥680px tall, Snap otherwise (the layout rule in feed-client.tsx) */
+.ev-feed .ev-skel-line { display: block; height: 12px; }
+.ev-feed .ev-skel-card { background: var(--panel); animation: none; }
+.ev-feed .ev-skel-card > .fs-skeleton { display: block; }
+.ev-feed.ev-skel-wide .ev-row { content-visibility: visible; }
+@media (width < 900px), (height < 540px) { .ev-skel-wide { display: none !important; } }
+@media (width < 640px), (width >= 900px), (height < 680px) { .ev-feed.ev-tablet.ev-skel-tablet { display: none; } }
+.ev-feed.ev-skel-m .ev-m-page, .ev-feed.ev-skel-m .ev-m-rail > li { content-visibility: visible; }
+.ev-feed.ev-skel-m span.fs-skeleton {
+  display: block; background-color: transparent;
+  background-image: linear-gradient(90deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.03) 100%);
+}
+.ev-feed .ev-skel-mcard { background: var(--panel); border-color: var(--line); cursor: default; }
+/* Reserve the top bar's count and strip row (filled by ShellSlot once the feed arrives). */
+body:has(.ev-skel-m) .shell-top-sub:empty { display: flex; align-items: center; height: 10px; padding-right: 16px; }
+body:has(.ev-skel-m) .shell-top-sub:empty::before { content: ""; flex: 1; height: 4px; border-radius: 2px; background: var(--line); }
+body:has(.ev-skel-m) .shell-top-slot:empty::before { content: ""; width: 76px; height: 14px; border-radius: 7px; background: var(--line); }
+@media (640px <= width < 900px) and (height >= 680px) {
+  body:has(.ev-skel-m) .shell-top-sub:empty { align-items: flex-start; height: 14px; }
+}
+
+@media (width < 1100px) {
+  .ev-feed.ev-app { grid-template-columns: minmax(0, 1fr) 380px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ev-feed *, .ev-feed *::before, .ev-feed *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
+}
+
+/* Undo toast: a sonner toast (unstyled) rendered by the root Toaster, outside .ev-feed. */
+[data-sonner-toast].ev-toast {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px; width: auto; max-width: calc(100vw - 32px);
+  padding: 8px 8px 8px 16px; min-height: 48px; border-radius: 12px;
+  background: var(--fg); color: oklch(0.18 0.01 293); font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  font-size: 14px; font-weight: 550; box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.6);
+}
+[data-sonner-toast].ev-toast .ev-toast-undo {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 10px; border: 0; border-radius: 8px;
+  background: none; font: inherit; font-weight: 600; color: oklch(0.42 0.17 293); cursor: pointer;
+  flex-shrink: 0; white-space: nowrap; overflow-wrap: normal;
+}
+[data-sonner-toast].ev-toast .ev-kbd {
+  display: inline-grid; place-items: center; min-width: 1.6em; height: 1.6em; padding: 0 0.4em;
+  font: 500 10px/1 var(--font-mono); color: oklch(0.45 0.01 293);
+  border: 1px solid oklch(0.8 0.01 293); border-bottom-width: 2px; border-radius: 5px; background: transparent;
+}
+/* Key hints only where there is a keyboard: not on touch, not outside the desktop layout (the sheet keeps its keycaps). */
+@media (hover: none), (width < 900px), (height < 540px) {
+  .ev-feed .ev-card .ev-kbd, .ev-feed .ev-hints, .ev-feed .ev-player .ev-kbd, [data-sonner-toast].ev-toast .ev-kbd { display: none; }
+  .ev-feed .ev-idle-keys { display: none; }
+  .ev-feed .ev-idle-touch { display: inline; }
+}
+[data-sonner-toast].ev-toast .ev-toast-undo:hover { background: oklch(0.92 0.02 293); }
+[data-sonner-toast].ev-toast .ev-toast-undo:focus-visible { outline: 2px solid oklch(0.42 0.17 293); outline-offset: 2px; }
+/* Only feed toasts use bottom-left: on desktop it starts at the queue column, clear of the rail. */
+@media (width >= 900px) and (height >= 540px) {
+  [data-sonner-toaster][data-x-position="left"] { --offset-left: 84px !important; }
+}
+@media (width >= 1100px) and (height >= 540px) {
+  [data-sonner-toaster][data-x-position="left"] { --offset-left: 260px !important; }
+}
+
+/* ---------- Phone feed ("Snap": below 640px, or too short for tablet / desktop) and the snap card (shared with the tablet stage) ----------
+   Ported from the prototype's .ev-m-* rules (design-lab: app/lab/evolved/evolved.css). */
+
+/* Top bar: "N of M left" (ShellSlot "top") and the strip (ShellSlot "topSub", 10px tall). */
+.ev-feed.ev-m-count { margin-left: auto; font-size: 13px; color: var(--fg-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ev-feed.ev-m-count strong { color: var(--fg); font-weight: 600; }
+.ev-feed.ev-m-strip { display: flex; gap: 2px; padding: 0 4px 0 0; height: 10px; align-items: center; }
+.ev-feed.ev-m-strip .ev-seg { flex: 1; width: auto; height: 4px; }
+.ev-feed.ev-m-strip .ev-seg[data-v="passed"], .ev-feed.ev-m-strip .ev-seg[data-v="dismissed"] { transform: none; }
+
+/* The feed fills the area between the top bar (+ strip row + border) and the tab bar; the page itself never scrolls. */
+html:has(.ev-snap), html:has(.ev-snap) body { overflow: hidden; }
+.ev-feed.ev-snap {
+  --ev-snap-top: calc(var(--top-h) + var(--safe-t) + 10px + 1px);
+  position: fixed; left: 0; right: 0; top: var(--ev-snap-top);
+  height: calc(100dvh - var(--ev-snap-top) - var(--tab-h) - var(--safe-b));
+  display: flex; flex-direction: column; background: var(--bg);
+}
+.ev-feed .ev-m-snap { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; scroll-snap-type: y mandatory; overscroll-behavior: contain; scrollbar-width: none; }
+.ev-feed .ev-m-snap::-webkit-scrollbar { display: none; }
+.ev-feed .ev-m-page {
+  height: 100%; scroll-snap-align: start; scroll-snap-stop: always; container-type: size;
+  display: flex; align-items: center; justify-content: center; padding: 0 16px;
+  content-visibility: auto; contain-intrinsic-size: auto 640px;
+}
+.ev-feed .ev-m-page > .ev-m-card { width: min(100%, 480px); }
+
+/* card */
+.ev-feed .ev-m-card {
+  --a-dark: color-mix(in oklch, var(--a) 45%, black);
+  --a-light: color-mix(in oklch, var(--a) 55%, white);
+  position: relative; display: flex; flex-direction: column; gap: 8px; padding: 10px 10px 12px; border-radius: 20px;
+  background: color-mix(in oklch, var(--a-dark) 42%, var(--panel)); border: 1px solid color-mix(in oklch, var(--a) 24%, var(--line));
+  box-shadow: 0 24px 50px -24px rgba(0, 0, 0, 0.8);
+  cursor: grab; user-select: none; -webkit-user-select: none;
+  /* Vertical scrolling and pinch-zoom stay with the browser over the card (it covers most of the
+     screen); !important beats the pan-y framer-motion writes inline for drag="x". */
+  touch-action: pan-y pinch-zoom !important;
+}
+.ev-feed .ev-m-card:active { cursor: grabbing; }
+/* Artwork is sized against BOTH the container's width and height so the whole card always fits;
+   when height-limited the square sits on a mat of the artist colour instead of being cropped. */
+.ev-feed .ev-m-art {
+  position: relative; height: min(100cqw - 52px, 100cqh - 236px, 460px); min-height: 120px;
+  border-radius: 13px; overflow: hidden; background: var(--a-dark); container-type: size;
+}
+.ev-feed .ev-m-img { width: auto; max-width: 100%; height: 100%; aspect-ratio: 1; margin: 0 auto; object-fit: cover; pointer-events: none; }
+.ev-feed .ev-m-img.ev-letter { font-size: 50cqh; }
+/* swipe overlays: opacity follows the drag offset (transparent at rest) */
+.ev-feed .ev-m-verdict { position: absolute; inset: 0; display: flex; align-items: flex-start; padding: 14px; pointer-events: none; }
+.ev-feed .ev-m-verdict span { display: inline-flex; align-items: center; gap: 7px; height: 38px; padding: 0 14px; border-radius: 10px; font-size: 16px; font-weight: 650; }
+.ev-feed .ev-m-verdict-more { background: color-mix(in oklch, var(--violet) 42%, transparent); }
+.ev-feed .ev-m-verdict-more span { background: var(--violet-fill); color: #fff; }
+.ev-feed .ev-m-verdict-less { justify-content: flex-end; background: rgba(12, 10, 16, 0.6); }
+.ev-feed .ev-m-verdict-less span { background: var(--fg); color: oklch(0.18 0.01 293); }
+/* decided cards stay in the scroll: liked badge; passed / dismissed artwork dimmed with a badge */
+.ev-feed .ev-m-liked, .ev-feed .ev-m-judged {
+  position: absolute; left: 12px; bottom: 12px; display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px;
+  border-radius: 8px; font-size: 13px; font-weight: 600;
+}
+.ev-feed .ev-m-liked { background: var(--violet-fill); color: #fff; }
+.ev-feed .ev-m-judged { gap: 6px; background: var(--fg); color: oklch(0.18 0.01 293); }
+.ev-feed .ev-m-card[data-v="passed"] .ev-m-img, .ev-feed .ev-m-card[data-v="dismissed"] .ev-m-img { opacity: 0.4; filter: grayscale(0.7); }
+.ev-feed .ev-m-play {
+  position: absolute; right: 12px; bottom: 12px; display: grid; place-items: center; width: 64px; height: 64px; border-radius: 50%;
+  background: var(--fg); color: oklch(0.16 0.01 293); box-shadow: 0 10px 28px -8px rgba(0, 0, 0, 0.6);
+  transition: transform 140ms var(--ease);
+}
+.ev-feed .ev-m-play:active { transform: scale(0.94); }
+.ev-feed .ev-m-play:disabled { cursor: default; background: var(--raise); color: var(--fg-3); }
+.ev-feed .ev-m-play:focus-visible { border-radius: 50%; }
+.ev-feed .ev-m-ring-svg { position: absolute; inset: 0; transform: rotate(-90deg); fill: none; stroke-width: 4; }
+.ev-feed .ev-m-ring-bg { stroke: rgba(0, 0, 0, 0.1); }
+.ev-feed .ev-m-ring { stroke: var(--violet); stroke-linecap: round; transition: stroke-dashoffset 250ms linear; }
+.ev-feed .ev-m-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ev-feed .ev-m-title > .ev-m-name { min-width: 0; }
+.ev-feed .ev-m-badge-side { position: static; display: none; flex-shrink: 0; }
+.ev-feed .ev-m-info { display: flex; flex-direction: column; gap: 2px; padding: 2px 4px 0; min-width: 0; }
+.ev-feed .ev-m-name { font-size: 24px; line-height: 1.15; letter-spacing: -0.025em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev-feed .ev-m-meta { display: flex; align-items: center; gap: 8px; margin-right: -8px; }
+.ev-feed .ev-m-genres { flex: 1; min-width: 0; font-size: 14px; color: var(--fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev-feed .ev-m-sec { display: flex; flex-shrink: 0; }
+.ev-feed .ev-m-icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 10px; color: var(--fg-2); }
+.ev-feed .ev-m-icon:active, .ev-feed .ev-m-icon:hover { background: rgba(255, 255, 255, 0.07); color: var(--fg); }
+.ev-feed .ev-m-icon[aria-pressed="true"] { color: var(--violet-ink); }
+.ev-feed .ev-m-why {
+  font-size: 14px; line-height: 1.4; color: var(--fg-2);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.ev-feed .ev-m-why strong { color: var(--fg); font-weight: 600; }
+.ev-feed .ev-m-chips { display: flex; gap: 6px; margin-top: 8px; }
+.ev-feed .ev-m-chip {
+  display: inline-flex; align-items: center; gap: 6px; flex: 1 1 0; min-width: 0; height: 40px; padding: 0 10px; border-radius: 10px;
+  background: rgba(0, 0, 0, 0.24); font-size: 13px; font-weight: 550; color: var(--fg-2);
+}
+.ev-feed .ev-m-chip span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev-feed .ev-m-chip svg { flex-shrink: 0; }
+.ev-feed .ev-m-chip[data-current] { background: var(--fg); color: oklch(0.18 0.01 293); }
+/* No tracks yet / none: the desktop pane's copy, in the chips' place and height. */
+.ev-feed .ev-m-chips-note { align-items: center; height: 40px; font-size: 13px; color: var(--fg-3); }
+
+/* Short pages (iPhone SE in Safari, the cold line or the player bar showing, phones in landscape).
+   The card adapts to the page's height so nothing is clipped from 220px up: first the artwork
+   shrinks further, then the track chips go, then the why sentence. The play button, the name and
+   the save / open / share row always stay. Wide and short pages (landscape) put the artwork beside
+   the text instead, which fits down to about 90px. */
+.ev-feed .ev-m-page, .ev-feed .ev-m-stage { container-name: ev-page; }
+@container ev-page (width < 560px) and (height < 356px) {
+  .ev-feed .ev-m-art { min-height: 76px; }
+}
+@container ev-page (width < 560px) and (height < 312px) {
+  .ev-feed .ev-m-chips { display: none; }
+  .ev-feed .ev-m-art { height: min(100cqw - 52px, 100cqh - 186px, 460px); }
+}
+@container ev-page (width < 560px) and (height < 262px) {
+  .ev-feed .ev-m-why { display: none; }
+  .ev-feed .ev-m-art { height: min(100cqw - 52px, 100cqh - 145px, 460px); }
+}
+/* Sideways arrangement: Snap pages only (the tablet stage is also an ev-page container). */
+@container ev-page (width >= 560px) and (height < 356px) {
+  .ev-feed .ev-m-page > .ev-m-card { width: min(100%, 680px); flex-direction: row; align-items: center; gap: 14px; }
+  .ev-feed .ev-m-page .ev-m-art { flex-shrink: 0; height: max(64px, min(100cqh - 32px, 300px)); min-height: 0; aspect-ratio: 1; }
+  .ev-feed .ev-m-page .ev-m-info { flex: 1; }
+  .ev-feed .ev-m-page .ev-m-art > .ev-m-liked, .ev-feed .ev-m-page .ev-m-art > .ev-m-judged { display: none; }
+  .ev-feed .ev-m-page .ev-m-badge-side { display: inline-flex; }
+}
+@container ev-page (width >= 560px) and (height < 200px) { .ev-feed .ev-m-page .ev-m-chips { display: none; } }
+@container ev-page (width >= 560px) and (height < 150px) {
+  .ev-feed .ev-m-page .ev-m-why { display: none; }
+  .ev-feed .ev-m-page > .ev-m-card { padding-block: 4px; }
+}
+/* The tablet stage keeps the card upright at any width, so a wide short stage (888-899px wide
+   with the player bar and the cold-start line showing) shrinks it as a narrow page does. */
+@container ev-page (width >= 560px) and (height < 356px) { .ev-feed .ev-m-stage .ev-m-art { min-height: 76px; } }
+@container ev-page (width >= 560px) and (height < 312px) {
+  .ev-feed .ev-m-stage .ev-m-chips { display: none; }
+  .ev-feed .ev-m-stage .ev-m-art { height: min(100cqw - 52px, 100cqh - 186px, 460px); }
+}
+@container ev-page (width >= 560px) and (height < 262px) {
+  .ev-feed .ev-m-stage .ev-m-why { display: none; }
+  .ev-feed .ev-m-stage .ev-m-art { height: min(100cqw - 52px, 100cqh - 145px, 460px); }
+}
+/* The play button stays whole on a small artwork (this queries the artwork itself). */
+@container (height < 88px) { .ev-feed .ev-m-play { bottom: calc((100cqh - 64px) / 2); right: calc((100cqh - 64px) / 2); } }
+@container (height < 120px) {
+  .ev-feed .ev-m-liked, .ev-feed .ev-m-judged { top: 6px; left: 6px; bottom: auto; height: 24px; padding: 0 7px; font-size: 0; gap: 0; }
+}
+
+/* triage, in the thumb zone above the tab bar (which carries the bottom safe area) */
+.ev-feed .ev-m-triage { flex-shrink: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; height: 80px; padding: 10px 16px; }
+.ev-feed .ev-m-tri {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 58px; border-radius: 14px;
+  background: var(--raise); color: var(--fg-2); font-size: 13px; font-weight: 600;
+  transition: background-color 120ms var(--ease), transform 120ms var(--ease);
+}
+.ev-feed .ev-m-tri:active { transform: scale(0.96); background: color-mix(in oklch, var(--raise), white 8%); }
+.ev-feed .ev-m-tri-like { color: var(--violet-ink); background: color-mix(in oklch, var(--violet) 14%, var(--raise)); }
+.ev-feed .ev-m-tri-like[aria-pressed="true"] { background: var(--violet-fill); color: #fff; }
+.ev-feed .ev-m-triage[data-hidden] { visibility: hidden; }
+
+/* end of queue: the final snap page */
+.ev-feed .ev-m-page > .ev-end { padding: 24px 20px; width: min(100%, 480px); }
+.ev-feed .ev-m-page .ev-end-img { width: 72px; height: 72px; }
+
+/* cold-start hint (components/feed/cold-start-banner.tsx): a panel at the top of the desktop queue,
+   one dismissible line above the scroller on phones and tablets. Mono only for the count. */
+.ev-feed .ev-cold { display: flex; flex-direction: column; gap: 10px; padding: 12px 16px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+.ev-feed .ev-cold-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.ev-feed .ev-cold-label { flex-shrink: 0; font-size: 14px; font-weight: 600; color: var(--fg-2); white-space: nowrap; }
+.ev-feed .ev-cold-n { font: 400 12px/1 var(--font-mono); color: var(--fg); font-variant-numeric: tabular-nums; }
+.ev-feed .ev-cold-sub { min-width: 0; font-size: 13px; color: var(--fg-3); text-align: right; }
+.ev-feed .ev-cold-track { height: 3px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.ev-feed .ev-cold-track > span { display: block; height: 100%; background: var(--violet); border-radius: inherit; transform-origin: left; transition: transform 250ms var(--ease); }
+.ev-feed .ev-coldline {
+  position: relative; flex-shrink: 0; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 4px 2px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.ev-feed .ev-coldline .ev-cold-label { font-size: 13px; }
+.ev-feed .ev-coldline .ev-cold-sub { flex: 1; font-size: 13px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev-feed .ev-coldline-x { display: grid; place-items: center; width: 44px; height: 44px; flex-shrink: 0; border-radius: 10px; color: var(--fg-3); }
+.ev-feed .ev-coldline-x:hover { color: var(--fg); }
+.ev-feed .ev-coldline .ev-cold-track { position: absolute; left: 16px; right: 16px; bottom: 6px; height: 2px; }
+/* Phones in landscape: the line would leave the card too little height, so it waits for a taller view. */
+@media (height < 480px) { .ev-feed.ev-snap:not(.ev-tablet) .ev-coldline { display: none; } }
+
+/* Small player bar (the docked player) between the scroller and the triage bar, as in the prototype. */
+.ev-feed .ev-m-mini { flex-shrink: 0; margin: 6px 16px 0; }
+.ev-feed .ev-m-mini .ev-player { min-height: 52px; padding: 6px 6px 8px 8px; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--raise); gap: 10px; }
+.ev-feed .ev-m-mini .ev-player img, .ev-feed .ev-m-mini .ev-player-blank { width: 36px; height: 36px; }
+.ev-feed .ev-m-mini .ev-player-btn { width: 40px; height: 40px; }
+.ev-feed .ev-m-mini .ev-player-bar { top: auto; bottom: 0; left: 12px; right: 12px; }
+
+/* The toast (outside .ev-feed) sits above the triage bar (80px, kept in layout even when hidden) + tab bar (56px),
+   and above the player bar while it shows. */
+body:has(.ev-snap) [data-sonner-toaster] {
+  --offset-bottom: calc(56px + 80px + env(safe-area-inset-bottom, 0px) + 6px) !important;
+  --mobile-offset-bottom: calc(56px + 80px + env(safe-area-inset-bottom, 0px) + 6px) !important;
+}
+body:has(.ev-snap .ev-m-mini) [data-sonner-toaster] {
+  --offset-bottom: calc(56px + 80px + env(safe-area-inset-bottom, 0px) + 66px) !important;
+  --mobile-offset-bottom: calc(56px + 80px + env(safe-area-inset-bottom, 0px) + 66px) !important;
+}
+/* Under 480px tall (phones in landscape) useFeedTriage puts the toast top right instead, under the
+   top bar and its strip row, where it covers the least of the card. */
+body:has(.ev-snap) [data-sonner-toaster][data-y-position="top"] {
+  --offset-top: calc(56px + env(safe-area-inset-top, 0px) + 11px + 8px) !important;
+  --mobile-offset-top: calc(56px + env(safe-area-inset-top, 0px) + 11px + 8px) !important;
+  --offset-right: 16px !important;
+  --mobile-offset-right: 16px !important;
+}
+/* Sonner stretches toasts across the width below 600px; this one stays its own size, right-aligned. */
+@media (width < 600px) {
+  body:has(.ev-snap) [data-sonner-toaster][data-y-position="top"] { left: auto; width: auto; }
+  body:has(.ev-snap) [data-sonner-toaster][data-y-position="top"] [data-sonner-toast].ev-toast { left: auto; width: max-content; }
+}
+
+/* Server render / hydration is the guessed tree (feed-client.tsx). Where the tablet or desktop view
+   will be used (same conditions as feed-client.tsx) a server-rendered Snap tree stays hidden until
+   the client switches, so no phone layout flashes. */
+@media (width >= 900px) and (height >= 540px), (width >= 640px) and (height >= 680px) { .ev-feed.ev-snap:not(.ev-tablet) { display: none; } }
+/* The desktop tree, server-rendered for a desktop guess (feed-client.tsx), stays hidden outside the desktop
+   layout (below 900px wide or 540px tall) until the client switches. */
+@media (width < 900px), (height < 540px) { .ev-feed.ev-app { display: none; } }
+/* Meanwhile the skeleton rendered beside the guessed tree (FeedClient, server render and hydration
+   only) shows the viewport's own layout exactly where the guessed tree is hidden: its tree for the
+   guessed layout never shows, the other two follow the skeleton's media queries above. */
+.ev-guess-skel { display: contents; }
+.ev-guess-skel[data-guess="desktop"] > .ev-skel-wide,
+.ev-guess-skel[data-guess="tablet"] > .ev-skel-tablet,
+.ev-guess-skel[data-guess="phone"] > .ev-skel-m:not(.ev-skel-tablet) { display: none !important; }
+
+/* ---------- Tablet feed, 640–899px and at least 680px tall (prototype `card` view, tablet branch) ---------- */
+@media (640px <= width < 900px) and (height >= 680px) {
+  .ev-feed.ev-m-strip { height: 14px; padding-bottom: 10px; }
+}
+.ev-feed.ev-tablet {
+  --ev-snap-top: calc(var(--top-h) + var(--safe-t) + 14px + 1px);
+  display: grid; grid-template-columns: minmax(0, 1fr) 280px;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-areas: "cold cold" "stage rail" "mini rail" "tri rail";
+}
+.ev-feed .ev-t-cold { grid-area: cold; }
+.ev-feed .ev-t-cold:empty { display: none; }
+.ev-feed .ev-m-stage {
+  grid-area: stage; min-height: 0; container-type: size;
+  display: flex; justify-content: center; align-items: center; padding: 24px 24px 0;
+}
+.ev-feed .ev-m-deck { position: relative; width: min(100%, 480px); }
+.ev-feed .ev-m-ghost {
+  --a-dark: color-mix(in oklch, var(--a) 45%, black);
+  position: absolute; inset: 0; border-radius: 20px; overflow: hidden; transform: translateY(-10px) scale(0.93); transform-origin: top center;
+  background: color-mix(in oklch, var(--a-dark) 40%, var(--panel)); border: 1px solid var(--line);
+}
+.ev-feed .ev-m-ghost-img { width: 100%; height: 100%; object-fit: cover; opacity: 0.5; }
+.ev-feed .ev-m-ghost-img.ev-letter { font-size: 0; }
+.ev-feed.ev-tablet .ev-m-stage > .ev-end { align-self: center; padding: 24px 20px; }
+.ev-feed.ev-tablet .ev-m-name { font-size: 28px; }
+.ev-feed.ev-tablet .ev-m-mini { grid-area: mini; margin: 6px 24px 0; }
+.ev-feed.ev-tablet .ev-m-triage { grid-area: tri; width: min(100%, 528px); justify-self: center; padding: 12px 24px; height: auto; }
+.ev-feed.ev-tablet .ev-m-tri { min-height: 64px; }
+
+/* Up next: every loaded artist in feed order; scrolls on its own */
+.ev-feed .ev-m-rail-wrap { grid-area: rail; display: flex; flex-direction: column; min-height: 0; padding: 16px 0 0; border-left: 1px solid var(--line); }
+.ev-feed .ev-m-rail-title { padding: 0 16px 8px; font-size: 13px; color: var(--fg-3); }
+.ev-feed .ev-m-rail {
+  display: flex; flex-direction: column; gap: 2px; min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 0 8px 16px;
+  scroll-snap-type: y proximity; overscroll-behavior: contain; scrollbar-width: none;
+}
+.ev-feed .ev-m-rail::-webkit-scrollbar { display: none; }
+.ev-feed .ev-m-rail > li { flex-shrink: 0; content-visibility: auto; contain-intrinsic-size: auto 56px; }
+.ev-feed .ev-m-thumb {
+  --a-dark: color-mix(in oklch, var(--a) 45%, black);
+  position: relative; display: flex; align-items: center; gap: 12px; width: 100%; padding: 6px; border-radius: 10px; text-align: left;
+}
+.ev-feed .ev-m-thumb:hover { background: var(--panel); }
+.ev-feed .ev-m-thumb[aria-current="true"] { background: var(--raise); }
+.ev-feed .ev-m-thumb-img { flex-shrink: 0; width: 44px; height: 44px; border-radius: 9px; object-fit: cover; background: var(--a-dark); transition: opacity 200ms var(--ease); }
+.ev-feed .ev-m-thumb-img.ev-letter { font-size: 18px; }
+.ev-feed .ev-m-thumb[data-v="passed"] .ev-m-thumb-img, .ev-feed .ev-m-thumb[data-v="dismissed"] .ev-m-thumb-img { opacity: 0.3; filter: grayscale(1); }
+.ev-feed .ev-m-thumb-x { position: absolute; left: 6px; top: 6px; width: 44px; height: 44px; display: grid; place-items: center; color: var(--fg-2); }
+.ev-feed .ev-m-thumb-badge {
+  position: absolute; left: 36px; top: 36px; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%;
+  background: var(--violet-fill); color: #fff; box-shadow: 0 0 0 2px var(--bg);
+}
+.ev-feed .ev-m-thumb-text { display: flex; flex-direction: column; min-width: 0; font-size: 12px; color: var(--fg-3); }
+.ev-feed .ev-m-thumb-text > * { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev-feed .ev-m-thumb-text strong { font-size: 14px; color: var(--fg); font-weight: 600; }
+.ev-feed .ev-m-thumb[data-v="passed"] .ev-m-thumb-text, .ev-feed .ev-m-thumb[data-v="dismissed"] .ev-m-thumb-text { opacity: 0.45; }
+
+/* Toast on tablets: above the triage bar (88px) + tab bar, clear of the Up next list. */
+@media (640px <= width < 900px) and (height >= 680px) {
+  body:has(.ev-tablet) [data-sonner-toaster] {
+    --offset-bottom: calc(56px + 88px + env(safe-area-inset-bottom, 0px) + 6px) !important;
+    --offset-left: 24px !important;
+  }
+  body:has(.ev-tablet .ev-m-mini) [data-sonner-toaster] { --offset-bottom: calc(56px + 88px + env(safe-area-inset-bottom, 0px) + 70px) !important; }
+  body:has(.ev-tablet) [data-sonner-toaster] { --width: calc(100vw - 24px - 304px) !important; }
+  body:has(.ev-tablet) [data-sonner-toast].ev-toast { width: 100%; max-width: none; }
+}
+
+/* Forced colours (Windows High Contrast): these parts are background-only, so they get system
+   colours. Strip: current = Highlight, liked = CanvasText, passed / dismissed = GrayText, undecided = outline. */
+@media (forced-colors: active) {
+  .ev-feed .ev-seg { forced-color-adjust: none; background: Canvas; border: 1px solid CanvasText; }
+  .ev-feed .ev-seg[data-v="liked"] { background: CanvasText; }
+  .ev-feed .ev-seg[data-v="passed"], .ev-feed .ev-seg[data-v="dismissed"] { background: GrayText; border-color: GrayText; }
+  .ev-feed .ev-seg[data-sel] { background: Highlight; border-color: Highlight; }
+  .ev-feed .ev-row[data-sel], .ev-feed .ev-m-thumb[aria-current="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
+  .ev-feed .ev-meter, .ev-feed .ev-cold-track { border: 1px solid CanvasText; }
+  .ev-feed .ev-meter > span, .ev-feed .ev-cold-track > span { forced-color-adjust: none; background: CanvasText; }
+  /* Background-only controls get a visible edge. */
+  .ev-feed .ev-m-tri, .ev-feed .ev-m-chip, .ev-feed .ev-btn-play { border: 1px solid ButtonText; }
+}
+
+/* Safari before 16.2 has no color-mix(): artist shades fall back to the artist colour itself and the
+   mixed backgrounds to flat tokens (see the token fallbacks in app/globals.css). */
+@supports not (color: color-mix(in oklch, red, blue)) {
+  .ev-feed .ev-row, .ev-feed .ev-card, .ev-feed .ev-m-card, .ev-feed .ev-m-ghost, .ev-feed .ev-m-thumb, .ev-feed .ev-player { --a-dark: var(--a); --a-light: var(--a, var(--violet)); }
+  .ev-feed .ev-card { background: var(--panel); }
+  .ev-feed .ev-m-card { background: var(--panel); border-color: var(--line); }
+  .ev-feed .ev-m-ghost { background: var(--panel); }
+  .ev-feed .ev-row-art-icon { background: rgba(0, 0, 0, 0.55); }
+  .ev-feed .ev-seg[data-v="passed"], .ev-feed .ev-seg[data-v="dismissed"] { background: var(--line-strong); }
+  .ev-feed button.ev-tri:hover, .ev-feed .ev-m-tri:active, .ev-feed .ev-track:hover, .ev-feed .ev-track[data-current] { background: var(--raise); }
+  .ev-feed .ev-track[data-current] .ev-track-name, .ev-feed .ev-track[data-current] .ev-track-n { color: var(--fg); }
+  .ev-feed .ev-btn-primary:hover:not(:disabled, [aria-disabled="true"]) { background: var(--violet-fill); }
+  .ev-feed .ev-m-verdict-more { background: rgba(139, 92, 246, 0.42); }
+  .ev-feed .ev-m-tri-like { background: var(--raise); }
+}

@@ -1,8 +1,9 @@
+import { LASTFM_USERNAME_RE, STATSFM_USERNAME_RE } from "@/lib/settings/patch-settings"
 import { revalidatePath } from "next/cache"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, dbError } from "@/lib/errors"
 import { isMusicPlatform } from "@/lib/music-links"
-import { invalidateExploreCache } from "@/lib/recommendation/explore-engine"
+import { onTasteChanged } from "@/lib/taste-change"
 import { encryptUsername } from "@/lib/crypto/username"
 import { withAuthedJsonRoute } from "@/lib/api/with-authed-route"
 
@@ -40,16 +41,18 @@ export const PATCH = withAuthedJsonRoute(async ({ userId, body: rawBody }) => {
   }
 
   if (body.lastfmUsername !== undefined) {
+    if (typeof body.lastfmUsername !== "string") return apiError("Invalid Last.fm username format", 400)
     const lfmUsername = body.lastfmUsername.trim()
-    if (lfmUsername && !/^[a-zA-Z][a-zA-Z0-9_-]{0,24}$/.test(lfmUsername)) {
+    if (lfmUsername && !LASTFM_USERNAME_RE.test(lfmUsername)) {
       return apiError("Invalid Last.fm username format", 400)
     }
     update.lastfm_username = encryptUsername(lfmUsername || null)
   }
 
   if (body.statsfmUsername !== undefined) {
+    if (typeof body.statsfmUsername !== "string") return apiError("Invalid stats.fm username format", 400)
     const sfmUsername = body.statsfmUsername.trim()
-    if (sfmUsername && !/^[a-zA-Z0-9._-]{1,30}$/.test(sfmUsername)) {
+    if (sfmUsername && !STATSFM_USERNAME_RE.test(sfmUsername)) {
       return apiError("Invalid stats.fm username format", 400)
     }
     update.statsfm_username = encryptUsername(sfmUsername || null)
@@ -99,30 +102,12 @@ export const PATCH = withAuthedJsonRoute(async ({ userId, body: rawBody }) => {
   // re-render so navigating back doesn't resurrect stale toggle/slider values.
   revalidatePath("/settings")
 
-  // Explore rails + Feed cache derive from selected_genres, adventurous,
-  // underground_mode, and deep_discovery. Any of those changing invalidates
-  // cached rails AND wipes unseen Feed rows so the next page load regenerates
-  // from scratch under the new settings.
-  const invalidates =
-    body.selectedGenres !== undefined ||
-    body.adventurous !== undefined ||
-    body.undergroundMode !== undefined ||
-    body.deepDiscovery !== undefined
-  if (invalidates) {
-    await Promise.all([
-      invalidateExploreCache(userId).catch((err) => {
-        console.error("[settings] explore-invalidate failed", err)
-      }),
-      supabase
-        .from("recommendation_cache")
-        .delete()
-        .eq("user_id", userId)
-        .is("seen_at", null)
-        .then(({ error: delErr }) => {
-          if (delErr) console.error("[settings] feed-cache-wipe failed", delErr.message)
-        }),
-    ])
-  }
+  // Settings the Explore rails / Feed queue derive from invalidate those caches
+  // so the next page load regenerates under the new settings (lib/taste-change).
+  await onTasteChanged(supabase, userId, {
+    kind: "settings",
+    fields: Object.keys(body).filter((k) => body[k as keyof typeof body] !== undefined),
+  })
 
   return Response.json({ success: true })
 })

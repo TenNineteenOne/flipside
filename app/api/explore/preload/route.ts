@@ -1,10 +1,8 @@
-import { safeAuth } from "@/lib/auth"
-import { createServiceClient } from "@/lib/supabase/server"
-import { apiError, apiUnauthorized } from "@/lib/errors"
-import { getAccessToken } from "@/lib/get-access-token"
-import { getSpotifyClientToken } from "@/lib/spotify-client-token"
+import { apiError } from "@/lib/errors"
+import { withAuthedRoute } from "@/lib/api/with-authed-route"
+import { loadExploreInput } from "@/lib/explore-input"
+import { claimCooldown } from "@/lib/cooldown"
 import { buildExploreRails, RAIL_KEYS } from "@/lib/recommendation/explore-engine"
-import type { NextRequest } from "next/server"
 
 // Mirrors explore/generate's force-regen cooldown (C1 hardening): this GET
 // has no `force` flag, but on a cold cache it runs the SAME 54-74s rail
@@ -22,27 +20,11 @@ export const maxDuration = 300
  * user is viewing it, so that when they tap Explore the rails + artist cache
  * are already populated. Read-only from the client's POV — the response body
  * is just `{ ok: true }`; the value is the side-effect of populating
- * `explore_cache` and `artist_search_cache`.
+ * `explore_cache`, `artists` and `artist_tracks_cache`.
  */
-export async function GET(req: NextRequest): Promise<Response> {
-  const session = await safeAuth()
-  if (!session?.user?.id) return apiUnauthorized()
-
-  const userId = session.user.id
-  const supabase = createServiceClient()
-
-  const [{ data: user, error: userError }, userAccessToken, clientToken] = await Promise.all([
-    supabase
-      .from("users")
-      .select("id, adventurous, underground_mode, popularity_curve, play_threshold, last_explore_generated_at")
-      .eq("id", userId)
-      .maybeSingle(),
-    getAccessToken(req),
-    getSpotifyClientToken(),
-  ])
-  if (userError || !user) return apiError("User not found", 404)
-
-  const accessToken = userAccessToken ?? clientToken ?? ""
+export const GET = withAuthedRoute(async ({ userId, supabase }): Promise<Response> => {
+  const input = await loadExploreInput(supabase, userId)
+  if (!input) return apiError("User not found", 404)
 
   try {
     // Cheap warm/cold check (mirrors buildExploreRails' own cache read) so the
@@ -55,35 +37,16 @@ export async function GET(req: NextRequest): Promise<Response> {
       .gt("expires_at", new Date().toISOString())
     const isCold = (cached?.length ?? 0) < RAIL_KEYS.length
 
-    if (isCold) {
-      if (user.last_explore_generated_at) {
-        const elapsed = Date.now() - new Date(user.last_explore_generated_at).getTime()
-        if (elapsed < FORCE_COOLDOWN_MS) {
-          return Response.json({ ok: true })
-        }
-      }
-      // Stamp the cooldown BEFORE building so two rapid preload taps (or a
-      // preload racing a Shuffle force-regen) can't both pass the gate.
-      await supabase
-        .from("users")
-        .update({ last_explore_generated_at: new Date().toISOString() })
-        .eq("id", userId)
+    // The claim stamps the cooldown atomically BEFORE building, so two rapid
+    // preload taps (or a preload racing a Shuffle force-regen) can't both pass.
+    if (isCold && (await claimCooldown(supabase, userId, "last_explore_generated_at", FORCE_COOLDOWN_MS)) === "cooling") {
+      return Response.json({ ok: true })
     }
 
-    await buildExploreRails(
-      {
-        userId: user.id,
-        accessToken,
-        adventurous: user.adventurous ?? false,
-        undergroundMode: user.underground_mode ?? false,
-        popularityCurve: typeof user.popularity_curve === "number" ? user.popularity_curve : undefined,
-        playThreshold: typeof user.play_threshold === "number" ? user.play_threshold : undefined,
-      },
-      { hydrate: true },
-    )
+    await buildExploreRails(input, { hydrate: true })
     return Response.json({ ok: true })
   } catch (err) {
     console.error("[explore/preload] fail", err instanceof Error ? err.message : err)
     return apiError("Preload failed", 500)
   }
-}
+})

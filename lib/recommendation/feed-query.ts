@@ -32,6 +32,7 @@ export async function getUnseenRecommendations(
       .select("artist_id, artist_data, score, why, source, seen_at")
       .eq("user_id", userId)
       .is("seen_at", null)
+      .is("skip_at", null) // defense in depth: a dismissed row never shows (#175 R4)
       .gt("expires_at", new Date().toISOString())
       .order("score", { ascending: false })
       .limit(40),

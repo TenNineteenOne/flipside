@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
 
 // ── Mock the Last.fm enrichment (getInfo) ────────────────────────────────────
-// resolveUnresolvedArtistIds confirms an artist exists via fetchArtistEnrichment
+// resolveUnresolvedArtistIds confirms an artist exists via lastfm.artistInfo
 // (cached Last.fm getInfo). Mock it to drive the cache-miss / ambiguous branch:
 //   found ({genres, popularity}) → mints by name → artist_id
 //   null                         → genuine not-found → unresolved
-const fetchArtistEnrichment = vi.fn()
-vi.mock("@/lib/recommendation/enrich-artist", () => ({
-  fetchArtistEnrichment: (...args: unknown[]) => fetchArtistEnrichment(...args),
+const artistInfo = vi.fn()
+vi.mock("@/lib/lastfm", () => ({
+  lastfm: { artistInfo: (...args: unknown[]) => artistInfo(...args) },
 }))
 
 import { resolveUnresolvedArtistIds } from "./id-resolver"
@@ -45,7 +45,7 @@ function makeSupabase(listened: ListenedRow[], artists: ArtistRow[]) {
   // ── artists table ──
   function artistsTable() {
     return {
-      // ensureArtists upsert(rows, {onConflict, ignoreDuplicates})
+      // ArtistIdentity.ensureBySpotifyId upsert(rows, {onConflict, ignoreDuplicates})
       async upsert(rows: ArtistRow[]) {
         for (const r of rows) {
           const existing = artists.find((x) => x.spotify_id === r.spotify_id)
@@ -54,7 +54,7 @@ function makeSupabase(listened: ListenedRow[], artists: ArtistRow[]) {
         }
         return { error: null }
       },
-      // ensureArtistByName insert(): name-only mint (no spotify_id).
+      // ArtistIdentity by-name insert(): name-only mint (no spotify_id).
       insert(row: Partial<ArtistRow>) {
         return {
           select(_c: string) {
@@ -78,7 +78,7 @@ function makeSupabase(listened: ListenedRow[], artists: ArtistRow[]) {
       },
       select(_cols: string) {
         return {
-          // ensureArtists read-back: .in("spotify_id", chunk)
+          // ensureBySpotifyId read-back: .in("spotify_id", chunk)
           // resolver table-hit read: .in("name_lower", nameLowers)
           async in(column: string, values: string[]) {
             const data = artists
@@ -91,7 +91,7 @@ function makeSupabase(listened: ListenedRow[], artists: ArtistRow[]) {
               }))
             return { data, error: null }
           },
-          // ensureArtistByName read: .eq("name_lower", v).order("id").limit(20)
+          // by-name read: .eq("name_lower", v).order("id").limit(20)
           eq(column: string, value: string) {
             return {
               order(orderCol: string, o: { ascending: boolean }) {
@@ -220,7 +220,7 @@ const baseRow = (over: Partial<ListenedRow>): ListenedRow => ({
 })
 
 beforeEach(() => {
-  fetchArtistEnrichment.mockReset()
+  artistInfo.mockReset()
 })
 
 describe("resolveUnresolvedArtistIds — tight unresolved filter", () => {
@@ -228,7 +228,7 @@ describe("resolveUnresolvedArtistIds — tight unresolved filter", () => {
     const listened = [baseRow({ spotify_artist_id: "sp-legacy" })]
     const supabase = makeSupabase(listened, [])
     await resolveUnresolvedArtistIds({ supabase, userId: "user-1" })
-    expect(fetchArtistEnrichment).not.toHaveBeenCalled()
+    expect(artistInfo).not.toHaveBeenCalled()
     expect(listened[0].artist_id).toBeNull()
   })
 
@@ -236,7 +236,7 @@ describe("resolveUnresolvedArtistIds — tight unresolved filter", () => {
     const listened = [baseRow({ artist_id: "artist-uuid-existing" })]
     const supabase = makeSupabase(listened, [])
     await resolveUnresolvedArtistIds({ supabase, userId: "user-1" })
-    expect(fetchArtistEnrichment).not.toHaveBeenCalled()
+    expect(artistInfo).not.toHaveBeenCalled()
   })
 })
 
@@ -248,7 +248,7 @@ describe("resolveUnresolvedArtistIds — artists table hit", () => {
     ]
     const supabase = makeSupabase(listened, artists)
     await resolveUnresolvedArtistIds({ supabase, userId: "user-1" })
-    expect(fetchArtistEnrichment).not.toHaveBeenCalled()
+    expect(artistInfo).not.toHaveBeenCalled()
     expect(listened[0].artist_id).toBe("artist-uuid-7")
     expect(listened[0].id_resolution_attempted_at).not.toBeNull()
   })
@@ -259,21 +259,21 @@ describe("resolveUnresolvedArtistIds — artists table hit", () => {
       { id: "artist-uuid-a", spotify_id: "sp-a", name: "Radiohead", name_lower: "radiohead" },
       { id: "artist-uuid-b", spotify_id: "sp-b", name: "Radiohead", name_lower: "radiohead" },
     ]
-    // getInfo confirms the artist exists → ensureArtist(by name) reuses the best
+    // getInfo confirms the artist exists → the doorway lands on the stable by-name row
     // existing row (spotify_id NOT NULL first) rather than minting a duplicate.
-    fetchArtistEnrichment.mockResolvedValue({ genres: ["rock"], popularity: 80 })
+    artistInfo.mockResolvedValue({ genres: ["rock"], popularity: 80 })
     const supabase = makeSupabase(listened, artists)
     await resolveUnresolvedArtistIds({ supabase, userId: "user-1" })
-    expect(fetchArtistEnrichment).toHaveBeenCalledOnce()
+    expect(artistInfo).toHaveBeenCalledOnce()
     // reused an existing same-name row; no fresh mint
     expect(["artist-uuid-a", "artist-uuid-b"]).toContain(listened[0].artist_id)
   })
 })
 
 describe("resolveUnresolvedArtistIds — getInfo confirm + mint-by-name", () => {
-  it("mints a uuid via ensureArtist when getInfo confirms the artist", async () => {
+  it("mints a uuid via the doorway when getInfo confirms the artist", async () => {
     const listened = [baseRow({})]
-    fetchArtistEnrichment.mockResolvedValue({ genres: ["rock"], popularity: 90 })
+    artistInfo.mockResolvedValue({ genres: ["rock"], popularity: 90 })
     const artists: ArtistRow[] = []
     const supabase = makeSupabase(listened, artists)
     await resolveUnresolvedArtistIds({ supabase, userId: "user-1" })
@@ -286,7 +286,7 @@ describe("resolveUnresolvedArtistIds — getInfo confirm + mint-by-name", () => 
 
   it("leaves artist_id null + only bumps timestamp when getInfo returns null (not found)", async () => {
     const listened = [baseRow({ lastfm_artist_name: "Radiohead" })]
-    fetchArtistEnrichment.mockResolvedValue(null)
+    artistInfo.mockResolvedValue(null)
     const supabase = makeSupabase(listened, [])
     await resolveUnresolvedArtistIds({ supabase, userId: "user-1" })
     expect(listened[0].artist_id).toBeNull()
@@ -296,7 +296,7 @@ describe("resolveUnresolvedArtistIds — getInfo confirm + mint-by-name", () => 
 
   it("never throws: getInfo rejecting only bumps timestamp, leaves artist_id null", async () => {
     const listened = [baseRow({})]
-    fetchArtistEnrichment.mockRejectedValue(new Error("lastfm getInfo 500"))
+    artistInfo.mockRejectedValue(new Error("lastfm getInfo 500"))
     const supabase = makeSupabase(listened, [])
     await resolveUnresolvedArtistIds({ supabase, userId: "user-1" })
     expect(listened[0].artist_id).toBeNull()
@@ -359,5 +359,61 @@ describe("resolveUnresolvedArtistIds — 23505 merge path on artist_id", () => {
     const still = listened.find((r) => r.id === "orphan")!
     expect(still).toBeDefined()
     expect(still.artist_id).toBeNull()
+  })
+})
+
+describe("resolveUnresolvedArtistIds — #175 F5/F23 failure paths", () => {
+  it("F5: a failed mint logs mint-failed and leaves the row unresolved", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {})
+    const listened = [baseRow({})]
+    artistInfo.mockResolvedValue({ genres: ["rock"], popularity: 90 })
+    const supabase = makeSupabase(listened, [])
+    const origFrom = supabase.from.bind(supabase)
+    supabase.from = (table: string) => {
+      const t = origFrom(table)
+      if (table === "artists") {
+        t.insert = () => ({ select: () => ({ single: async () => ({ data: null, error: { message: "boom" } }) }) })
+      }
+      return t
+    }
+    await resolveUnresolvedArtistIds({ supabase, userId: "user-1" })
+    expect(listened[0].artist_id).toBeNull()
+    expect(listened[0].id_resolution_attempted_at).not.toBeNull()
+    expect(log.mock.calls.some((c) => String(c[0]).includes('mint-failed name="Radiohead" → unresolved'))).toBe(true)
+    log.mockRestore()
+  })
+
+  it("F5: a throwing getInfo logs the getInfo/mint threw line", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {})
+    const listened = [baseRow({})]
+    artistInfo.mockRejectedValue(new Error("lastfm 500"))
+    await resolveUnresolvedArtistIds({ supabase: makeSupabase(listened, []), userId: "user-1" })
+    expect(err.mock.calls.some((c) => String(c[0]).includes('getInfo/mint threw for "Radiohead"'))).toBe(true)
+    err.mockRestore()
+  })
+
+  it("F23: merge update error keeps the orphan (plays not lost) and leaves the target untouched", async () => {
+    const orphan = baseRow({ id: "orphan", play_count: 4 })
+    const target = baseRow({ id: "target", artist_id: "artist-uuid-9", lastfm_artist_name: null, play_count: 10 })
+    const listened = [orphan, target]
+    const artists: ArtistRow[] = [
+      { id: "artist-uuid-9", spotify_id: "sp-9", name: "Radiohead", name_lower: "radiohead" },
+    ]
+    const supabase = makeSupabase(listened, artists)
+    const origFrom = supabase.from.bind(supabase)
+    supabase.from = (table: string) => {
+      const t = origFrom(table)
+      if (table === "listened_artists") {
+        const origUpdate = t.update.bind(t)
+        t.update = (patch: Partial<ListenedRow>) =>
+          patch.play_count != null
+            ? { eq: () => Promise.resolve({ error: { code: "XX000", message: "merge failed" } }) }
+            : origUpdate(patch)
+      }
+      return t
+    }
+    await resolveUnresolvedArtistIds({ supabase, userId: "user-1" })
+    expect(listened.find((r) => r.id === "orphan")?.play_count).toBe(4)
+    expect(listened.find((r) => r.id === "target")?.play_count).toBe(10)
   })
 })

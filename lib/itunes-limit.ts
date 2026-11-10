@@ -17,49 +17,18 @@
  * Shared across all iTunes callers so concurrent rails and the blocking set
  * can't collectively out-burst the API.
  */
+import { createLimiter } from "@/lib/limiter"
+
 const MAX_CONCURRENCY = 5
 const MIN_INTERVAL_MS = 50 // minimum ms between successive dispatches
 
-let active = 0
-const waiters: Array<() => void> = []
+const limiter = createLimiter({ maxConcurrency: MAX_CONCURRENCY, minIntervalMs: MIN_INTERVAL_MS })
 
-// Earliest timestamp at which the next dispatch may begin.
-let earliestNextDispatch = 0
-
-function acquire(): Promise<void> {
-  if (active < MAX_CONCURRENCY) {
-    active++
-    return Promise.resolve()
-  }
-  // Slot is full — park until a releaser hands us its slot (active stays put;
-  // the slot is transferred, not re-counted).
-  return new Promise<void>((resolve) => waiters.push(resolve))
-}
-
-function release(): void {
-  const next = waiters.shift()
-  if (next) {
-    next() // transfer the slot to the next waiter; active unchanged
-  } else {
-    active--
-  }
-}
-
-/** Run `fn` under the shared iTunes concurrency cap and min-interval gate. */
-export async function runItunes<T>(fn: () => Promise<T>): Promise<T> {
-  // Enforce minimum gap between successive dispatches so calls are spread
-  // over time rather than all 5 slots firing at once.
-  const now = Date.now()
-  const wait = earliestNextDispatch - now
-  if (wait > 0) {
-    await new Promise<void>((resolve) => setTimeout(resolve, wait))
-  }
-  earliestNextDispatch = Math.max(Date.now(), earliestNextDispatch) + MIN_INTERVAL_MS
-
-  await acquire()
-  try {
-    return await fn()
-  } finally {
-    release()
-  }
+/**
+ * Run `fn` under the shared iTunes concurrency cap and min-interval gate.
+ * Callers outside lib/music-provider/itunes.ts should use `itunesFetch`, which
+ * adds the circuit breaker and call counter on top of this gate.
+ */
+export function runItunes<T>(fn: () => Promise<T>): Promise<T> {
+  return limiter.run(fn)
 }

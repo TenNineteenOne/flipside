@@ -1,6 +1,6 @@
 ---
 title: Genre System
-updated: 2026-07-11
+updated: 2026-11-10
 related: [[generation-engine]], [[explore-engine]], [[settings-and-discovery]], [[infra-and-ops]]
 ---
 
@@ -33,8 +33,15 @@ stored `lastfmTag`. Raw values are never mutated.
 
 ## Adjacency (`lib/genre/adjacency.ts`)
 
-Builds five in-memory indexes at module load (`leafByKey`, `tagToAnchors`, `tagToClusters`,
-`clusterToLeafKeys`, `anchorToClusters`).
+The logic is a pure factory, `createGenreGraph(nodes)` (`lib/genre/genre-graph.ts`), which builds
+five in-memory indexes (`leafByKey`, `tagToAnchors`, `tagToClusters`, `clusterToLeafKeys`,
+`anchorToClusters`). `adjacency.ts` binds it once to the full `data/genres.json` for server code.
+The client genre picker (onboarding + Settings) binds it to **`data/genres-picker.json`**
+instead: the same tree with only `id`, `label`, `lastfmTag`, `children` and leaf `x`/`y`
+(`slimGenreTree`, `lib/genre/picker-data.ts`; 765 kB vs 3.3 MB, ~132 kB gzip vs ~256 kB in the
+bundle). Regenerate it with `npm run build:genres-picker` whenever `genres.json` changes;
+`lib/genre/picker-data.test.ts` fails while they differ and checks the picker data and adjacency
+against the full tree.
 
 - `adjacencyScore(a,b)` was deleted 2026-07-11 — it had no production callers. The
   pairwise-scoring implementation (continuous distance + tiered fallback) lives in git
@@ -55,12 +62,11 @@ Used by `augmentWithAdjacent` (Feed bleed), `outsideRail`/`leftfieldRail` (Explo
 | `build-genre-taxonomy.ts` | original Wikidata SPARQL → 12×80 skeleton |
 | `build-genres-v2.ts` | slot 6,291 everynoise leaves; add x/y/color |
 | `build-subclusters.ts` | split clusters >30 leaves by keyword dict (idempotent) |
+| `build-genres-picker.ts` | write the slim `data/genres-picker.json` the client genre picker ships (rerun after any of the above) |
 | `validate-genre-tree.ts` | Last.fm `tag.getSimilar` validation; `--apply` auto-moves leaves ≥0.75 confidence |
 | `subcluster-keywords.ts` | the keyword dictionary |
 | `seed-artist-cache.ts` | populate `artist_search_cache` from Last.fm tag top artists → Spotify-resolve |
-| `backfill-artist-genres.ts` | fill genres+popularity via MusicBrainz + Last.fm (avoids Spotify quota) |
-| `mb-coverage-spike.ts` | one-off MusicBrainz genre-coverage research (not production) |
-| `inspect-cache.ts` | post-backfill verification |
+| `backfill-artist-genres.ts` | fill-only genres+popularity on `artists` (+ `recommendation_cache.artist_data`) via MusicBrainz + Last.fm (avoids Spotify quota) |
 
 All long scripts checkpoint to `.checkpoint.json` for safe resume.
 

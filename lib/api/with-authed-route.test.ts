@@ -5,11 +5,12 @@
  * @/lib/errors are mocked so we exercise only the wrapper logic.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest"
+import { describe, it, expect, vi, beforeEach, afterAll } from "vitest"
 import {
   withAuthedRoute,
   withAuthedCsrfRoute,
   withAuthedJsonRoute,
+  withCronRoute,
 } from "./with-authed-route"
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
@@ -26,6 +27,10 @@ vi.mock("@/lib/csrf", () => ({
 vi.mock("@/lib/errors", async (importOriginal) => {
   return await importOriginal<typeof import("@/lib/errors")>()
 })
+
+const fakeClient = { from: vi.fn() }
+const createServiceClient = vi.fn(() => fakeClient)
+vi.mock("@/lib/supabase/server", () => ({ createServiceClient: () => createServiceClient() }))
 
 import { safeAuth } from "@/lib/auth"
 import { enforceSameOrigin } from "@/lib/csrf"
@@ -236,5 +241,81 @@ describe("withAuthedJsonRoute", () => {
     expect(ctx.userId).toBe("user-happy")
     expect(ctx.request).toBe(req)
     expect(ctx.body).toEqual(payload)
+  })
+})
+
+// ─── supabase in context ──────────────────────────────────────────────────────
+
+describe("context supabase client", () => {
+  it("is created lazily, once per request, and only when accessed", async () => {
+    mockSafeAuth.mockResolvedValue(sessionWith("user-sb"))
+    let seen: unknown[] = []
+    const wrapped = withAuthedRoute(async (ctx) => {
+      expect(createServiceClient).not.toHaveBeenCalled()
+      seen = [ctx.supabase, ctx.supabase]
+      return new Response(null, { status: 204 })
+    })
+
+    await wrapped(makeRequest())
+
+    expect(seen).toEqual([fakeClient, fakeClient])
+    expect(createServiceClient).toHaveBeenCalledOnce()
+  })
+
+  it("is available alongside body in withAuthedJsonRoute", async () => {
+    mockSafeAuth.mockResolvedValue(sessionWith("user-sb"))
+    let ctxSeen: { supabase: unknown; body: unknown } | null = null
+    const wrapped = withAuthedJsonRoute(async (ctx) => {
+      ctxSeen = { supabase: ctx.supabase, body: ctx.body }
+      return new Response(null, { status: 204 })
+    })
+
+    await wrapped(makeRequest('{"x":1}'))
+
+    expect(ctxSeen).toEqual({ supabase: fakeClient, body: { x: 1 } })
+  })
+})
+
+// ─── withCronRoute ────────────────────────────────────────────────────────────
+
+describe("withCronRoute", () => {
+  const cronReq = (auth?: string) =>
+    new Request("https://example.com/api/cron/x", auth ? { headers: { authorization: auth } } : {})
+  const original = process.env.CRON_SECRET
+
+  beforeEach(() => {
+    process.env.CRON_SECRET = "s3cret"
+  })
+  afterAll(() => {
+    process.env.CRON_SECRET = original
+  })
+
+  it("500 Server misconfigured when CRON_SECRET is unset", async () => {
+    delete process.env.CRON_SECRET
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {})
+    const handler = vi.fn()
+    const res = await withCronRoute("t", handler)(cronReq("Bearer s3cret"))
+    expect(res.status).toBe(500)
+    expect(await res.json()).toEqual({ error: "Server misconfigured" })
+    expect(handler).not.toHaveBeenCalled()
+    spy.mockRestore()
+  })
+
+  it.each([undefined, "Bearer wrong", "s3cret", "bearer s3cret"])("401 for authorization=%s", async (auth) => {
+    const handler = vi.fn()
+    const res = await withCronRoute("t", handler)(cronReq(auth))
+    expect(res.status).toBe(401)
+    expect(await res.json()).toEqual({ error: "Unauthorized" })
+    expect(handler).not.toHaveBeenCalled()
+  })
+
+  it("runs the handler with the request and a client on the exact bearer", async () => {
+    const req = cronReq("Bearer s3cret")
+    const res = await withCronRoute("t", async (ctx) => {
+      expect(ctx.request).toBe(req)
+      expect(ctx.supabase).toBe(fakeClient)
+      return Response.json({ ok: true })
+    })(req)
+    expect(res.status).toBe(200)
   })
 })

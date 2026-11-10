@@ -2,12 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { ChevronDown, ChevronUp, Search, X } from "lucide-react"
-import genreData from "@/data/genres.json"
+// The slim tree (lib/genre/picker-data.ts): the full data/genres.json is 3.3 MB and stays server-side.
+import genreData from "@/data/genres-picker.json"
 import type { GenreNode } from "@/lib/types"
 import { normalizeGenre } from "@/lib/genre/normalize"
-import { adjacentGenres } from "@/lib/genre/adjacency"
+import { createGenreGraph } from "@/lib/genre/genre-graph"
 
 export const ALL_GENRES: GenreNode[] = (genreData as { nodes: GenreNode[] }).nodes
+const { adjacentGenres } = createGenreGraph(ALL_GENRES)
 
 function countSelectedInTree(node: GenreNode, selectedIds: Set<string>): number {
   let n = selectedIds.has(node.id) ? 1 : 0
@@ -180,6 +182,12 @@ export function GenrePicker({ selected, onToggle, cap }: GenrePickerProps) {
           </button>
         )}
       </div>
+
+      {atCap && (
+        <div className="mono" role="status" style={{ fontSize: 11, color: "var(--text-muted)" }}>
+          Max {cap} genres — remove one to add another
+        </div>
+      )}
 
       {/* Related-genre chips — shown after the user just selected a leaf. */}
       {relatedChips.length > 0 && !searchMatches && (

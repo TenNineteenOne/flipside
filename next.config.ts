@@ -11,7 +11,7 @@ const isProd = process.env.NODE_ENV === "production";
 // strict (nonce) policy would force all-dynamic rendering. There is no inline-
 // script XSS vector in the app today, so this is the right trade.
 //   - img-src / media-src allow the Spotify + Apple CDNs (artist art + audio
-//     previews played via new Audio()). 'self' covers next/image-optimized URLs.
+//     previews played via new Audio()). next/image is unoptimized, so art loads straight from them.
 //   - connect-src is 'self' (all third-party calls happen server-side); dev adds
 //     ws: for the Turbopack/HMR socket.
 //   - 'unsafe-eval' is dev-only (React uses eval for richer error overlays).
@@ -47,8 +47,15 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // The /dev-preview harness is written as page.dev.tsx / layout.dev.tsx, which are routes only
+  // outside production, so `next build` never compiles it (its layout's notFound() is a second
+  // guard). The defaults stay, so proxy.ts, route handlers and metadata files are unaffected.
+  pageExtensions: isProd ? ["tsx", "ts", "jsx", "js"] : ["dev.tsx", "tsx", "ts", "jsx", "js"],
   productionBrowserSourceMaps: false,
   images: {
+    // Serve CDN art as-is: /_next/image is anonymous, so distinct allowed-CDN
+    // URLs could exhaust the Vercel Hobby transformation quota (#175 S5).
+    unoptimized: true,
     remotePatterns: [
       { protocol: "https", hostname: "i.scdn.co" },
       { protocol: "https", hostname: "mosaic.scdn.co" },

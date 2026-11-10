@@ -1,6 +1,5 @@
-import { musicProvider } from '@/lib/music-provider/provider'
-import type { Artist, Track } from '@/lib/music-provider/types'
-import type { SimilarArtistRef } from '@/lib/music-provider'
+import type { Artist } from '@/lib/music-provider/types'
+import { lastfm, type SimilarArtistRef } from '@/lib/lastfm'
 import { createServiceClient } from '@/lib/supabase/server'
 import {
   UNDERGROUND_MAX_POPULARITY,
@@ -9,25 +8,15 @@ import {
   type ScoredArtist,
   type SoftenedFilters,
 } from './types'
-import { ArtistNameCache } from './artist-name-cache'
-import { resolveArtistsByName } from './resolve-candidates'
-import { ensureArtist, type ArtistsSupabaseClient } from '@/lib/artists'
-import { confirmPlayableTracks, confirmToTarget, type ConfirmOutcome } from './confirm-previews'
-import { createConfirmCollector, NEGATIVE_TTL_MS } from './persist-confirms'
-import { searchTracksByArtist } from '@/lib/music-provider/itunes'
-import { fetchArtistEnrichment, buildEnrichArtist } from './enrich-artist'
-import { normalizeArtistName } from '@/lib/listened-artists'
+import { isEligibleForCooldown, loadExclusions, readFeedbackIds } from './exclusions'
+import { PlayableCandidates, livePlayablePorts } from './playable-candidates'
+import { ArtistIdentity } from '@/lib/artist-identity'
 import { normalizedIncludes, normalizeGenre } from '@/lib/genre/normalize'
 import { adjacentGenres } from '@/lib/genre/adjacency'
-import { cachedTagArtistNames } from '@/lib/lastfm-cache'
-import { runLastfm } from '@/lib/lastfm-limit'
-import { incLastfmTag } from '@/lib/recommendation/api-call-counter'
 import coldStartData from '@/data/cold-start-seeds.json'
 import { sampleLikes, LIKE_SAMPLE_SIZE } from './window'
 import { applyClusterCap } from './cluster-cap'
 import { splitResolvePools } from './resolve-pools'
-
-const LASTFM_BASE = "https://ws.audioscrobbler.com/2.0"
 
 /** Adventurous soft penalty applied to candidates whose Spotify popularity > 50. */
 const ADVENTUROUS_MAINSTREAM_PENALTY = 0.08
@@ -55,228 +44,14 @@ export function tierMultiplier(popularity: number, curveK = 0.95): number {
   return Math.pow(curveK, popularity)
 }
 
-// Lower than the 8s used elsewhere: fetchTagArtistNames may fire TWO sequential
-// calls (as-is, then a spaced retry on empty), so a high per-call ceiling stacks
-// into a ~16s worst case. Valid tag.gettopartists responses return in <1s; 5s is
-// ample headroom while bounding the retry path's cold-start cost.
-const LASTFM_TIMEOUT_MS = 5000
-
-/**
- * Single live `tag.gettopartists` call. Returns the names ([] when the tag
- * genuinely has no top artists), and THROWS on a transient failure (non-2xx,
- * timeout, network error) so the cache layer can tell "genuinely empty"
- * (negative-cacheable) from "fetch failed" (must not be cached). Gated by the
- * shared Last.fm concurrency cap.
- */
-async function fetchTagArtistNamesRaw(tag: string, limit: number, apiKey: string): Promise<string[]> {
-  return runLastfm(async () => {
-    const url =
-      `${LASTFM_BASE}/?method=tag.gettopartists` +
-      `&tag=${encodeURIComponent(tag)}&api_key=${apiKey}&format=json&limit=${limit}`
-    incLastfmTag()
-    const res = await fetch(url, { signal: AbortSignal.timeout(LASTFM_TIMEOUT_MS) })
-    if (!res.ok) throw new Error(`lastfm tag.gettopartists ${res.status}`)
-    const data = await res.json()
-    const artists = data?.topartists?.artist
-    if (!Array.isArray(artists)) return []
-    return (artists as Array<{ name: string }>).map((a) => a.name).filter(Boolean)
-  })
-}
-
-/**
- * Fetch top-artist names for a Last.fm tag, tolerating the two tag spellings
- * we deal in. Genre-tree leaf tags are hyphenated slugs (e.g.
- * "dutch-black-metal") but Last.fm indexes most multi-word tags space-
- * separated ("dutch black metal" → 267 artists vs 0 for the hyphenated form).
- * We try the tag as-is FIRST so canonical hyphenated tags (trip-hop, post-punk)
- * keep their better-curated results, and only retry empties with spaces.
- *
- * Throws on transient failure of the primary spelling (so it isn't cached); a
- * genuinely-empty primary result is returned as [] when the spaced retry also
- * comes back empty or fails.
- */
-export async function fetchTagArtistNames(tag: string, limit: number): Promise<string[]> {
-  const apiKey = process.env.LASTFM_API_KEY
-  if (!apiKey) return []
-  const names = await fetchTagArtistNamesRaw(tag, limit, apiKey)
-  if (names.length > 0 || !tag.includes('-')) return names
-  try {
-    return await fetchTagArtistNamesRaw(tag.replace(/-/g, ' '), limit, apiKey)
-  } catch {
-    return names // primary spelling was genuinely empty; don't let a retry blip mask that
-  }
-}
-
-/**
- * Fetch artist names for a Last.fm genre tag. `limit` controls how many top
- * artists to request; default 20 matches the engine's main-pool seeding. The
- * Explore "Left-field" rail passes `limit=30` so it can sample from positions
- * 10-30 (deeper cuts). Return order matches Last.fm's rank order.
- *
- * Results pass through a shared 7-day Supabase cache (lastfm_cache) so cold
- * Explore loads don't redo the same tag.gettopartists call every time.
- */
-export async function getTagArtistNames(tag: string, limit = 20): Promise<string[]> {
-  return cachedTagArtistNames(tag, limit, fetchTagArtistNames)
-}
-
-/**
- * Spotify-free name resolver (Stage 2, #157). The `searchArtists` dep for
- * resolve-candidates, wired to Last.fm artist.getInfo instead of Spotify
- * /search so generation no longer dies when the shared Spotify key is
- * 429-throttled.
- *
- * getInfo is the SAME cached call `buildEnrichArtist` uses (7-day, negative-
- * cached via cachedArtistEnrichment), so this adds ~0 extra network: on a hit
- * it's free; on a miss the enrich dep would have fired it anyway. Returns a
- * single Artist carrying the genres/popularity from getInfo, or [] for a
- * genuine "artist not found" (null enrichment).
- *
- *  - `id: ""` — the canonical uuid is minted downstream (resolve-candidates
- *    calls mintArtist → ensureArtist by name, then re-keys `.id`).
- *  - `spotifyId: null` — Last.fm has no Spotify id; the #159 worker backfills it.
- *  - `imageUrl: null` — getInfo's image is a placeholder; Stage 3 fills real art.
- *
- * Never rate-limits (the shared Last.fm limiter handles pacing), so it returns
- * Artist[] and never a RateLimited sentinel.
- */
-export function lastfmResolve(name: string): Promise<Artist[]> {
-  const apiKey = process.env.LASTFM_API_KEY
-  if (!apiKey) return Promise.resolve([])
-  return fetchArtistEnrichment(name, apiKey).then((e) =>
-    e
-      ? [{ id: "", spotifyId: null, name, genres: e.genres, popularity: e.popularity, imageUrl: null }]
-      : [],
-  )
-}
-
-/**
- * Build a live confirmPreview dep for resolve-candidates. iTunes-first (free,
- * no auth, near-universal 30s previews), Spotify top-tracks as fallback. Reuses
- * any `topTracks` already on the artist (warm name-cache hit) with zero network.
- * Shared by the primary, secondary, and adjacent-bleed resolves so the
- * playability guarantee holds across the whole For You pipeline.
- */
-export function buildConfirmPreview(
-  accessToken: string,
-  onConfirmOutcome?: (o: ConfirmOutcome) => void,
-) {
-  return (artist: Artist) =>
-    confirmPlayableTracks(
-      {
-        id: artist.id,
-        name: artist.name,
-        spotifyId: artist.spotifyId,
-        topTracks: artist.topTracks,
-        knownEmpty: artist.knownEmpty,
-      },
-      {
-        onConfirmOutcome,
-        searchItunes: (name) => searchTracksByArtist(name, 'US', 5),
-        // Spotify top-tracks keyed on the SPOTIFY id (not the uuid identity).
-        // No id (Last.fm-only artist) or no token → no-op to [].
-        getSpotifyTopTracks: (spotifyId) =>
-          accessToken && spotifyId
-            ? musicProvider.getArtistTopTracks(accessToken, spotifyId, 5, 'US').catch(() => [])
-            : Promise.resolve([]),
-      },
-    )
-}
-
-/**
- * Build the `mintArtist` dep for resolve-candidates. Mints/resolves the
- * canonical `artists.id` (uuid) race-safely via `ensureArtist`.
- *
- * Provider-agnostic (Stage 2, #157): the seed's spotifyId comes from the
- * resolved Artist's `.spotifyId` attribute, NOT `.id` (which the search adapter
- * leaves as "" — the uuid is assigned downstream). For Last.fm-resolved
- * artists spotifyId is null → `ensureArtist` get-or-creates by name. For reused
- * artists carrying a spotify_id it dedups on spotify_id as before.
- */
-export function buildMintArtist(supabase: SupabaseClient) {
-  return (artist: Artist) =>
-    ensureArtist(supabase as unknown as ArtistsSupabaseClient, {
-      spotifyId: artist.spotifyId ?? null,
-      name: artist.name,
-      genres: artist.genres,
-      popularity: artist.popularity,
-      imageUrl: artist.imageUrl,
-    })
-}
-
 // ── Seed gathering ──────────────────────────────────────────────────────────
 
 type SupabaseClient = ReturnType<typeof createServiceClient>
 
-/** Chunk size for batched `artist_tracks_cache` reads — mirrors the name cache's BATCH_READ_CHUNK_SIZE. */
-const TRACKS_REHYDRATE_CHUNK_SIZE = 500
-
-/**
- * Rehydrate baked track previews onto resolved candidates from
- * `artist_tracks_cache` (post-0037: keyed by `artist_id` uuid, columns
- * `artist_id, tracks`). The Stage-2 fold moved baked previews out of the
- * name cache (artist_data.topTracks) into this table, but the generation
- * path was never rehydrated from it — so warm artists arrived at preview-
- * confirmation with topTracks=undefined and were re-confirmed (or, before
- * the confirm fix, dropped). This mirrors Explore's hydrateRailArtists
- * (decision A1): warm artists arrive confirmed; cold artists keep topTracks
- * undefined and fall through to iTunes/Spotify.
- *
- * Mutates `artist.topTracks` in place for candidates that have a cached set.
- * NEVER throws — degrades to no rehydration on any read error.
- *
- * Exported for unit testing.
- */
-export async function rehydrateTopTracks(
-  supabase: SupabaseClient,
-  candidates: Array<{ artist: Artist }>,
-): Promise<void> {
-  const ids = [...new Set(candidates.map((c) => c.artist.id).filter(Boolean))]
-  if (ids.length === 0) return
-
-  const tracksById = new Map<string, Track[]>()
-  // Fresh confirmed-empty rows (#162): within NEGATIVE_TTL_MS → short-circuit
-  // the confirm step (knownEmpty) instead of re-hitting iTunes. Expired
-  // negatives are ignored (artist stays unconfirmed → re-confirms).
-  const knownEmptyIds = new Set<string>()
-  const now = Date.now()
-  for (let i = 0; i < ids.length; i += TRACKS_REHYDRATE_CHUNK_SIZE) {
-    const chunk = ids.slice(i, i + TRACKS_REHYDRATE_CHUNK_SIZE)
-    const { data, error } = await supabase
-      .from('artist_tracks_cache')
-      .select('artist_id, tracks, fetched_at')
-      .in('artist_id', chunk)
-    if (error) {
-      console.log(`[engine] rehydrate read-fail err="${error.message}" chunk=${i}-${i + chunk.length} total=${ids.length}`)
-      return // degrade to no rehydration
-    }
-    for (const row of data ?? []) {
-      const id = row.artist_id as string | null
-      if (!id) continue
-      const tracks = (row.tracks as Track[] | null) ?? []
-      if (tracks.length > 0) {
-        tracksById.set(id, tracks)
-      } else if (row.fetched_at && now - new Date(row.fetched_at as string).getTime() < NEGATIVE_TTL_MS) {
-        knownEmptyIds.add(id)
-      }
-    }
-  }
-
-  if (tracksById.size === 0 && knownEmptyIds.size === 0) return
-  for (const { artist } of candidates) {
-    const cached = tracksById.get(artist.id)
-    if (cached) {
-      artist.topTracks = cached // positive always wins
-    } else if (knownEmptyIds.has(artist.id)) {
-      artist.knownEmpty = true
-    }
-  }
-}
-
 async function gatherSeedContext(
   userId: string,
   supabase: SupabaseClient
-): Promise<{ seedNames: string[]; userGenres: string[] }> {
+): Promise<{ seedNames: string[]; pinnedSeeds: string[]; userGenres: string[] }> {
   const [dbSeeds, thumbsUpRows, userRow] = await Promise.all([
     supabase
       .from('seed_artists')
@@ -287,13 +62,9 @@ async function gatherSeedContext(
     // Fetch the full thumbs-up set; sampling is applied below via
     // sampleLikes() so the Feed draws the same 10 random likes Explore uses
     // within a cache window. See docs/prd-diversity-overhaul.md (M1).
-    supabase
-      .from('feedback')
-      .select('artist_id')
-      .eq('user_id', userId)
-      .eq('signal', 'thumbs_up')
-      .is('deleted_at', null)
-      .then(({ data }) => (data ?? []).map((r) => r.artist_id as string).filter(Boolean)),
+    readFeedbackIds(supabase, userId, 'thumbs_up').then(({ data }) =>
+      data.map((r) => r.artist_id).filter(Boolean)
+    ),
 
     supabase
       .from('users')
@@ -326,7 +97,9 @@ async function gatherSeedContext(
     // Genre seed names from Last.fm tags (each cached).
     topGenres.length === 0
       ? Promise.resolve([] as string[])
-      : Promise.all(topGenres.map(getTagArtistNames)).then((batches) => batches.flat()),
+      : // Default limit (20). Pre-#175 F15 a bare `.map(fn)` passed the array
+      // INDEX as the limit, so genre seeds asked Last.fm for 0..4 artists.
+      Promise.all(topGenres.map((tag) => lastfm.tagTopArtists(tag))).then((batches) => batches.flat()),
   ])
 
   names.push(...thumbsUpNames)
@@ -339,12 +112,21 @@ async function gatherSeedContext(
     `totalPooled=${names.length}`
   )
 
-  const deduped = [...new Set(names)]
-  for (let i = deduped.length - 1; i > 0; i--) {
+  // The user's own picks lead (#175 F-A): after F15 genres add ~20 names each,
+  // so one shuffled pool dropped every picked seed from about half of first
+  // feeds. Picks are shuffled among themselves, then the like/genre fill.
+  const pinnedKeys = new Set(dbSeeds.map((n) => n.toLowerCase()))
+  const fill = [...new Set(names.slice(dbSeeds.length))].filter((n) => !pinnedKeys.has(n.toLowerCase()))
+  const seedNames = [...shuffle([...new Set(dbSeeds)]), ...shuffle(fill)]
+  return { seedNames, pinnedSeeds: dbSeeds, userGenres }
+}
+
+function shuffle<T>(arr: T[]): T[] {
+  for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1))
-    ;[deduped[i], deduped[j]] = [deduped[j], deduped[i]]
+    ;[arr[i], arr[j]] = [arr[j], arr[i]]
   }
-  return { seedNames: deduped, userGenres }
+  return arr
 }
 
 // ── Core pipeline ───────────────────────────────────────────────────────────
@@ -498,24 +280,6 @@ export function backfillToTarget(
 }
 
 /**
- * Cooldown gate: a `skip_at` timestamp is a permanent hide ("Dismiss" button).
- * Undo is available from the History page, which clears skip_at via the
- * dismiss RPC. A passive `seen_at` is a 7-day soft cooldown.
- */
-export function isEligibleForCooldown(
-  seenAt: string | null | undefined,
-  skipAt: string | null | undefined,
-  now: Date = new Date()
-): boolean {
-  if (skipAt) return false
-  if (seenAt) {
-    const days = (now.getTime() - new Date(seenAt).getTime()) / (1000 * 60 * 60 * 24)
-    if (days < 7) return false
-  }
-  return true
-}
-
-/**
  * Post-pipeline merge that injects a small number of adjacent-genre picks at
  * positions where they can't displace the top relevance picks. Treats
  * `userGenres` as the root set and samples close (and optionally medium)
@@ -530,10 +294,8 @@ export interface AugmentAdjacentOpts {
   adaptiveBroadening?: boolean
   popularityCurve: number
   undergroundMode?: boolean
-  thumbsDownIds: Set<string>
-  overThresholdIds: Set<string>
-  overThresholdNames: Set<string>
   fetchTagArtists: (tag: string) => Promise<string[]>
+  /** Resolve names → artists, keyed by input name, with the user's exclusions already applied. */
   resolveArtists: (names: string[]) => Promise<Map<string, Artist>>
 }
 
@@ -602,9 +364,6 @@ export async function augmentWithAdjacent(
   const scored: ScoredArtist[] = []
   for (const [name, artist] of resolved.entries()) {
     if (baseIds.has(artist.id)) continue
-    if (opts.thumbsDownIds.has(artist.id)) continue
-    if (opts.overThresholdIds.has(artist.id)) continue
-    if (opts.overThresholdNames.has(normalizeArtistName(artist.name))) continue
     if (opts.undergroundMode && (artist.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) continue
 
     const tag = nameToTag.get(name.toLowerCase()) ?? ''
@@ -655,6 +414,8 @@ export async function augmentWithAdjacent(
 
 export interface RunPipelineOpts {
   seedNames: string[]
+  /** The user's onboarding seed artists: never recommended back, even past the seed cap. */
+  pinnedSeeds?: string[]
   accessToken: string
   userId: string
   playThreshold: number
@@ -666,19 +427,45 @@ export interface RunPipelineOpts {
   deepDiscovery?: boolean
   adventurous?: boolean
   userGenres?: string[]
+  /**
+   * The doorway shared by every run of one build (#175 F-E): a discarded
+   * soften run's secondary resolve keeps going in the background, and two
+   * instances racing over the same names each mint a row.
+   */
+  identity?: ArtistIdentity
 }
 
-async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
+/**
+ * One pipeline run, before composition into the public BuildResult: the
+ * tier-1 result plus its two halves of background work, kept apart because
+ * softening flushes EVERY run's confirms but finishes only the returned run.
+ */
+export interface PipelineRun {
+  count: number
+  metrics: BuildResult['metrics']
+  /** Tier-2 + secondary confirm/write; null when the run failed early. */
+  runSecondary: (() => Promise<number>) | null
+  /** Persist this run's confirm outcomes. Never throws. */
+  flush: () => Promise<void>
+  /**
+   * The tier-1 write hit a DB error (#175 R7). A count of 0 then means "the
+   * write failed", not "nothing eligible", so softening must not kick in.
+   */
+  writeError?: boolean
+}
+
+async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
   const {
-    seedNames, accessToken, userId, playThreshold, popularityCurve, supabase,
+    seedNames, pinnedSeeds = [], accessToken, userId, playThreshold, popularityCurve, supabase,
     source, genre, undergroundMode, deepDiscovery, adventurous, userGenres = [],
   } = o
 
-  // ONE collector per run (#162). Every confirm tier (tier-1 blocking, tier-2
-  // deferred, secondary) records outcomes here; the route flushes it once in
-  // after() so a single batch-upsert covers all three phases.
-  const confirmCollector = createConfirmCollector()
-  const flushConfirms = () => confirmCollector.flush(supabase)
+  // ONE pipeline (and so ONE outcome collector, #162) per run. Every resolve
+  // (primary, secondary, bleed) shares its doorway; every confirm tier (tier-1
+  // blocking, tier-2 deferred, secondary) records outcomes into it, flushed
+  // once by finish() (in after()) so a single batch-upsert covers all three phases.
+  const candidates = new PlayableCandidates(supabase, livePlayablePorts(accessToken), o.identity)
+  const flush = () => candidates.flush()
 
   const widenSeedCap = userGenres.length >= ADAPTIVE_BROADEN_THRESHOLD
   const seedCap = widenSeedCap ? 15 : 10
@@ -692,12 +479,12 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
   const firstHop = await Promise.all(
     capSeedNames.map(async (name) => ({
       seed: name,
-      items: await musicProvider.getSimilarArtistNames(name),
+      items: await lastfm.similarArtists(name),
     }))
   )
 
   const lfmRefResults = deepDiscovery
-    ? await runDeepHop(firstHop, (n) => musicProvider.getSimilarArtistNames(n))
+    ? await runDeepHop(firstHop, (n) => lastfm.similarArtists(n))
     : firstHop
 
   const lfmResults = lfmRefResults.map(({ seed, items }) => ({
@@ -705,15 +492,21 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     names: items.map((i) => i.name),
   }))
 
-  const knownNames = new Set(capSeedNames.map((n) => n.toLowerCase()))
+  const knownNames = new Set([...capSeedNames, ...pinnedSeeds].map((n) => n.toLowerCase()))
+  // Provenance keyed by the SAME lowercase key buildRoundRobinNames dedupes on
+  // (#175 F20): "Boards of Canada" (seed A) and "Boards Of Canada" (seed B)
+  // are one candidate, so both seeds must be credited. Read via seedsOf().
   const nameToSeeds = new Map<string, string[]>()
   for (const { seed, names } of lfmResults) {
     for (const name of names) {
-      if (knownNames.has(name.toLowerCase())) continue
-      if (!nameToSeeds.has(name)) nameToSeeds.set(name, [])
-      nameToSeeds.get(name)!.push(seed)
+      const key = name.toLowerCase()
+      if (knownNames.has(key)) continue
+      const seeds = nameToSeeds.get(key)
+      if (!seeds) nameToSeeds.set(key, [seed])
+      else if (!seeds.includes(seed)) seeds.push(seed)
     }
   }
+  const seedsOf = (name: string) => nameToSeeds.get(name.toLowerCase()) ?? []
 
   const allNames = buildRoundRobinNames(lfmResults, knownNames, { tailFirst: true })
   const { blocking: uniqueNames, secondary: secondaryNames } = splitResolvePools(allNames)
@@ -721,51 +514,57 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
 
   if (uniqueNames.length === 0) {
     console.error(`[engine] FAIL no_unique seeds=${capSeedNames.length} lfm=${lfmTotal} source=${source}`)
-    return { count: 0, runSecondary: null, flushConfirms, metrics: { primaryMs: 0, previewMs: 0, firstBatchMs: 0, misses: 0, retries: 0, rateLimited: false } }
+    return { count: 0, runSecondary: null, flush, metrics: { primaryMs: 0, previewMs: 0, firstBatchMs: 0, misses: 0, retries: 0, rateLimited: false } }
   }
 
-  const candidateMap = new Map<string, { artist: Artist; seedArtists: string[] }>()
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const nameCache = new ArtistNameCache(supabase as any)
+  // The one exclusion policy (#175 D3): thumbs-down, listened over the play
+  // threshold (by id, or by name for id-less history rows), and the 7-day
+  // seen / dismissed cooldown — applied BEFORE confirm so no iTunes call is
+  // spent on an artist writeScored would discard.
+  const exclusions = await loadExclusions(supabase, userId, { playThreshold, nameFallback: true, liked: true })
+  // Distinct ids hidden as listened (baseline counted per id, not per name).
+  const filtListenedIds = new Set<string>()
+  /** Every feed candidate gate: exclusions + underground cap + genre filter. */
+  const feedKeeps = (artist: Artist, countListened = false): boolean => {
+    const why = exclusions.reason(artist)
+    if (why) {
+      if (countListened && why === 'listened') filtListenedIds.add(artist.id)
+      return false
+    }
+    if (undergroundMode && (artist.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) return false
+    if (genre && !artist.genres.some((g) => normalizedIncludes(g, genre))) return false
+    return true
+  }
 
   // Fire the secondary resolution in parallel with primary. It's still best-
-  // effort and its scoring/write-back happens later in `runSecondary` (from
-  // an `after()` block), but the Spotify/Last.fm round-trips now overlap with
-  // the primary resolve instead of waiting for it to finish first. Shared
-  // `nameCache` — writes are idempotent, names don't overlap between slices.
-  const mintArtist = buildMintArtist(supabase)
-
+  // effort and its confirm/write happens later in `runSecondary` (from an
+  // `after()` block), but the Last.fm round-trips overlap with the primary
+  // resolve instead of waiting for it to finish first. Gated + rehydrated by
+  // the same pipeline, so the backfill reserve and the secondary tier both
+  // arrive filtered and warm.
   const secondaryResolvePromise = secondaryNames.length === 0
     ? null
-    : resolveArtistsByName(secondaryNames, {
-        cache: nameCache,
-        searchArtists: (name) => lastfmResolve(name),
-        enrichArtist: buildEnrichArtist(),
-        mintArtist,
-      })
+    : candidates.resolve(secondaryNames, { keep: (a) => feedKeeps(a) })
 
   let previewMs = 0
   const primaryStart = Date.now()
-  const resolved = await resolveArtistsByName(uniqueNames, {
-    cache: nameCache,
-    searchArtists: (name) => lastfmResolve(name),
-    enrichArtist: buildEnrichArtist(),
-    mintArtist,
+  // Resolve → gate → rehydrate: warm artists arrive at preview-confirmation
+  // already confirmed (no iTunes call); cold ones fall through to iTunes/Spotify.
+  const primary = await candidates.resolve(uniqueNames, {
+    keep: (a) => feedKeeps(a, true),
     concurrency: RESOLVE_CONCURRENCY,
     delayMs: RESOLVE_DELAY_MS,
   })
+  const resolved = primary.stats
   const primaryMs = Date.now() - primaryStart
 
   console.log(`[cache-search] hit=${resolved.cacheHits} miss=${resolved.cacheMisses} total=${uniqueNames.length}`)
 
-  // Build id→resolver-name map so confirmed artists can be written back into
-  // artist_search_cache with topTracks baked in (warm-reuse write-back, #145).
-  const idToName = new Map<string, string>()
-  for (const [name, a] of resolved.resolved) idToName.set(a.id, name)
-
-  for (const [name, artist] of resolved.resolved) {
-    const seedArtists = nameToSeeds.get(name) ?? []
+  // Distinct resolved identities, pre-gate (the `cands` log field).
+  const candsCount = new Set([...resolved.resolved.values()].map((a) => a.id)).size
+  const candidateMap = new Map<string, { artist: Artist; seedArtists: string[] }>()
+  for (const [name, artist] of primary.artists) {
+    const seedArtists = seedsOf(name)
     if (candidateMap.has(artist.id)) {
       const existing = candidateMap.get(artist.id)!
       for (const s of seedArtists) {
@@ -775,49 +574,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
       candidateMap.set(artist.id, { artist, seedArtists })
     }
   }
-
-  const [{ data: listenedData }, { data: thumbsDownData }] = await Promise.all([
-    supabase
-      .from('listened_artists')
-      .select('artist_id, lastfm_artist_name, play_count')
-      .eq('user_id', userId),
-    supabase
-      .from('feedback')
-      .select('artist_id')
-      .eq('user_id', userId)
-      .eq('signal', 'thumbs_down')
-      .is('deleted_at', null),
-  ])
-
-  const overThresholdIds = new Set<string>()
-  const overThresholdNames = new Set<string>()
-  for (const row of listenedData ?? []) {
-    if (row.play_count == null || row.play_count <= playThreshold) continue
-    if (row.artist_id) {
-      overThresholdIds.add(row.artist_id)
-    } else if (row.lastfm_artist_name) {
-      overThresholdNames.add(normalizeArtistName(row.lastfm_artist_name))
-    }
-  }
-
-  const thumbsDownIds = new Set((thumbsDownData ?? []).map((r) => r.artist_id))
-  let filtListened = 0
-
-  const filteredCandidates = [...candidateMap.entries()]
-    .filter(([id, val]) => {
-      if (thumbsDownIds.has(id)) return false
-      if (overThresholdIds.has(id)) { filtListened++; return false }
-      if (overThresholdNames.has(normalizeArtistName(val.artist.name))) { filtListened++; return false }
-      if (undergroundMode && (val.artist.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) return false
-      if (genre && !val.artist.genres.some((g) => normalizedIncludes(g, genre))) return false
-      return true
-    })
-    .map(([, val]) => val)
-
-  // Rehydrate baked previews from artist_tracks_cache so warm artists arrive at
-  // preview-confirmation already confirmed (no re-confirm / no iTunes call).
-  // Cold artists keep topTracks undefined and fall through to iTunes/Spotify.
-  await rehydrateTopTracks(supabase, filteredCandidates)
+  const filteredCandidates = [...candidateMap.values()]
 
   // Local scorer — shared by the primary pool and the backfill reserve so the
   // two are ranked on the same scale. (The secondary `runSecondary` closure
@@ -883,9 +640,9 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     console.error(
       `[engine] FAIL zero_top seeds=${capSeedNames.length} lfm=${lfmTotal} ` +
       `uniq=${uniqueNames.length} ok=${resolved.searchOk} fail=${resolved.searchFail} ` +
-      `filtListened=${filtListened} cands=${candidateMap.size} source=${source}`
+      `filtListened=${filtListenedIds.size} cands=${candsCount} source=${source}`
     )
-    return { count: 0, runSecondary: null, flushConfirms, metrics: { primaryMs: Date.now() - primaryStart, previewMs, firstBatchMs: 0, misses: resolved.cacheMisses, retries: resolved.searchRetries, rateLimited: resolved.rateLimited } }
+    return { count: 0, runSecondary: null, flush, metrics: { primaryMs: Date.now() - primaryStart, previewMs, firstBatchMs: 0, misses: resolved.cacheMisses, retries: resolved.searchRetries, rateLimited: resolved.rateLimited } }
   }
 
   // Post-pipeline adjacent-genre bleed. Skipped when the user has filtered
@@ -898,19 +655,11 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
       adaptiveBroadening: widenSeedCap,
       popularityCurve,
       undergroundMode,
-      thumbsDownIds,
-      overThresholdIds,
-      overThresholdNames,
-      fetchTagArtists: getTagArtistNames,
-      resolveArtists: async (names) => {
-        const r = await resolveArtistsByName(names, {
-          cache: nameCache,
-          searchArtists: (name) => lastfmResolve(name),
-          enrichArtist: buildEnrichArtist(),
-          mintArtist,
-        })
-        return r.resolved
-      },
+      fetchTagArtists: (tag) => lastfm.tagTopArtists(tag),
+      // Same pipeline: gated by the exclusions AND rehydrated, so a bleed
+      // pick with a cached preview (or a fresh negative) never re-hits iTunes.
+      resolveArtists: async (names) =>
+        (await candidates.resolve(names, { keep: (a) => !exclusions.reason(a) })).artists,
     })
   }
 
@@ -925,14 +674,9 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     const sec = await secondaryResolvePromise
     const pickedIds = new Set(top.map((t) => t.artist.id))
     const reserve: ScoredArtist[] = []
-    for (const [name, art] of sec.resolved) {
+    for (const [name, art] of sec.artists) {
       if (pickedIds.has(art.id)) continue
-      if (thumbsDownIds.has(art.id)) continue
-      if (overThresholdIds.has(art.id)) continue
-      if (overThresholdNames.has(normalizeArtistName(art.name))) continue
-      if (undergroundMode && (art.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) continue
-      if (genre && !art.genres.some((g) => normalizedIncludes(g, genre))) continue
-      reserve.push(scoreCandidate(art, nameToSeeds.get(name) ?? [], `${source}_backfill`))
+      reserve.push(scoreCandidate(art, seedsOf(name), `${source}_backfill`))
     }
     const before = top.length
     top = backfillToTarget(top, reserve, TARGET)
@@ -946,7 +690,6 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
   //   Tier 2 (deferred): finish primary to TARGET, then secondary pool — all in after().
   // Every artist written in ANY phase is confirmed-playable (comes through confirmToTarget).
 
-  const confirmFn = buildConfirmPreview(accessToken, confirmCollector.onConfirmOutcome)
   const inTop = new Set(top.map((t) => t.artist.id))
   const tail = pool.filter((s) => !inTop.has(s.artist.id)) // already score-sorted
   const ordered = [...top, ...tail]
@@ -958,15 +701,20 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
   // writtenIds tracks all ids written across tier-1, tier-2, and secondary to
   // avoid duplicate confirms or upserts.
   const writtenIds = new Set<string>()
+  let writeError = false
 
   /**
    * Write a set of confirmed ScoredArtists to recommendation_cache, skipping
    * cooldown-ineligible rows and ids already written this run. Returns the
    * number of rows successfully upserted.
    *
-   * Preserves ALL existing behaviour: cooldown filtering, row shape, expires_at,
-   * upsert onConflict. Fetches cooldown state fresh from DB for the given items
-   * so concurrent phases never clobber a live seen_at/skip_at.
+   * Cooldown state is read fresh from the DB for the given items. Writes:
+   *   - new rows (none in the cache): an upsert carrying NO seen_at / skip_at /
+   *     created_at, so the row gets the column defaults.
+   *   - existing rows (unseen, or resurfaced: seen > 7 days ago, no skip_at —
+   *     owner decision D1, #175 F26): a conditional UPDATE (R4) with
+   *     `seen_at: null` so the feed shows them, and `created_at: now` so the
+   *     nightly cron's 3-day unseen expiry doesn't expire them again (F-C).
    */
   async function writeScored(items: ScoredArtist[]): Promise<number> {
     // Exclude ids already written in a previous phase
@@ -974,90 +722,107 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     if (fresh.length === 0) return 0
 
     const ids = fresh.map((item) => item.artist.id)
-    const { data: existingCache } = await supabase
+    const { data: existingCache, error: readErr } = await supabase
       .from('recommendation_cache')
       .select('artist_id, seen_at, skip_at')
       .eq('user_id', userId)
       .in('artist_id', ids)
 
-    const existingSeenAt = new Map<string, string | null>()
-    const existingSkipAt = new Map<string, string | null>()
-    for (const row of existingCache ?? []) {
-      existingSeenAt.set(row.artist_id, row.seen_at)
-      existingSkipAt.set(row.artist_id, row.skip_at)
-    }
-
-    const rows = fresh
-      .filter((item) => {
-        const seenAt = existingSeenAt.get(item.artist.id)
-        const skipAt = existingSkipAt.get(item.artist.id)
-        // Not in cache → eligible. In cache → check both cooldowns.
-        if (seenAt === undefined && skipAt === undefined) return true
-        return isEligibleForCooldown(seenAt, skipAt, now)
-      })
-      .map((item) => {
-        const previousSeenAt = existingSeenAt.get(item.artist.id)
-        const previousSkipAt = existingSkipAt.get(item.artist.id)
-        return {
-          user_id: userId,
-          artist_id: item.artist.id,
-          artist_data: item.artist,
-          score: item.score,
-          why: item.why,
-          source: item.source,
-          expires_at: expiresAt.toISOString(),
-          // Preserve existing cooldown state on re-surface so the window doesn't reset.
-          ...(previousSeenAt !== undefined ? { seen_at: previousSeenAt } : { seen_at: null }),
-          ...(previousSkipAt !== undefined ? { skip_at: previousSkipAt } : { skip_at: null }),
-        }
-      })
-
-    if (rows.length === 0) return 0
-
-    const { error } = await supabase
-      .from('recommendation_cache')
-      .upsert(rows, { onConflict: 'user_id,artist_id' })
-
-    if (error) {
-      console.error(`[engine] upsert_error source=${source} err=${error.message}`)
+    // Fail safe (#175 F17): without the cooldown read every item looks "not in
+    // cache" and could be resurfaced or written over a live dismissal. Write
+    // nothing instead.
+    if (readErr) {
+      console.error(`[engine] cooldown_read_error source=${source} err=${readErr.message}`)
+      writeError = true
       return 0
     }
 
-    for (const row of rows) writtenIds.add(row.artist_id)
-    return rows.length
+    const existing = new Map<string, { seen_at: string | null; skip_at: string | null }>()
+    for (const row of existingCache ?? []) existing.set(row.artist_id, row)
+
+    const inserts = []
+    const rewrites: Array<{ row: Record<string, unknown> & { artist_id: string }; seenAt: string | null }> = []
+    for (const item of fresh) {
+      const prev = existing.get(item.artist.id)
+      if (prev && !isEligibleForCooldown(prev.seen_at, prev.skip_at, now)) continue
+      const row = {
+        user_id: userId,
+        artist_id: item.artist.id,
+        artist_data: item.artist,
+        score: item.score,
+        why: item.why,
+        source: item.source,
+        expires_at: expiresAt.toISOString(),
+      }
+      // A re-written row gets a fresh created_at too (#175 F-C): the nightly
+      // cron expires unseen rows by created_at age, so keeping the old one
+      // would expire a just-refreshed unseen row again that night.
+      if (prev) rewrites.push({ row: { ...row, seen_at: null, created_at: now.toISOString() }, seenAt: prev.seen_at })
+      else inserts.push(row) // brand-new: created_at / seen_at / skip_at from the DB defaults
+    }
+
+    let written = 0
+    if (inserts.length > 0) {
+      const { error } = await supabase
+        .from('recommendation_cache')
+        .upsert(inserts, { onConflict: 'user_id,artist_id' })
+      if (error) {
+        console.error(`[engine] upsert_error source=${source} err=${error.message}`)
+        writeError = true
+      } else {
+        for (const row of inserts) writtenIds.add(row.artist_id)
+        written += inserts.length
+      }
+    }
+
+    // Existing rows are re-written by a conditional UPDATE per row, never an
+    // upsert (#175 R4): it lands only while the row is still exactly what we
+    // read (same seen_at, no skip_at), so a dismiss / thumbs-down / save
+    // landing between the read above and this write is never undone.
+    const results = await Promise.all(
+      rewrites.map(({ row, seenAt }) => {
+        const q = supabase
+          .from('recommendation_cache')
+          .update(row)
+          .eq('user_id', userId)
+          .eq('artist_id', row.artist_id)
+          .is('skip_at', null)
+        return (seenAt ? q.eq('seen_at', seenAt) : q.is('seen_at', null)).select('artist_id')
+      }),
+    )
+    let resurfacedN = 0
+    for (const [i, { data, error }] of results.entries()) {
+      if (error) {
+        console.error(`[engine] rewrite_error source=${source} err=${error.message}`)
+        writeError = true
+      }
+      for (const r of data ?? []) {
+        writtenIds.add(r.artist_id)
+        written++
+        if (rewrites[i].seenAt) resurfacedN++
+      }
+    }
+    if (resurfacedN > 0) console.log(`[engine] resurfaced source=${source} n=${resurfacedN}`)
+    return written
   }
 
   // ── Tier 1 (blocking): confirm FIRST_BATCH_TARGET artists, write, return fast ──
   const firstBatchStart = Date.now()
-  const { kept: firstBatch, confirmedCount: c1 } = await confirmToTarget(
-    ordered,
-    FIRST_BATCH_TARGET,
-    confirmFn,
-  )
+  const { kept: firstBatch, confirmedCount: c1 } = await candidates.confirm(ordered, FIRST_BATCH_TARGET)
   const firstBatchMs = Date.now() - firstBatchStart
   previewMs = firstBatchMs // time the user waited for first paint
 
   const tier1Written = await writeScored(firstBatch)
 
-  // Write-back: bake confirmed topTracks into artist_search_cache so the next
-  // generation's resolver finds warm artists with topTracks → no re-confirm.
-  // idToName covers only the primary resolved pool; artists with no known name
-  // (adjacent-bleed, not in resolved.resolved) are simply skipped. (#145)
-  await Promise.all(
-    firstBatch.map((k) => {
-      const nm = idToName.get(k.artist.id)
-      return nm ? nameCache.write(nm, k.artist).catch(() => {}) : Promise.resolve()
-    })
-  )
-
   console.log(
     `[engine] tier1 seeds=${capSeedNames.length} lfm=${lfmTotal} uniq=${uniqueNames.length} ` +
-    `ok=${resolved.searchOk} fail=${resolved.searchFail} filtListened=${filtListened} ` +
-    `cands=${candidateMap.size} firstBatch=${firstBatch.length} written=${tier1Written} source=${source}`
+    `ok=${resolved.searchOk} fail=${resolved.searchFail} filtListened=${filtListenedIds.size} ` +
+    `cands=${candsCount} firstBatch=${firstBatch.length} written=${tier1Written} source=${source}`
   )
 
   // ── Background continuation: tier-2 (finish primary to TARGET) + secondary pool ──
-  // runSecondary is the single function called by after() in the route. It:
+  // runSecondary is the run's background half; finish() (called by after() in
+  // the route) runs it, then flushes. It:
   //   1. Confirms ordered.slice(c1) up to (TARGET - firstBatch.length) more artists.
   //   2. Writes those via writeScored (deduped against writtenIds).
   //   3. Resolves + confirms + writes the secondary pool (unchanged from before).
@@ -1067,23 +832,12 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     // ── Tier 2: finish primary to TARGET ──
     const tier2Need = TARGET - firstBatch.length
     if (tier2Need > 0 && c1 < ordered.length) {
-      const { kept: tier2Batch } = await confirmToTarget(
-        ordered.slice(c1),
-        tier2Need,
-        confirmFn,
-      )
+      const { kept: tier2Batch } = await candidates.confirm(ordered.slice(c1), tier2Need)
       if (tier2Batch.length > 0) {
         const written = await writeScored(tier2Batch)
         backgroundWritten += written
         console.log(
           `[engine] tier2 source=${source} confirmed=${tier2Batch.length} written=${written}`
-        )
-        // Write-back tier-2 confirmed topTracks (idToName in closure scope). (#145)
-        await Promise.all(
-          tier2Batch.map((k) => {
-            const nm = idToName.get(k.artist.id)
-            return nm ? nameCache.write(nm, k.artist).catch(() => {}) : Promise.resolve()
-          })
         )
       }
     }
@@ -1094,19 +848,10 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     // Already fetched in parallel with primary — just await the result.
     const secondaryResolved = await secondaryResolvePromise
 
-    // Build id→name map for secondary pool write-back. (#145)
-    const secondaryIdToName = new Map<string, string>()
-    for (const [name, a] of secondaryResolved.resolved) secondaryIdToName.set(a.id, name)
-
     const secondaryCandidates: Array<{ artist: Artist; seedArtists: string[] }> = []
-    for (const [name, artist] of secondaryResolved.resolved) {
+    for (const [name, artist] of secondaryResolved.artists) {
       if (writtenIds.has(artist.id)) continue
-      if (thumbsDownIds.has(artist.id)) continue
-      if (overThresholdIds.has(artist.id)) continue
-      if (overThresholdNames.has(normalizeArtistName(artist.name))) continue
-      if (undergroundMode && (artist.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) continue
-      if (genre && !artist.genres.some((g) => normalizedIncludes(g, genre))) continue
-      const seedArtists = nameToSeeds.get(name) ?? []
+      const seedArtists = seedsOf(name)
       secondaryCandidates.push({ artist, seedArtists })
     }
 
@@ -1114,10 +859,6 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
       console.log(`[engine] secondary_empty source=${source}`)
       return backgroundWritten
     }
-
-    // Rehydrate baked previews for the secondary pool too (mirror the primary
-    // path) so tier-2/secondary warm artists also arrive confirmed.
-    await rehydrateTopTracks(supabase, secondaryCandidates)
 
     const secondaryScored: ScoredArtist[] = secondaryCandidates.map(({ artist, seedArtists }) => {
       const seedRelevance = Math.min(Math.sqrt(seedArtists.length) / Math.sqrt(6), 1)
@@ -1144,25 +885,14 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
     secondaryScored.sort((a, b) => b.score - a.score)
 
     // Confirm only up to TARGET secondary candidates before writing.
-    const { kept: secConfirmed } = await confirmToTarget(
-      secondaryScored,
-      TARGET,
-      buildConfirmPreview(accessToken, confirmCollector.onConfirmOutcome),
-    )
+    const { kept: secConfirmed } = await candidates.confirm(secondaryScored, TARGET)
 
     if (secConfirmed.length > 0) {
       const secWritten = await writeScored(secConfirmed)
       backgroundWritten += secWritten
       console.log(
         `[engine] secondary-OK source=${source} names=${secondaryNames.length} ` +
-        `resolved=${secondaryResolved.resolved.size} written=${secWritten}`
-      )
-      // Write-back secondary confirmed topTracks into artist_search_cache. (#145)
-      await Promise.all(
-        secConfirmed.map((k) => {
-          const nm = secondaryIdToName.get(k.artist.id)
-          return nm ? nameCache.write(nm, k.artist).catch(() => {}) : Promise.resolve()
-        })
+        `resolved=${secondaryResolved.stats.resolved.size} written=${secWritten}`
       )
     } else {
       console.log(`[engine] secondary_all_in_cooldown source=${source}`)
@@ -1173,8 +903,9 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
 
   return {
     count: tier1Written,
+    writeError, // tier-1 only: snapshotted before the background tiers run
     runSecondary,
-    flushConfirms,
+    flush,
     metrics: {
       primaryMs,
       previewMs,
@@ -1205,30 +936,48 @@ async function runPipeline(o: RunPipelineOpts): Promise<BuildResult> {
  * `coldStartSeeds` deps, making the cascade order deterministically testable.
  */
 export interface SoftenDeps {
-  run: (opts: RunPipelineOpts) => Promise<BuildResult>
+  run: (opts: RunPipelineOpts) => Promise<PipelineRun>
   coldStartSeeds: () => string[]
+}
+
+/**
+ * Compose the public result. `finish` = the returned run's secondary pass,
+ * then EVERY run's flush (each run has its own collector; a softened retry
+ * must not discard the earlier runs' confirmed previews — #162, b3e402c).
+ */
+function composeResult(final: PipelineRun, runs: PipelineRun[], softenedFilters?: SoftenedFilters): BuildResult {
+  return {
+    count: final.count,
+    metrics: final.metrics,
+    pending: final.runSecondary != null,
+    ...(softenedFilters ? { softenedFilters } : {}),
+    finish: async () => {
+      try {
+        await final.runSecondary?.()
+      } finally {
+        await Promise.all(runs.map((r) => r.flush()))
+      }
+    },
+  }
 }
 
 export async function runWithSoftening(
   baseOpts: RunPipelineOpts,
   deps: SoftenDeps
 ): Promise<BuildResult> {
-  // Each deps.run() is a full runPipeline with its OWN confirm collector.
-  // Only the returned result's flushConfirms would ever be called, so a
-  // softened retry would silently discard the earlier runs' confirmed
-  // previews (#162 — e.g. tier-1 positives suppressed by cooldown still cost
-  // live iTunes calls worth persisting). Chain every run's flush onto the
-  // returned result so the route's single after() flush covers them all.
-  const flushes: Array<() => Promise<void>> = []
-  const withChainedFlush = (result: BuildResult): BuildResult => {
-    if (result.flushConfirms) flushes.push(result.flushConfirms)
-    if (flushes.length <= 1) return result
-    const all = [...flushes]
-    return { ...result, flushConfirms: async () => { await Promise.all(all.map((f) => f())) } }
+  const runs: PipelineRun[] = []
+  const run = async (opts: RunPipelineOpts) => {
+    const r = await deps.run(opts)
+    runs.push(r)
+    return r
   }
 
-  const primary = withChainedFlush(await deps.run(baseOpts))
-  if (primary.count > 0) return primary
+  // A failed write is not an empty pool (#175 R7): softening would widen the
+  // filters (cold-start even drops underground mode) for a transient DB error.
+  const done = (r: PipelineRun) => r.count > 0 || !!r.writeError
+
+  const primary = await run(baseOpts)
+  if (done(primary)) return composeResult(primary, runs)
 
   const softened: SoftenedFilters = { playThreshold: false, coldStart: false }
   const originalPlayThreshold = baseOpts.playThreshold
@@ -1236,27 +985,27 @@ export async function runWithSoftening(
   // Soften 1: bump play threshold.
   console.log(`[engine] soften_play_threshold userId=${baseOpts.userId} from=${originalPlayThreshold} to=${originalPlayThreshold + 5}`)
   softened.playThreshold = true
-  const r1 = withChainedFlush(await deps.run({
+  const r1 = await run({
     ...baseOpts,
     playThreshold: originalPlayThreshold + 5,
     source: 'soften_play_threshold',
-  }))
-  if (r1.count > 0) return { ...r1, softenedFilters: softened }
+  })
+  if (done(r1)) return composeResult(r1, runs, softened)
 
   // Soften 2: cold-start fallback. undergroundMode is intentionally off here —
   // cold-start is the degenerate escape hatch for users with no seeds; its
   // curated starter picks are treated as an exception to the cap promise.
   console.log(`[engine] soften_cold_start userId=${baseOpts.userId}`)
   softened.coldStart = true
-  const r3 = withChainedFlush(await deps.run({
+  const r3 = await run({
     ...baseOpts,
     seedNames: deps.coldStartSeeds(),
     playThreshold: originalPlayThreshold + 5,
     undergroundMode: false,
     source: 'soften_cold_start',
     userGenres: [],
-  }))
-  return { ...r3, softenedFilters: softened }
+  })
+  return composeResult(r3, runs, softened)
 }
 
 /**
@@ -1269,10 +1018,12 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
   const { userId, accessToken, playThreshold, popularityCurve, genre, undergroundMode, deepDiscovery, adventurous } = input
   const supabase = createServiceClient()
 
-  const { seedNames, userGenres } = await gatherSeedContext(userId, supabase)
+  const { seedNames, pinnedSeeds, userGenres } = await gatherSeedContext(userId, supabase)
+  const identity = new ArtistIdentity(supabase)
 
   const makeBaseOpts = (overrides: Partial<RunPipelineOpts>): RunPipelineOpts => ({
     seedNames,
+    pinnedSeeds,
     accessToken,
     userId,
     playThreshold,
@@ -1284,6 +1035,7 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     deepDiscovery,
     adventurous,
     userGenres,
+    identity,
     ...overrides,
   })
 
@@ -1300,14 +1052,10 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
 
   console.log(`[engine] cold_start userId=${userId}`)
   const coldSeeds = sampleColdStartSeeds()
-  return runPipeline(makeBaseOpts({ seedNames: coldSeeds, source: 'cold_start', userGenres: [] }))
+  const run = await runPipeline(makeBaseOpts({ seedNames: coldSeeds, source: 'cold_start', userGenres: [] }))
+  return composeResult(run, [run])
 }
 
 function sampleColdStartSeeds(): string[] {
-  const pool = [...coldStartData.seeds]
-  for (let i = pool.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[pool[i], pool[j]] = [pool[j], pool[i]]
-  }
-  return pool.slice(0, 5).map((s) => s.name)
+  return shuffle([...coldStartData.seeds]).slice(0, 5).map((s) => s.name)
 }

@@ -27,6 +27,11 @@ export function hasPlayablePreview(
 export interface ConfirmOutcome {
   /** The minted uuid identity (artists.id) — the artist_tracks_cache key. */
   artistId: string
+  /**
+   * The name iTunes was searched with — the preview store's poisoning guard
+   * checks it against the canonical `artists.name` before writing.
+   */
+  name: string
   /** Playable tracks found ([] when definitiveEmpty). */
   tracks: Track[]
   /** True only for the confirmed-no-preview negative case (iTunes real-[] + no spotifyId). */
@@ -63,7 +68,7 @@ export interface ConfirmInput {
    */
   spotifyId?: string | null
   /**
-   * Previously-confirmed tracks, rehydrated from `artist_tracks_cache` on the
+   * Previously-confirmed tracks, rehydrated from `artist_tracks_cache` (PreviewStore) on the
    * generation path (or carried on a warm explore artist).
    *  - undefined  → never confirmed / no cached set: resolve via iTunes/Spotify
    *  - []         → NOT a reliable negative post-fold (usually the `?? []`
@@ -74,7 +79,7 @@ export interface ConfirmInput {
    */
   topTracks?: Track[]
   /**
-   * Fresh negative-cache flag (#162), set by `rehydrateTopTracks` when
+   * Fresh negative-cache flag (#162), set by `PreviewStore.rehydrate` when
    * `artist_tracks_cache` holds a confirmed-empty row within the negative TTL.
    * When true (and there's no positive `topTracks` to reuse), skip the network
    * and return [] — the artist was recently confirmed to have no preview. A
@@ -168,7 +173,7 @@ export async function confirmPlayableTracks(
   const it = await deps.searchItunes(artist.name).catch(() => null)
   const p = playableTracks(it ?? [])
   if (p.length > 0) {
-    deps.onConfirmOutcome?.({ artistId: artist.id, tracks: p, definitiveEmpty: false, source: 'itunes' })
+    deps.onConfirmOutcome?.({ artistId: artist.id, name: artist.name, tracks: p, definitiveEmpty: false, source: 'itunes' })
     return p
   }
 
@@ -176,7 +181,7 @@ export async function confirmPlayableTracks(
   const sp = await deps.getSpotifyTopTracks(artist.spotifyId ?? null).catch(() => [])
   const p2 = playableTracks(sp)
   if (p2.length > 0) {
-    deps.onConfirmOutcome?.({ artistId: artist.id, tracks: p2, definitiveEmpty: false, source: 'spotify' })
+    deps.onConfirmOutcome?.({ artistId: artist.id, name: artist.name, tracks: p2, definitiveEmpty: false, source: 'spotify' })
     return p2
   }
 
@@ -187,7 +192,7 @@ export async function confirmPlayableTracks(
   //    present and Spotify also came back empty → Spotify [] is failure-
   //    ambiguous, so still no negative.
   if (it !== null && artist.spotifyId == null) {
-    deps.onConfirmOutcome?.({ artistId: artist.id, tracks: [], definitiveEmpty: true, source: 'itunes' })
+    deps.onConfirmOutcome?.({ artistId: artist.id, name: artist.name, tracks: [], definitiveEmpty: true, source: 'itunes' })
   }
   return []
 }

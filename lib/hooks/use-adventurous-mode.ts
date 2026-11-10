@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { patchSettings } from "@/lib/settings/patch-settings"
 
 // ─── Public constants ────────────────────────────────────────────────────────
 // Centralises the magic strings that were previously duplicated across four
@@ -19,15 +20,13 @@ export const ADVENTUROUS_EVENT_NAME = "flipside:adventurous-change"
  * value (typically the server-rendered `users.adventurous`), NOT a hardcoded
  * `false`.
  *
- * Why this matters: the original AppNav clobbered the server's value with
- * `false` on every mount when the key was missing (`getItem(...) === "1"`
- * evaluates to false on null). A returning adventurous user opening the site
- * in incognito or on a fresh device would see the nav flip from adventurous
- * to non-adventurous post-mount — their saved preference silently dropped on
- * the floor until they re-toggled in Settings.
+ * Why this matters: an earlier nav read `getItem(...) === "1"`, which is
+ * false on a missing key, so a returning adventurous user in incognito or on
+ * a fresh device saw adventurous mode switch off after mount — their saved
+ * preference silently dropped until they re-toggled in Settings.
  *
- * Settings + Explore both treat the server as authoritative on first render;
- * this fallback makes AppNav consistent with them. localStorage acts as a
+ * Every consumer (the app shell's adventurous line, Settings, Explore)
+ * treats the server as authoritative on first render. localStorage acts as a
  * write-through cache for in-tab and cross-tab sync, not as the source of
  * truth.
  */
@@ -61,18 +60,11 @@ export function dispatchAdventurousEvent(): void {
 }
 
 /**
- * PATCH /api/settings with { adventurous: next }.
- * Throws if the response is not ok.
+ * PATCH /api/settings with { adventurous: next } via patchSettings.
+ * Rejects if the response is not ok (callers toast their own copy).
  */
 export async function patchAdventurousSetting(next: boolean): Promise<void> {
-  const res = await fetch("/api/settings", {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ adventurous: next }),
-  })
-  if (!res.ok) {
-    throw new Error("Failed to save adventurous setting")
-  }
+  await patchSettings({ adventurous: next })
 }
 
 // ─── Public interface ─────────────────────────────────────────────────────────
@@ -85,12 +77,9 @@ export interface UseAdventurousModeResult {
 /**
  * Single seam for "is adventurous mode on?" across the app.
  *
- * Replaces the duplicated localStorage + window event + PATCH pattern that
- * previously lived in:
- *   components/visual/ambient.tsx
- *   components/nav/app-nav.tsx
- *   components/settings/settings-form.tsx
- *   components/explore/explore-client.tsx
+ * Owns the localStorage + window event + PATCH pattern for every consumer:
+ * the app shell (adventurous line on the rail / under the top bar), the
+ * Settings obscurity panel and Explore's rail session.
  *
  * SSR-safe: the initial render uses `initial` (from the server).  On mount the
  * hook reconciles with localStorage in case another tab wrote a newer value

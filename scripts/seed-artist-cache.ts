@@ -1,15 +1,16 @@
 /**
- * Seed artist_search_cache from every leaf in data/genres.json.
+ * Seed the canonical `artists` table from every leaf in data/genres.json.
  *
  * Phase 1 — Last.fm scan (rate-limited, sequential, ~5 min):
  *   For each leaf tag, call tag.getTopArtists?limit=50 and accumulate a
  *   global name set. Checkpoints every 25 leaves so Ctrl+C is safe.
  *
  * Phase 2 — Spotify resolve (concurrent, ~15-25 min on first run):
- *   Pass the deduped name list through the existing resolveArtistsByName
- *   pipeline. ArtistNameCache.batchRead skips names already cached, so
- *   writes only hit Spotify for net-new artists. Cache writes land in
- *   artist_search_cache for free.
+ *   Pass the deduped name list through resolveArtistsByName with the
+ *   artist-identity doorway (lib/artist-identity) and a Spotify-search lookup
+ *   adapter. Names already settled in `artists` skip Spotify; net-new artists
+ *   are minted by spotify_id (rule 1 of the doorway) and get a fill-only
+ *   metadata patch.
  *
  * Usage:
  *   npx tsx scripts/seed-artist-cache.ts                      # full run
@@ -26,10 +27,10 @@ import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { join } from 'path'
 import { config as loadEnv } from 'dotenv'
 import { createClient } from '@supabase/supabase-js'
-import { SpotifyProvider } from '../lib/music-provider/spotify-provider'
+import { searchSpotifyArtists } from '../lib/music-provider/spotify'
 import { getSpotifyClientToken } from '../lib/spotify-client-token'
 import { resolveArtistsByName } from '../lib/recommendation/resolve-candidates'
-import { ArtistNameCache, type CacheSupabaseClient } from '../lib/recommendation/artist-name-cache'
+import { ArtistIdentity } from '../lib/artist-identity'
 import type { Artist, RateLimited } from '../lib/music-provider'
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -256,19 +257,22 @@ async function phase1CollectNames(
 
 async function phase2ResolveNames(
   names: string[],
-  cache: ArtistNameCache,
-  provider: SpotifyProvider
+  identity: ArtistIdentity,
 ): Promise<void> {
   console.log(`[seed] phase2 start totalNames=${names.length}`)
 
+  // Spotify-search lookup adapter: the search puts the Spotify id in `.id`;
+  // the doorway wants it as the `spotifyId` attribute (the uuid is minted).
   const searchArtists = async (name: string): Promise<Artist[] | RateLimited> => {
     const token = await getSpotifyClientToken()
     if (!token) return []
-    return provider.searchArtists(token, name)
+    const res = await searchSpotifyArtists(token, name)
+    return Array.isArray(res) ? res.map((a) => ({ ...a, id: '', spotifyId: a.id })) : res
   }
 
   const result = await resolveArtistsByName(names, {
-    cache,
+    cache: identity,
+    mintArtist: (a) => identity.ensure(a),
     searchArtists,
     concurrency: 4,
     delayMs: 200,
@@ -345,10 +349,9 @@ async function main() {
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { auth: { persistSession: false } }
   )
-  const cache = new ArtistNameCache(supabase as unknown as CacheSupabaseClient)
-  const provider = new SpotifyProvider()
+  const identity = new ArtistIdentity(supabase)
 
-  await phase2ResolveNames(cp.collectedNames, cache, provider)
+  await phase2ResolveNames(cp.collectedNames, identity)
   console.log(`[seed] all phases complete.`)
 }
 

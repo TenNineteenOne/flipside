@@ -7,6 +7,19 @@ export function sanitizeHex(color: string | null | undefined, fallback = "#8b5cf
   return color && /^#[0-9a-fA-F]{6}$/.test(color) ? color : fallback
 }
 
+/**
+ * The one display-colour rule for an artist. sanitizeHex returns "#8b5cf6" as
+ * its fallback when the stored color is null, undefined, empty, or invalid;
+ * that sentinel (whether stored or produced by the fallback) means "no real
+ * color", so fall back to the deterministic name-hash and every artist gets a
+ * distinctive tint.
+ */
+export function resolveArtistColor(rawColor: string | null | undefined, artistName: string): string {
+  const sanitized = sanitizeHex(rawColor)
+  if (sanitized === "#8b5cf6") return stringToVibrantHex(artistName)
+  return sanitized
+}
+
 export function stringToVibrantHex(str: string): string {
   let hash = 0
   for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash)
@@ -34,4 +47,20 @@ export function hexToRgba(hex: string, alpha: number): string {
   const full = cleaned.length === 3 ? cleaned.split("").map((c) => c + c).join("") : cleaned
   const num = parseInt(full.slice(0, 6), 16)
   return `rgba(${(num >> 16) & 0xff}, ${(num >> 8) & 0xff}, ${num & 0xff}, ${alpha})`
+}
+
+/** WCAG relative luminance of a #rrggbb colour. */
+function luminance(hex: string): number {
+  const [r, g, b] = [1, 3, 5].map((i) => {
+    const c = parseInt(hex.slice(i, i + 2), 16) / 255
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+  })
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+/** Text colour (white or near-black) with the higher contrast on a #rrggbb background. */
+export function readableTextOn(hex: string): "#ffffff" | "#14121a" {
+  const L = luminance(sanitizeHex(hex))
+  const ink = luminance("#14121a")
+  return (1.05) / (L + 0.05) >= (L + 0.05) / (ink + 0.05) ? "#ffffff" : "#14121a"
 }

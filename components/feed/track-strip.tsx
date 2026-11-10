@@ -3,7 +3,8 @@
 import { memo, useState } from "react"
 import Image from "next/image"
 import { Play } from "lucide-react"
-import { hexToRgba } from "@/lib/color-utils"
+import { artworkAt } from "@/lib/feed/artwork"
+import { formatDuration } from "@/lib/feed/card-copy"
 import type { Track } from "@/lib/music-provider/types"
 
 // ---------------------------------------------------------------------------
@@ -12,20 +13,19 @@ import type { Track } from "@/lib/music-provider/types"
 
 export interface TrackStripProps {
   tracks: Track[]
-  artistId?: string          // Used to save track to Spotify Playlist
-  artistName?: string        // Used for JIT Spotify resolution
-  artistColor?: string       // hex, defaults to '#8b5cf6'
-  compact?: boolean          // Optional for dense UI views like Saved screen
+  /** Kept for callers; the strip takes the artist colour from the card's --a. */
+  artistColor?: string
+  compact?: boolean          // Optional for dense UI views: first track only
   onPlay?: (track: Track) => void
 }
 
 // ---------------------------------------------------------------------------
-// Component
+// Component: the Explore card's track list (styles in artist-card.css, .ex-tracks).
+// Each row is one button that plays its track; the artwork shows a play glyph.
 // ---------------------------------------------------------------------------
 
 export const TrackStrip = memo(function TrackStrip({
   tracks,
-  artistColor = "#8b5cf6",
   compact = false,
   onPlay,
 }: TrackStripProps) {
@@ -33,138 +33,51 @@ export const TrackStrip = memo(function TrackStrip({
 
   if (tracks.length === 0) return null
 
-  // Option 11 CSS classes for hover states
-  const baseTintFlow = `linear-gradient(90deg, ${hexToRgba(artistColor, 0.25)} 0%, rgba(15,15,15,0.7) 100%)`
-
   const handlePlayClick = (e: React.MouseEvent, track: Track) => {
     e.stopPropagation()
     onPlay?.(track)
   }
 
-  // Define how many tracks show. In feed, maybe show 3 maximum normally
   const displayTracks = compact ? tracks.slice(0, 1) : (isExpanded ? tracks : tracks.slice(0, 3))
   const remainingCount = tracks.length - displayTracks.length
 
   return (
-    <div className="flex flex-col gap-[3px] mt-2 mb-2 px-1 w-full">
-      {displayTracks.map((track, index) => {
-        const isFeatured = index === 0 && !compact
+    <ul className="ex-tracks">
+      {displayTracks.map((track) => (
+        <li key={track.id}>
+          <button type="button" className="ex-track" onClick={(e) => handlePlayClick(e, track)} aria-label={`Play ${track.name}`}>
+            <span className="ex-track-art">
+              {track.albumImageUrl && (
+                <Image src={artworkAt(track.albumImageUrl, 40)} alt="" width={40} height={40} unoptimized />
+              )}
+              <span className="ex-track-play" aria-hidden>
+                <Play size={14} fill="currentColor" strokeWidth={0} />
+              </span>
+            </span>
+            <span className="ex-track-text">
+              <span className="ex-track-name">{track.name}</span>
+              {track.albumName && <span className="ex-track-album">{track.albumName}</span>}
+            </span>
+            <span className="ex-track-dur">{formatDuration(track.durationMs)}</span>
+          </button>
+        </li>
+      ))}
 
-        // For the first track, it gets the largest treatment
-        if (isFeatured) {
-          return (
-            <div
-              key={track.id}
-              onClick={(e) => handlePlayClick(e, track)}
-              className="rounded-r-2xl p-3 flex items-center gap-4 cursor-pointer transition-transform hover:translate-x-1"
-              style={{
-                background: baseTintFlow,
-                borderLeft: `3px solid ${artistColor}`
-              }}
-            >
-              <div className="relative w-12 h-12 shrink-0">
-                {track.albumImageUrl ? (
-                  <Image
-                    src={track.albumImageUrl}
-                    alt={track.albumName}
-                    width={48}
-                    height={48}
-                    className="rounded-lg object-cover shadow-lg w-full h-full"
-                    unoptimized
-                  />
-                ) : (
-                  <div className="w-full h-full bg-black/40 rounded-lg" />
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-[16px] font-bold text-white truncate drop-shadow-sm">
-                  {track.name}
-                </div>
-                {/* Secondary artist mapping (safeguard missing values) */}
-                <div className="text-[13px] text-white/50 mt-0.5 truncate mix-blend-plus-lighter font-medium">
-                  {track.albumName}
-                </div>
-              </div>
-              <div className="flex shrink-0 items-center justify-center gap-1">
-                <button
-                  onClick={(e) => handlePlayClick(e, track)}
-                  className="w-10 h-10 rounded-full text-black flex items-center justify-center shrink-0 border-none transition-transform hover:scale-105"
-                  style={{ backgroundColor: artistColor }}
-                  aria-label={`Play ${track.name}`}
-                >
-                  <Play size={16} fill="currentColor" strokeWidth={0} />
-                </button>
-              </div>
-            </div>
-          )
-        }
-
-        // Secondary tracks
-        return (
-          <div
-            key={track.id}
-            onClick={(e) => handlePlayClick(e, track)}
-            className="rounded-r-2xl p-2.5 flex items-center gap-4 cursor-pointer transition-transform hover:translate-x-1"
-            style={{
-              background: baseTintFlow,
-              borderLeft: `3px solid ${artistColor}`
+      {remainingCount > 0 && !compact && (
+        <li>
+          <button
+            type="button"
+            className="ex-track ex-track-more"
+            onClick={(e) => {
+              e.stopPropagation()
+              setIsExpanded(true)
             }}
           >
-            <div className="relative w-10 h-10 shrink-0">
-               {track.albumImageUrl ? (
-                 <Image
-                   src={track.albumImageUrl}
-                   alt={track.albumName}
-                   width={40}
-                   height={40}
-                   className="rounded-lg object-cover opacity-80 w-full h-full"
-                   unoptimized
-                 />
-               ) : (
-                 <div className="w-full h-full bg-black/40 rounded-lg opacity-80" />
-               )}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-[15px] font-semibold text-gray-200 truncate pr-2">
-                {track.name}
-              </div>
-            </div>
-            <div className="flex shrink-0 items-center justify-center gap-1">
-              <button
-                  onClick={(e) => handlePlayClick(e, track)}
-                  className="w-8 h-8 rounded-full text-white flex items-center justify-center shrink-0 border border-white/20 transition-colors hover:bg-white hover:text-black"
-                  aria-label={`Play ${track.name}`}
-                >
-                  <Play size={12} fill="currentColor" strokeWidth={0} />
-              </button>
-            </div>
-          </div>
-        )
-      })}
-
-      {/* Overflow tracking "+ X tracks" expanding button */}
-      {remainingCount > 0 && !compact && (
-        <div
-          className="rounded-r-2xl p-2.5 flex items-center gap-4 cursor-pointer transition-transform hover:translate-x-1"
-          style={{
-            background: baseTintFlow,
-            borderLeft: `3px solid ${artistColor}`
-          }}
-          onClick={(e) => { 
-            e.stopPropagation()
-            setIsExpanded(true)
-          }}
-        >
-          <div className="w-10 h-10 bg-black/30 rounded-lg flex items-center justify-center border border-white/5 opacity-80 text-gray-400 font-semibold text-xs">
-            +{remainingCount}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-[14px] font-medium text-gray-400 italic hover:text-gray-200 transition-colors">
-              View all tracks
-            </div>
-          </div>
-        </div>
+            <span className="ex-track-art ex-track-count">+{remainingCount}</span>
+            <span className="ex-track-name">View all tracks</span>
+          </button>
+        </li>
       )}
-    </div>
+    </ul>
   )
 })

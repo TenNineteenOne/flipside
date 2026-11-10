@@ -3,8 +3,8 @@ import { safeAuth } from "@/lib/auth"
 import { apiError, apiUnauthorized } from "@/lib/errors"
 import { createServiceClient } from "@/lib/supabase/server"
 import { createWindowLimiter } from "@/lib/rate-limiter"
-import { searchArtistCandidates } from "@/lib/music-provider/lastfm-search"
-import { normalizeArtistName } from "@/lib/history/name-utils"
+import { lastfm } from "@/lib/lastfm"
+import { artistNameKey } from "@/lib/artist-identity"
 import type { Artist } from "@/lib/music-provider/types"
 
 // Per-user in-memory rate limit. A debounced UI already throttles typing; this
@@ -18,9 +18,12 @@ const MIN_QUERY_LEN = 2
 const CACHE_SUFFICIENT = 5
 const RESULT_CAP = 10
 
-// Escape %/_/\ so user input can't turn into a wildcard in ILIKE.
+// Escape %/_/\ so user input can't turn into a wildcard in ILIKE. PostgREST
+// also rewrites EVERY `*` in a like/ilike value to `%` and has no escape for
+// it (`\*` would arrive as `\%`, a literal percent sign), so `*` becomes `_`:
+// a one-character wildcard that still matches a real `*` (e.g. "*NSYNC").
 function escapeIlike(s: string): string {
-  return s.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_")
+  return s.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_").replace(/\*/g, "_")
 }
 
 /**
@@ -120,11 +123,11 @@ export async function GET(req: NextRequest) {
   // 2. Supplement with Last.fm only when the cache is thin — keeps live Last.fm
   //    volume low and prefers our enriched cache rows.
   if (suggestions.length < CACHE_SUFFICIENT) {
-    const seen = new Set(suggestions.map((s) => normalizeArtistName(s.name)))
-    const candidates = await searchArtistCandidates(trimmed)
+    const seen = new Set(suggestions.map((s) => artistNameKey(s.name)))
+    const candidates = await lastfm.searchArtists(trimmed)
     for (const c of candidates) {
       if (suggestions.length >= RESULT_CAP) break
-      const norm = normalizeArtistName(c.name)
+      const norm = artistNameKey(c.name)
       if (seen.has(norm)) continue
       seen.add(norm)
       suggestions.push({

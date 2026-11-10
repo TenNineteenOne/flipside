@@ -1,5 +1,90 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { hashIp, evaluateRateLimit, createWindowLimiter } from "../rate-limiter"
+
+const rpc = vi.hoisted(() => vi.fn())
+vi.mock("@/lib/supabase/server", () => ({ createServiceClient: () => ({ rpc }) }))
+
+import {
+  hashIp,
+  evaluateRateLimit,
+  createWindowLimiter,
+  networkOf,
+  loginLimitBuckets,
+  isRateLimited,
+} from "../rate-limiter"
+
+describe("networkOf", () => {
+  it("keys IPv6 by its /64, normalising zero-compression and leading zeros", () => {
+    expect(networkOf("2001:db8:0:1::abcd")).toBe("2001:db8:0:1::/64")
+    expect(networkOf("2001:0DB8:0000:0001:ffff:1:2:3")).toBe("2001:db8:0:1::/64")
+    expect(networkOf("2001:db8::1")).toBe("2001:db8:0:0::/64")
+    expect(networkOf("fe80::1%eth0")).toBe("fe80:0:0:0::/64")
+  })
+
+  it("puts every address inside one /64 in the same network", () => {
+    expect(networkOf("2001:db8:aa:bb:1::1")).toBe(networkOf("2001:db8:aa:bb:ffff:ffff:ffff:ffff"))
+    expect(networkOf("2001:db8:aa:bb::1")).not.toBe(networkOf("2001:db8:aa:bc::1"))
+  })
+
+  it("keys IPv4 (and IPv4-mapped IPv6) by the full address", () => {
+    expect(networkOf("203.0.113.7")).toBe("203.0.113.7")
+    expect(networkOf("::ffff:203.0.113.7")).toBe("203.0.113.7")
+    expect(networkOf("203.0.113.8")).not.toBe(networkOf("203.0.113.7"))
+  })
+
+  it("passes unparseable values through", () => {
+    expect(networkOf("unknown")).toBe("unknown")
+  })
+})
+
+describe("loginLimitBuckets", () => {
+  it("IPv4: per-IP (unchanged key) then global, no separate network bucket", () => {
+    expect(loginLimitBuckets("203.0.113.7")).toEqual([
+      { key: hashIp("203.0.113.7"), max: 10 },
+      { key: "global", max: 300 },
+    ])
+  })
+
+  it("IPv6: per-IP, then hashed /64 network, then global", () => {
+    expect(loginLimitBuckets("2001:db8:0:1::abcd")).toEqual([
+      { key: hashIp("2001:db8:0:1::abcd"), max: 10 },
+      { key: hashIp("net:2001:db8:0:1::/64"), max: 20 },
+      { key: "global", max: 300 },
+    ])
+  })
+})
+
+describe("isRateLimited", () => {
+  afterEach(() => {
+    rpc.mockReset()
+  })
+
+  it("stops at the first full bucket, so a blocked IP isn't charged globally", async () => {
+    rpc.mockResolvedValueOnce({ data: true, error: null })
+    expect(await isRateLimited("2001:db8::1")).toBe(true)
+    expect(rpc).toHaveBeenCalledTimes(1)
+  })
+
+  it("is limited when a later bucket (global) is full", async () => {
+    rpc
+      .mockResolvedValueOnce({ data: false, error: null })
+      .mockResolvedValueOnce({ data: false, error: null })
+      .mockResolvedValueOnce({ data: true, error: null })
+    expect(await isRateLimited("2001:db8::1")).toBe(true)
+    expect(rpc.mock.calls[2][1].p_ip_hash).toBe("global")
+  })
+
+  it("allows when every bucket has room", async () => {
+    rpc.mockResolvedValue({ data: false, error: null })
+    expect(await isRateLimited("203.0.113.7")).toBe(false)
+    expect(rpc).toHaveBeenCalledTimes(2)
+  })
+
+  it("fails open on DB error", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {})
+    rpc.mockResolvedValue({ data: null, error: { message: "down" } })
+    expect(await isRateLimited("203.0.113.7")).toBe(false)
+  })
+})
 
 describe("hashIp", () => {
   it("returns a 64-char hex string (SHA-256)", () => {

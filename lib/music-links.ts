@@ -4,7 +4,7 @@
  *   - update CHECK constraint on users.preferred_music_platform
  *   - add a case to getArtistLink / getShareableArtistLink below
  *   - add a PLATFORM_META entry
- *   - (if direct resolution is possible) add a branch in app/api/open/[platform]/[artistId]/route.ts
+ *   - (if direct resolution is possible) extend linkFor in lib/external-links.ts
  */
 export const SUPPORTED_PLATFORMS = ["spotify", "apple_music", "youtube_music"] as const
 export type MusicPlatform = (typeof SUPPORTED_PLATFORMS)[number]

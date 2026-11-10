@@ -41,6 +41,9 @@ function makeSupabase(
               return {
                 is() {
                   return {
+                    is() {
+                      return this
+                    },
                     gt() {
                       return {
                         order() {

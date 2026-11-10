@@ -4,7 +4,7 @@ import Image from "next/image"
 import { X, Bookmark, Share2 } from "lucide-react"
 import { toast } from "sonner"
 import { hexToRgba } from "@/lib/color-utils"
-import { resolveArtistColor } from "@/lib/hooks/use-artist-color"
+import { resolveArtistColor } from "@/lib/color-utils"
 import { useArtistSaves } from "@/lib/hooks/use-artist-saves"
 import {
   PLATFORM_META,
@@ -13,7 +13,6 @@ import {
   type MusicPlatform,
 } from "@/lib/music-links"
 import { PlatformIcon } from "@/components/platform-icon"
-import { Ambient } from "@/components/visual/ambient"
 
 export interface SavedArtistRow {
   artistId: string
@@ -21,7 +20,8 @@ export interface SavedArtistRow {
   name: string
   genres: string[]
   imageUrl: string | null
-  artistColor: string
+  /** Stored colour (null when none); resolved via resolveArtistColor. */
+  artistColor: string | null
 }
 
 interface SavedClientProps {
@@ -40,19 +40,8 @@ export function SavedClient({ artists, hasLastfm, musicPlatform }: SavedClientPr
 
   const visible = artists.filter((a) => savedIds.has(a.artistId))
 
-  const accent = "#8b5cf6"
-  const c1 = visible[0] ? resolveArtistColor(visible[0].artistColor, visible[0].name) : accent
-  const c2 = visible[1] ? resolveArtistColor(visible[1].artistColor, visible[1].name) : "#ec6fb5"
-  const palette = `
-    radial-gradient(50% 40% at 18% 20%, ${hexToRgba(c1, 0.22)} 0%, transparent 70%),
-    radial-gradient(55% 45% at 82% 30%, ${hexToRgba(c2, 0.18)} 0%, transparent 70%),
-    radial-gradient(70% 55% at 50% 90%, ${hexToRgba(accent, 0.14)} 0%, transparent 70%)
-  `
-
   return (
     <div>
-      <Ambient palette={palette} />
-
       <div className="page-head">
         <h1>Saved</h1>
         <span className="sub">
@@ -148,8 +137,6 @@ export function SavedClient({ artists, hasLastfm, musicPlatform }: SavedClientPr
                       height: 30,
                       borderRadius: "50%",
                       background: "rgba(0,0,0,0.6)",
-                      backdropFilter: "blur(8px)",
-                      WebkitBackdropFilter: "blur(8px)",
                       border: 0,
                       color: "#fff",
                       display: "grid",

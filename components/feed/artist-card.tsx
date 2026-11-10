@@ -1,17 +1,21 @@
 "use client"
 
-import { memo, useCallback } from "react"
+import "./artist-card.css"
+import { memo, useCallback, type CSSProperties } from "react"
 import Image from "next/image"
 import { motion } from "framer-motion"
-import { SkipForward, Bookmark, Check, Share2 } from "lucide-react"
+import { Bookmark, Heart, Share2, ThumbsDown, X } from "lucide-react"
 import { toast } from "sonner"
 import { TrackStrip } from "@/components/feed/track-strip"
 import { PlatformIcon } from "@/components/platform-icon"
 import { useAudio } from "@/lib/audio-context"
-import { hexToRgba } from "@/lib/color-utils"
+import { readableTextOn } from "@/lib/color-utils"
+import { artworkFor, letterFor } from "@/lib/feed/artwork"
+import { listSeparator, popularityLabel, whyParts } from "@/lib/feed/card-copy"
 import { useArtistTracks } from "@/lib/hooks/use-artist-tracks"
 import { useArtistColor } from "@/lib/hooks/use-artist-color"
 import type { Track } from "@/lib/music-provider/types"
+import type { CardArtist } from "@/lib/cards/card-artist"
 import {
   PLATFORM_META,
   getArtistLink,
@@ -23,30 +27,8 @@ import {
 // Types
 // ---------------------------------------------------------------------------
 
-interface ArtistWithTracks {
-  id: string
-  spotifyId?: string | null
-  name: string
-  genres: string[]
-  imageUrl: string | null
-  popularity: number
-  topTracks: Track[]
-}
-
-interface Recommendation {
-  artist_id: string
-  artist_data: ArtistWithTracks
-  score: number
-  why: {
-    sourceArtists: string[]
-    genres: string[]
-    friendBoost: string[]
-  }
-  artist_color?: string | null
-}
-
 export interface ArtistCardProps {
-  recommendation: Recommendation
+  artist: CardArtist
   musicPlatform: MusicPlatform
   onSave: () => void
   onFeedback: (signal: string) => void
@@ -55,9 +37,9 @@ export interface ArtistCardProps {
    * Last signal received for this artist. Drives both the collapsed dismiss
    * state and the in-place "Liked" affordance:
    *   - null           → expanded card, default buttons
-   *   - "thumbs_up"    → expanded card, green outline + "Liked" button (keep playing)
-   *   - "thumbs_down"  → collapsed 56px bar, red-tinted "Passed"
-   *   - "skip"         → collapsed 56px bar, neutral "Dismissed"
+   *   - "thumbs_up"    → expanded card, violet outline + "Liked" button (keep playing)
+   *   - "thumbs_down"  → collapsed 56px bar, "Passed"
+   *   - "skip"         → collapsed 56px bar, "Dismissed"
    */
   dismissSignal?: string | null
   /** When true, hero image is preloaded (set on the LCP card only). */
@@ -65,56 +47,7 @@ export interface ArtistCardProps {
 }
 
 // ---------------------------------------------------------------------------
-// Module-scope static styles — hoisted out of the render path. Each object
-// here has zero prop/state references; dynamic styles stay inline below.
-// ---------------------------------------------------------------------------
-
-const heroWrapStyle: React.CSSProperties = {
-  position: "relative",
-  height: 340,
-  overflow: "hidden",
-}
-
-const heroScrimStyle: React.CSSProperties = {
-  position: "absolute",
-  inset: 0,
-  background: "linear-gradient(to top, #000 0%, transparent 65%)",
-}
-
-const heroNameWrapStyle: React.CSSProperties = {
-  position: "absolute",
-  left: 24,
-  right: 24,
-  bottom: 20,
-}
-
-const cardBodyStyle: React.CSSProperties = {
-  padding: "18px 20px 20px",
-}
-
-const noTracksPlaceholderStyle: React.CSSProperties = {
-  height: 64,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  borderRadius: 12,
-  background: "rgba(255,255,255,0.025)",
-  border: "1px solid var(--border)",
-}
-
-const reasonPillStyle: React.CSSProperties = {
-  marginTop: 18,
-  padding: "14px 16px",
-  background: "rgba(255,255,255,0.025)",
-  borderRadius: 12,
-  fontSize: 14,
-  textAlign: "center",
-  color: "var(--text-secondary)",
-  lineHeight: 1.4,
-}
-
-// ---------------------------------------------------------------------------
-// Component
+// Component (styles: artist-card.css, every rule scoped under .ex-card)
 // ---------------------------------------------------------------------------
 
 // Collapse the card for thumbs_down / skip, but NOT thumbs_up — we keep the
@@ -124,8 +57,10 @@ function signalCollapses(signal: string | null | undefined): boolean {
   return signal != null && signal !== "thumbs_up"
 }
 
+const spring = { type: "spring", stiffness: 400, damping: 40 } as const
+
 function ArtistCardImpl({
-  recommendation,
+  artist,
   musicPlatform,
   onSave,
   onFeedback,
@@ -135,17 +70,18 @@ function ArtistCardImpl({
 }: ArtistCardProps) {
   const isLiked = dismissSignal === "thumbs_up"
   const isCollapsed = signalCollapses(dismissSignal)
-  const { artist_data, why, artist_color } = recommendation
-  const artistColor = useArtistColor(artist_color, artist_data.name)
+  const artistColor = useArtistColor(artist.artistColor, artist.name)
+  // The only inline style: the artist's colour, which the stylesheet derives its shades from.
+  const tint = { "--a": artistColor } as CSSProperties
 
   const { play } = useAudio()
 
   const { tracks: localTracks, isFetching: isFetchingTracks } = useArtistTracks({
     // The Show-Tracks route (/api/artists/[id]/tracks) is keyed on the internal
     // artist_id (Stage 2 re-key), so pass the surrogate uuid here.
-    artistId: recommendation.artist_id,
-    artistName: artist_data.name,
-    initialTracks: artist_data.topTracks,
+    artistId: artist.id,
+    artistName: artist.name,
+    initialTracks: artist.topTracks,
   })
 
   function handleSave(e: React.MouseEvent) {
@@ -155,312 +91,150 @@ function ArtistCardImpl({
 
   const handlePlay = useCallback(
     (track: Track) => {
-      play(track, artist_data.name, artist_data.imageUrl, artistColor)
+      play(track, artist.name, artist.imageUrl, artistColor)
     },
-    [play, artist_data.name, artist_data.imageUrl, artistColor],
+    [play, artist.name, artist.imageUrl, artistColor],
   )
 
   function handleShare(e: React.MouseEvent) {
     e.stopPropagation()
     const url = getShareableArtistLink(musicPlatform, {
-      artistId: recommendation.artist_id,
-      spotifyId: artist_data.spotifyId ?? null,
-      artistName: artist_data.name,
+      artistId: artist.id,
+      spotifyId: artist.spotifyId ?? null,
+      artistName: artist.name,
     })
     navigator.clipboard.writeText(url).then(() => toast.success("Link copied!")).catch(() => toast.error("Couldn't copy link"))
   }
 
-  const reasonText =
-    why.sourceArtists.length > 0
-      ? why.genres.length > 0
-        ? `Similar to ${why.sourceArtists.join(" & ")} · genre · ${why.genres[0]}`
-        : `Similar to ${why.sourceArtists.join(" & ")}`
-      : why.genres.length > 0
-        ? `Because you like ${why.genres.join(", ")}`
-        : null
-
   // ------------------------------------------------------------------
-  // Collapsed (slim bar) state — no emoji, colour-coded labels. Only applies
-  // to thumbs_down / skip. Thumbs_up and saves keep the card expanded.
+  // Collapsed (slim bar) state. Only applies to thumbs_down / skip.
+  // Thumbs_up and saves keep the card expanded.
   // ------------------------------------------------------------------
   if (isCollapsed) {
-    const labelMap: Record<string, { text: string; color: string; border: string }> = {
-      thumbs_down: { text: "Passed",    color: "var(--dislike)",    border: "rgba(255,75,75,0.35)" },
-      skip:        { text: "Dismissed", color: "var(--text-muted)", border: "var(--border)" },
-    }
-    const signal = labelMap[dismissSignal ?? "skip"] ?? labelMap.skip
+    const passed = dismissSignal === "thumbs_down"
 
     return (
-      <motion.div
-        layout
-        initial={{ height: "auto", opacity: 1 }}
-        animate={{ height: 56, opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ type: "spring", stiffness: 400, damping: 40 }}
-        style={{
-          padding: "14px 18px",
-          background: "rgba(15,15,15,0.6)",
-          border: `1px solid ${signal.border}`,
-          borderRadius: 16,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          overflow: "hidden",
-        }}
-      >
-        <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-secondary)" }}>
-          {artist_data.name}
-        </span>
-        <span
-          className="mono"
-          style={{
-            fontSize: 11,
-            fontWeight: 600,
-            color: signal.color,
-            textTransform: "uppercase",
-            letterSpacing: "0.1em",
-          }}
-        >
-          {signal.text}
+      <motion.div layout exit={{ opacity: 0 }} transition={spring} className="ex-card ex-card-bar" style={tint}>
+        <span className="ex-card-bar-name">{artist.name}</span>
+        <span className="ex-card-bar-state">
+          {passed ? <ThumbsDown size={14} aria-hidden /> : <X size={14} aria-hidden />}
+          {passed ? "Passed" : "Dismissed"}
         </span>
       </motion.div>
     )
   }
 
+  const art = artworkFor(artist)
+  const why = whyParts(artist.why)
+  const platform = PLATFORM_META[musicPlatform]
+  const genres = (artist.genres ?? []).slice(0, 2).join(" · ")
+
   // ------------------------------------------------------------------
-  // Expanded hero card (also rendered after thumbs_up — card stays visible so
-  // the user can keep playing tracks. The 'liked' affordance is a subtle green
-  // outline + glow + the + More like this button swapping to ✓ Liked.)
+  // Expanded card (also after thumbs_up — the card stays so the user can keep
+  // playing tracks; liked = violet outline + the More button turning "Liked").
   // ------------------------------------------------------------------
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ height: "auto", opacity: 1, y: 0 }}
-      transition={{ type: "spring", stiffness: 400, damping: 40 }}
-      className="fadein"
-      style={{
-        width: "100%",
-        borderRadius: "var(--radius-xl)",
-        overflow: "hidden",
-        background: "rgba(15,15,15,0.65)",
-        backdropFilter: "blur(30px)",
-        WebkitBackdropFilter: "blur(30px)",
-        border: isLiked
-          ? "2px solid rgba(34,197,94,0.55)"
-          : "1px solid rgba(255,255,255,0.08)",
-        boxShadow: isLiked
-          ? "0 0 0 4px rgba(34,197,94,0.12), 0 30px 80px rgba(0,0,0,0.55)"
-          : "0 30px 80px rgba(0,0,0,0.55)",
-        transition: "border-color 0.25s ease, box-shadow 0.25s ease",
-      }}
+      initial={{ y: 20 }}
+      animate={{ y: 0 }}
+      transition={spring}
+      className="ex-card"
+      data-liked={isLiked || undefined}
+      style={tint}
     >
-      {/* Hero image */}
-      <div style={heroWrapStyle}>
-        {artist_data.imageUrl ? (
+      <div className="ex-card-art">
+        {art ? (
           <Image
-            src={artist_data.imageUrl}
-            alt={artist_data.name}
+            src={art}
+            alt={artist.name}
             fill
-            sizes="(min-width: 900px) 680px, 100vw"
+            sizes="(min-width: 1100px) 400px, (min-width: 900px) 440px, 100vw"
             priority={priority}
-            style={{
-              objectFit: "cover",
-              filter: "saturate(0.85) contrast(1.05)",
-            }}
+            className="ex-card-img"
           />
         ) : (
-          <div
-            style={{
-              width: "100%",
-              height: "100%",
-              background: `linear-gradient(135deg, ${hexToRgba(artistColor, 0.4)}, ${hexToRgba(artistColor, 0.15)} 60%, #0a0a0a)`,
-            }}
-          />
+          <span className="ex-card-letter" style={{ color: readableTextOn(artistColor) }} aria-hidden>
+            {letterFor(artist.name)}
+          </span>
         )}
-
-        {/* Color tint overlay */}
-        {artist_data.imageUrl && (
-          <div
-            style={{
-              position: "absolute",
-              inset: 0,
-              background: `linear-gradient(135deg, ${hexToRgba(artistColor, 0.18)}, transparent 60%)`,
-              mixBlendMode: "color",
-            }}
-          />
-        )}
-
-        {/* Dark gradient scrim */}
-        <div style={heroScrimStyle} />
-
-        {/* Name + genre */}
-        <div style={heroNameWrapStyle}>
-          <div
-            className="display"
-            style={{
-              fontSize: "clamp(40px, 9vw, 56px)",
-              lineHeight: 0.92,
-              color: "#fff",
-              textShadow: "0 4px 30px rgba(0,0,0,0.5)",
-            }}
-          >
-            {artist_data.name}
-          </div>
-          {(artist_data.genres?.length ?? 0) > 0 && artist_data.genres?.[0] && (
-            <div
-              className="mono"
-              style={{
-                fontSize: 10.5,
-                fontWeight: 600,
-                letterSpacing: "0.2em",
-                textTransform: "uppercase",
-                color: artistColor,
-                marginTop: 10,
-              }}
-            >
-              {artist_data.genres[0]} · popularity {artist_data.popularity}
-            </div>
-          )}
-        </div>
       </div>
 
-      {/* Body */}
-      <div style={cardBodyStyle}>
-        {/* Track strip */}
+      <div className="ex-card-body">
+        <div>
+          <h3 className="ex-card-name">{artist.name}</h3>
+          {genres && <p className="ex-card-genres">{genres}</p>}
+          <p className="ex-card-pop">
+            <span className="ex-meter" aria-hidden>
+              <span style={{ "--p": Math.min(100, Math.max(0, artist.popularity)) / 100 } as CSSProperties} />
+            </span>
+            {popularityLabel(artist.popularity)} · popularity {artist.popularity}
+          </p>
+          {why && (
+            <p className="ex-card-why">
+              {why.lead}
+              {why.names.length > 0
+                ? why.names.map((n, i) => (
+                    <span key={n}>
+                      {listSeparator(i, why.names.length)}
+                      <strong>{n}</strong>
+                    </span>
+                  ))
+                : why.genres.join(", ")}
+            </p>
+          )}
+        </div>
+
         {localTracks.length > 0 ? (
           <div onClick={(e) => e.stopPropagation()}>
-            <TrackStrip
-              tracks={localTracks}
-              artistId={recommendation.artist_id}
-              artistName={artist_data.name}
-              artistColor={artistColor}
-              onPlay={handlePlay}
-            />
+            <TrackStrip tracks={localTracks} artistColor={artistColor} onPlay={handlePlay} />
           </div>
         ) : (
-          <div style={noTracksPlaceholderStyle}>
-            <span className="mono" style={{ fontSize: 11, color: "var(--text-muted)" }}>
-              {isFetchingTracks ? "Loading tracks…" : "No tracks available"}
-            </span>
-          </div>
+          <p className="ex-card-note">{isFetchingTracks ? "Loading tracks…" : "No tracks available"}</p>
         )}
 
-        {reasonText && (
-          <div style={reasonPillStyle}>
-            {reasonText}
+        <div className="ex-card-actions">
+          <div className="ex-triage">
+            <button type="button" onClick={() => onFeedback("thumbs_down")} className="ex-tri">
+              <ThumbsDown size={16} strokeWidth={1.75} aria-hidden /> Less like this
+            </button>
+            <button type="button" onClick={() => onFeedback("skip")} className="ex-tri">
+              <X size={16} strokeWidth={1.75} aria-hidden /> Dismiss
+            </button>
+            <button type="button" onClick={() => onFeedback("thumbs_up")} aria-pressed={isLiked} className="ex-tri ex-tri-like">
+              <Heart size={16} strokeWidth={1.75} fill={isLiked ? "currentColor" : "none"} aria-hidden />
+              {isLiked ? "Liked" : "More like this"}
+            </button>
           </div>
-        )}
 
-        {/* Actions */}
-        <div className="col gap-12" style={{ marginTop: 16 }}>
-          {/* Open in <preferred platform> + Share */}
-          <div style={{ display: "flex", gap: 8 }}>
+          <div className="ex-secondary">
+            <button type="button" className="ex-sec" onClick={handleSave} aria-pressed={isSaved}>
+              <Bookmark size={16} strokeWidth={1.75} fill={isSaved ? "currentColor" : "none"} aria-hidden />
+              <span className="ex-sec-label">{isSaved ? "Bookmarked" : "Bookmark"}</span>
+            </button>
             <a
               href={getArtistLink(musicPlatform, {
-                artistId: recommendation.artist_id,
-                spotifyId: artist_data.spotifyId ?? null,
-                artistName: artist_data.name,
+                artistId: artist.id,
+                spotifyId: artist.spotifyId ?? null,
+                artistName: artist.name,
               })}
               target="_blank"
               rel="noopener noreferrer"
-              className="btn"
+              className="ex-sec"
+              aria-label={`Open in ${platform.label}`}
               onClick={(e) => e.stopPropagation()}
-              style={{
-                flex: 1,
-                background: PLATFORM_META[musicPlatform].brandColor,
-                color: PLATFORM_META[musicPlatform].brandFg,
-                borderColor: "transparent",
-                fontWeight: 700,
-              }}
             >
               <PlatformIcon platform={musicPlatform} size={16} />
-              Open in {PLATFORM_META[musicPlatform].label}
+              <span className="ex-sec-label">{platform.label}</span>
             </a>
             <button
-              className="btn"
+              type="button"
+              className="ex-sec"
               onClick={handleShare}
               title="Copy artist link"
-              style={{ padding: "0 14px" }}
+              aria-label={`Share: copy link to ${artist.name}`}
             >
-              <Share2 size={15} />
-            </button>
-          </div>
-
-          {/* Bookmark */}
-          <button
-            className="btn btn-block btn-lg"
-            onClick={handleSave}
-            style={{
-              background: isSaved ? "rgba(255,255,255,0.04)" : hexToRgba(artistColor, 0.15),
-              borderColor: isSaved ? "var(--border)" : hexToRgba(artistColor, 0.35),
-              color: isSaved ? "var(--text-muted)" : "var(--text-primary)",
-              fontWeight: 600,
-            }}
-          >
-            {isSaved ? (
-              <>
-                <Check size={16} strokeWidth={2.5} /> Bookmarked
-              </>
-            ) : (
-              <>
-                <Bookmark size={16} /> Bookmark in Flipside
-              </>
-            )}
-          </button>
-
-          {/* Feedback strip — NO EMOJI */}
-          <div style={{ display: "flex", gap: 10 }}>
-            <button
-              onClick={() => onFeedback("thumbs_down")}
-              className="btn"
-              style={{
-                flex: 1,
-                minWidth: 0,
-                fontSize: 13,
-                whiteSpace: "nowrap",
-                color: "#ff7b7b",
-                background: "rgba(255,75,75,0.05)",
-                borderColor: "rgba(255,75,75,0.18)",
-              }}
-            >
-              <span className="mono" style={{ fontSize: 13, fontWeight: 700 }}>
-                —
-              </span>{" "}
-              Less like this
-            </button>
-            <button
-              onClick={() => onFeedback("skip")}
-              className="btn"
-              style={{ flex: 1, minWidth: 0, fontSize: 13, whiteSpace: "nowrap" }}
-            >
-              <SkipForward size={15} /> Dismiss
-            </button>
-            <button
-              onClick={() => onFeedback("thumbs_up")}
-              aria-pressed={isLiked}
-              className="btn"
-              style={{
-                flex: 1.2,
-                minWidth: 0,
-                fontSize: 13,
-                whiteSpace: "nowrap",
-                color: "var(--like)",
-                background: isLiked ? "rgba(34,197,94,0.22)" : "rgba(34,197,94,0.07)",
-                borderColor: isLiked ? "rgba(34,197,94,0.55)" : "rgba(34,197,94,0.22)",
-                fontWeight: isLiked ? 700 : undefined,
-              }}
-            >
-              {isLiked ? (
-                <>
-                  <Check size={15} strokeWidth={2.5} /> Liked
-                </>
-              ) : (
-                <>
-                  <span className="mono" style={{ fontSize: 13, fontWeight: 700 }}>+</span>{" "}
-                  More like this
-                </>
-              )}
+              <Share2 size={16} strokeWidth={1.75} aria-hidden /> <span className="ex-sec-label">Share</span>
             </button>
           </div>
         </div>
@@ -470,6 +244,6 @@ function ArtistCardImpl({
 }
 
 // Memoized so that toggling a save on one card doesn't re-render every
-// sibling in the feed. Props are all primitives plus two callbacks that
-// FeedClient stabilizes per-artistId via its FeedCardRow wrapper.
+// sibling in the rail. Props are all primitives plus two callbacks that
+// ExploreArtistRow stabilizes per artist id.
 export const ArtistCard = memo(ArtistCardImpl)

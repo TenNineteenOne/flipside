@@ -1,6 +1,6 @@
 ---
 title: External APIs
-updated: 2026-07-11
+updated: 2026-10-24
 related: [[music-providers]], [[spotify-dependency]], [[generation-engine]], [[api-routes]]
 ---
 
@@ -10,44 +10,44 @@ Every external service flipside talks to, and exactly what it provides. Breakers
 are in [[music-providers]]; the replaceability analysis is in [[spotify-dependency]].
 
 ## Last.fm — the recommendation brain
-Auth: `LASTFM_API_KEY` (public read-only, no OAuth). Concurrency-gated (`runLastfm`, 12),
-Supabase-cached (`lastfm_cache`).
+Auth: `LASTFM_API_KEY` (public read-only, no OAuth). Every call goes through the one
+adapter, `lib/lastfm` (`lastfm.*`): key, timeouts, the `runLastfm` gate (12 concurrent,
+~20 req/s), the Supabase `lastfm_cache` read-through and per-endpoint counters. See
+[[music-providers]].
 
-| Endpoint | Used for | Where |
+| Endpoint | Used for | Adapter op → callers |
 |---|---|---|
-| `artist.getSimilar` | **similar artists** (the discovery graph) | `spotify-provider.getSimilarArtistNames` |
-| `tag.gettopartists` | top artists per genre tag (rails, seeds) | `engine.ts`, `explore-engine.ts` |
-| `artist.getInfo` | **genres + listener-count→popularity** enrichment | `enrich-artist.ts` |
-| `user.getTopArtists`, `user.getRecentTracks` | listening history (opt-in) | `history/lastfm-syncer.ts` |
+| `artist.getSimilar` | **similar artists** (the discovery graph) | `similarArtists` → `engine.ts`, `explore-engine.ts` (wildcards) |
+| `tag.gettopartists` | top artists per genre tag (seeds, bleed, rails) | `tagTopArtists` → `engine.ts`, `explore-engine.ts` |
+| `artist.getInfo` | doorway name resolve + **genres / listener-count→popularity** | `artistInfo` → `artist-identity/lastfm-lookup.ts`, `history/id-resolver.ts` |
+| `artist.search` | onboarding typeahead | `searchArtists` → `app/api/onboarding/search` |
+| `user.getTopArtists`, `user.getRecentTracks` | listening history (opt-in) | `userArtistNames` → `history/lastfm-syncer.ts` |
 
 > Last.fm **artist images are dead** (placeholder star since years ago; confirmed still
 > true 2026) and its license excludes images — images come from Spotify today.
 
 ## iTunes / Apple — preview audio (primary)
-Auth: **none** (free, keyless). Gated by `runItunes` + `itunesBreaker`.
+Auth: **none** (free, keyless). All HTTP via `itunesFetch`; gated by the iTunes limiter + `itunesBreaker` (the `/api/open` link resolver passes `gateOnly`: limiter only, no breaker, no call counter).
 
 | Endpoint | Used for | Where |
 |---|---|---|
 | `search?entity=song` | **30s preview URLs** (primary source) | `itunes.ts:searchTracksByArtist` |
-| `search?entity=musicArtist` | Apple Music artist URL resolution | `api/open/apple_music` |
+| `search?entity=musicArtist` | Apple Music artist URL resolution (an answered no-match is cached as NULL for 30 days; an http/network/parse failure falls back to the search URL and caches nothing) | `lib/external-links.ts` (`linkFor`) |
 
 Known pain point: ~20 req/min soft limit with erratic **403** throttling (per-IP, so prod's
 Vercel IP differs from local) and no `Retry-After`. The official Apple Music API needs a
 paid developer JWT.
 
 ## Spotify Web API
-Two credentials — see [[music-providers]] for token details and [[spotify-dependency]] for
-the 2026 API gutting. What flipside uses:
+**Client-credentials only** — login is username-only and the user-token surface (history,
+like, save→playlist, OAuth) was deleted in #175 (restore tag `archive/spotify-user-token`).
+Adapter: `lib/music-provider/spotify.ts`. See [[spotify-dependency]] for the 2026 API gutting.
 
-| Endpoint | Token | Used for | Degrades? |
+| Endpoint | Used for | Where | Degrades? |
 |---|---|---|---|
-| `/search?type=artist` | client-creds or user | resolve name → **ID + image** | onboarding falls back to `artist_search_cache` ILIKE on 429 |
-| `/artists/{id}/top-tracks` | user | preview fallback | iTunes tried first; ⚠️ likely removed for client-creds in Feb 2026 |
-| `/me/top/artists`, `/me/player/recently-played`, `/me` | user | history + market (opt-in) | Last.fm / stats.fm are alternates |
-| `/search?type=track`, `/artists/{id}` | user | resolve iTunes track → Spotify ID (for "like") | hard fail |
-| `PUT /me/tracks` | user | like a track | hard fail |
-| `/users/:id/playlists`, `/playlists/:id/tracks` | user | save→playlist (optional) | returns `playlistError`, save still succeeds |
-| OAuth `/authorize`,`/api/token` | — | optional Spotify connect + token refresh | — |
+| `/artists/{id}/top-tracks` | preview fallback after iTunes | `getSpotifyTopTracks` via `livePlayablePorts` | no Spotify id / token → skipped; ⚠️ likely removed for client-creds in Feb 2026 |
+| `/search?type=artist` | name → Spotify id + image | `searchSpotifyArtists`, **only** `scripts/seed-artist-cache.ts` | generation resolves names via Last.fm since #157 |
+| `accounts.spotify.com/api/token` | client-credentials token | `lib/spotify-client-token.ts` | null token → Spotify fallback skipped |
 
 > ⚠️ As of **Feb 2026** Spotify removed `popularity`/`followers` from the artist object,
 > deprecated `genres`, nulled `preview_url` for client-creds, and removed related-artists /
@@ -57,7 +57,7 @@ the 2026 API gutting. What flipside uses:
 ## stats.fm — optional history
 Auth: none (public per-username). `GET /api/v1/users/{username}/top/artists?range=lifetime`.
 Items often embed `artist.spotifyIds[]`, so many map to Spotify IDs without a search.
-8s timeout, no breaker. `lib/statsfm-listened-artists.ts`.
+8s timeout, no breaker. `lib/history/statsfm-syncer.ts` → `ingestListens`.
 
 ## Researched but NOT integrated (candidates)
 See `docs/_sweeps/research-*.md` and [[spotify-dependency]]:
@@ -66,4 +66,3 @@ See `docs/_sweeps/research-*.md` and [[spotify-dependency]]:
 - **MusicBrainz** — keyless (1 req/s, User-Agent required); url-rels return an artist's
   **Spotify URL** → recover the Spotify ID without the Spotify API.
 - **ListenBrainz**, **TheAudioDB**, **Discogs**, **Wikidata/Commons** — secondary.
-- `scripts/mb-coverage-spike.ts` is a research spike only (not production).

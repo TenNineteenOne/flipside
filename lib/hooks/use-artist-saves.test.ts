@@ -14,7 +14,7 @@
  */
 
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { buildSaveFetchInit, DEFAULT_SAVES_MESSAGES } from "./use-artist-saves"
+import { buildSaveFetchInit, DEFAULT_SAVES_MESSAGES } from "@/lib/client/artist-signals"
 
 // ─── Sonner mock ──────────────────────────────────────────────────────────────
 

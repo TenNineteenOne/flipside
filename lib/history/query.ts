@@ -1,4 +1,5 @@
 import { createServiceClient } from "@/lib/supabase/server"
+import { liftArtistColor } from "@/lib/cards/card-artist"
 
 export interface HistoryEntry {
   artist_id: string
@@ -86,7 +87,7 @@ export async function getHistoryPage(
       artist_data: rec.artist_data,
       score: rec.score,
       why: rec.why,
-      artist_color: (rec.artist_data as Record<string, unknown>)?.artist_color as string | null ?? null,
+      artist_color: liftArtistColor(rec.artist_data),
       seen_at: rec.seen_at,
       signal,
       bookmarked: savedSet.has(rec.artist_id),

@@ -14,8 +14,7 @@
  */
 
 import { describe, it, expect } from "vitest"
-import { resolveArtistColor } from "./use-artist-color"
-import { stringToVibrantHex } from "@/lib/color-utils"
+import { resolveArtistColor, stringToVibrantHex } from "@/lib/color-utils"
 
 const DEFAULT_SENTINEL = "#8b5cf6"
 

@@ -6,6 +6,35 @@ import { hexToRgba } from "@/lib/color-utils"
 import { patchSettings } from "@/lib/settings/patch-settings"
 import { MINT, LASTFM_RED, STATSFM_PURPLE } from "@/lib/settings/obscurity"
 
+/**
+ * One source username field: `draft` is the input, `saved` the last value the
+ * server accepted. Blur saves when the draft differs from `saved` (not from
+ * the initial prop — bob→alice→bob must save the second bob); a rejected
+ * save leaves `saved` alone.
+ */
+function useSourceUsername(
+  initial: string | null,
+  key: "lastfmUsername" | "statsfmUsername",
+  label: string,
+) {
+  const [draft, setDraft] = useState(initial ?? "")
+  const [saved, setSaved] = useState(initial ?? "")
+
+  async function onBlur() {
+    const trimmed = draft.trim()
+    if (trimmed === saved) return
+    try {
+      await patchSettings({ [key]: trimmed })
+      setSaved(trimmed)
+      toast.success(`${label} username saved`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : `Failed to save ${label} username`)
+    }
+  }
+
+  return { draft, setDraft, saved, onBlur }
+}
+
 interface ConnectedSourcesPanelProps {
   initialLastfmUsername: string | null
   initialStatsfmUsername: string | null
@@ -17,34 +46,13 @@ export function ConnectedSourcesPanel({
   initialStatsfmUsername,
   initialLastfmArtistCount,
 }: ConnectedSourcesPanelProps) {
-  const [lastfmUsername, setLastfmUsername] = useState(initialLastfmUsername ?? "")
-  const [statsfmUsername, setStatsfmUsername] = useState(initialStatsfmUsername ?? "")
+  const lastfm = useSourceUsername(initialLastfmUsername, "lastfmUsername", "Last.fm")
+  const statsfm = useSourceUsername(initialStatsfmUsername, "statsfmUsername", "stats.fm")
   const [syncingSource, setSyncingSource] = useState<null | "lastfm" | "statsfm">(null)
 
-  const isConnected = lastfmUsername.trim().length > 0
-  const isStatsfmConnected = statsfmUsername.trim().length > 0
-
-  async function handleLastfmBlur() {
-    const trimmed = lastfmUsername.trim()
-    if (trimmed === (initialLastfmUsername ?? "")) return
-    try {
-      await patchSettings({ lastfmUsername: trimmed })
-      toast.success("Last.fm username saved")
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to save Last.fm username")
-    }
-  }
-
-  async function handleStatsfmBlur() {
-    const trimmed = statsfmUsername.trim()
-    if (trimmed === (initialStatsfmUsername ?? "")) return
-    try {
-      await patchSettings({ statsfmUsername: trimmed })
-      toast.success("stats.fm username saved")
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to save stats.fm username")
-    }
-  }
+  // Status + Sync reflect what the server has, not an unsaved/rejected draft.
+  const isConnected = lastfm.saved.length > 0
+  const isStatsfmConnected = statsfm.saved.length > 0
 
   async function handleSync(source: "lastfm" | "statsfm") {
     if (syncingSource) return
@@ -102,16 +110,16 @@ export function ConnectedSourcesPanel({
               }}
             >
               {isConnected
-                ? `connected · @${lastfmUsername.trim()} · ${initialLastfmArtistCount} artists`
+                ? `connected · @${lastfm.saved}${lastfm.saved === (initialLastfmUsername ?? "") ? ` · ${initialLastfmArtistCount} artists` : ""}`
                 : "not connected"}
             </div>
             <div className="field" style={{ height: 40, marginTop: 8 }}>
               <input
                 type="text"
                 placeholder="your-lastfm-username"
-                value={lastfmUsername}
-                onChange={(e) => setLastfmUsername(e.target.value)}
-                onBlur={handleLastfmBlur}
+                value={lastfm.draft}
+                onChange={(e) => lastfm.setDraft(e.target.value)}
+                onBlur={lastfm.onBlur}
               />
             </div>
           </div>
@@ -155,16 +163,16 @@ export function ConnectedSourcesPanel({
               }}
             >
               {isStatsfmConnected
-                ? `connected · @${statsfmUsername.trim()}`
+                ? `connected · @${statsfm.saved}`
                 : "not connected"}
             </div>
             <div className="field" style={{ height: 40, marginTop: 8 }}>
               <input
                 type="text"
                 placeholder="your-statsfm-username"
-                value={statsfmUsername}
-                onChange={(e) => setStatsfmUsername(e.target.value)}
-                onBlur={handleStatsfmBlur}
+                value={statsfm.draft}
+                onChange={(e) => statsfm.setDraft(e.target.value)}
+                onBlur={statsfm.onBlur}
               />
             </div>
           </div>
