@@ -246,13 +246,26 @@
 .ev-feed .ev-btn-ghost { border: 1px solid var(--line-strong); color: var(--fg); text-decoration: none; }
 .ev-feed .ev-btn-ghost:hover { background: var(--raise); }
 
-/* loading skeleton (app/(app)/feed/loading.tsx): desktop panes ≥900px, card list below */
+/* loading skeleton (app/(app)/feed/loading.tsx): desktop panes ≥900px, tablet 640–899px, Snap below */
 .ev-feed .ev-skel-line { display: block; height: 12px; }
 .ev-feed .ev-skel-card { background: var(--panel); animation: none; }
 .ev-feed .ev-skel-card > .fs-skeleton { display: block; }
 .ev-feed.ev-skel-wide .ev-row { content-visibility: visible; }
 @media (max-width: 899px) { .ev-skel-wide { display: none !important; } }
-@media (min-width: 900px) { .ev-skel-narrow { display: none; } }
+@media (max-width: 639px), (min-width: 900px) { .ev-feed.ev-tablet.ev-skel-tablet { display: none; } }
+.ev-feed.ev-skel-m .ev-m-page, .ev-feed.ev-skel-m .ev-m-rail > li { content-visibility: visible; }
+.ev-feed.ev-skel-m span.fs-skeleton {
+  display: block; background-color: transparent;
+  background-image: linear-gradient(90deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.03) 100%);
+}
+.ev-feed .ev-skel-mcard { background: var(--panel); border-color: var(--line); cursor: default; }
+/* Reserve the top bar's count and strip row (filled by ShellSlot once the feed arrives). */
+body:has(.ev-skel-m) .shell-top-sub:empty { display: flex; align-items: center; height: 10px; padding-right: 16px; }
+body:has(.ev-skel-m) .shell-top-sub:empty::before { content: ""; flex: 1; height: 4px; border-radius: 2px; background: var(--line); }
+body:has(.ev-skel-m) .shell-top-slot:empty::before { content: ""; width: 76px; height: 14px; border-radius: 7px; background: var(--line); }
+@media (min-width: 640px) and (max-width: 899px) {
+  body:has(.ev-skel-m) .shell-top-sub:empty { align-items: flex-start; height: 14px; }
+}
 
 @media (max-width: 1279px) {
   .ev-feed .ev-row { grid-template-columns: 48px minmax(0, 1fr) 80px 76px; }
