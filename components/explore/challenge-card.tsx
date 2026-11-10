@@ -25,8 +25,9 @@ export const ChallengeCard = memo(function ChallengeCard({
     <section aria-label="Weekly challenge" className="ex-challenge" data-done={completed || undefined}>
       <div className="ex-challenge-row">
         <p className="ex-challenge-text">
+          {/* the separator keeps the title and description apart for screen readers and copy */}
           <span className="ex-challenge-title">{title}</span>
-          {description}
+          <span className="sr-only">:</span> {description}
         </p>
         <span className="ex-challenge-n">
           {completed && <Check size={14} strokeWidth={2.5} aria-hidden />}

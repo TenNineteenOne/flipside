@@ -34,6 +34,7 @@ export const ExploreArtistRow = memo(function ExploreArtistRow({
     <MotionConfig reducedMotion="user">
       <motion.div
         layout
+        data-artist={artist.id}
         initial={{ y: 10 }}
         animate={{ y: 0 }}
         exit={{ opacity: 0 }}

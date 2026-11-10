@@ -63,12 +63,20 @@ describe("FeedDesktop server render", () => {
     const html = render([artist("a", "Yin Yin"), { ...artist("b", "Altın Gün"), genres: [], popularity: 0 }])
     const queue = html.slice(html.indexOf('class="ev-queue"'), html.indexOf('class="ev-focus"'))
     const cols = queue.slice(queue.indexOf('class="ev-cols"'), queue.indexOf('class="ev-rows"'))
-    expect(cols).toMatch(/<span>Artist<\/span><span class="ev-col-genre">Genre<\/span><span class="ev-col-pop" title="0–100. Lower means more obscure.">Popularity<span class="sr-only"> \(0–100. Lower means more obscure.\)<\/span>/)
-    expect(queue).toContain('<span class="ev-row-genre"><span class="sr-only">Genre: </span>dub</span>')
+    // the scale is visible text; the hint is said once (no title on the header or the rows)
+    expect(cols).toMatch(/<span>Artist<\/span><span class="ev-col-genre">Genre<\/span><span class="ev-col-pop">Popularity <span class="ev-col-scale">0–100<\/span><span class="sr-only">. Lower means more obscure.<\/span>/)
+    expect(queue).not.toMatch(/title="Popularity/)
+    expect(queue).toContain('<span class="ev-row-genre" title="dub"><span class="sr-only">Genre: </span>dub</span>')
     expect(queue).toMatch(/<span class="sr-only">Popularity: <\/span>.*?<span class="ev-row-pop-n">40<\/span><span class="sr-only"> out of 100<\/span>/)
     // no genre: no dangling "Genre:"; popularity 0 still reads
     expect(queue).toContain('<span class="ev-row-genre"></span>')
     expect(queue).toMatch(/<span class="ev-row-pop-n">0<\/span><span class="sr-only"> out of 100<\/span>/)
+  })
+
+  it("hides the column labels when no rows are visible", () => {
+    const html = render([])
+    expect(html).toContain('class="ev-queue"')
+    expect(html).not.toContain('class="ev-cols"')
   })
 
   it("an artist with no image and no tracks shows the letter panel, not an image", () => {

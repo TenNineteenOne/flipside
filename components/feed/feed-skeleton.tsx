@@ -1,6 +1,7 @@
 import "@/components/feed/feed.css"
 
 const ROWS = Array.from({ length: 10 }, (_, i) => i)
+const SEGS = Array.from({ length: 20 }, (_, i) => i)
 
 /**
  * Feed skeleton (the route's loading.tsx, and FeedClient's fallback while a layout's code
@@ -22,7 +23,13 @@ export function FeedSkeleton() {
               {/* inside the real subtitle's box, so the header (and the rows under it) keep their height */}
               <p className="ev-queue-sub"><span className="fs-skeleton ev-skel-line" style={{ display: "inline-block", width: 320, verticalAlign: "middle" }} /></p>
             </div>
-            <span className="fs-skeleton" style={{ width: 220, height: 14 }} />
+            {/* the real progress block's structure, so the header's height matches at every width */}
+            <div className="ev-progress">
+              <span className="ev-progress-text"><span className="fs-skeleton" style={{ display: "inline-block", width: 84, height: 12, verticalAlign: "middle" }} /></span>
+              <ol className="ev-strip" style={{ "--n": SEGS.length } as React.CSSProperties}>
+                {SEGS.map((i) => <li key={i} className="ev-seg" />)}
+              </ol>
+            </div>
           </div>
           <QueueColumns />
           <div className="ev-rows">
@@ -79,15 +86,15 @@ export function FeedSkeleton() {
 /**
  * The desktop queue's column labels (feed.css .ev-cols: the rows' grid, sticky under the queue
  * header). Shared by FeedDesktop and the skeleton so the loaded feed doesn't shift. Rows carry
- * their own visually hidden "Genre:" / "Popularity:" prefixes; the hint is the only extra.
+ * their own visually hidden "Genre:" / "Popularity:" prefixes; the scale is visible text and the
+ * hint is visually hidden (no title, so touch and keyboard users get the same as everyone).
  */
 export function QueueColumns() {
-  const hint = "0–100. Lower means more obscure."
   return (
     <div className="ev-cols">
       <span>Artist</span>
       <span className="ev-col-genre">Genre</span>
-      <span className="ev-col-pop" title={hint}>Popularity<span className="sr-only"> ({hint})</span></span>
+      <span className="ev-col-pop">Popularity <span className="ev-col-scale">0–100</span><span className="sr-only">. Lower means more obscure.</span></span>
     </div>
   )
 }

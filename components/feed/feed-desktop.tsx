@@ -83,7 +83,7 @@ export function FeedDesktop({ triage, signalCount, onLoadMore, generating, onSho
           </div>
           <div className="ev-progress" aria-label={`${remaining} of ${total} left`}>
             <span className="ev-progress-text"><strong>{remaining}</strong> of {total} left</span>
-            <ol className="ev-strip" aria-hidden>
+            <ol className="ev-strip" aria-hidden style={{ "--n": triage.ids.length } as React.CSSProperties}>
               {triage.ids.map((id) => (
                 <li key={id} className="ev-seg" data-v={VERDICT[signals.get(id) ?? ""] ?? "none"} data-sel={id === selectedId || undefined} />
               ))}
@@ -93,7 +93,8 @@ export function FeedDesktop({ triage, signalCount, onLoadMore, generating, onSho
 
         <div className="ev-coldstart"><ColdStartBanner signalCount={signalCount} /></div>
 
-        <QueueColumns />
+        {/* no labels floating above an emptied queue */}
+        {rows.shown.length > 0 && <QueueColumns />}
         <ul className="ev-rows" aria-label="Artist queue">
           {rows.shown.map(({ item: a, leaving }, i) => {
             const sel = a.id === selectedId
@@ -126,13 +127,13 @@ export function FeedDesktop({ triage, signalCount, onLoadMore, generating, onSho
                 </button>
                 <div className="ev-row-text">
                   <span className="ev-row-name">
-                    {a.name}
+                    <span className="ev-row-name-t">{a.name}</span>
                     {playing && <span className="ev-eq" aria-label="Playing"><i /><i /><i /></span>}
                   </span>
                   <span className="ev-row-why">{whyText(a.why)}</span>
                 </div>
-                <span className="ev-row-genre">{a.genres[0] && <><span className="sr-only">Genre: </span>{a.genres[0]}</>}</span>
-                <span className="ev-row-pop" title={`Popularity ${a.popularity}/100`}>
+                <span className="ev-row-genre" title={a.genres[0]}>{a.genres[0] && <><span className="sr-only">Genre: </span>{a.genres[0]}</>}</span>
+                <span className="ev-row-pop">
                   <span className="sr-only">Popularity: </span>
                   <span className="ev-meter" aria-hidden><span style={{ width: `${a.popularity}%` }} /></span>
                   <span className="ev-row-pop-n">{a.popularity}</span>

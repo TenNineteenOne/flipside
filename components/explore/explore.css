@@ -79,7 +79,8 @@
 }
 .ev-explore .ex-challenge-row { display: flex; align-items: baseline; justify-content: space-between; gap: 4px 16px; flex-wrap: wrap; }
 .ev-explore .ex-challenge-text { min-width: 0; flex: 1 1 260px; font-size: 13px; color: var(--fg-3); overflow-wrap: anywhere; }
-.ev-explore .ex-challenge-title { margin-right: 10px; font-size: 15px; font-weight: 600; color: var(--fg); }
+/* 6px + the word space after the hidden ":" = the old 10px gap */
+.ev-explore .ex-challenge-title { margin-right: 6px; font-size: 15px; font-weight: 600; color: var(--fg); }
 .ev-explore .ex-challenge-n { display: inline-flex; align-items: center; gap: 6px; font: 400 12px/1 var(--font-mono); color: var(--fg); font-variant-numeric: tabular-nums; }
 .ev-explore .ex-challenge[data-done] .ex-challenge-n { color: var(--violet-ink); }
 .ev-explore .ex-challenge-track { height: 3px; border-radius: 999px; background: var(--line); overflow: hidden; }
@@ -119,14 +120,27 @@
 /* the active rail: its title and line, then the grid */
 .ev-explore .ex-rail-head { display: flex; flex-direction: column; gap: 2px; margin: 18px 0 16px; }
 .ev-explore .ex-rail-title { font-size: 18px; letter-spacing: -0.015em; line-height: 1.25; }
-.ev-explore .ex-rail-sub { color: var(--fg-3); font-size: 14px; max-width: 70ch; text-wrap: pretty; }
-.ev-explore .ex-rail-adv { display: inline-flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 13px; color: var(--violet-ink); }
-.ev-explore .ex-rail-adv svg { flex-shrink: 0; }
+/* One line on desktop, the Adventurous note after the subtitle. Phones reserve the extra line the
+   note may need, in the skeleton too, so the grid sits at the same height whether it shows or not. */
+.ev-explore .ex-rail-sub { color: var(--fg-3); font-size: 14px; line-height: 21px; text-wrap: pretty; }
+.ev-explore .ex-rail-adv { white-space: nowrap; color: var(--violet-ink); }
+.ev-explore .ex-rail-adv svg { display: inline; vertical-align: -1px; margin: 0 2px 0 4px; }
+@media (width < 900px) { .ev-explore .ex-rail-sub { min-height: 42px; } }
+@media (width < 360px) { .ev-explore .ex-rail-sub { min-height: 63px; } }
 
+/* Cells stretch: cards in a row share a height and their action rows line up at the bottom. */
 .ev-explore .ex-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr)); gap: 20px; align-items: start;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr)); gap: 20px;
 }
-.ev-explore .ex-grid > * { min-width: 0; }
+.ev-explore .ex-grid > * { display: flex; flex-direction: column; min-width: 0; }
+.ev-explore .ex-grid > * > .ex-card { flex: 1; }
+
+/* Passed / dismissed artists: one-line bars after the grid, in a row on desktop, stacked on phones. */
+.ev-explore .ex-decided { margin-top: 28px; }
+.ev-explore .ex-decided-title { margin-bottom: 10px; font-size: 13px; font-weight: 600; color: var(--fg-3); }
+.ev-explore .ex-decided-title:focus-visible { outline-offset: 4px; }
+.ev-explore .ex-decided-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); gap: 8px; }
+.ev-explore .ex-decided-list > * { min-width: 0; }
 
 /* empty / building states */
 .ev-explore .ex-empty {
@@ -154,15 +168,20 @@
 .ev-explore .ex-skel-tab { flex-shrink: 0; width: 132px; height: 44px; border-radius: 999px; }
 .ev-explore .ex-skel-title { width: 150px; height: 18px; margin: 2.25px 0; }
 .ev-explore .ex-skel-sub { width: min(380px, 80vw); margin: 4.5px 0; }
+.ev-explore .ex-rail-sub > .ex-skel-sub { margin: 4.5px 0; }
 /* Lines that wrap on narrow screens get a second skeleton line there (same heights as the copy). */
 .ev-explore .ex-skel-wrap { display: none; width: 50%; }
 @media (width < 640px) { .ev-explore .ex-controls .ex-skel-wrap, .ev-explore .ex-challenge .ex-skel-wrap { display: block; } }
-@media (width < 360px) { .ev-explore .ex-rail-head .ex-skel-wrap { display: block; margin-top: 2.5px; } }
+@media (width < 900px) { .ev-explore .ex-rail-head .ex-skel-wrap { display: block; margin-top: 2.5px; } }
 
 @media (width < 640px) {
   .ev-explore .ex-head { padding-top: 18px; }
   .ev-explore .ex-title { font-size: 24px; }
   .ev-explore .ex-actions { margin-left: 0; width: 100%; }
+  /* No tinted panel (Adventurous off, and the skeleton): the switch lines up with the header and challenge. */
+  .ev-explore:not([data-adventurous]) .ex-controls { padding-inline: 0; border-inline-width: 0; }
+  /* The hint keeps two lines' room, so the padding change (and the skeleton) don't move the page. */
+  .ev-explore .ex-adv-hint { min-height: 39px; }
   .ev-explore .ex-actions > .ex-btn { flex: 1 1 auto; }
 }
 @media (prefers-reduced-motion: reduce) {
