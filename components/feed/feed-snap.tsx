@@ -256,7 +256,7 @@ export function TriageBar({ triage }: { triage: FeedTriage }) {
 export function SnapCount({ triage }: { triage: Pick<FeedTriage, "remaining" | "total"> }) {
   return (
     <span className="ev-feed ev-m-count">
-      <strong>{triage.remaining}</strong> of {triage.total} left
+      <strong>{triage.remaining}</strong><span className="ev-m-count-of"> of {triage.total}</span> left
     </span>
   )
 }

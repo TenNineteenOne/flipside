@@ -729,7 +729,11 @@ body:has(.ev-snap) [data-sonner-toaster][data-y-position="top"] {
 .ev-feed .ev-btn.wander-btn-on:hover:not([aria-disabled="true"]) { background: var(--wander-rainbow); filter: brightness(1.06); }
 /* Phone / tablet top bar: the switch, then "N of M left". */
 .ev-feed.ev-m-topbar { display: flex; align-items: center; justify-content: flex-end; gap: 12px; min-width: 0; margin-left: auto; }
-@media (width < 360px) { .ev-feed.ev-m-topbar { gap: 8px; } }
+/* padding-left keeps the switch off the wordmark; the tighter gap below 400px pays for it */
+.ev-feed.ev-m-topbar { padding-left: 8px; }
+@media (width < 400px) { .ev-feed.ev-m-topbar { gap: 8px; } }
+/* Below 400px the switch + Load more leave no room for "of M": show "N left" */
+@media (width < 400px) { .ev-feed .ev-m-count-of { display: none; } }
 /* Header Load more: a 40px icon button on phones, icon + "Load more" from 600px wide. */
 .ev-feed .ev-btn.ev-m-more { flex: none; min-height: 40px; min-width: 40px; padding: 0; gap: 6px; font-size: 14px; }
 .ev-feed .ev-m-more-text { display: none; }
