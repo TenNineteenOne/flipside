@@ -92,6 +92,9 @@
   content-visibility: auto; contain-intrinsic-size: auto 66px;
 }
 .ev-feed .ev-row:hover { background: var(--panel); }
+/* A decided row leaving the queue (feed-desktop.tsx, useLeaving): fades and slides 32px left. */
+.ev-feed .ev-row[data-leaving] { animation: ev-row-out 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards; pointer-events: none; }
+@keyframes ev-row-out { to { opacity: 0; transform: translateX(-32px); } }
 .ev-feed .ev-row[data-sel] { background: var(--raise); border-color: var(--line-strong); }
 .ev-feed .ev-row-select { position: absolute; inset: 0; border-radius: 10px; }
 .ev-feed .ev-row-select:focus-visible { outline-offset: -2px; }
