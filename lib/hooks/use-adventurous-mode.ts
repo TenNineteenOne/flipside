@@ -58,8 +58,50 @@ export function writeAdventurousToStorage(next: boolean): void {
  * flip a server `true` off, or the reverse). Returns the value to show.
  */
 export function adoptServerAdventurous(initial: boolean): boolean {
-  writeAdventurousToStorage(initial)
-  return initial
+  const value = (confirmed ??= initial)
+  writeAdventurousToStorage(value)
+  return value
+}
+
+/**
+ * The last value the server confirmed in this page session. It outlives client navigations
+ * (Back can restore a cached Feed whose `initial` predates a toggle) and resets on a hard load,
+ * so a value set on another device still wins after a reload.
+ */
+let confirmed: boolean | null = null
+export function resetConfirmedAdventurous(): void { confirmed = null }
+
+/**
+ * The writer behind setAdventurous, React-free so it can be tested. Saves run one at a time in
+ * call order; the optimistic state flips at once, so rapid clicks read the value they see. Only
+ * the newest save broadcasts or rolls back (to the last confirmed value), so an older save landing
+ * never flickers the switch. Rejects when its own save fails (callers toast).
+ */
+export function createAdventurousWriter(deps: {
+  setState: (v: boolean) => void
+  fallback: () => boolean
+  patch?: (next: boolean) => Promise<void>
+}): (next: boolean) => Promise<void> {
+  const patch = deps.patch ?? patchAdventurousSetting
+  let chain: Promise<void> = Promise.resolve()
+  let latest = 0
+  return (next) => {
+    deps.setState(next)
+    const id = ++latest
+    const run = chain.then(() => patch(next)).then(
+      () => {
+        confirmed = next
+        writeAdventurousToStorage(next)
+        if (id === latest) dispatchAdventurousEvent()
+      },
+      (err) => {
+        if (id === latest) deps.setState(confirmed ?? deps.fallback())
+        throw err
+      },
+    )
+    chain = run.catch(() => {})
+    return run
+  }
 }
 
 /**
@@ -114,6 +156,7 @@ export function useAdventurousMode(initial: boolean): UseAdventurousModeResult {
 
     const handleStorageEvent = (e: StorageEvent) => {
       if (e.key === ADVENTUROUS_STORAGE_KEY) {
+        confirmed = readAdventurousFromStorage(initial) // another tab saved it
         syncFromStorage()
       }
     }
@@ -127,24 +170,10 @@ export function useAdventurousMode(initial: boolean): UseAdventurousModeResult {
     }
   }, [initial])
 
-  // ── Writer ───────────────────────────────────────────────────────────────
-  const setAdventurous = async (next: boolean): Promise<void> => {
-    // 1. Optimistic update
-    setAdventurousState(next)
-
-    try {
-      // 2. Persist to the server
-      await patchAdventurousSetting(next)
-
-      // 3. On success: write localStorage + broadcast in-tab event
-      writeAdventurousToStorage(next)
-      dispatchAdventurousEvent()
-    } catch (err) {
-      // 4. On failure: roll back and re-throw so callers can handle (e.g. toast)
-      setAdventurousState(!next)
-      throw err
-    }
-  }
+  // ── Writer: ordered saves, newest-wins rollback (createAdventurousWriter) ──
+  // One writer per hook instance (stable across renders). After mount `confirmed` is always set
+  // (adoptServerAdventurous), so the creation-time fallback only matters before the first effect.
+  const [setAdventurous] = useState(() => createAdventurousWriter({ setState: setAdventurousState, fallback: () => initial }))
 
   return { adventurous, setAdventurous }
 }

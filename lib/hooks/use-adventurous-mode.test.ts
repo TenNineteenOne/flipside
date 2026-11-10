@@ -26,6 +26,8 @@ import {
   patchAdventurousSetting,
   dispatchAdventurousEvent,
   adoptServerAdventurous,
+  createAdventurousWriter,
+  resetConfirmedAdventurous,
 } from "./use-adventurous-mode"
 
 // ─── localStorage stub ────────────────────────────────────────────────────────
@@ -263,11 +265,13 @@ describe("failure path: no localStorage write and no event dispatch", () => {
 // ─── Mount: the server value is authoritative over a stale stored value ──────
 
 describe("adoptServerAdventurous", () => {
+  beforeEach(() => resetConfirmedAdventurous())
   it("overwrites a stale stored value with the server value, so later reads agree", () => {
     lsStub.setItem(ADVENTUROUS_STORAGE_KEY, "0")
     expect(adoptServerAdventurous(true)).toBe(true)
     expect(readAdventurousFromStorage(false)).toBe(true)
 
+    resetConfirmedAdventurous() // a fresh page load
     lsStub.setItem(ADVENTUROUS_STORAGE_KEY, "1")
     expect(adoptServerAdventurous(false)).toBe(false)
     expect(readAdventurousFromStorage(true)).toBe(false)
@@ -276,5 +280,54 @@ describe("adoptServerAdventurous", () => {
   it("still returns the server value when storage is blocked", () => {
     lsStub.setItem.mockImplementation(() => { throw new Error("SecurityError") })
     expect(adoptServerAdventurous(true)).toBe(true)
+  })
+})
+
+describe("createAdventurousWriter (Feed + Settings switches, #205 sweep 2)", () => {
+  beforeEach(() => resetConfirmedAdventurous())
+
+  it("only saves the setting: one PATCH /api/settings, no generate or rebuild request", async () => {
+    const fetchSpy = vi.fn(async () => new Response("{}", { status: 200 }))
+    vi.stubGlobal("fetch", fetchSpy)
+    await createAdventurousWriter({ setState: () => {}, fallback: () => false })(true)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe("/api/settings")
+    expect(JSON.parse(init.body as string)).toEqual({ adventurous: true })
+    vi.unstubAllGlobals()
+  })
+
+  it("three fast clicks: state follows each click at once, saves run in order, the last value wins", async () => {
+    const states: boolean[] = []
+    const saves: boolean[] = []
+    let finishFirst!: () => void
+    const patch = vi.fn((next: boolean) => {
+      saves.push(next)
+      return saves.length === 1 ? new Promise<void>((r) => { finishFirst = r }) : Promise.resolve()
+    })
+    let on = false
+    const write = createAdventurousWriter({ setState: (v) => { on = v; states.push(v) }, fallback: () => false, patch })
+    const runs = [write(!on), write(!on), write(!on)] // each click reads the value it sees
+    expect(states).toEqual([true, false, true])
+    await new Promise((r) => setTimeout(r, 0))
+    expect(saves).toEqual([true]) // the second save waits for the first
+    finishFirst()
+    await Promise.all(runs)
+    expect(saves).toEqual([true, false, true])
+    expect(on).toBe(true)
+  })
+
+  it("a failed newest save rolls back to the last confirmed value and rejects", async () => {
+    let on = false
+    const patch = vi.fn(async (next: boolean) => { if (!next) throw new Error("nope") })
+    const write = createAdventurousWriter({ setState: (v) => { on = v }, fallback: () => false, patch })
+    await write(true)
+    await expect(write(false)).rejects.toThrow("nope")
+    expect(on).toBe(true)
+  })
+
+  it("Back restoring a stale initial: mount adopts the confirmed value, not the cached prop", async () => {
+    await createAdventurousWriter({ setState: () => {}, fallback: () => false, patch: async () => {} })(true)
+    expect(adoptServerAdventurous(false)).toBe(true)
   })
 })

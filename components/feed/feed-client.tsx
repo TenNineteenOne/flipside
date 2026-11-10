@@ -75,21 +75,6 @@ const currentLayout = (): Layout =>
 const noSubscribe = () => () => {}
 const useHydrating = () => useSyncExternalStore(noSubscribe, () => false, () => true)
 
-/**
- * Flip Wander farther: save the setting and nothing else. The cards on screen stay; the next
- * Load more generates with the saved value (#205). Never rejects (a failed save toasts and rolls back).
- */
-export function flipWander(on: boolean, save: (next: boolean) => Promise<void>): Promise<void> {
-  return save(!on).catch(() => {
-    toast.error("Couldn't save Wander farther")
-  })
-}
-
-/** Queue a flip behind `prev` so rapid toggles save in click order. flipWander never rejects, so one failure can't break the chain. */
-export function queueWander(prev: Promise<void>, on: boolean, save: (next: boolean) => Promise<void>): Promise<void> {
-  return prev.then(() => flipWander(on, save))
-}
-
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
@@ -201,10 +186,13 @@ export function FeedClient({ recommendations, musicPlatform, signalCount, initia
   }, [mounted])
 
   const { adventurous, setAdventurous } = useAdventurousMode(initialAdventurous)
-  // Flips save in order (queueWander); a Load more right after one waits for the whole chain,
-  // so it generates with the latest value.
+  // Flipping only saves the setting; the cards on screen stay (#205). Saves run in order inside the
+  // hook, so a Load more waiting on the newest one generates with the latest value.
   const wanderSave = useRef<Promise<void>>(Promise.resolve())
-  const wander = { on: adventurous, toggle: () => void (wanderSave.current = queueWander(wanderSave.current, adventurous, setAdventurous)) }
+  const wander = {
+    on: adventurous,
+    toggle: () => void (wanderSave.current = setAdventurous(!adventurous).catch(() => { toast.error("Couldn't save Wander farther") })),
+  }
 
   async function handleGenerateMore() {
     await wanderSave.current
