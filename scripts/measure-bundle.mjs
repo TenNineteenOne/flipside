@@ -84,7 +84,25 @@ if (!existsSync(join(NEXT, "diagnostics/analyze/data"))) {
 }
 const out = execFileSync(join("node_modules", ".bin", "next"), ["analyze", "export"], { encoding: "utf8", maxBuffer: 1 << 30, stdio: ["ignore", "pipe", "inherit"] })
 const ana = new Map() // chunk -> { routes, sources: Map(source -> {size, gz}) }
+const firstLoad = new Map() // route -> analyzer chunks loaded without a dynamic import
+const lazy = new Map() // dynamic import() / next/dynamic trigger in project code -> { routes, chunks }
 for (const line of out.split("\n")) {
+  if (line.startsWith('{"type":"group"')) {
+    const g = JSON.parse(line)
+    const trigger = g.trigger_module_ident.match(/^\[project\]\/(?!node_modules)(\S+)/)?.[1]
+    if (g.kind !== "async") {
+      const set = firstLoad.get(g.route) ?? new Set()
+      for (const o of g.outputs) set.add(o.replace(/^.*\/chunks\//, ""))
+      firstLoad.set(g.route, set)
+      continue
+    }
+    if (!trigger) continue
+    const l = lazy.get(trigger) ?? { routes: new Set(), chunks: new Set() }
+    if (g.route in ROUTES) l.routes.add(g.route)
+    for (const o of g.outputs) if (o.endsWith(".js")) l.chunks.add(o.replace(/^.*\/chunks\//, ""))
+    lazy.set(trigger, l)
+    continue
+  }
   if (!line.startsWith('{"type":"part"')) continue
   const p = JSON.parse(line)
   const chunk = p.filename.match(/^\[client-fs\]\/_next\/static\/chunks\/(.+\.js)$/)?.[1]
@@ -112,4 +130,18 @@ for (const c of ranked) {
   console.log(`${c.name.padEnd(28)} ${kB(c.gz)} ${kB(c.raw)}  ${c.routes.join(" ") || "(no page route)"}`)
   const top = [...c.byPkg].sort((a, b) => b[1] - a[1]).slice(0, 6)
   console.log("    " + top.map(([k, v]) => `${k} ${(v / 1000).toFixed(1)}k`).join(", "))
+}
+
+// Lazily loaded chunk groups: not part of a route's first load above, but a group the server renders
+// (next/dynamic with SSR) is preloaded by that page's HTML, so it adds to that page's first load.
+console.log("\nLazy chunk groups from project code (module gzip sum of their chunks not in that route's first load)")
+for (const [trigger, l] of lazy) {
+  if (!l.routes.size) continue
+  let gz = 0
+  const loaded = firstLoad.get([...l.routes][0]) ?? new Set()
+  for (const ch of l.chunks) {
+    if (loaded.has(ch)) continue
+    for (const s of ana.get(ch)?.sources.values() ?? []) gz += s.gz
+  }
+  console.log(`${trigger.padEnd(40)} ${kB(gz)}  ${[...l.routes].join(" ")}`)
 }

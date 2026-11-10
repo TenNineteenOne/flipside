@@ -1,6 +1,5 @@
 import { useMemo } from "react"
-import { createAvatar } from "@dicebear/core"
-import { shapes } from "@dicebear/collection"
+import { identiconSvg } from "@/lib/identicon"
 
 interface IdenticonAvatarProps {
   seed: string
@@ -8,10 +7,7 @@ interface IdenticonAvatarProps {
 }
 
 export function IdenticonAvatar({ seed = "user", size = 40 }: IdenticonAvatarProps) {
-  const svg = useMemo(
-    () => createAvatar(shapes, { seed, size, radius: 50 }).toString(),
-    [seed, size],
-  )
+  const svg = useMemo(() => identiconSvg(seed, size), [seed, size])
 
   return (
     <div
