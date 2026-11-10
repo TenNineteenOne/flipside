@@ -600,3 +600,19 @@ body:has(.ev-snap .ev-m-mini) [data-sonner-toaster] {
   .ev-feed .ev-meter, .ev-feed .ev-cold-track { border: 1px solid CanvasText; }
   .ev-feed .ev-meter > span, .ev-feed .ev-cold-track > span { forced-color-adjust: none; background: CanvasText; }
 }
+
+/* Safari before 16.2 has no color-mix(): artist shades fall back to the artist colour itself and the
+   mixed backgrounds to flat tokens (see the token fallbacks in app/globals.css). */
+@supports not (color: color-mix(in oklch, red, blue)) {
+  .ev-feed .ev-row, .ev-feed .ev-card, .ev-feed .ev-m-card, .ev-feed .ev-m-ghost, .ev-feed .ev-m-thumb, .ev-feed .ev-player { --a-dark: var(--a); --a-light: var(--a, var(--violet)); }
+  .ev-feed .ev-card { background: var(--panel); }
+  .ev-feed .ev-m-card { background: var(--panel); border-color: var(--line); }
+  .ev-feed .ev-m-ghost { background: var(--panel); }
+  .ev-feed .ev-row-art-icon { background: rgba(0, 0, 0, 0.55); }
+  .ev-feed .ev-seg[data-v="passed"], .ev-feed .ev-seg[data-v="dismissed"] { background: var(--line-strong); }
+  .ev-feed button.ev-tri:hover, .ev-feed .ev-m-tri:active, .ev-feed .ev-track:hover, .ev-feed .ev-track[data-current] { background: var(--raise); }
+  .ev-feed .ev-track[data-current] .ev-track-name, .ev-feed .ev-track[data-current] .ev-track-n { color: var(--fg); }
+  .ev-feed .ev-btn-primary:hover:not(:disabled) { background: var(--violet-fill); }
+  .ev-feed .ev-m-verdict-more { background: rgba(139, 92, 246, 0.42); }
+  .ev-feed .ev-m-tri-like { background: var(--raise); }
+}

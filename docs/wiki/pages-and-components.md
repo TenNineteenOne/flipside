@@ -26,6 +26,15 @@ Mono for key hints, durations and counts. Each artist's colour is `--a` on its c
 refine it. The old per-page radial "ambient" backgrounds (Explore, Saved, Settings) are gone; those
 pages sit on the plain `--bg`.
 
+Browser floor: container query units need Safari 16.0 and `:has()` 15.4, so the effective minimum is
+**Safari 16.0**. `color-mix()` needs 16.2: `@supports not (color: color-mix(…))` blocks in
+`globals.css`, `feed.css` and `landing.css` give 16.0–16.1 flat equivalents (`--violet-fill`
+`#8054e3`, `--violet-wash` as rgba, `--a-dark` / `--a-light` = `--a`, mixed backgrounds → tokens).
+Breakpoints use range syntax (`width < 900px` / `width >= 900px`) so fractional widths (zoom, OS
+scaling) always match exactly one side. Under `forced-colors: active` the progress strip (current =
+`Highlight`, liked = `CanvasText`, passed = `GrayText`), selected rows, popularity meter and
+cold-start bar get system colours.
+
 ## Screens (`app/(app)` + `app/(marketing)`)
 
 | Screen | Loads | Client shell / notes |
@@ -33,7 +42,7 @@ pages sit on the plain `--bg`.
 | `/` (landing) | nothing: static, prerendered; never reads session, cookies or headers | `app/page.tsx` + `app/landing.css` (scoped under `.ev-landing`). Hero is `HeroStack` (`components/landing/hero-stack.tsx`) inside its own `AudioProvider`: six sample artists from `data/landing-sample.json` (regenerate with `npm run build:landing-sample`; `validateLandingSample` in `lib/landing/sample.ts` keeps every URL on the CSP's iTunes hosts). Signed-in visitors never see it: the proxy redirects `/` to `/feed` |
 | `/sign-in` | — | username-only `signIn("credentials")` (Existing / New mode, `?mode=new` from the landing CTA), then `/api/onboarding/check` → onboarding or feed (`router.replace`); signed-in users are bounced to `/feed` by the proxy |
 | `/onboarding` | — | artist search + genre picker + Last.fm/stats.fm usernames + platform; saves via `patchSettings` (`PATCH /api/settings`) + `POST /api/onboarding/seeds` (a different route from Settings' `/api/settings/seed-artists`); fire-and-forget first generate (`postGenerate`). Genres cap at 50; "Get started" is disabled while 1–2 artists are picked (the seeds route needs ≥3). `/feed` redirects here until onboarding is done |
-| `/feed` | `recommendation_cache` (unseen, scored, ≤20), tracks cache, signal counts; empty → `RecommendationsLoader` + `ExplorePrewarm`; `loading.tsx` is a CSS-only skeleton per layout (desktop panes, tablet card + Up next, one Snap page + triage bar, reserving the top bar's count/strip row), so nothing shifts when the feed arrives | `FeedClient`: ≥900px renders `FeedDesktop` (queue + focus pane), 640–899px `FeedTablet`, below 640px `FeedSnap` (one tree, picked by a `matchMedia` `useSyncExternalStore`; the server and hydration render `FeedSnap`, which `feed.css` hides at ≥640px until the client switches); all read `useFeedTriage`, so resizing keeps selection, verdicts, saves and playback. Renders `CardArtist[]` from `loadFeedCards` (`lib/cards/feed-cards.ts`: tracks-cache fallback, colour lift, drop no-preview cards, `interleave()`); `useFeedFill` poll-append (same assembler via `GET /api/recommendations`), low-queue auto-generate |
+| `/feed` | `recommendation_cache` (unseen, scored, ≤20), tracks cache, signal counts; empty → `RecommendationsLoader` + `ExplorePrewarm`; `loading.tsx` is a CSS-only skeleton per layout (desktop panes, tablet card + Up next, one Snap page + triage bar, reserving the top bar's count/strip row), so nothing shifts when the feed arrives | `FeedClient`: ≥900px renders `FeedDesktop` (queue + focus pane), 640–899px and ≥680px tall `FeedTablet`, otherwise `FeedSnap` (one tree, picked by a `matchMedia` `useSyncExternalStore`; the server and hydration render `FeedSnap`, which `feed.css` hides under the same tablet/desktop conditions until the client switches); all read `useFeedTriage`, so resizing keeps selection, verdicts, saves and playback. Renders `CardArtist[]` from `loadFeedCards` (`lib/cards/feed-cards.ts`: tracks-cache fallback, colour lift, drop no-preview cards, `interleave()`); `useFeedFill` poll-append (same assembler via `GET /api/recommendations`), low-queue auto-generate |
 | `/explore` | `buildExploreRails({hydrate, regenerate:false})` (never blocks); challenge streamed via React 19 `use()` | Rails of `ArtistCard`s (the only remaining user of that card). `ExploreClient`: JSX over `useRailSession` (`lib/client/rail-session.ts`: rails, active rail, adventurous ordering, shuffle/apply, poll-swap after shuffle/settings; a regen POST 429 means a build is already running → poll; Shuffle/Apply/cold start write `explore-regen-at` so a later visit resumes the poll; a thrown final GET is retried once after 1.5s) |
 | `/history` | seen recs + feedback/saves, derived `signal` | `HistoryClient`: filter tabs, time grouping; signal changes + undo/unblock via `useArtistFeedback` (`setSignal` / `removeSignal` / `dismiss`) |
 | `/saved` | `saves` enriched from `recommendation_cache` | `SavedClient`: grid, optimistic unsave, open-in-platform + share |
@@ -45,8 +54,11 @@ pages sit on the plain `--bg`.
 - **`AppShell`** (`components/shell/app-shell.tsx`, styles in `shell.css`) — signed-in chrome,
   rendered by `app/(app)/layout.tsx`. ≥900px: fixed left rail (Feed, Explore, History, Saved,
   Stats, Settings; 232px, icons-only 64px at 900–1099px). Below 900px: top bar (wordmark +
-  identicon avatar opening a native popover with Settings and Sign out via
-  `next-auth/react` `signOut`) and a five-item bottom tab bar. Which shows is CSS only.
+  identicon avatar menu button with Settings and Sign out via `next-auth/react` `signOut`; a
+  state-driven menu, not the Popover API, so Safari before 17 works: `aria-haspopup="menu"` /
+  `aria-expanded`, rendered only while open, focus moves in on open, closes on Escape (focus back
+  to the button), outside pointer down, Tab out, item activation and route change, arrow keys move
+  between items) and a five-item bottom tab bar. Which shows is CSS only.
   `aria-current="page"` when the path equals a link or starts with it plus `/`. Adventurous
   mode (`useAdventurousMode`) draws a 2px gradient on the rail edge / under the top bar.
   Pages hook in via `components/shell/shell-context.tsx`: `useShellBadge(href, n)` (nav count),
@@ -100,7 +112,8 @@ pages sit on the plain `--bg`.
   the queue, and the rail "Tuning" block
   via `<ShellSlot name="rail">`. No decision logic. `FeedClient` sets the Saved badge
   (`useShellBadge`) to saves made since the feed opened.
-- **`FeedSnap`** (`components/feed/feed-snap.tsx`) — phones below 640px: a fixed column between
+- **`FeedSnap`** (`components/feed/feed-snap.tsx`) — phones below 640px, and any viewport below
+  900px that is under 680px tall (phones in landscape, browser zoom): a fixed column between
   the shell top bar and tab bar (the page body does not scroll): the cold-start hint as one
   dismissible line (`ColdStartBanner` with `onDismiss`; same threshold and copy), a vertical
   scroller with mandatory snapping, one full-height page per loaded artist (decided ones included,
@@ -117,7 +130,13 @@ pages sit on the plain `--bg`.
   layout): artwork sized `min(100cqw - 52px, 100cqh - 236px, 460px)` on an artist-colour mat,
   64px play button with a 30-second ring, name, genres + save / open / share, why, up to three
   track chips; artists without tracks fetch them (`useArtistTracks`) only while selected.
-  Swipe (framer-motion `drag="x"`, direction lock, `touch-action: pan-y`): past 96px, or a flick
+  Short pages (container queries on the page, `ev-page`): the artwork shrinks to 76px, then the
+  chips go (below 312px), then the why line (below 262px), so play, name and the icon row stay
+  whole from 220px up; wide short pages (landscape, ≥560px wide and <356px tall) put the artwork
+  beside the text, down to ~90px. Under 480px of viewport height the cold-start line is hidden.
+  Programmatic scrolls measure offsets from the scroller (`el.offsetTop - root.offsetTop`).
+  Swipe (framer-motion `drag="x"`, direction lock, `touch-action: pan-y pinch-zoom` set in CSS over
+  framer's inline `pan-y`; a `pointercancel` / `touchcancel` never commits): past 96px, or a flick
   past 40px over 500px/s (`swipeDirection`, `lib/feed/swipe.ts`), right = `thumbs_up`, left =
   `thumbs_down` via `judge(…, { toggle: false, advance: true })`; the card springs back to rest in
   place (`dragSnapToOrigin`) while the scroller moves on, and ignores drags until at rest. Violet /
@@ -125,12 +144,13 @@ pages sit on the plain `--bg`.
   "Less like this" / "Dismissed" badge. Reduced motion: no rotation or spring, instant scroll.
   The floating pill is hidden while the feed is mounted (`useSuppressFloatingPlayer`); the undo
   toast is lifted above the triage bar (and the player bar when shown).
-- **`FeedTablet`** (`components/feed/feed-tablet.tsx`) — 640–899px: the selected artist's
+- **`FeedTablet`** (`components/feed/feed-tablet.tsx`) — 640–899px and at least 680px tall: the selected artist's
   `SnapCard` (swipeable, entrance scale-up, next undecided artist as a ghost behind it) in a size
   container, the triage bar under it (≤528px), and a 280px "Up next" list of every loaded artist
   in feed order (thumbnail, name, first genre; violet heart badge when liked, dimmed with an X when
   passed/dismissed; `aria-current` on the selected row; tap selects; scrolls on its own and keeps
-  the selected row centred). Shares `TopBarProgress`, `ColdLine`, `PlayerBar` and `TriageBar`
+  the selected row centred; "Load more artists" is always its last item, as it is at the end of
+  the desktop queue column). Shares `TopBarProgress`, `ColdLine`, `PlayerBar` and `TriageBar`
   with `FeedSnap`; the end state takes the card's place when nothing is left.
 - **`FeedShortcuts`** (`components/feed/feed-shortcuts.tsx`) — mounted by `FeedClient` at every
   width: one window `keydown` listener mapped by the pure `feedAction` (`lib/feed/feed-keymap.ts`)
