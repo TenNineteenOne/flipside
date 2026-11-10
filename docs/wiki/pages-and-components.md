@@ -307,7 +307,10 @@ triage buttons, track chips, Play preview, the landing's primary buttons) a 1px 
 
 ## Playback & "Open in platform"
 
-Single `HTMLAudioElement` in `AudioProvider`; only `previewUrl`-bearing tracks play. The
+Single `HTMLAudioElement` in `AudioProvider`; only `previewUrl`-bearing tracks play. `useAudio()`
+(memoised) carries track, artist, `isPlaying` and the play/pause/resume/stop actions; playback
+progress is a separate store read with `useAudioProgress(active?)`, so the 250ms ticks re-render
+only the progress ring/bars (`PlayRing`, desktop `TrackBar`, mini-player), not the feed tree. The
 player is **source-agnostic** (`itunes`/`spotify`/`deezer`). "Open in {platform}" uses
 `lib/music-links.getArtistLink`:
 

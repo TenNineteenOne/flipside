@@ -6,7 +6,7 @@ import { motion, useMotionValue, useReducedMotion, useTransform, type PanInfo } 
 import { Bookmark, Heart, Pause, Play, Share2, ThumbsDown, X } from "lucide-react"
 import { PlatformIcon } from "@/components/platform-icon"
 import { Art, artistVar } from "@/components/feed/feed-parts"
-import { useAudio } from "@/lib/audio-context"
+import { useAudio, useAudioProgress } from "@/lib/audio-context"
 import { chipColors, resolveArtistColor } from "@/lib/color-utils"
 import { artworkFor } from "@/lib/feed/artwork"
 import { listSeparator, whyParts } from "@/lib/feed/card-copy"
@@ -77,7 +77,7 @@ export function SnapCard({ a, triage, eager = false, enter = false }: {
   const platform = PLATFORM_META[triage.musicPlatform]
   const why = whyParts(a.why)
   const art = artworkFor({ imageUrl: a.imageUrl, topTracks: tracks })
-  const { currentTrack, progress } = useAudio()
+  const { currentTrack } = useAudio()
   const mine = !!currentTrack && triage.nowPlayingArtist?.id === a.id
   // Artists that arrived without tracks fetch them once selected, as the desktop focus pane does.
   const fetchTracks = a.topTracks.length === 0 && a.id === triage.selectedId
@@ -112,7 +112,7 @@ export function SnapCard({ a, triage, eager = false, enter = false }: {
         <motion.div className="ev-m-verdict ev-m-verdict-less" style={{ opacity: sw.less }} aria-hidden>
           <span><ThumbsDown size={18} strokeWidth={2} />Less like this</span>
         </motion.div>
-        <PlayRing a={a} playing={playing} progress={mine ? progress : 0} disabled={playable.length === 0} onClick={() => triage.togglePlay(a)} />
+        <PlayRing a={a} playing={playing} mine={mine} disabled={playable.length === 0} onClick={() => triage.togglePlay(a)} />
         {v && <Badge v={v} />}
       </div>
 
@@ -190,9 +190,10 @@ function TrackFetch({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
 }
 
 /** 64px play button on the artwork; the ring fills over the 30-second preview of this artist's track. */
-function PlayRing({ a, playing, progress, disabled, onClick }: {
-  a: CardArtist; playing: boolean; progress: number; disabled: boolean; onClick: () => void
+function PlayRing({ a, playing, mine, disabled, onClick }: {
+  a: CardArtist; playing: boolean; mine: boolean; disabled: boolean; onClick: () => void
 }) {
+  const progress = useAudioProgress(mine)
   return (
     <button type="button" className="ev-m-play" onClick={onClick} disabled={disabled} aria-label={playing ? `Pause ${a.name}` : `Play ${a.name}`}>
       <svg className="ev-m-ring-svg" viewBox="0 0 64 64" aria-hidden>

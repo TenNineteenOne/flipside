@@ -10,7 +10,7 @@ import { ColdStartBanner } from "@/components/feed/cold-start-banner"
 import { QueueColumns } from "@/components/feed/feed-skeleton"
 import { Kbd } from "@/components/feed/feed-shortcuts"
 import { ShellSlot } from "@/components/shell/shell-context"
-import { useAudio } from "@/lib/audio-context"
+import { useAudioProgress } from "@/lib/audio-context"
 import { artworkFor } from "@/lib/feed/artwork"
 import { formatDuration, listSeparator, popularityLabel, whyParts, whyText } from "@/lib/feed/card-copy"
 import { PLATFORM_META } from "@/lib/music-links"
@@ -182,7 +182,6 @@ function FocusCard({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
   const loading = !canPlay && isFetching
   const why = whyParts(a.why)
   const art = artworkFor({ imageUrl: a.imageUrl, topTracks: tracks })
-  const { progress } = useAudio()
   const playable = tracks.filter((t) => t.previewUrl).slice(0, 3)
   const saved = triage.savedIds.has(a.id)
   const platform = PLATFORM_META[triage.musicPlatform]
@@ -266,7 +265,7 @@ function FocusCard({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
                     </span>
                     <span className="ev-track-name">{t.name}<span className="ev-track-album">{t.albumName}</span></span>
                     {dur && <span className="ev-track-dur">{dur}</span>}
-                    {current && <span className="ev-track-bar" aria-hidden><span style={{ transform: `scaleX(${progress})` }} /></span>}
+                    {current && <TrackBar />}
                   </button>
                 </li>
               )
@@ -276,4 +275,10 @@ function FocusCard({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
       )}
     </article>
   )
+}
+
+/** The playing track's progress bar; the only part of the focus pane that re-renders on playback ticks. */
+function TrackBar() {
+  const progress = useAudioProgress()
+  return <span className="ev-track-bar" aria-hidden><span style={{ transform: `scaleX(${progress})` }} /></span>
 }

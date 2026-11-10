@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent } from "react"
 import Image from "next/image"
 import { Heart, Pause, Play, ThumbsDown } from "lucide-react"
-import { useAudio } from "@/lib/audio-context"
+import { useAudio, useAudioProgress } from "@/lib/audio-context"
 import { formatDuration, listSeparator, popularityLabel, whyParts } from "@/lib/feed/card-copy"
 import { artistVars, landingSample, type LandingArtist } from "@/lib/landing/sample"
 import type { Track } from "@/lib/music-provider/types"
@@ -46,7 +46,8 @@ export function HeroStack() {
   const owns = !!audio.currentTrack && a.tracks.some((t) => t.id === audio.currentTrack!.id)
   const playing = owns && audio.isPlaying
   const track = owns ? a.tracks.find((t) => t.id === audio.currentTrack!.id)! : a.tracks[0]
-  const view: CardView = { key: `${a.id}-${i}`, a, first: i === 0, owns, playing, progress: audio.progress, track }
+  const progress = useAudioProgress(owns)
+  const view: CardView = { key: `${a.id}-${i}`, a, first: i === 0, owns, playing, progress, track }
 
   const toggle = () => {
     if (owns) {
