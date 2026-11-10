@@ -1,6 +1,6 @@
 ---
 title: Architecture Overview
-updated: 2026-10-24
+updated: 2026-11-09
 related: [[generation-engine]], [[api-routes]], [[music-providers]], [[data-model]]
 ---
 
@@ -13,7 +13,7 @@ flipside is a **Next.js 16 App Router** app (React 19, TypeScript, Tailwind v4) 
 
 | Group | Routes | Auth | Wrapper |
 |---|---|---|---|
-| `app/(app)` | `/feed`, `/explore`, `/history`, `/saved`, `/stats`, `/settings` | required (redirect to `/sign-in`) | `AudioProvider` + `AppNav` + `MiniPlayer` |
+| `app/(app)` | `/feed`, `/explore`, `/history`, `/saved`, `/stats`, `/settings` | required (redirect to `/sign-in`) | `AudioProvider` + `AppShell` (rail / top bar + tab bar) + `MiniPlayer` |
 | `app/(marketing)` | `/sign-in`, `/onboarding` | public | bare layout |
 | `app/api` | the HTTP surface | mixed | see [[api-routes]] |
 

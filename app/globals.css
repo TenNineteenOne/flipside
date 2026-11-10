@@ -157,140 +157,28 @@
   }
 }
 
-/* ── App shell ─────────────────────────────────────────────────── */
-.app {
-  min-height: 100dvh;
-  position: relative;
-  display: flex;
-  flex-direction: column;
-}
-.app-main {
-  flex: 1;
-  width: 100%;
-  padding: 0 16px 24px;
-  display: flex;
-  justify-content: center;
-}
+/* ── App column (signed-in pages; the shell itself is components/shell/shell.css) ── */
 .app-col {
   width: 100%;
   max-width: var(--shell-max);
 }
-@media (min-width: 900px) {
-  .app-main { padding: 0 32px 64px; }
-}
 
-/* ── Unified app nav (top sticky, mobile + desktop) ────────────── */
-.appnav {
-  position: sticky;
-  top: 0;
-  padding-top: env(safe-area-inset-top);
-  background: var(--rail);
-  border-bottom: 1px solid var(--border);
-  z-index: 50;
+/* ── Wordmark (components/shell/wordmark.tsx) ──────────────────── */
+.fs-wordmark {
+  display: inline-flex;
+  align-items: baseline;
+  font-weight: 650;
+  letter-spacing: -0.035em;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--fg);
 }
-.appnav-inner {
-  height: 64px;
-  display: flex;
-  align-items: stretch;
-  padding: 0 12px;
-  gap: 8px;
-}
-.appnav-brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 0 0 auto;
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: 19px;
-  letter-spacing: -0.02em;
-  color: var(--text-primary);
-}
-.appnav-brand .dot {
-  width: 8px;
-  height: 8px;
+.fs-wordmark-dot {
+  width: 0.28em;
+  height: 0.28em;
+  margin-left: 0.06em;
   border-radius: 50%;
-  background: var(--accent);
-  display: inline-block;
-  box-shadow: 0 0 12px var(--accent-glow);
-  flex-shrink: 0;
-}
-.appnav .appnav-brand .wordmark { display: none; }
-.appnav-avatar {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-}
-.appnav-tabs {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: stretch;
-}
-.appnav-tabs a {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  text-decoration: none;
-  color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  position: relative;
-  padding: 6px 4px;
-  border-radius: 12px;
-  background: transparent;
-  transition: color .2s var(--easing), background .2s var(--easing);
-}
-.appnav-tabs a.active {
-  color: var(--text-primary);
-  background: rgba(255,255,255,0.06);
-  background: color-mix(in srgb, var(--tab-color, var(--accent)) 14%, transparent);
-}
-.appnav-tabs a svg { width: 22px; height: 22px; }
-@media (max-width: 359px) {
-  .appnav-tabs a { font-size: 9.5px; gap: 2px; padding: 4px 2px; }
-  .appnav-tabs a svg { width: 20px; height: 20px; }
-}
-@media (min-width: 900px) {
-  .appnav-inner {
-    max-width: 1280px;
-    margin: 0 auto;
-    padding: 0 32px;
-    gap: 24px;
-  }
-  .appnav .appnav-brand .wordmark { display: inline; }
-  .appnav-tabs {
-    flex: 0 1 auto;
-    margin: 0 auto;
-    justify-content: center;
-    gap: 12px;
-  }
-  .appnav-tabs a {
-    flex: 0 0 auto;
-    min-width: 110px;
-    font-size: 12px;
-    padding: 6px 12px;
-  }
-}
-
-/* Adventurous mode: replace border-bottom with a 2px rainbow strip,
-   plus the existing brighter-glass treatment. */
-.appnav.adventurous {
-  border-bottom: none;
-}
-.appnav.adventurous::after {
-  content: "";
-  position: absolute;
-  left: 0; right: 0;
-  bottom: 0;
-  height: 2px;
-  background: linear-gradient(90deg, #f5b047, #ec6fb5, #7dd9c6, #a8c7fa);
-  pointer-events: none;
+  background: var(--violet);
 }
 
 /* ── Page head ─────────────────────────────────────────────────── */
