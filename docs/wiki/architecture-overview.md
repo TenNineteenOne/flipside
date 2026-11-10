@@ -1,6 +1,6 @@
 ---
 title: Architecture Overview
-updated: 2026-11-09
+updated: 2026-11-10
 related: [[generation-engine]], [[api-routes]], [[music-providers]], [[data-model]]
 ---
 
@@ -15,6 +15,8 @@ flipside is a **Next.js 16 App Router** app (React 19, TypeScript, Tailwind v4) 
 |---|---|---|---|
 | `app/(app)` | `/feed`, `/explore`, `/history`, `/saved`, `/stats`, `/settings` | required (redirect to `/sign-in`) | `AudioProvider` + `AppShell` (rail / top bar + tab bar) + `MiniPlayer` |
 | `app/(marketing)` | `/sign-in`, `/onboarding` | public | bare layout |
+| `app/page.tsx` | `/` (landing) | public; signed-in visitors are redirected to `/feed` by the proxy | static (prerendered), its own `AudioProvider` around the hero card |
+| `app/dev-preview` | `/dev-preview/*` | development only: 404 in production | the real shell and components with fixture data and a stubbed `/api/*` fetch |
 | `app/api` | the HTTP surface | mixed | see [[api-routes]] |
 
 Every `(app)` page is an **async server component** that queries Supabase directly, then
