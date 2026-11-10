@@ -64,5 +64,13 @@ export interface BuildResult {
     misses: number
     retries: number
     rateLimited: boolean
+    /** Stage wall-clocks for gen-timing (ms). Stages overlap, so they don't sum to the total. */
+    gatherMs?: number
+    /** First hop (+ deep hop) of getSimilar. */
+    similarMs?: number
+    /** Exclusion load, from its (early) start until loaded. */
+    exclusionsMs?: number
+    /** Adjacent-bleed tag fetch + resolve, from its start (alongside primary) until done. */
+    bleedMs?: number
   }
 }

@@ -125,10 +125,7 @@ export async function loadExclusions(
   const cooldownStart = new Date(now.getTime() - COOLDOWN_DAYS * DAY_MS).toISOString()
   const none = Promise.resolve({ data: [] as { artist_id: string }[] })
   const [listened, thumbsDown, seen, skipped, thumbsUp, saved] = await Promise.all([
-    preloaded.listened ??
-      readAllRows<{ id: string; artist_id: string | null; lastfm_artist_name: string | null; play_count: number | null }>(() =>
-        supabase.from("listened_artists").select("id, artist_id, lastfm_artist_name, play_count").eq("user_id", userId),
-      ),
+    preloaded.listened ?? readListened(supabase, userId),
     preloaded.thumbsDown ?? readFeedbackIds(supabase, userId, "thumbs_down"),
     readAllRows<{ id: string; artist_id: string }>(() =>
       supabase
@@ -171,6 +168,24 @@ export async function loadExclusions(
       return null
     },
   }
+}
+
+/**
+ * Start the policy-independent reads (every listened row + active thumbs-down)
+ * once, to share across several `loadExclusions` calls via `preloaded` — e.g.
+ * the Feed's softening reruns, which differ only in play threshold.
+ */
+export function preloadExclusionRows(
+  supabase: Pick<SupabaseClient, "from">,
+  userId: string,
+): Required<PreloadedRows> {
+  return { listened: readListened(supabase, userId), thumbsDown: readFeedbackIds(supabase, userId, "thumbs_down") }
+}
+
+function readListened(supabase: Pick<SupabaseClient, "from">, userId: string) {
+  return readAllRows<{ id: string; artist_id: string | null; lastfm_artist_name: string | null; play_count: number | null }>(() =>
+    supabase.from("listened_artists").select("id, artist_id, lastfm_artist_name, play_count").eq("user_id", userId),
+  )
 }
 
 /** The user's active thumbs-down / thumbs-up feedback, every row (paged). */
