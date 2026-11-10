@@ -117,31 +117,19 @@ export function buildFeedbackDeleteUrl(artistId: string): string {
   return `/api/feedback/${encodeURIComponent(artistId)}`
 }
 
-/**
- * Build the POST body for a feedback signal. railKey is omitted when
- * undefined so JSON.stringify never sends `"railKey": null`.
- */
-export function buildFeedbackPostBody(
-  artistId: string,
-  signal: string,
-  railKey: string | undefined,
-): Record<string, string> {
-  const body: Record<string, string> = { artistId, signal }
-  if (railKey !== undefined) body.railKey = railKey
-  return body
+/** Build the POST body for a feedback signal. */
+export function buildFeedbackPostBody(artistId: string, signal: string): Record<string, string> {
+  return { artistId, signal }
 }
 
 /**
- * "local"  — local-only, no network call (signal is in localOnlySignals)
  * "delete" — undo (thumbs_up toggled off)
  * "post"   — normal signal (thumbs_up first time, thumbs_down, etc.)
  */
 export function classifyFeedbackOp(
   signal: string,
   currentSignal: string | undefined,
-  localOnlySignals: readonly string[] = [],
-): "local" | "delete" | "post" {
-  if (localOnlySignals.includes(signal)) return "local"
+): "delete" | "post" {
   if (signal === "thumbs_up" && currentSignal === "thumbs_up") return "delete"
   return "post"
 }
@@ -149,10 +137,6 @@ export function classifyFeedbackOp(
 export interface ArtistFeedbackDeps {
   fetchImpl?: typeof fetch
   toast: ToastErrorLike
-  /** Initial rail (see setRailKey). */
-  railKey?: string
-  /** Signals applied locally only (Explore: ["skip"]). */
-  localOnlySignals?: readonly string[]
   messages?: { undoFailed?: string; saveFailed?: string }
 }
 
@@ -161,7 +145,7 @@ export interface ArtistFeedback {
   /**
    * Set a signal (optimistic, serialized per artist). thumbs_up on an already
    * thumbs_up artist → DELETE /api/feedback/{id} (undo; seen_at stays set, so
-   * session-only); local-only signals skip the network; else POST. Resolves to
+   * session-only); else POST. Resolves to
    * success; failures toast.
    */
   setSignal(artistId: string, signal: string): Promise<boolean>
@@ -199,18 +183,11 @@ export interface ArtistFeedback {
    *   anything else             POST previous; same value: no request
    */
   restore(artistId: string, previous: string | undefined): Promise<boolean>
-  /**
-   * Rail the user is on. Captured when tapped: a POST queued behind an
-   * earlier in-flight call still names the rail the artist was on.
-   */
-  setRailKey(railKey: string | undefined): void
 }
 
 export function createArtistFeedback({
   fetchImpl = fetch,
   toast,
-  railKey,
-  localOnlySignals = [],
   messages,
 }: ArtistFeedbackDeps): ArtistFeedback {
   const store = createOptimisticStore<string>()
@@ -221,11 +198,11 @@ export function createArtistFeedback({
     const res = await fetchImpl(url, { method: "DELETE" })
     if (!res.ok && res.status !== 204) throw new Error("Server error")
   }
-  async function post(artistId: string, signal: string, rail: string | undefined) {
+  async function post(artistId: string, signal: string) {
     const res = await fetchImpl("/api/feedback", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildFeedbackPostBody(artistId, signal, rail)),
+      body: JSON.stringify(buildFeedbackPostBody(artistId, signal)),
     })
     if (!res.ok) throw new Error("Server error")
   }
@@ -238,15 +215,12 @@ export function createArtistFeedback({
     store,
 
     async setSignal(artistId, signal) {
-      const rail = railKey // the rail tapped on, even if the POST queues behind another call
-      const op = classifyFeedbackOp(signal, store.get(artistId), localOnlySignals)
-      if (op === "local") return store.optimistic(artistId, signal, async () => {})
-      if (op === "delete") {
+      if (classifyFeedbackOp(signal, store.get(artistId)) === "delete") {
         const ok = await store.optimistic(artistId, undefined, () => del(buildFeedbackDeleteUrl(artistId)))
         if (!ok) toast.error(undoFailed)
         return ok
       }
-      const ok = await store.optimistic(artistId, signal, () => post(artistId, signal, rail))
+      const ok = await store.optimistic(artistId, signal, () => post(artistId, signal))
       if (!ok) toast.error(saveFailed)
       return ok
     },
@@ -254,15 +228,14 @@ export function createArtistFeedback({
     async restore(artistId, previous) {
       const current = store.get(artistId)
       if (current === previous) return true
-      const rail = railKey
       const steps: Array<() => Promise<void>> =
         previous === undefined
           ? [current === "skip" ? () => undismiss(artistId) : () => del(buildFeedbackDeleteUrl(artistId))]
           : current === "skip"
-            ? [() => undismiss(artistId), () => post(artistId, previous, rail).catch(() => {})]
+            ? [() => undismiss(artistId), () => post(artistId, previous).catch(() => {})]
             : previous === "skip" && current !== undefined
               ? [() => del(buildFeedbackDeleteUrl(artistId))]
-              : [() => post(artistId, previous, rail)]
+              : [() => post(artistId, previous)]
       const ok = await store.optimistic(artistId, previous, async () => {
         for (const s of steps) await s()
       })
@@ -280,10 +253,6 @@ export function createArtistFeedback({
       const ok = await store.confirmedOp(artistId, undefined, () => undismiss(artistId))
       if (!ok) toast.error(undoFailed)
       return ok
-    },
-
-    setRailKey(next) {
-      railKey = next
     },
   }
 }

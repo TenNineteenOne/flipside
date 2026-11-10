@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { signOut } from "next-auth/react"
-import { BarChart3, Bookmark, Clock, Compass, Keyboard, LogOut, Music2, Settings } from "lucide-react"
+import { BarChart3, Bookmark, Clock, Keyboard, LogOut, Music2, Settings } from "lucide-react"
 import { IdenticonAvatar } from "@/components/ui/identicon-avatar"
 import { NavLinkStatus } from "@/components/nav/navigation-progress"
 import { useAdventurousMode } from "@/lib/hooks/use-adventurous-mode"
@@ -14,7 +14,6 @@ import { Wordmark } from "./wordmark"
 
 export const NAV = [
   { href: "/feed", label: "Feed", icon: Music2 },
-  { href: "/explore", label: "Explore", icon: Compass },
   { href: "/history", label: "History", icon: Clock },
   { href: "/saved", label: "Saved", icon: Bookmark },
   { href: "/stats", label: "Stats", icon: BarChart3 },
@@ -126,7 +125,6 @@ export function AppShell({ userSeed, initialAdventurous, pathPrefix, children }:
                 <Link
                   key={href}
                   href={href}
-                  prefetch={href === "/explore" ? true : undefined}
                   className="shell-nav-item"
                   aria-current={isCurrent(pathname, href) ? "page" : undefined}
                   aria-label={count ? `${label}, ${count}` : label}
@@ -218,7 +216,6 @@ export function AppShell({ userSeed, initialAdventurous, pathPrefix, children }:
               <Link
                 key={href}
                 href={href}
-                prefetch={href === "/explore" ? true : undefined}
                 className="shell-tab"
                 aria-current={isCurrent(pathname, href) ? "page" : undefined}
                 aria-label={count ? `${label}, ${count}` : undefined}

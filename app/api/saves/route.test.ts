@@ -1,4 +1,4 @@
-/** #175 F21: saves store an artist name for Explore artists too. */
+/** #175 F21: saves store an artist name for artists outside recommendation_cache too. */
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { createRouteFakeDb } from "@/lib/api/__fixtures__/route-fake-db"
 
@@ -28,7 +28,7 @@ describe("POST /api/saves artist_name", () => {
     expect(db.tables.saves[0].artist_name).toBe("Feed Name")
   })
 
-  it("falls back to the artists row name (Explore artist, not in recommendation_cache)", async () => {
+  it("falls back to the artists row name (artist not in recommendation_cache)", async () => {
     expect(await (await save()).json()).toEqual({ success: true, saved: true, playlistId: null })
     expect(db.tables.saves[0].artist_name).toBe("Radiohead")
   })

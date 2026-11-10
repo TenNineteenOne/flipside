@@ -2,10 +2,10 @@
 
 import "./feed.css"
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Heart, ThumbsDown, X } from "lucide-react"
+import { Heart, Plus, ThumbsDown, X } from "lucide-react"
 import { ColdStartBanner } from "@/components/feed/cold-start-banner"
 import { EndState, type Wander } from "@/components/feed/feed-parts"
-import { WanderSwitch } from "@/components/feed/wander-switch"
+import { WanderSwitch, wanderButton } from "@/components/feed/wander-switch"
 import { SnapCard } from "@/components/feed/snap-card"
 import { MiniPlayer, useSuppressFloatingPlayer } from "@/components/player/mini-player"
 import { ShellSlot } from "@/components/shell/shell-context"
@@ -140,7 +140,7 @@ export function FeedSnap({ triage, signalCount, onLoadMore, generating, wander, 
 
   return (
     <div className="ev-feed ev-snap">
-      <TopBarProgress triage={triage} wander={wander} />
+      <TopBarProgress triage={triage} wander={wander} onLoadMore={onLoadMore} generating={generating} />
       <ColdLine signalCount={signalCount} />
 
       <main className="ev-m-snap" ref={scrollerRef} aria-label="Artists">
@@ -167,13 +167,29 @@ export function FeedSnap({ triage, signalCount, onLoadMore, generating, wander, 
 
 /* ---- pieces shared by the phone (Snap) and tablet feeds ---- */
 
-/** Wander farther + "N of M left" in the shell top bar, and the segment strip as its second row. */
-export function TopBarProgress({ triage, wander }: { triage: FeedTriage; wander: Wander }) {
+/**
+ * Wander farther + Load more + "N of M left" in the shell top bar, and the segment strip as its
+ * second row. Load more is an icon button on phones ("Load more" text from 600px wide); rainbow
+ * while Wander farther is on; aria-disabled (focus stays) while generating, like LoadMore.
+ */
+export function TopBarProgress({ triage, wander, onLoadMore, generating }: {
+  triage: FeedTriage; wander: Wander; onLoadMore: () => void; generating: boolean
+}) {
   return (
     <>
       <ShellSlot name="top">
         <span className="ev-feed ev-m-topbar">
           <WanderSwitch on={wander.on} onToggle={wander.toggle} compact />
+          <button
+            type="button"
+            className={`ev-btn ev-btn-ghost ev-m-more${wanderButton(wander.on)}`}
+            onClick={generating ? undefined : onLoadMore}
+            aria-disabled={generating || undefined}
+            aria-label={generating ? "Generating…" : "Load more artists"}
+          >
+            <Plus size={18} strokeWidth={2} aria-hidden />
+            <span className="ev-m-more-text" aria-hidden>{generating ? "Generating…" : "Load more"}</span>
+          </button>
           <SnapCount triage={triage} />
         </span>
       </ShellSlot>

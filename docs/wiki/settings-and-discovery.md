@@ -8,10 +8,10 @@ related: [[generation-engine]], [[data-model]], [[genre-system]], [[pages-and-co
 
 User discovery preferences live as columns on the `users` row (see [[data-model]]), edited
 via `PATCH /api/settings` (`lib/settings/patch-settings.ts` — the only client writer, with
-typed keys, abort support and `SettingsSaveError`). Any change triggers `rebuild()` on the
-feed-generation controller (`lib/client/feed-generation.ts`), which fires **both**
-`POST /api/recommendations/generate?replace=true` and `POST /api/explore/generate?force=true`
-in parallel.
+typed keys, abort support and `SettingsSaveError`). Nothing regenerates on save: the route
+calls `onTasteChanged` (`lib/taste-change.ts`), which wipes the user's unseen Feed queue when
+`selectedGenres` or `fameLevel` changed, so the next Feed load generates under the new
+settings. Wander farther (`adventurous`) only shapes the next batch and wipes nothing.
 
 ## The settings
 
@@ -39,17 +39,6 @@ boolean. The Settings server component passes `initialFameLevel` and `initialAdv
 `score = k^popularity × 0.8 + seedRelevance × 0.2 − adventurousPenalty`. See
 [[generation-engine]]. The feed read path (`getUnseenRecommendations`) re-applies the
 stop-0 cap from the *current* `fame_level`, so moving the slider is honored on first paint.
-
-## Regenerate flow (`rebuild()` in `lib/client/feed-generation.ts`)
-Guards concurrent calls with the controller's synchronous re-entry flag. An Explore 429
-(its 90s cooldown) means a rebuild is already running and is treated as success — no
-"Explore failed" toast. Both endpoints return after
-*scheduling* (not completion) — the toast says "loading", and `localStorage["explore-regen-
-at"]` signals `ExploreClient` to begin poll-swapping ([[pages-and-components]]). Honest
-async copy was the fix in #146. The flag is the epoch ms written **before** the POSTs
-(the server stamps `generated_at` at build start), so Explore treats rails with
-`generatedAt >= flag` as already fresh; an Explore failure (non-429) removes it. Shuffle,
-Apply and the Explore cold start write the same flag (#175 sweep 2 Y3).
 
 Connected sources: blur saves a Last.fm / stats.fm username when it differs from the last
 value the server **accepted**; the "connected · @name" status and Sync use that saved

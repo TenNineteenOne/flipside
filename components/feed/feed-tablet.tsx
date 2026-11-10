@@ -51,7 +51,7 @@ export function FeedTablet({ triage, signalCount, onLoadMore, generating, wander
 
   return (
     <div className="ev-feed ev-snap ev-tablet">
-      <TopBarProgress triage={triage} wander={wander} />
+      <TopBarProgress triage={triage} wander={wander} onLoadMore={onLoadMore} generating={generating} />
       <div className="ev-t-cold"><ColdLine signalCount={signalCount} /></div>
 
       <main className="ev-m-stage" aria-label="Selected artist">

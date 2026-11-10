@@ -65,6 +65,10 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizePackageImports: ["lucide-react", "framer-motion", "sonner"],
   },
+  // Explore was folded into Feed (#205). `:path*` also matches bare /explore.
+  async redirects() {
+    return [{ source: "/explore/:path*", destination: "/feed", permanent: true }]
+  },
   async headers() {
     return [
       {

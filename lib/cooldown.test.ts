@@ -58,16 +58,16 @@ describe("claimCooldown", () => {
   })
 
   it("claims exactly at the window boundary (elapsed === window)", async () => {
-    const rows: Row[] = [{ id: "u1", last_explore_generated_at: iso(NOW - 90_000) }]
+    const rows: Row[] = [{ id: "u1", last_accumulated_lastfm_at: iso(NOW - 90_000) }]
     const { client } = fakeUsers(rows)
-    expect(await claimCooldown(client, "u1", "last_explore_generated_at", 90_000, NOW)).toBe("claimed")
+    expect(await claimCooldown(client, "u1", "last_accumulated_lastfm_at", 90_000, NOW)).toBe("claimed")
   })
 
   it("a second immediate claim is cooling (no double pass)", async () => {
-    const rows: Row[] = [{ id: "u1", last_explore_generated_at: null }]
+    const rows: Row[] = [{ id: "u1", last_accumulated_lastfm_at: null }]
     const { client } = fakeUsers(rows)
-    const a = claimCooldown(client, "u1", "last_explore_generated_at", 90_000, NOW)
-    const b = claimCooldown(client, "u1", "last_explore_generated_at", 90_000, NOW + 1)
+    const a = claimCooldown(client, "u1", "last_accumulated_lastfm_at", 90_000, NOW)
+    const b = claimCooldown(client, "u1", "last_accumulated_lastfm_at", 90_000, NOW + 1)
     expect([await a, await b]).toEqual(["claimed", "cooling"])
   })
 

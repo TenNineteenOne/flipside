@@ -21,7 +21,7 @@
 .wander-sw[aria-checked="true"] .wander-track::after { transform: translateX(16px); background: oklch(0.16 0.01 293); }
 .wander-label { white-space: nowrap; }
 .wander-label small { display: block; margin-top: 2px; font-size: 12px; line-height: 1.5; color: var(--fg-3); white-space: normal; }
-@media (width < 400px) { .wander-sw[data-compact] .wander-far { display: none; } }
+@media (width < 440px) { .wander-sw[data-compact] .wander-far { display: none; } }
 .wander-sw[data-compact] { gap: 8px; font-size: 13px; }
 
 .wander-note { margin: 6px 0 0; font-size: 12px; line-height: 1.5; color: var(--fg-3); }

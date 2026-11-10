@@ -129,7 +129,7 @@ afterEach(() => {
   vi.unstubAllEnvs()
   // Restore any vi.spyOn (e.g. the cold-start test's similarArtists spy,
   // the run-2 test's Math.random spy) so it can't leak into a later test's
-  // module mocks. Mirrors the explore integration suite's afterEach.
+  // module mocks.
   vi.restoreAllMocks()
 })
 

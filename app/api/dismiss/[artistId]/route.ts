@@ -19,8 +19,7 @@ export const DELETE = withAuthedCsrfRoute(
 
     if (rpcError) return dbError(rpcError, "dismiss/clear-rpc")
 
-    // Explore caches include the server-side skip_at filter, so cached rails
-    // omit the artist. Wipe the cache so the next Explore load can re-include.
+    // An undismiss is a taste change (see lib/taste-change).
     await onTasteChanged(supabase, userId, { kind: "undismiss" })
 
     return new Response(null, { status: 204 })

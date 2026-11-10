@@ -3,7 +3,7 @@ import { runItunes } from "./itunes-limit"
 
 /**
  * The limiter bounds concurrent live iTunes calls (bursty preview confirmation
- * across the blocking set + 4 Explore rails + per-artist tracks must share one
+ * across the generation tiers + per-artist tracks must share one
  * budget). These lock down the hand-written slot-transfer semaphore: it must cap
  * concurrency and never lose/leak a slot.
  *

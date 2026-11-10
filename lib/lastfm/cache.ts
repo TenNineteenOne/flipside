@@ -5,8 +5,7 @@ const TTL_MS = 7 * 24 * 60 * 60 * 1000
 // Negative-cache TTL for genuinely-empty tag results. Short, so a tag that gains
 // artists (or a one-off Last.fm hiccup that still returned a valid empty body)
 // is rechecked within the day — but long enough that obscure leaf tags don't
-// re-hit Last.fm on every Explore generation, which was the dominant cold-load
-// cost. Transient *failures* (timeout / non-2xx) are never cached at all.
+// re-hit Last.fm on every generation. Transient *failures* (timeout / non-2xx) are never cached at all.
 const NEG_TTL_MS = 12 * 60 * 60 * 1000
 
 // Within-request memoization. Clears on every server cold start; the Supabase

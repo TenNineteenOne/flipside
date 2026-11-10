@@ -1,5 +1,3 @@
-import { EXPLORE_REGEN_AT_KEY } from "@/lib/client/rail-session"
-
 /**
  * The one client-side owner of POST /api/recommendations/generate: request,
  * response classification, toast copy, and the re-entry guard. Framework-free
@@ -8,12 +6,10 @@ import { EXPLORE_REGEN_AT_KEY } from "@/lib/client/rail-session"
  *
  * Every caller reads the same `GenerateResult` and decides explicitly what
  * each `kind` means for it (e.g. the feed's top-up is silent, "Load more"
- * reports it; Settings' rebuild counts Explore's 429 as already refreshing;
- * onboarding fires `postGenerate` and ignores the result).
+ * reports it; onboarding fires `postGenerate` and ignores the result).
  */
 
 export const GENERATE_URL = "/api/recommendations/generate"
-export const EXPLORE_GENERATE_URL = "/api/explore/generate?force=true"
 
 export type GenerateKind =
   /** 2xx with new recs written. */
@@ -154,14 +150,6 @@ export async function pollRecsUntilReady({
   return isCancelled() ? "cancelled" : "timeout"
 }
 
-/** Settings-rebuild copy when the feed half failed. */
-export function rebuildFailureMessage(r: GenerateResult): string {
-  if (r.kind === "queue-full") return "Queue is full — review some artists first"
-  if (r.kind === "cooldown") return "Cooling down — wait a few seconds and try again"
-  if (r.kind === "unavailable") return "Music service temporarily unavailable — try again in a moment"
-  return "Explore rebuilt, but feed failed"
-}
-
 export interface ToastLike {
   (message: string): void
   error: (message: string) => void
@@ -171,9 +159,6 @@ export interface ToastLike {
 export interface FeedGenerationDeps {
   fetchImpl?: typeof fetch
   toast: ToastLike
-  /** Where the Explore-regen-in-flight flag is written (localStorage in the browser). */
-  storage?: Pick<Storage, "setItem" | "removeItem"> | null
-  now?: () => number
   /** Called whenever `generating` flips. */
   onGeneratingChange?: (generating: boolean) => void
 }
@@ -187,8 +172,6 @@ export interface FeedGeneration {
    * 401, which the caller handles (redirect).
    */
   requestMore(opts?: { silent?: boolean }): Promise<GenerateResult | null>
-  /** Settings "rebuild": replace the feed and force an Explore regen, with toasts. */
-  rebuild(): Promise<void>
   /**
    * Drop the guard without waiting for the in-flight run (component unmount).
    * Reports `generating` false now; the abandoned run no longer flips it when
@@ -200,8 +183,6 @@ export interface FeedGeneration {
 export function createFeedGeneration({
   fetchImpl = fetch,
   toast,
-  storage = null,
-  now = Date.now,
   onGeneratingChange,
 }: FeedGenerationDeps): FeedGeneration {
   let generating = false
@@ -242,53 +223,6 @@ export function createFeedGeneration({
           }
         }
         return r
-      } finally {
-        settle(id)
-      }
-    },
-
-    async rebuild() {
-      const id = acquire()
-      if (id === null) return
-      // Signal to ExploreClient that a background regen is in flight so it
-      // can start a poll-only when the user navigates to /explore before it
-      // finishes. Written BEFORE the POSTs: the server stamps generated_at at
-      // build start, so rails with generatedAt >= this t0 are the rebuild's
-      // (#175 Y3-a). localStorage throws in private/incognito mode.
-      try { storage?.setItem(EXPLORE_REGEN_AT_KEY, String(now())) } catch { /* private mode */ }
-      try {
-        const [feedRes, exploreRes] = await Promise.all([
-          fetchImpl(`${GENERATE_URL}?replace=true`, { method: "POST" }),
-          fetchImpl(EXPLORE_GENERATE_URL, { method: "POST" }),
-        ])
-
-        const feed = await readGenerateResponse(feedRes)
-        // Explore's 429 is its cooldown: a rebuild is already running, which
-        // is what we asked for — treat it as success (owner decision #4).
-        const exploreOk = exploreRes.ok || exploreRes.status === 429
-        if (!exploreOk) {
-          try { storage?.removeItem(EXPLORE_REGEN_AT_KEY) } catch { /* private mode */ }
-        }
-
-        if (feed.ok) {
-          const soft = softenedFiltersMessage(feed.body)
-          if (soft) toast(soft)
-        }
-
-        if (!feed.ok && !exploreOk) {
-          toast.error("Couldn't rebuild — try again")
-        } else if (!feed.ok) {
-          toast.error(rebuildFailureMessage(feed))
-        } else if (!exploreOk) {
-          toast.error("Feed rebuilt, but Explore failed")
-        } else {
-          // Both regen requests return as soon as the work is *scheduled* (feed
-          // after its first batch, #144; Explore via after(), #145a), so word
-          // it as in-progress rather than done.
-          toast.success("Rebuilding feed & Explore — new picks are loading")
-        }
-      } catch {
-        toast.error("Couldn't rebuild — try again")
       } finally {
         settle(id)
       }

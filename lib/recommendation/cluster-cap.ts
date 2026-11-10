@@ -1,12 +1,10 @@
 /**
- * Cross-rail / pool cluster cap for the diversity overhaul (M2).
+ * Pool cluster cap for the diversity overhaul (M2).
  *
- * Cluster = artist.genres[0] (primary genre). Cap is a fraction of the visible
- * surface (picks across all rails for Explore, top pool for Feed). When a
- * genre exceeds the cap, we swap the lowest-ranked offender(s) with the
- * highest-ranked leftover whose genre is still under the cap, preferring
- * swaps within the same rail (for Explore) so each rail's identity stays
- * intact.
+ * Cluster = artist.genres[0] (primary genre). Cap is a fraction of the Feed's
+ * top pool. When a genre exceeds the cap, we swap the lowest-ranked
+ * offender(s) with the highest-ranked leftover whose genre is still under
+ * the cap.
  *
  * Deterministic and idempotent given the same inputs — runs before cache
  * writes so cache-hit paths serve the capped result directly.
@@ -79,103 +77,6 @@ export function applyClusterCap<T>(
     if (c > topCount) { topCount = c; topGenre = g }
   }
   return { swaps, topShare: topCount / picks.length, topGenre }
-}
-
-/**
- * Cap across multiple rails against a shared budget (total visible picks). Swaps
- * stay within-rail so each rail's theme is preserved — if a rail has no valid
- * under-cap leftover, we move on to the next-best rail for the offending genre.
- */
-export function applyCrossRailClusterCap<T>(
-  rails: Array<{ picks: T[]; leftover: T[] }>,
-  getGenre: (t: T) => string,
-  capPct: number = CLUSTER_CAP_PCT,
-): CapStats {
-  const totalPicks = rails.reduce((sum, r) => sum + r.picks.length, 0)
-  if (totalPicks === 0) return { swaps: 0, topShare: 0, topGenre: null }
-  const limit = Math.ceil(totalPicks * capPct)
-
-  const counts = new Map<string, number>()
-  for (const rail of rails) {
-    for (const a of rail.picks) counts.set(getGenre(a), (counts.get(getGenre(a)) ?? 0) + 1)
-  }
-
-  const exhaustedForGenre = new Set<string>()
-  const genreFullyExhausted = new Set<string>()
-  let swaps = 0
-  let iters = 0
-  const maxIters = totalPicks * 4
-  while (iters++ < maxIters) {
-    let overGenre: string | null = null
-    let overCount = 0
-    for (const [g, c] of counts) {
-      if (genreFullyExhausted.has(g)) continue
-      if (c > limit && c > overCount) {
-        overGenre = g
-        overCount = c
-      }
-    }
-    if (!overGenre) break
-
-    let bestRailIdx = -1
-    let bestRailCount = 0
-    for (let i = 0; i < rails.length; i++) {
-      const key = `${i}:${overGenre}`
-      if (exhaustedForGenre.has(key)) continue
-      const rail = rails[i]
-      let c = 0
-      for (const a of rail.picks) if (getGenre(a) === overGenre) c++
-      if (c > bestRailCount) {
-        bestRailCount = c
-        bestRailIdx = i
-      }
-    }
-    if (bestRailIdx < 0) {
-      genreFullyExhausted.add(overGenre)
-      continue
-    }
-
-    const rail = rails[bestRailIdx]
-    let offenderIdx = -1
-    for (let i = rail.picks.length - 1; i >= 0; i--) {
-      if (getGenre(rail.picks[i]) === overGenre) {
-        offenderIdx = i
-        break
-      }
-    }
-    if (offenderIdx < 0) {
-      exhaustedForGenre.add(`${bestRailIdx}:${overGenre}`)
-      continue
-    }
-
-    let leftIdx = -1
-    for (let i = 0; i < rail.leftover.length; i++) {
-      const ng = getGenre(rail.leftover[i])
-      if ((counts.get(ng) ?? 0) < limit) {
-        leftIdx = i
-        break
-      }
-    }
-    if (leftIdx < 0) {
-      exhaustedForGenre.add(`${bestRailIdx}:${overGenre}`)
-      continue
-    }
-
-    const out = rail.picks[offenderIdx]
-    const inn = rail.leftover[leftIdx]
-    rail.picks[offenderIdx] = inn
-    rail.leftover.splice(leftIdx, 1, out)
-    counts.set(getGenre(out), (counts.get(getGenre(out)) ?? 0) - 1)
-    counts.set(getGenre(inn), (counts.get(getGenre(inn)) ?? 0) + 1)
-    swaps++
-  }
-
-  let topGenre: string | null = null
-  let topCount = 0
-  for (const [g, c] of counts) {
-    if (c > topCount) { topCount = c; topGenre = g }
-  }
-  return { swaps, topShare: totalPicks > 0 ? topCount / totalPicks : 0, topGenre }
 }
 
 /** Default genre accessor: primary genre with `unknown` fallback. Treats

@@ -1,9 +1,7 @@
 /**
- * Cache-window helpers shared between Feed and Explore engines.
- *
- * Kept in their own module so either engine can import without creating a
- * circular dependency (explore-engine.ts imports from engine.ts for
- * `getTagArtistNames`).
+ * Cache-window helpers for the Feed engine and its far pool (far-picks.ts),
+ * kept in their own module so far-picks can import them without a cycle
+ * through engine.ts.
  */
 
 /**
@@ -40,8 +38,7 @@ export function seededShuffle<T>(arr: T[], seed: number): T[] {
 /**
  * Roll a deterministic sample of up to `size` likes from a user's full
  * thumbs-up set. Seed is the cache window so the sample is stable across
- * in-window cache hits but rotates weekly. Same sample in Feed and Explore
- * so the two surfaces feel coherent.
+ * in-window cache hits but rotates weekly.
  */
 export const LIKE_SAMPLE_SIZE = 10
 

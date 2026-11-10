@@ -26,20 +26,20 @@ function block(html: string, marker: string, tag: string) {
 const LINK = /<a[^>]*>/g
 
 describe("AppShell server render", () => {
-  it("rail lists all six sections and marks only the current one", () => {
+  it("rail lists all five sections and marks only the current one", () => {
     const rail = block(render("/history/older"), 'class="shell-nav"', "nav")
-    for (const s of ["Feed", "Explore", "History", "Saved", "Stats", "Settings"]) expect(rail).toContain(`>${s}<`)
+    for (const s of ["Feed", "History", "Saved", "Stats", "Settings"]) expect(rail).toContain(`>${s}<`)
     const links = rail.match(LINK) ?? []
-    expect(links).toHaveLength(6)
+    expect(links).toHaveLength(5)
     const current = links.filter((a) => a.includes('aria-current="page"'))
     expect(current).toHaveLength(1)
     expect(current[0]).toContain('href="/history"')
   })
 
-  it("tab bar has five items without Settings, current one marked", () => {
+  it("tab bar has four items without Settings, current one marked", () => {
     const tabs = block(render("/saved"), 'class="shell-tabs"', "nav")
     const links = tabs.match(LINK) ?? []
-    expect(links).toHaveLength(5)
+    expect(links).toHaveLength(4)
     expect(tabs).not.toContain("Settings")
     expect(links.filter((a) => a.includes('aria-current="page"'))).toEqual([expect.stringContaining('href="/saved"')])
   })

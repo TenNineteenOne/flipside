@@ -66,9 +66,10 @@ cooldown / permanent dismiss), `expires_at` (hard TTL), `source`. Hot query uses
 index `WHERE seen_at IS NULL` on `(user_id, score DESC, expires_at DESC)`.
 RPCs: `rpc_record_feedback_v2`, `rpc_delete_feedback_v2`, `rpc_clear_dismiss_v2` (uuid-keyed, 0036).
 
-### `explore_cache` — the Explore rails
-Per-user, per-rail. One row per `(user_id, rail_key)`, **24h TTL**. Deleted on
-feedback/seed/genre changes and the Adventurous toggle. See [[explore-engine]].
+### `explore_cache` — retired
+The removed Explore page's per-rail cache (`(user_id, rail_key)`, 24h TTL). No code reads or
+writes it since 2026-11-10 (#205); a later migration drops it. `users.last_explore_generated_at`
+(its 90s rebuild cooldown) is likewise unused.
 
 ### `feedback` — thumbs signals
 `(user_id, artist_id)` unique, `signal` (`thumbs_up`|`thumbs_down`), soft-delete
@@ -94,14 +95,15 @@ seeds. Last.fm-only picks get their uuid via `/api/onboarding/resolve` (the door
 - `login_attempts` — IP-hash rate limiting (`rpc_register_login_attempt`, 0035).
 - `user_challenges` — weekly discovery quests, `(user_id, week_start, challenge_key)`;
   progress via `rpc_increment_challenge_progress`, called from `rpc_record_feedback` on
-  thumbs-up transitions. See `lib/challenges/engine.ts`.
+  thumbs-up transitions. See `lib/challenges/engine.ts`. Its only UI was the removed Explore
+  page; `POST /api/feedback` still assigns and credits the row, but nothing shows it.
 - `groups`, `group_members`, `group_activity` — **legacy** social tables (0001), feature
   removed (0010); tables may still exist but are unused.
 
 ## Notes / gotchas
 
-- `underground_mode` (0015) and `deep_discovery` (0022) are **both** present — confirm
-  intended semantics before assuming one supersedes the other ([[settings-and-discovery]]).
+- `underground_mode` (0015) and `deep_discovery` (0022) are retired: folded into
+  `fame_level` and `adventurous` by 0042 ([[settings-and-discovery]]).
 - `artists.artist_color` is **lazy-null** — populated during generation, not at
   insert; UI must fall back to `#8b5cf6` ([[infra-and-ops]] color extraction).
 - **Supabase Data API GRANTs**: newer tables will need explicit GRANTs before the policy

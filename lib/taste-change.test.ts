@@ -1,29 +1,17 @@
-import { describe, it, expect, vi, beforeEach } from "vitest"
+import { describe, it, expect, vi } from "vitest"
 import { createFakeSupabase } from "@/lib/recommendation/__fixtures__/fake-supabase"
-
-const invalidateExploreCache = vi.fn<(userId: string, rails?: string[]) => Promise<void>>()
-vi.mock("@/lib/recommendation/explore-engine", () => ({
-  invalidateExploreCache: (userId: string, rails?: string[]) => invalidateExploreCache(userId, rails),
-}))
-
 import { invalidationFor, onTasteChanged, type TasteChange } from "./taste-change"
-
-beforeEach(() => {
-  invalidateExploreCache.mockReset()
-  invalidateExploreCache.mockResolvedValue(undefined)
-})
 
 describe("invalidationFor (policy table)", () => {
   const cases: Array<[string, TasteChange, ReturnType<typeof invalidationFor>]> = [
-    ["thumb from a rail", { kind: "feedback", railKey: "outside" }, { explore: ["outside"], feed: false }],
-    ["thumb without rail / un-thumb", { kind: "feedback" }, { explore: "all", feed: false }],
-    ["save / unsave", { kind: "save" }, { explore: "all", feed: false }],
-    ["undismiss", { kind: "undismiss" }, { explore: "all", feed: false }],
-    ["seed add / remove", { kind: "seeds" }, { explore: "all", feed: false }],
-    ["settings: selectedGenres", { kind: "settings", fields: ["selectedGenres"] }, { explore: "all", feed: true }],
-    ["settings: fameLevel", { kind: "settings", fields: ["fameLevel"] }, { explore: "all", feed: true }],
-    ["settings: adventurous (next batch only, #205)", { kind: "settings", fields: ["adventurous"] }, { explore: "all", feed: false }],
-    ["settings: usernames/platform", { kind: "settings", fields: ["lastfmUsername", "preferredMusicPlatform"] }, { explore: null, feed: false }],
+    ["thumb / un-thumb", { kind: "feedback" }, { feed: false }],
+    ["save / unsave", { kind: "save" }, { feed: false }],
+    ["undismiss", { kind: "undismiss" }, { feed: false }],
+    ["seed add / remove", { kind: "seeds" }, { feed: false }],
+    ["settings: selectedGenres", { kind: "settings", fields: ["selectedGenres"] }, { feed: true }],
+    ["settings: fameLevel", { kind: "settings", fields: ["fameLevel"] }, { feed: true }],
+    ["settings: adventurous (next batch only, #205)", { kind: "settings", fields: ["adventurous"] }, { feed: false }],
+    ["settings: usernames/platform", { kind: "settings", fields: ["lastfmUsername", "preferredMusicPlatform"] }, { feed: false }],
   ]
   it.each(cases)("%s", (_label, change, expected) => {
     expect(invalidationFor(change)).toEqual(expected)
@@ -39,52 +27,31 @@ describe("onTasteChanged", () => {
     ],
   })
 
-  it("narrow rail invalidation passes the rail list", async () => {
-    const { client } = createFakeSupabase(rows())
-    await onTasteChanged(client, "u1", { kind: "feedback", railKey: "wildcards" })
-    expect(invalidateExploreCache).toHaveBeenCalledWith("u1", ["wildcards"])
-  })
-
-  it("'all' passes no rail list and leaves the feed alone", async () => {
-    const { client, tables } = createFakeSupabase(rows())
-    await onTasteChanged(client, "u1", { kind: "save" })
-    expect(invalidateExploreCache).toHaveBeenCalledWith("u1", undefined)
-    expect(tables.recommendation_cache).toHaveLength(3)
-  })
-
   it("feed-affecting settings wipe only the user's unseen rows", async () => {
     const { client, tables } = createFakeSupabase(rows())
     await onTasteChanged(client, "u1", { kind: "settings", fields: ["fameLevel"] })
     expect(tables.recommendation_cache.map((r) => r.artist_id)).toEqual(["b", "c"])
   })
 
-  it("explore invalidation never touches the users row (rebuild cooldown stays; #175 S1)", async () => {
-    const t = { ...rows(), users: [{ id: "u1", last_explore_generated_at: "2026-10-24T00:00:00Z" }] }
-    const { client, tables, queries } = createFakeSupabase(t)
+  it("never touches the users row (#175 S1)", async () => {
+    const { client, queries } = createFakeSupabase({ ...rows(), users: [{ id: "u1" }] })
     await onTasteChanged(client, "u1", { kind: "settings", fields: ["selectedGenres"] })
-    expect(invalidateExploreCache).toHaveBeenCalled()
-    expect(tables.users[0].last_explore_generated_at).toBe("2026-10-24T00:00:00Z")
     expect(queries.filter((q) => q.table === "users")).toHaveLength(0)
   })
 
-  it("adventurous leaves the Feed queue alone (#205)", async () => {
+  it("adventurous and non-settings changes leave the Feed queue alone (#205)", async () => {
     const { client, tables } = createFakeSupabase(rows())
     await onTasteChanged(client, "u1", { kind: "settings", fields: ["adventurous"] })
+    await onTasteChanged(client, "u1", { kind: "save" })
     expect(tables.recommendation_cache).toHaveLength(3)
   })
 
-  it("no-op settings touch nothing", async () => {
-    const { client, tables } = createFakeSupabase(rows())
-    await onTasteChanged(client, "u1", { kind: "settings", fields: ["lastfmUsername"] })
-    expect(invalidateExploreCache).not.toHaveBeenCalled()
-    expect(tables.recommendation_cache).toHaveLength(3)
-  })
-
-  it("never throws when invalidation fails", async () => {
+  it("never throws when the wipe fails", async () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {})
-    invalidateExploreCache.mockRejectedValue(new Error("boom"))
     const { client } = createFakeSupabase(rows())
-    await expect(onTasteChanged(client, "u1", { kind: "seeds" })).resolves.toBeUndefined()
+    const failing = { ...client, from: () => ({ delete: () => ({ eq: () => ({ is: async () => ({ error: { message: "boom" } }) }) }) }) } as unknown as typeof client
+    await expect(onTasteChanged(failing, "u1", { kind: "settings", fields: ["fameLevel"] })).resolves.toBeUndefined()
+    expect(spy).toHaveBeenCalled()
     spy.mockRestore()
   })
 })

@@ -5,7 +5,6 @@ type SupabaseClient = ReturnType<typeof createServiceClient>
 /** `users` timestamptz columns that back a per-user cooldown. */
 export type CooldownColumn =
   | "last_generated_at"
-  | "last_explore_generated_at"
   | "last_accumulated_lastfm_at"
   | "last_accumulated_statsfm_at"
 

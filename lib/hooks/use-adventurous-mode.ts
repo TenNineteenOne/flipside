@@ -25,7 +25,7 @@ export const ADVENTUROUS_EVENT_NAME = "flipside:adventurous-change"
  * a fresh device saw adventurous mode switch off after mount — their saved
  * preference silently dropped until they re-toggled in Settings.
  *
- * Every consumer (the app shell's adventurous line, Settings, Explore)
+ * Every consumer (the app shell's adventurous line, Settings, the Feed switch)
  * treats the server as authoritative on first render. localStorage acts as a
  * write-through cache for in-tab and cross-tab sync, not as the source of
  * truth.
@@ -79,7 +79,7 @@ export interface UseAdventurousModeResult {
  *
  * Owns the localStorage + window event + PATCH pattern for every consumer:
  * the app shell (adventurous line on the rail / under the top bar), the
- * Settings obscurity panel and Explore's rail session.
+ * Settings discovery panel and the Feed's Wander farther switch.
  *
  * SSR-safe: the initial render uses `initial` (from the server).  On mount the
  * hook reconciles with localStorage in case another tab wrote a newer value

@@ -7,7 +7,7 @@ export function playableTracks(tracks: Track[]): Track[] {
 
 /**
  * Read-path guard: true when an artist has at least one playable preview. Used
- * by the feed and explore read paths to never render a dead card — a last line
+ * by the feed read path to never render a dead card — a last line
  * of defense over the drop-at-write guarantee (catches legacy rows written
  * before previews were baked). Accepts the minimal `{ previewUrl }` shape so it
  * works on both `Track[]` and the leaner cached card shapes.
@@ -69,7 +69,7 @@ export interface ConfirmInput {
   spotifyId?: string | null
   /**
    * Previously-confirmed tracks, rehydrated from `artist_tracks_cache` (PreviewStore) on the
-   * generation path (or carried on a warm explore artist).
+   * generation path.
    *  - undefined  → never confirmed / no cached set: resolve via iTunes/Spotify
    *  - []         → NOT a reliable negative post-fold (usually the `?? []`
    *                 type-coercion default, since the name-cache no longer

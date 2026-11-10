@@ -4,7 +4,6 @@ import { safeAuth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { getCachedUser } from "@/lib/user-cache"
 import { FeedClient } from "@/components/feed/feed-client"
-import { ExplorePrewarm } from "@/components/feed/explore-prewarm"
 import { RecommendationsLoader } from "@/components/feed/recommendations-loader"
 import { DEFAULT_MUSIC_PLATFORM, isMusicPlatform, type MusicPlatform } from "@/lib/music-links"
 import { getUnseenRecommendations, type UnseenRecommendation } from "@/lib/recommendation/feed-query"
@@ -63,12 +62,7 @@ export default async function FeedPage() {
 
   // No valid recommendations — client component triggers generation and refreshes
   if (validRecs.length === 0) {
-    return (
-      <>
-        <RecommendationsLoader />
-        <ExplorePrewarm />
-      </>
-    )
+    return <RecommendationsLoader />
   }
 
   // Assemble cards (tracks-cache fallback, colour lift, playable filter,
@@ -88,15 +82,12 @@ export default async function FeedPage() {
   const signalCount = (artistCount ?? 0) + (feedbackCount ?? 0) + (saveCount ?? 0)
 
   return (
-    <>
-      <FeedClient
-        recommendations={cards}
-        musicPlatform={musicPlatform}
-        signalCount={signalCount}
-        initialAdventurous={!!user.adventurous}
-        initialLayout={guessFeedLayout(await headers())}
-      />
-      <ExplorePrewarm />
-    </>
+    <FeedClient
+      recommendations={cards}
+      musicPlatform={musicPlatform}
+      signalCount={signalCount}
+      initialAdventurous={!!user.adventurous}
+      initialLayout={guessFeedLayout(await headers())}
+    />
   )
 }

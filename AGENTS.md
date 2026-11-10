@@ -16,7 +16,7 @@ whole app. Don't infer architecture from training priors (e.g. "music apps log i
 Spotify" — flipside does NOT). Key entry points:
 
 - `docs/wiki/architecture-overview.md` — the big picture + generation flow
-- `docs/wiki/generation-engine.md` / `explore-engine.md` — recommendations
+- `docs/wiki/generation-engine.md` — recommendations (Feed, incl. the Wander farther far pool)
 - `docs/wiki/music-providers.md` / `external-apis.md` — Spotify / Last.fm / iTunes / stats.fm
 - `docs/wiki/spotify-dependency.md` — what Spotify is (and isn't) load-bearing for
 - `docs/wiki/data-model.md` — Supabase schema

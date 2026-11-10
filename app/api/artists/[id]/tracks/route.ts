@@ -6,7 +6,7 @@ import { searchTracksByArtist } from "@/lib/music-provider/itunes"
 import { PreviewStore } from "@/lib/recommendation/preview-store"
 import { createWindowLimiter } from "@/lib/rate-limiter"
 
-// Each feed/Explore card without baked tracks fetches once on mount, so heavy
+// Each feed card without baked tracks fetches once on mount, so heavy
 // legit browsing stays far below 120/min; a loop hammering iTunes doesn't.
 // ponytail: per-instance in-memory (effective ceiling = 120 × warm instances);
 // move to the DB-backed limiter if this must be a hard cap.

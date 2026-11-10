@@ -1,6 +1,6 @@
 /**
- * Exclusions — the one "never show this artist" policy (#175 D3), shared by
- * the Feed and Explore engines. Loads the user's exclusion state once and
+ * Exclusions — the one "never show this artist" policy (#175 D3) for the Feed
+ * engine. Loads the user's exclusion state once and
  * answers one question: why (if at all) is this artist excluded?
  *
  *   - thumbs_down : an active thumbs-down feedback row
@@ -18,14 +18,11 @@ export type ExclusionReason = "thumbs_down" | "listened" | "liked" | "cooldown"
 
 export interface ExclusionPolicy {
   /**
-   * A listened artist hides when `play_count > playThreshold` (Feed: the
-   * user's play_threshold). `"any"` = any listened row hides regardless of
-   * play count (Explore — owner decision #3, #175).
+   * A listened artist hides when `play_count > playThreshold`.
    */
-  playThreshold: number | "any"
+  playThreshold: number
   /**
-   * Also match listened rows that have no `artist_id` by `artistNameKey`
-   * (Feed). Explore matches by id only.
+   * Also match listened rows that have no `artist_id` by `artistNameKey`.
    */
   nameFallback: boolean
   /**
@@ -60,8 +57,6 @@ export function isEligibleForCooldown(
   }
   return true
 }
-
-type QueryRows<T> = PromiseLike<{ data: T[] | null }>
 
 /** PostgREST's default max-rows cap; a plain select silently truncates past it. */
 const PAGE_SIZE = 1000
@@ -103,33 +98,19 @@ export async function readAllRows<T extends { id: string }>(
   }
 }
 
-/**
- * Reads a caller already has in flight (#175 E4b: Explore's user context reads
- * the same rows). `listened` must hold every row with an `artist_id` (and
- * `lastfm_artist_name` when the policy uses `nameFallback`); `thumbsDown` the
- * user's active thumbs-down feedback — ALL rows (page with `readAllRows`).
- * Pass promises, not builders, so each read runs once however often it's awaited.
- */
-export interface PreloadedRows {
-  listened?: QueryRows<{ artist_id: string | null; play_count?: number | null; lastfm_artist_name?: string | null }>
-  thumbsDown?: QueryRows<{ artist_id: string }>
-}
-
 export async function loadExclusions(
   supabase: Pick<SupabaseClient, "from">,
   userId: string,
   policy: ExclusionPolicy,
   now: Date = new Date(),
-  preloaded: PreloadedRows = {},
 ): Promise<Exclusions> {
   const cooldownStart = new Date(now.getTime() - COOLDOWN_DAYS * DAY_MS).toISOString()
   const none = Promise.resolve({ data: [] as { artist_id: string }[] })
   const [listened, thumbsDown, seen, skipped, thumbsUp, saved] = await Promise.all([
-    preloaded.listened ??
-      readAllRows<{ id: string; artist_id: string | null; lastfm_artist_name: string | null; play_count: number | null }>(() =>
-        supabase.from("listened_artists").select("id, artist_id, lastfm_artist_name, play_count").eq("user_id", userId),
-      ),
-    preloaded.thumbsDown ?? readFeedbackIds(supabase, userId, "thumbs_down"),
+    readAllRows<{ id: string; artist_id: string | null; lastfm_artist_name: string | null; play_count: number | null }>(() =>
+      supabase.from("listened_artists").select("id, artist_id, lastfm_artist_name, play_count").eq("user_id", userId),
+    ),
+    readFeedbackIds(supabase, userId, "thumbs_down"),
     readAllRows<{ id: string; artist_id: string }>(() =>
       supabase
         .from("recommendation_cache")
@@ -152,7 +133,7 @@ export async function loadExclusions(
   const listenedIds = new Set<string>()
   const listenedNames = new Set<string>()
   for (const row of listened.data ?? []) {
-    if (policy.playThreshold !== "any" && (row.play_count == null || row.play_count <= policy.playThreshold)) continue
+    if (row.play_count == null || row.play_count <= policy.playThreshold) continue
     if (row.artist_id) listenedIds.add(row.artist_id as string)
     else if (policy.nameFallback && row.lastfm_artist_name) listenedNames.add(artistNameKey(row.lastfm_artist_name as string))
   }

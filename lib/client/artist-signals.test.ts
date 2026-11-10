@@ -80,33 +80,7 @@ describe("feedback: optimistic before queue", () => {
     expect(toast.error).toHaveBeenCalledWith("Couldn't undo — try again")
   })
 
-  it("local-only signals skip the network but still queue behind in-flight calls", async () => {
-    const { c, calls, sig } = feedback({ localOnlySignals: ["skip"] })
-    c.setSignal("a", "thumbs_up")
-    const t2 = c.setSignal("a", "skip")
-    expect(sig()).toBe("skip")
-    await flush()
-    calls[0].resolve(false) // like fails while skip is queued
-    await t2
-    expect(sig()).toBe("skip")
-    expect(calls).toHaveLength(1)
-  })
 
-  it("#175 Y3: sends the rail current at tap time, even when the POST is queued", async () => {
-    const { c, calls } = feedback({ railKey: "adjacent" })
-    c.setSignal("a", "thumbs_up")
-    c.setSignal("a", "thumbs_down") // queued behind the like, tapped on adjacent
-    c.setRailKey("outside")
-    await flush()
-    expect(body(calls[0].init).railKey).toBe("adjacent")
-    calls[0].resolve(true)
-    await flush()
-    expect(body(calls[1].init).railKey).toBe("adjacent")
-    c.setRailKey(undefined)
-    c.setSignal("b", "thumbs_down")
-    await flush()
-    expect(body(calls[2].init)).toEqual({ artistId: "b", signal: "thumbs_down" })
-  })
 
   it("other artists are independent", async () => {
     const { c, calls } = feedback()

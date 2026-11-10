@@ -61,8 +61,8 @@ async function gatherSeedContext(
       .then(({ data }) => (data ?? []).map((r) => r.name as string).filter(Boolean)),
 
     // Fetch the full thumbs-up set; sampling is applied below via
-    // sampleLikes() so the Feed draws the same 10 random likes Explore uses
-    // within a cache window. See docs/prd-diversity-overhaul.md (M1).
+    // sampleLikes() so the Feed draws a stable 10 random likes within a
+    // cache window. See docs/prd-diversity-overhaul.md (M1).
     readFeedbackIds(supabase, userId, 'thumbs_up').then(({ data }) =>
       data.map((r) => r.artist_id).filter(Boolean)
     ),

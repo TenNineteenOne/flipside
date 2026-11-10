@@ -13,7 +13,7 @@ export function WanderSwitch({ on, onToggle, caption, compact = false }: {
   onToggle: () => void
   /** Second line under the label (Settings). */
   caption?: string
-  /** Phone top bar: "Wander" only below 400px wide (the accessible name stays "Wander farther"). */
+  /** Phone top bar: "Wander" only below 440px wide (the accessible name stays "Wander farther"). */
   compact?: boolean
 }) {
   const captionId = useId()

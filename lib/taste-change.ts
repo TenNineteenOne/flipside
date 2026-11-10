@@ -1,56 +1,39 @@
-import { invalidateExploreCache, type RailKey } from "@/lib/recommendation/explore-engine"
 import type { createServiceClient } from "@/lib/supabase/server"
 
 type SupabaseClient = ReturnType<typeof createServiceClient>
 
 /**
  * Something the user did that changes what Flipside should recommend.
- *  - feedback: thumbs up/down (POST) or un-thumb (DELETE). `railKey` set when
- *    the thumb came from a specific Explore rail. `skip` is NOT a taste change.
+ *  - feedback: thumbs up/down (POST) or un-thumb (DELETE). `skip` is NOT a taste change.
  *  - save:     save or unsave an artist.
  *  - undismiss: clear a skip/dismiss.
  *  - seeds:    add or remove seed artists.
  *  - settings: a settings PATCH; `fields` are the body keys that were sent.
+ *
+ * Only settings the Feed queue is filtered by wipe it today; the other kinds
+ * reach the next batch through the engine's normal reads. The callers stay
+ * wired so a new cache only needs a rule here.
  */
 export type TasteChange =
-  | { kind: "feedback"; railKey?: RailKey }
+  | { kind: "feedback" }
   | { kind: "save" }
   | { kind: "undismiss" }
   | { kind: "seeds" }
   | { kind: "settings"; fields: readonly string[] }
 
 export interface Invalidation {
-  /** Explore rails to drop: "all", a subset, or none. */
-  explore: "all" | RailKey[] | null
   /** Wipe the user's unseen Feed queue (recommendation_cache, seen_at IS NULL). */
   feed: boolean
 }
 
-// Settings that both Explore rails and the Feed queue are built from.
-const FEED_AND_EXPLORE_SETTINGS = ["selectedGenres", "fameLevel"]
-// Wander farther (adventurous) changes the NEXT Feed batch only, never the
-// queued cards (#205 decision 4), so it leaves the Feed queue alone.
-const EXPLORE_ONLY_SETTINGS = ["adventurous"]
-const FEED_ONLY_SETTINGS: string[] = []
+// Settings the queued Feed cards were built from. Wander farther (adventurous)
+// changes the NEXT batch only, never the queued cards (#205 decision 4).
+const FEED_SETTINGS = ["selectedGenres", "fameLevel"]
 
 /** The invalidation policy: which caches a taste change makes stale. Pure. */
 export function invalidationFor(change: TasteChange): Invalidation {
-  switch (change.kind) {
-    case "feedback":
-      // Narrow to the source rail when known; other rails pick the signal up on
-      // their natural 24h TTL rebuild. No rail (Feed thumbs, un-thumb) = all.
-      return { explore: change.railKey ? [change.railKey] : "all", feed: false }
-    case "save":
-    case "undismiss":
-    case "seeds":
-      return { explore: "all", feed: false }
-    case "settings": {
-      const both = change.fields.some((f) => FEED_AND_EXPLORE_SETTINGS.includes(f))
-      const feed = both || change.fields.some((f) => FEED_ONLY_SETTINGS.includes(f))
-      const explore = both || change.fields.some((f) => EXPLORE_ONLY_SETTINGS.includes(f))
-      return { explore: explore ? "all" : null, feed }
-    }
-  }
+  if (change.kind !== "settings") return { feed: false }
+  return { feed: change.fields.some((f) => FEED_SETTINGS.includes(f)) }
 }
 
 /**
@@ -64,20 +47,11 @@ export async function onTasteChanged(
   userId: string,
   change: TasteChange,
 ): Promise<void> {
-  const { explore, feed } = invalidationFor(change)
-  await Promise.all([
-    explore &&
-      invalidateExploreCache(userId, explore === "all" ? undefined : explore).catch((err) => {
-        console.error(`[taste-change] explore-invalidate failed kind=${change.kind}`, err)
-      }),
-    feed &&
-      supabase
-        .from("recommendation_cache")
-        .delete()
-        .eq("user_id", userId)
-        .is("seen_at", null)
-        .then(({ error }) => {
-          if (error) console.error(`[taste-change] feed-cache-wipe failed kind=${change.kind}`, error.message)
-        }),
-  ])
+  if (!invalidationFor(change).feed) return
+  const { error } = await supabase
+    .from("recommendation_cache")
+    .delete()
+    .eq("user_id", userId)
+    .is("seen_at", null)
+  if (error) console.error(`[taste-change] feed-cache-wipe failed kind=${change.kind}`, error.message)
 }

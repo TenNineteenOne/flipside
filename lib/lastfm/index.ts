@@ -4,7 +4,7 @@
  * timeouts, the shared rate/concurrency gate (`./limit`), the `lastfm_cache`
  * read-through (`./cache`) and the per-endpoint live-call counters.
  *
- * Callers (Feed/Explore engines, the identity doorway, onboarding search,
+ * Callers (the Feed engine, the identity doorway, onboarding search,
  * history sync) depend on `lastfm` (or a `createLastfm({...})` with fakes in
  * tests) and never build Last.fm URLs themselves.
  *

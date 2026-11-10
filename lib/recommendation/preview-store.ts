@@ -15,7 +15,7 @@
  *     the TTL.
  *   - display reads (`readForDisplay`): no TTL — a row is a row.
  *
- * Writers: the confirm collector (generation + Explore) and the tracks route.
+ * Writers: the confirm collector (generation) and the tracks route.
  * Both go through `upsertGuarded`. The tracks route applies the shared-cache
  * poisoning guard (a row is never written when the name we searched iTunes
  * with disagrees with the canonical `artists.name` for that id); collector
@@ -43,17 +43,6 @@ export const PREVIEW_TTL_MS = 24 * 60 * 60 * 1000
 const TABLE = "artist_tracks_cache"
 /** Chunk size for `.in()` reads and batch upserts (PostgREST URL limit). */
 const CHUNK = 500
-
-// Process-global tally of rows persisted by the confirm collector, for the
-// [explore-timing] log line. Measurement-only (same concurrency caveat as
-// api-call-counter): interleaving concurrent builds is acceptable.
-let persistedRows = 0
-export function snapshotPersisted(): number {
-  return persistedRows
-}
-export function resetPersisted(): void {
-  persistedRows = 0
-}
 
 export interface ConfirmCollector {
   /** Wire into confirmPlayableTracks so each live confirm is recorded. */
@@ -171,7 +160,7 @@ export class PreviewStore {
         if (rows.length === 0) return
         try {
           // ponytail: no canonical `artists` read here (#175 E4a) — it was one
-          // extra round-trip per flush, on Explore's critical path once per rail,
+          // extra round-trip per flush on the generation critical path,
           // and it cannot fire: every collected outcome's name is the doorway
           // artist's name, which is either the roster row's own `name` (name-cache
           // hit) or the input name whose `artistNameDbKey` (= toLowerCase) IS the
@@ -187,7 +176,6 @@ export class PreviewStore {
             console.log(`[persist-confirms] fail err="${error}" n=${pos}/${neg}`)
             return
           }
-          persistedRows += written.length
           console.log(`[persist-confirms] ok n=${pos}/${neg}`)
         } catch (err) {
           const neg = rows.filter((r) => r.source === "none").length

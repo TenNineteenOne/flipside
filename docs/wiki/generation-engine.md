@@ -1,15 +1,15 @@
 ---
 title: Generation Engine (Feed)
 updated: 2026-11-10
-related: [[explore-engine]], [[music-providers]], [[external-apis]], [[genre-system]], [[data-model]]
+related: [[music-providers]], [[external-apis]], [[genre-system]], [[data-model]]
 ---
 
 # Generation Engine (Feed)
 
 The Feed ("For You") pipeline. Entry point: `buildRecommendations(input)` in
-`lib/recommendation/engine.ts` (the core). Explore shares the same
-`PlayableCandidates` pipeline (resolve → exclusions → rehydrate → confirm → persist) — see
-[[explore-engine]].
+`lib/recommendation/engine.ts` (the core). The Explore page (and its rails engine) was
+folded into Feed and removed on 2026-11-10 (#205); its two discovery rails live on as the
+Wander farther far pool (step 11).
 
 ## Pipeline (in order)
 
@@ -63,7 +63,7 @@ The Feed ("For You") pipeline. Entry point: `buildRecommendations(input)` in
     - **Wander farther off:** 4 slots from position 5, close-genre adjacent bleed only.
     - **Wander farther on:** 10 slots from position 3, filled from the **far pool** first,
       adjacent bleed covering any shortfall. The far pool (`lib/recommendation/far-picks.ts`)
-      is Explore's Uncharted Territory + Curveballs logic ported into Feed: 4 anchors the
+      is the retired Explore page's Uncharted Territory + Curveballs logic, ported into Feed: 4 anchors the
       user hasn't touched (selected genres / listened genres via `artists`) and 4 leaves
       sampled across the genre tree minus the top-2 listened anchors, mid-list (positions
       10+) of each tag, round-robined and capped at 30 names. **Max 8 Last.fm
@@ -99,13 +99,13 @@ The Feed ("For You") pipeline. Entry point: `buildRecommendations(input)` in
 | Module | Purpose |
 |---|---|
 | `engine.ts` | the orchestrator above (seeds, fan-out, scoring, bleed, tiers, `finish()`) |
-| `playable-candidates.ts` | the shared name → confirmed-playable pipeline (resolve, `keep` gate, rehydrate, confirm, flush) used by Feed tiers/backfill/bleed and every Explore rail; `livePlayablePorts(token)` wires Last.fm getInfo, iTunes, Spotify top-tracks |
-| `exclusions.ts` | the one "never show this artist" policy (`loadExclusions(supabase, userId, { playThreshold \| 'any', nameFallback, liked? }, now?, preloaded?)`; Explore passes its already-in-flight listened / thumbs-down reads). Every read is keyset-paged on `id` (`readAllRows`, #175 R8); a mid-read page error keeps the rows read so far (logged) |
+| `playable-candidates.ts` | the shared name → confirmed-playable pipeline (resolve, `keep` gate, rehydrate, confirm, flush) used by Feed tiers/backfill/bleed and the far pool; `livePlayablePorts(token)` wires Last.fm getInfo, iTunes, Spotify top-tracks |
+| `exclusions.ts` | the one "never show this artist" policy (`loadExclusions(supabase, userId, { playThreshold, nameFallback, liked? }, now?)`). Every read is keyset-paged on `id` (`readAllRows`, #175 R8); a mid-read page error keeps the rows read so far (logged) |
 | `preview-store.ts` | `PreviewStore`: the ONLY code touching `artist_tracks_cache` — confirm read (`rehydrate`), display read, outcome collector, tracks-route read/refresh/write; one 24h TTL; poisoning guard on tracks-route writes (collector writes satisfy it by construction, #175 E4a) |
 | `resolve-candidates.ts` | name → Artist resolver (cache → Last.fm `getInfo` resolve; Spotify-free since #157), 429 backoff |
 | `resolve-pools.ts` | blocking (36) / secondary (54) split; latency knobs |
 | `confirm-previews.ts` | iTunes-first / Spotify-fallback playability confirm |
-| `cluster-cap.ts` | 25% per-genre diversity cap (single-list + cross-rail) |
+| `cluster-cap.ts` | 25% per-genre diversity cap |
 | `scoring` (in engine) | `k^popularity` tier multiplier + relevance |
 | `window.ts` | weekly-stable seeds: `cacheWindowSeed`, `seededShuffle`, `sampleLikes` |
 | `far-picks.ts` | the Wander farther far pool: outside-anchor + leftfield tag pickers, `fetchFarNames` (≤8 tag lookups), `loadListenedGenres` |
@@ -143,8 +143,6 @@ through `lib/artist-identity` (with `lastfm-lookup.ts` = `lastfmResolve`, `build
 - `chain-walker.ts` (speculative multi-hop BFS) was deleted 2026-07-11 — it had zero callers.
 - Toggling Wander farther changes the **next batch only**: `adventurous` no longer wipes the
   unseen queue (`lib/taste-change.ts`); `fameLevel` and `selectedGenres` still do.
-- Explore artists only land in `recommendation_cache` (and the 7-day cooldown) once the
-  user *acts* on them — a behavioral gap vs the Feed.
 - Last.fm tags hyphenated in flipside's tree (e.g. `dutch-black-metal`) may return 0 from
   Last.fm; `lastfm.tagTopArtists` retries with spaces (a second sequential call) — this was
-  the Explore leftfield-rail latency cause.
+  the old Explore leftfield-rail latency cause, and why the far pool caps tag lookups at 8.
