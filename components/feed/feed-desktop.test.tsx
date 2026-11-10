@@ -22,7 +22,7 @@ function artist(id: string, name: string, imageUrl: string | null = `https://is1
 }
 
 function Desktop({ artists }: { artists: CardArtist[] }) {
-  return <FeedDesktop triage={useFeedTriage(artists)} />
+  return <FeedDesktop triage={useFeedTriage(artists, "spotify")} />
 }
 
 // Text only: drop React's <!-- --> separators between adjacent text nodes.

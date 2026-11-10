@@ -105,6 +105,7 @@
 .ev-feed .ev-row-pop { display: flex; align-items: center; gap: 8px; pointer-events: none; }
 .ev-feed .ev-row-pop-n { font: 400 11px/1 var(--font-mono); color: var(--fg-3); }
 .ev-feed .ev-row-state { display: flex; justify-content: flex-end; pointer-events: none; }
+.ev-feed .ev-saved-tag { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; border-radius: 6px; font-size: 12px; font-weight: 600; color: var(--fg-2); background: var(--raise); }
 .ev-feed .ev-liked-tag { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; border-radius: 6px; font-size: 12px; font-weight: 600; color: #fff; background: var(--violet); }
 .ev-feed .ev-row[data-liked] .ev-row-name { color: var(--fg); }
 
@@ -142,6 +143,63 @@
 .ev-feed .ev-btn-play:disabled { cursor: default; background: var(--raise); color: var(--fg-3); }
 .ev-feed .ev-triage { display: flex; gap: 6px; }
 
+.ev-feed .ev-card { animation: ev-feed-in 220ms var(--ease); }
+/* Entrance moves only; it never starts transparent. */
+@keyframes ev-feed-in { from { transform: translateY(8px); } }
+
+.ev-feed .ev-kbd {
+  display: inline-grid; place-items: center; min-width: 1.6em; height: 1.6em; padding: 0 0.4em;
+  font: 500 10px/1 var(--font-mono); color: var(--fg-3);
+  border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 5px; background: var(--bg);
+}
+
+/* secondary actions */
+.ev-feed .ev-secondary { display: flex; gap: 4px; }
+.ev-feed .ev-sec {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: 1; min-height: 44px; border-radius: 8px;
+  font-size: 13px; color: var(--fg-2); text-decoration: none; transition: background-color 120ms var(--ease), color 120ms var(--ease);
+}
+.ev-feed .ev-sec:hover { background: var(--raise); color: var(--fg); }
+.ev-feed .ev-sec[aria-pressed="true"] { color: var(--violet-ink); }
+
+/* track list */
+.ev-feed .ev-tracks-title { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; color: var(--fg-3); padding: 0 8px 6px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.ev-feed .ev-tracks-title span { font-weight: 400; }
+.ev-feed .ev-track { position: relative; display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; min-height: 48px; padding: 6px 8px; border-radius: 8px; text-align: left; overflow: hidden; }
+.ev-feed .ev-track:hover { background: color-mix(in oklch, var(--raise), transparent 30%); }
+.ev-feed .ev-track[data-current] { background: color-mix(in oklch, var(--raise), transparent 30%); }
+.ev-feed .ev-track-n { position: relative; display: grid; place-items: center; height: 20px; font: 400 12px/1 var(--font-mono); color: var(--fg-3); }
+.ev-feed .ev-track-hover { position: absolute; opacity: 0; color: var(--fg); }
+.ev-feed .ev-track:hover .ev-track-hover { opacity: 1; }
+.ev-feed .ev-track:hover .ev-track-i { opacity: 0; }
+.ev-feed .ev-track[data-current] .ev-track-name, .ev-feed .ev-track[data-current] .ev-track-n { color: var(--a-light); }
+.ev-feed .ev-track-name { display: flex; flex-direction: column; min-width: 0; font-size: 14px; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev-feed .ev-track-album { font-size: 12px; font-weight: 400; color: var(--fg-3); overflow: hidden; text-overflow: ellipsis; }
+.ev-feed .ev-track-dur { font: 400 11px/1 var(--font-mono); color: var(--fg-3); }
+.ev-feed .ev-track-bar { position: absolute; left: 8px; right: 8px; bottom: 0; height: 2px; }
+.ev-feed .ev-track-bar span { display: block; height: 100%; background: var(--a-light); transform-origin: left; transition: transform 250ms linear; }
+
+/* docked player (components/player/mini-player.tsx, docked variant) */
+.ev-feed .ev-player { --a-light: color-mix(in oklch, var(--a, var(--violet)) 55%, white); position: relative; display: flex; align-items: center; gap: 12px; padding: 12px 16px 14px; background: var(--rail); border-top: 1px solid var(--line); min-height: 68px; }
+.ev-feed .ev-player img, .ev-feed .ev-player-blank { width: 40px; height: 40px; border-radius: 6px; object-fit: cover; background: var(--a, var(--raise)); flex-shrink: 0; }
+.ev-feed .ev-player-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.ev-feed .ev-player-track { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev-feed .ev-player-artist { font-size: 13px; color: var(--fg-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev-feed .ev-player-btn { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--fg); color: oklch(0.16 0.01 293); flex-shrink: 0; }
+.ev-feed .ev-player-btn:hover { background: #fff; }
+.ev-feed .ev-player-bar { position: absolute; left: 0; right: 0; top: -1px; height: 2px; }
+.ev-feed .ev-player-bar span { display: block; height: 100%; background: var(--a-light); transform-origin: left; transition: transform 250ms linear; }
+.ev-feed .ev-player-idle { font-size: 13px; color: var(--fg-3); }
+
+/* rail tuning block (portalled into the shell rail; the shell hides its slot below 1100px) */
+.ev-feed.ev-tuning { display: flex; flex-direction: column; gap: 8px; }
+.ev-feed .ev-rail-heading { font-size: 13px; font-weight: 600; color: var(--fg-3); padding: 0 10px 2px; }
+.ev-feed .ev-tune-group { display: flex; flex-direction: column; gap: 6px; padding: 0 10px 4px; }
+.ev-feed .ev-tune-label { font: 500 11px/1.4 var(--font-mono); color: var(--fg-3); }
+.ev-feed .ev-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.ev-feed .ev-chip { display: inline-flex; align-items: center; height: 24px; padding: 0 9px; border-radius: 6px; font-size: 13px; color: var(--fg-2); background: var(--raise); white-space: nowrap; }
+.ev-feed .ev-chip-more { color: var(--violet-ink); background: var(--violet-wash); }
+
 @media (max-width: 1279px) {
   .ev-feed .ev-row { grid-template-columns: 48px minmax(0, 1fr) 80px 76px; }
   .ev-feed .ev-row-genre { display: none; }
@@ -153,4 +211,25 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .ev-feed *, .ev-feed *::before, .ev-feed *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
+}
+
+/* Undo toast: a sonner toast (unstyled) rendered by the root Toaster, outside .ev-feed. */
+[data-sonner-toast].ev-toast {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px; width: auto; max-width: calc(100vw - 32px);
+  padding: 8px 8px 8px 16px; min-height: 48px; border-radius: 12px;
+  background: var(--fg); color: oklch(0.18 0.01 293); font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  font-size: 14px; font-weight: 550; box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.6);
+}
+[data-sonner-toast].ev-toast .ev-toast-undo {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 10px; border: 0; border-radius: 8px;
+  background: none; font: inherit; font-weight: 600; color: oklch(0.42 0.17 293); cursor: pointer;
+}
+[data-sonner-toast].ev-toast .ev-toast-undo:hover { background: oklch(0.92 0.02 293); }
+[data-sonner-toast].ev-toast .ev-toast-undo:focus-visible { outline: 2px solid oklch(0.42 0.17 293); outline-offset: 2px; }
+/* Only feed toasts use bottom-left: on desktop it starts at the queue column, clear of the rail. */
+@media (min-width: 900px) {
+  [data-sonner-toaster][data-x-position="left"] { --offset-left: 84px !important; }
+}
+@media (min-width: 1100px) {
+  [data-sonner-toaster][data-x-position="left"] { --offset-left: 260px !important; }
 }
