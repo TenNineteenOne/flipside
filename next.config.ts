@@ -47,6 +47,8 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // design-lab only (dev server): comma-separated LAN origins allowed to load the prototypes from a phone.
+  allowedDevOrigins: process.env.LAB_DEV_ORIGINS?.split(",") ?? [],
   productionBrowserSourceMaps: false,
   images: {
     // Serve CDN art as-is: /_next/image is anonymous, so distinct allowed-CDN

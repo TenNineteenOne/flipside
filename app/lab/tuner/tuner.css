@@ -1,0 +1,1348 @@
+/* Flipside FM — a receiver faceplate. Everything scoped under .lab-tuner. */
+
+.lab-tuner {
+  --face: oklch(0.205 0.006 70);
+  --face-hi: oklch(0.245 0.007 70);
+  --face-lo: oklch(0.175 0.005 70);
+  --window: oklch(0.13 0.008 65);
+  --rule: oklch(0.34 0.008 70);
+  --rule-soft: oklch(0.28 0.007 70);
+  --ink: oklch(0.94 0.008 80);
+  --ink-2: oklch(0.8 0.01 75);
+  --ink-3: oklch(0.67 0.012 72);
+  --dial: oklch(0.83 0.145 72);
+  --dial-dim: oklch(0.6 0.08 70);
+  --dial-ink: oklch(0.2 0.03 60);
+  --needle: oklch(0.69 0.19 38);
+  --seg-off: oklch(0.205 0.01 65);
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --pad: clamp(16px, 3vw, 40px);
+
+  min-height: 100dvh;
+  background: var(--face);
+  color: var(--ink);
+  font-family: var(--font-tuner), system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+.lab-tuner *,
+.lab-tuner *::before,
+.lab-tuner *::after {
+  box-sizing: border-box;
+}
+.lab-tuner :where(h1, h2, h3, p, ol, dl, dd, figure) {
+  margin: 0;
+  padding: 0;
+}
+.lab-tuner :where(ol) {
+  list-style: none;
+}
+.lab-tuner :where(button) {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.lab-tuner :where(a) {
+  color: inherit;
+}
+.lab-tuner :focus-visible {
+  outline: 2px solid var(--dial);
+  outline-offset: 2px;
+}
+.lab-tuner .tab {
+  font-variant-numeric: tabular-nums;
+}
+.lab-tuner .sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.lab-tuner kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.6em;
+  height: 1.6em;
+  padding: 0 0.35em;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  font: 500 11px/1 var(--font-tuner), sans-serif;
+  font-stretch: 110%;
+  color: var(--ink-2);
+  background: var(--face-lo);
+}
+
+/* ---------- Faceplate header ---------- */
+
+.lab-tuner .plate-top {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 18px var(--pad);
+  border-bottom: 1px solid var(--rule-soft);
+}
+.lab-tuner .brand {
+  font-size: 20px;
+  font-weight: 700;
+  font-stretch: 82%;
+  letter-spacing: -0.005em;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.lab-tuner .brand span {
+  font-size: 11px;
+  font-weight: 600;
+  font-stretch: 120%;
+  letter-spacing: 0.08em;
+  padding: 3px 6px;
+  border: 1px solid var(--dial-dim);
+  border-radius: 3px;
+  color: var(--dial);
+}
+.lab-tuner .plate-link {
+  margin-left: auto;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 4px;
+  font-size: 14px;
+  color: var(--ink-2);
+  text-decoration: none;
+}
+.lab-tuner .plate-link:hover {
+  color: var(--ink);
+}
+
+/* Input selector: rectangular switches with a status LED above the active one. */
+.lab-tuner .selector {
+  display: flex;
+  margin-left: auto;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--face-lo);
+}
+.lab-tuner .selector a {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  min-width: 82px;
+  min-height: 48px;
+  padding: 9px 12px 8px;
+  font-size: 11.5px;
+  font-weight: 500;
+  font-stretch: 115%;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--ink-3);
+  transition: color 0.18s var(--ease), background-color 0.18s var(--ease);
+}
+.lab-tuner .selector a + a {
+  border-left: 1px solid var(--rule-soft);
+}
+.lab-tuner .selector a:hover {
+  color: var(--ink);
+  background: var(--face);
+}
+.lab-tuner .selector .led {
+  width: 14px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--seg-off);
+  box-shadow: inset 0 0 0 1px var(--rule-soft);
+}
+.lab-tuner .selector a[aria-current="page"] {
+  color: var(--ink);
+}
+.lab-tuner .selector a[aria-current="page"] .led {
+  background: var(--dial);
+  box-shadow: 0 0 6px oklch(0.83 0.145 72 / 0.55);
+}
+.lab-tuner .ident {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 13px;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.lab-tuner .onair {
+  font-size: 11px;
+  font-weight: 600;
+  font-stretch: 120%;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 7px;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+}
+.lab-tuner .onair[data-live] {
+  color: var(--dial-ink);
+  background: var(--needle);
+  border-color: var(--needle);
+}
+
+/* ---------- The dial ---------- */
+
+.lab-tuner .dial-wrap {
+  position: relative;
+}
+.lab-tuner .dial {
+  position: relative;
+  height: 148px;
+  background: var(--window);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  cursor: ew-resize;
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+  overflow: hidden;
+  isolation: isolate;
+  color: var(--ink-3);
+  transition: color 0.9s var(--ease);
+}
+/* backlight: a warm wash from below the scale, only when powered */
+.lab-tuner .dial::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(to top, oklch(0.83 0.145 72 / 0.11), transparent 70%);
+  opacity: 0;
+  transition: opacity 0.9s var(--ease);
+}
+.lab-tuner [data-on] .dial {
+  color: var(--dial);
+}
+.lab-tuner [data-on] .dial::before {
+  opacity: 1;
+}
+.lab-tuner .dial-scale {
+  position: absolute;
+  left: 0;
+  top: 28px;
+  width: 100%;
+  height: 72px;
+  overflow: visible;
+}
+.lab-tuner .dial-scale line {
+  vector-effect: non-scaling-stroke;
+  stroke: currentColor;
+  stroke-width: 1;
+}
+.lab-tuner .dial-scale .tk {
+  opacity: 0.45;
+}
+.lab-tuner .dial-scale .tk-major {
+  opacity: 0.9;
+}
+.lab-tuner .dial-scale .st {
+  stroke-width: 2;
+  opacity: 0.75;
+}
+.lab-tuner .dial-scale .st-cur {
+  opacity: 1;
+}
+.lab-tuner .dial-scale .st-dead {
+  stroke-dasharray: 2 4;
+  opacity: 0.35;
+}
+.lab-tuner .dial-nums,
+.lab-tuner .dial-marks,
+.lab-tuner .dial-bands {
+  position: absolute;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+}
+.lab-tuner .dial-nums {
+  top: 102px;
+  height: 14px;
+}
+.lab-tuner .dial-nums span {
+  position: absolute;
+  transform: translateX(-50%);
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 14px;
+}
+.lab-tuner .dial-nums span:first-child {
+  transform: none;
+}
+.lab-tuner .dial-nums span:last-child {
+  transform: translateX(-100%);
+}
+.lab-tuner .dial-marks {
+  top: 8px;
+  height: 16px;
+}
+.lab-tuner .dial-marks .mark {
+  position: absolute;
+  transform: translateX(-50%);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  color: var(--ink);
+}
+.lab-tuner .dial-bands {
+  top: 122px;
+  height: 20px;
+}
+.lab-tuner .band {
+  position: absolute;
+  padding-top: 4px;
+  border-top: 1px solid currentColor;
+  font-size: 10.5px;
+  font-weight: 500;
+  font-stretch: 115%;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: center;
+  line-height: 1.2;
+  white-space: nowrap;
+  opacity: 0.85;
+}
+.lab-tuner .needle-track {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transform: translateX(calc(var(--x) * 100%));
+  transition: transform 0.34s var(--ease);
+}
+.lab-tuner .dial[data-dragging] .needle-track {
+  transition: none;
+}
+.lab-tuner .needle {
+  position: absolute;
+  left: -1px;
+  top: 4px;
+  bottom: 30px;
+  width: 2px;
+  background: var(--needle);
+  box-shadow: 0 0 8px oklch(0.69 0.19 38 / 0.7);
+}
+.lab-tuner .dial-readout {
+  min-height: 22px;
+  padding-top: 6px;
+  font-size: 13px;
+  color: var(--ink-2);
+  text-align: center;
+}
+.lab-tuner .dial-readout .tab {
+  color: var(--dial);
+  margin-right: 6px;
+}
+
+/* ---------- Shared readout pieces ---------- */
+
+.lab-tuner .freq {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.lab-tuner .freq-num {
+  font-size: 30px;
+  font-weight: 300;
+  line-height: 1;
+  color: var(--dial-dim);
+}
+.lab-tuner [data-on] .freq-num {
+  color: var(--dial);
+}
+.lab-tuner .freq-unit {
+  font-size: 12px;
+  font-weight: 500;
+  font-stretch: 115%;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.lab-tuner .acq {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.lab-tuner .track {
+  font-size: 15px;
+  color: var(--ink-2);
+}
+.lab-tuner .track span {
+  color: var(--ink-3);
+}
+.lab-tuner .path {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+.lab-tuner .path-label {
+  color: var(--ink-3);
+}
+.lab-tuner .path-hop {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.lab-tuner .path-node {
+  padding: 3px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  white-space: nowrap;
+}
+.lab-tuner .path-out {
+  border-color: var(--dial-dim);
+  color: var(--ink);
+}
+.lab-tuner .path-wire {
+  width: 18px;
+  height: 1px;
+  background: var(--rule);
+  position: relative;
+}
+.lab-tuner .path-wire::after {
+  content: "";
+  position: absolute;
+  right: -1px;
+  top: -3px;
+  width: 5px;
+  height: 7px;
+  background: var(--rule);
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+.lab-tuner .art {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 3px;
+  background: var(--face-lo);
+}
+
+/* ---------- Controls ---------- */
+
+.lab-tuner .ring {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+}
+.lab-tuner .ring > svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.lab-tuner .ring-track {
+  fill: var(--face-hi);
+  stroke: var(--rule);
+  stroke-width: 3;
+}
+.lab-tuner .ring-fill {
+  fill: none;
+  stroke: var(--dial);
+  stroke-width: 3;
+  stroke-linecap: butt;
+  transition: stroke-dashoffset 0.3s linear;
+}
+.lab-tuner .ring-icon {
+  position: relative;
+  display: grid;
+  place-items: center;
+  margin-top: -10px;
+}
+.lab-tuner .ring-time {
+  position: absolute;
+  bottom: 22%;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-3);
+}
+.lab-tuner .ring:hover .ring-track {
+  fill: oklch(0.27 0.008 70);
+}
+.lab-tuner .ring:active {
+  transform: scale(0.97);
+}
+.lab-tuner .ring[data-buffering] .ring-fill {
+  stroke: var(--dial-dim);
+}
+.lab-tuner .key-sq {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--face-hi);
+  transition: background-color 0.15s var(--ease);
+}
+.lab-tuner .key-sq:hover {
+  background: oklch(0.28 0.008 70);
+}
+.lab-tuner .key-sq:active {
+  transform: translateY(1px);
+}
+.lab-tuner .transport {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.lab-tuner .scope {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  max-width: 100%;
+  justify-self: stretch;
+  width: 100%;
+  height: 96px;
+}
+
+/* ---------- App ---------- */
+
+.lab-tuner .tn-app {
+  padding-bottom: 72px;
+}
+.lab-tuner .dial-row {
+  padding: 20px var(--pad) 4px;
+}
+.lab-tuner .deck {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr) 272px;
+  grid-template-areas: "presets now log";
+  gap: 0;
+  border-top: 1px solid var(--rule-soft);
+  margin-top: 12px;
+}
+.lab-tuner .now {
+  grid-area: now;
+  grid-template-columns: minmax(0, 1fr);
+  padding: 28px clamp(20px, 2.6vw, 40px) 32px;
+  display: grid;
+  gap: 22px;
+  align-content: start;
+  min-width: 0;
+}
+.lab-tuner .presets {
+  grid-area: presets;
+  padding: 28px var(--pad) 32px;
+  border-right: 1px solid var(--rule-soft);
+}
+.lab-tuner .log {
+  grid-area: log;
+  padding: 28px var(--pad) 32px;
+  border-left: 1px solid var(--rule-soft);
+  display: grid;
+  align-content: start;
+  gap: 16px;
+}
+.lab-tuner .presets h2,
+.lab-tuner .log h2 {
+  font-size: 12px;
+  font-weight: 600;
+  font-stretch: 118%;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-bottom: 14px;
+}
+.lab-tuner .log h2 {
+  margin-bottom: 0;
+}
+
+.lab-tuner .now-head {
+  display: grid;
+  grid-template-columns: clamp(180px, 17vw, 260px) minmax(0, 1fr);
+  gap: clamp(20px, 2.4vw, 36px);
+  align-items: end;
+}
+.lab-tuner .now-info {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.lab-tuner .artist {
+  font-size: clamp(2.5rem, 4.4vw, 4.25rem);
+  font-weight: 700;
+  font-stretch: 72%;
+  line-height: 0.95;
+  letter-spacing: -0.012em;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+.lab-tuner .tracks {
+  display: flex;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--face-lo);
+  overflow: hidden;
+}
+.lab-tuner .tracks button {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  font-size: 13.5px;
+  color: var(--ink-3);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lab-tuner .tracks button + button {
+  border-left: 1px solid var(--rule-soft);
+}
+.lab-tuner .tracks button .tab {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-3);
+}
+.lab-tuner .tracks button:hover {
+  color: var(--ink);
+}
+.lab-tuner .tracks button[aria-pressed="true"] {
+  color: var(--ink);
+  background: var(--face-hi);
+  box-shadow: inset 0 -2px 0 var(--dial);
+}
+.lab-tuner .tracks button[aria-pressed="true"] .tab {
+  color: var(--dial);
+}
+
+.lab-tuner .console {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 24px;
+  align-items: center;
+  padding: 14px 18px;
+  background: var(--window);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+}
+
+.lab-tuner .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.lab-tuner .act {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--face-hi);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+.lab-tuner .act:hover {
+  background: oklch(0.28 0.008 70);
+}
+.lab-tuner .act:active {
+  transform: translateY(1px);
+}
+.lab-tuner .act kbd {
+  margin-left: 2px;
+}
+.lab-tuner .act[aria-pressed="true"] {
+  border-color: var(--dial-dim);
+}
+.lab-tuner .act-quiet {
+  background: transparent;
+  border-color: var(--rule-soft);
+  color: var(--ink-2);
+}
+.lab-tuner .lamp {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--seg-off);
+  box-shadow: inset 0 0 0 1px var(--rule);
+  transition: background-color 0.2s var(--ease), box-shadow 0.2s var(--ease);
+}
+.lab-tuner .act-lock[aria-pressed="true"] .lamp {
+  background: var(--dial);
+  box-shadow: 0 0 8px oklch(0.83 0.145 72 / 0.7);
+}
+.lab-tuner .upnext {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  font-size: 14px;
+  color: var(--ink-3);
+}
+.lab-tuner .upnext .tab {
+  color: var(--dial);
+}
+.lab-tuner .upnext strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+.lab-tuner .upnext-why::before {
+  content: "· ";
+}
+
+.lab-tuner .presets ol {
+  display: grid;
+  gap: 6px;
+}
+.lab-tuner .presets li {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+.lab-tuner .preset {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 0 6px 0 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+.lab-tuner .preset-n {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--face-hi);
+  font-size: 16px;
+  font-weight: 600;
+  transition: background-color 0.18s var(--ease), color 0.18s var(--ease);
+}
+.lab-tuner .preset:hover .preset-n {
+  background: oklch(0.28 0.008 70);
+}
+.lab-tuner li[data-active] .preset-n {
+  background: var(--dial);
+  border-color: var(--dial);
+  color: var(--dial-ink);
+}
+.lab-tuner .preset-name {
+  min-width: 0;
+  display: grid;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.25;
+}
+.lab-tuner .preset-name,
+.lab-tuner .preset-name small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lab-tuner .preset-name small {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink-3);
+}
+.lab-tuner .preset-empty {
+  font-size: 14px;
+  color: var(--ink-3);
+}
+.lab-tuner .preset-clear {
+  flex: none;
+  width: 36px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink-3);
+  opacity: 0;
+  transition: opacity 0.15s var(--ease);
+}
+.lab-tuner .presets li:hover .preset-clear,
+.lab-tuner .preset-clear:focus-visible {
+  opacity: 1;
+}
+.lab-tuner .preset-clear:hover {
+  color: var(--ink);
+  background: var(--face-hi);
+}
+@media (hover: none) {
+  .lab-tuner .preset-clear {
+    opacity: 1;
+  }
+}
+.lab-tuner .hint {
+  margin-top: 18px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink-3);
+}
+
+.lab-tuner .log ol {
+  display: grid;
+}
+.lab-tuner .log li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.lab-tuner .log-meta {
+  display: grid;
+  min-width: 0;
+}
+.lab-tuner .log-t {
+  flex: none;
+  color: var(--ink-3);
+  font-size: 12px;
+}
+.lab-tuner .log-v {
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+.lab-tuner .log li[data-kind="lock"] .log-v {
+  color: var(--dial);
+}
+.lab-tuner .log-a {
+  min-width: 0;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 14.5px;
+  font-weight: 500;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lab-tuner .log-a:hover:not(:disabled) {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.lab-tuner .log-a:disabled {
+  cursor: default;
+  color: var(--ink-3);
+  text-decoration: line-through;
+}
+.lab-tuner .log-empty {
+  font-size: 14px;
+  color: var(--ink-3);
+  line-height: 1.6;
+}
+.lab-tuner .keys {
+  display: grid;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+.lab-tuner .keys div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.lab-tuner .keys dt {
+  display: flex;
+  gap: 4px;
+  min-width: 64px;
+}
+.lab-tuner .keys dd {
+  margin: 0;
+}
+
+.lab-tuner .toast {
+  position: fixed;
+  left: 50%;
+  bottom: 72px;
+  z-index: 40;
+  max-width: calc(100vw - 32px);
+  padding: 10px 16px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--face-hi);
+  font-size: 14px;
+  box-shadow: 0 10px 30px oklch(0 0 0 / 0.4);
+  transform: translate(-50%, 12px);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.25s var(--ease), opacity 0.2s var(--ease);
+}
+.lab-tuner .toast[data-show] {
+  transform: translate(-50%, 0);
+  opacity: 1;
+}
+
+.lab-tuner .thumbbar {
+  display: none;
+}
+
+/* ---------- Landing ---------- */
+
+.lab-tuner .hero {
+  grid-template-columns: minmax(0, 1fr);
+  padding: clamp(28px, 6vh, 72px) var(--pad) 40px;
+  display: grid;
+  gap: clamp(24px, 4vh, 40px);
+}
+.lab-tuner .hero-line {
+  font-size: clamp(2.1rem, 4.6vw, 4.25rem);
+  font-weight: 650;
+  font-stretch: 78%;
+  line-height: 1;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+  max-width: 20ch;
+}
+.lab-tuner .hero .dial {
+  height: 156px;
+}
+.lab-tuner .hero-deck {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: clamp(24px, 4vw, 64px);
+  align-items: center;
+}
+.lab-tuner .readout {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  min-width: 0;
+}
+.lab-tuner .readout-name {
+  font-size: clamp(1.9rem, 3vw, 2.75rem);
+  font-weight: 700;
+  font-stretch: 72%;
+  line-height: 1;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+.lab-tuner .readout-standby {
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.lab-tuner .power {
+  display: grid;
+  place-items: center;
+  min-height: 200px;
+}
+.lab-tuner .tune-in {
+  position: relative;
+  width: 196px;
+  height: 196px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 14px;
+  border: 1px solid var(--rule);
+  border-radius: 50%;
+  background: var(--face-hi);
+  box-shadow:
+    0 0 0 10px var(--face-lo),
+    0 0 0 11px var(--dial-dim);
+  font-size: 19px;
+  font-weight: 600;
+  font-stretch: 118%;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dial);
+  transition: background-color 0.2s var(--ease), box-shadow 0.3s var(--ease);
+}
+.lab-tuner .tune-in:hover {
+  background: oklch(0.275 0.008 70);
+  box-shadow:
+    0 0 0 10px var(--face-lo),
+    0 0 0 11px var(--dial);
+}
+.lab-tuner .tune-in:active {
+  transform: scale(0.985);
+}
+.lab-tuner .tune-in-lamp {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--dial);
+  box-shadow: 0 0 10px oklch(0.83 0.145 72 / 0.7);
+  animation: tn-breathe 2.6s ease-in-out infinite;
+}
+@keyframes tn-breathe {
+  50% {
+    opacity: 0.35;
+  }
+}
+.lab-tuner .hero-scope {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px;
+  min-width: 0;
+  background: var(--window);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+}
+.lab-tuner .art-sm {
+  width: 96px;
+  flex: none;
+}
+.lab-tuner .tn-land[data-on] .needle-track {
+  animation: tn-sweep 1.2s var(--ease);
+}
+@keyframes tn-sweep {
+  from {
+    transform: translateX(0);
+  }
+}
+
+.lab-tuner .pitch {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: clamp(32px, 6vw, 96px);
+  padding: clamp(56px, 9vh, 112px) var(--pad);
+  border-top: 1px solid var(--rule-soft);
+  background: var(--face-lo);
+}
+.lab-tuner .pitch-copy {
+  display: grid;
+  gap: 20px;
+  align-content: start;
+  max-width: 34rem;
+}
+.lab-tuner .pitch h2 {
+  font-size: clamp(1.9rem, 3.2vw, 2.9rem);
+  font-weight: 650;
+  font-stretch: 78%;
+  line-height: 1.02;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+.lab-tuner .pitch p {
+  font-size: 17px;
+  line-height: 1.6;
+  color: var(--ink-2);
+  text-wrap: pretty;
+  max-width: 62ch;
+}
+.lab-tuner .cta {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  min-height: 52px;
+  padding: 0 26px;
+  margin-top: 6px;
+  border-radius: 4px;
+  background: var(--dial);
+  color: var(--dial-ink);
+  font-size: 16px;
+  font-weight: 650;
+  text-decoration: none;
+  transition: background-color 0.18s var(--ease);
+}
+.lab-tuner .cta:hover {
+  background: oklch(0.88 0.13 75);
+}
+.lab-tuner .spec {
+  align-self: center;
+  border-top: 1px solid var(--rule);
+}
+.lab-tuner .spec div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  padding: 15px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.lab-tuner .spec dt {
+  font-size: 15px;
+  color: var(--ink-2);
+}
+.lab-tuner .spec dd {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  text-align: right;
+}
+.lab-tuner .spec div:last-child dd {
+  color: var(--dial);
+  font-size: 22px;
+}
+.lab-tuner .plate-foot {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 20px var(--pad) 76px;
+  border-top: 1px solid var(--rule-soft);
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+/* ---------- Responsive ---------- */
+
+@media (max-width: 1180px) {
+  .lab-tuner .deck {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      "now now"
+      "presets log";
+  }
+  .lab-tuner .presets {
+    border-right: 0;
+    border-top: 1px solid var(--rule-soft);
+  }
+  .lab-tuner .log {
+    border-top: 1px solid var(--rule-soft);
+  }
+  .lab-tuner .plate-top {
+    flex-wrap: wrap;
+  }
+  .lab-tuner .tn-app .selector {
+    order: 3;
+    width: 100%;
+    margin-left: 0;
+  }
+  .lab-tuner .tn-app .selector a {
+    flex: 1;
+    min-width: 0;
+  }
+  .lab-tuner .ident {
+    margin-left: auto;
+  }
+}
+
+@media (max-width: 820px) {
+  .lab-tuner .hero-deck {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .lab-tuner .power {
+    order: -1;
+    min-height: 0;
+  }
+  .lab-tuner .pitch {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .lab-tuner .deck {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "now" "presets" "log";
+  }
+  .lab-tuner .log {
+    border-left: 0;
+  }
+  .lab-tuner .now {
+    padding: 20px 16px 24px;
+    gap: 18px;
+  }
+  .lab-tuner .now-head {
+    grid-template-columns: 112px minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+  }
+  .lab-tuner .now-head .path,
+  .lab-tuner .now-head .tracks {
+    grid-column: 1 / -1;
+  }
+  .lab-tuner .now-info {
+    display: contents;
+  }
+  .lab-tuner .now-head .art {
+    grid-row: 1 / span 3;
+  }
+  .lab-tuner .now-head .freq,
+  .lab-tuner .now-head .artist,
+  .lab-tuner .now-head .track {
+    grid-column: 2;
+  }
+  .lab-tuner .artist {
+    font-size: 2.25rem;
+  }
+  .lab-tuner .freq-num {
+    font-size: 24px;
+  }
+  .lab-tuner .tracks button {
+    padding: 0 8px;
+    font-size: 13px;
+  }
+  .lab-tuner .now-head .track span {
+    display: none;
+  }
+  .lab-tuner .tn-app {
+    padding-bottom: 150px;
+  }
+  .lab-tuner .thumbbar {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: 62px;
+    z-index: 30;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 10px;
+    background: var(--face-hi);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    box-shadow: 0 12px 30px oklch(0 0 0 / 0.5);
+  }
+  .lab-tuner .thumbbar .act {
+    justify-content: center;
+    min-height: 48px;
+    background: var(--face);
+  }
+  .lab-tuner .console .ring {
+    display: none;
+  }
+  .lab-tuner .console .transport {
+    justify-content: space-between;
+    width: 100%;
+  }
+  .lab-tuner .thumbbar .ring-time {
+    display: none;
+  }
+  .lab-tuner .thumbbar .ring-icon {
+    margin-top: 0;
+  }
+  .lab-tuner .toast {
+    bottom: 148px;
+  }
+  .lab-tuner .deck {
+    margin-top: 4px;
+  }
+  .lab-tuner .console {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+    gap: 14px;
+    padding: 14px;
+  }
+  .lab-tuner .scope {
+    height: 64px;
+  }
+  .lab-tuner .actions {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+  .lab-tuner .actions .act {
+    grid-column: span 2;
+  }
+  .lab-tuner .actions .act:nth-child(n + 5) {
+    grid-column: span 3;
+  }
+  .lab-tuner .act {
+    justify-content: center;
+    padding: 0 8px;
+    font-size: 13.5px;
+  }
+  .lab-tuner .actions .act:nth-child(4) {
+    grid-column: 1 / -1;
+  }
+  .lab-tuner .act kbd {
+    display: none;
+  }
+  .lab-tuner .presets ol {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .lab-tuner .preset-clear {
+    display: none;
+  }
+  .lab-tuner .presets,
+  .lab-tuner .log {
+    padding: 24px 16px;
+  }
+  .lab-tuner .hint,
+  .lab-tuner .keys {
+    display: none;
+  }
+  .lab-tuner .plate-top {
+    padding: 12px 16px;
+    gap: 12px;
+  }
+  .lab-tuner .tn-app .selector a {
+    padding: 8px 2px 7px;
+    font-size: 10px;
+    letter-spacing: 0.02em;
+    font-stretch: 100%;
+  }
+  .lab-tuner .dial-row {
+    padding: 14px 16px 0;
+  }
+  .lab-tuner .ident .who {
+    display: none;
+  }
+  .lab-tuner .dial,
+  .lab-tuner .hero .dial {
+    height: 132px;
+  }
+  .lab-tuner .dial-bands {
+    top: 112px;
+  }
+  .lab-tuner .dial-scale {
+    height: 62px;
+  }
+  .lab-tuner .dial-nums {
+    top: 92px;
+  }
+  .lab-tuner .band {
+    font-size: 9.5px;
+    letter-spacing: 0.02em;
+    font-stretch: 90%;
+  }
+  .lab-tuner .dial-nums span:nth-child(even) {
+    display: none;
+  }
+  .lab-tuner .needle {
+    bottom: 26px;
+  }
+  .lab-tuner .tune-in {
+    width: 168px;
+    height: 168px;
+  }
+  .lab-tuner .hero {
+    padding-top: 28px;
+    gap: 22px;
+  }
+  .lab-tuner .art-sm {
+    width: 64px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lab-tuner *,
+  .lab-tuner *::before,
+  .lab-tuner *::after {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+  }
+}
