@@ -1,6 +1,6 @@
 ---
 title: Generation Engine (Feed)
-updated: 2026-10-24
+updated: 2026-11-09
 related: [[explore-engine]], [[music-providers]], [[external-apis]], [[genre-system]], [[data-model]]
 ---
 
@@ -89,7 +89,7 @@ The Feed ("For You") pipeline. Entry point: `buildRecommendations(input)` in
 | `cluster-cap.ts` | 25% per-genre diversity cap (single-list + cross-rail) |
 | `scoring` (in engine) | `k^popularity` tier multiplier + relevance |
 | `window.ts` | weekly-stable seeds: `cacheWindowSeed`, `seededShuffle`, `sampleLikes` |
-| `freshness.ts` | "has ≥5 unseen unexpired recs?" for splash redirect |
+| `freshness.ts` | "has ≥5 unseen unexpired recs?"; its only caller (the old landing splash redirect) was removed when the landing went static (#184), so it is currently unused |
 | `gen-timing.ts` (+ `lib/metrics/api-call-counter.ts`) | instrumentation (`[gen-timing]` logs) |
 
 Outside this folder: Last.fm calls go through `lib/lastfm` (one adapter), name → uuid
