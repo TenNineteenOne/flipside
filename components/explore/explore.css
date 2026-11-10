@@ -127,10 +127,19 @@
 @media (width < 900px) { .ev-explore .ex-rail-sub { min-height: 42px; } }
 @media (width < 360px) { .ev-explore .ex-rail-sub { min-height: 63px; } }
 
+/* Cells stretch: cards in a row share a height and their action rows line up at the bottom. */
 .ev-explore .ex-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr)); gap: 20px; align-items: start;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr)); gap: 20px;
 }
-.ev-explore .ex-grid > * { min-width: 0; }
+.ev-explore .ex-grid > * { display: flex; flex-direction: column; min-width: 0; }
+.ev-explore .ex-grid > * > .ex-card { flex: 1; }
+
+/* Passed / dismissed artists: one-line bars after the grid, in a row on desktop, stacked on phones. */
+.ev-explore .ex-decided { margin-top: 28px; }
+.ev-explore .ex-decided-title { margin-bottom: 10px; font-size: 13px; font-weight: 600; color: var(--fg-3); }
+.ev-explore .ex-decided-title:focus-visible { outline-offset: 4px; }
+.ev-explore .ex-decided-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); gap: 8px; }
+.ev-explore .ex-decided-list > * { min-width: 0; }
 
 /* empty / building states */
 .ev-explore .ex-empty {

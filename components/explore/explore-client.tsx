@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, use, useMemo } from "react"
+import { Suspense, use, useCallback, useMemo } from "react"
 import { RefreshCw, Sparkles, Moon, Mountain, Flame, Dices, type LucideIcon } from "lucide-react"
 import { AnimatePresence } from "framer-motion"
 import "./explore.css"
@@ -136,6 +136,35 @@ export function ExploreClient({
       unsaveFailed: "Couldn't unsave — try again",
     },
   })
+
+  // Passed / dismissed artists leave the grid for the compact "Decided" group below it, so the grid
+  // closes up instead of keeping a 56px bar in a card-sized cell.
+  const isDecided = (id: string) => {
+    const s = dismissedSignals.get(id)
+    return s != null && s !== "thumbs_up"
+  }
+  const railArtists = activeRail?.artists ?? []
+  const open = railArtists.filter((a) => !isDecided(a.id))
+  const decided = railArtists.filter((a) => isDecided(a.id))
+
+  // Keyboard focus would be lost with the card that leaves: hand it to the next card (or the
+  // previous one, or the Decided group when the grid empties). Order is read from the grid's DOM.
+  const handleFeedback = useCallback(
+    (artistId: string, signal: string) => {
+      setSignal(artistId, signal)
+      if (signal !== "thumbs_down" && signal !== "skip") return
+      const cells = [...document.querySelectorAll<HTMLElement>(".ex-grid > [data-artist]")]
+      const i = cells.findIndex((c) => c.dataset.artist === artistId)
+      if (i < 0 || !cells[i].contains(document.activeElement)) return
+      const next = (cells[i + 1] ?? cells[i - 1])?.dataset.artist
+      requestAnimationFrame(() => {
+        const cell = next ? document.querySelector(`.ex-grid > [data-artist="${CSS.escape(next)}"]`) : null
+        const target = cell?.querySelector<HTMLElement>("button, a[href]") ?? document.getElementById("ex-decided-title")
+        target?.focus()
+      })
+    },
+    [setSignal],
+  )
 
   const totalDiscoveries = useMemo(
     () => orderedRails.reduce((n, r) => n + r.artists.length, 0),
@@ -284,7 +313,7 @@ export function ExploreClient({
           ) : (
             <div className="ex-grid">
               <AnimatePresence initial={false}>
-                {activeRail.artists.map((artist) => (
+                {open.map((artist) => (
                   <ExploreArtistRow
                     key={artist.id}
                     artist={artist}
@@ -292,11 +321,32 @@ export function ExploreClient({
                     isSaved={savedIds.has(artist.id)}
                     dismissSignal={dismissedSignals.get(artist.id) ?? null}
                     onSave={toggleSave}
-                    onFeedback={setSignal}
+                    onFeedback={handleFeedback}
                   />
                 ))}
               </AnimatePresence>
             </div>
+          )}
+
+          {decided.length > 0 && (
+            <section className="ex-decided" aria-labelledby="ex-decided-title">
+              <h3 id="ex-decided-title" className="ex-decided-title" tabIndex={-1}>Decided in this rail</h3>
+              <div className="ex-decided-list">
+                <AnimatePresence initial={false}>
+                  {decided.map((artist) => (
+                    <ExploreArtistRow
+                      key={artist.id}
+                      artist={artist}
+                      musicPlatform={musicPlatform}
+                      isSaved={savedIds.has(artist.id)}
+                      dismissSignal={dismissedSignals.get(artist.id) ?? null}
+                      onSave={toggleSave}
+                      onFeedback={handleFeedback}
+                    />
+                  ))}
+                </AnimatePresence>
+              </div>
+            </section>
           )}
         </section>
       )}
