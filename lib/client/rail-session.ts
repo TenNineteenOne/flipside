@@ -1,4 +1,7 @@
 import type { RailKey, RailPayload } from "@/lib/cards/explore-rail-payloads"
+import { createPoller, type Timers } from "@/lib/client/poll"
+
+export { FINAL_GET_RETRY_MS, type Timers } from "@/lib/client/poll"
 
 // ---------------------------------------------------------------------------
 // Poll-swap helpers — pure functions, exported for unit tests
@@ -37,9 +40,6 @@ export const SETTINGS_REGEN_WINDOW_MS = 120_000
  * `generatedAt >= flag` came from that regen (#175 Y3-a). Cleared on fresh.
  */
 export const EXPLORE_REGEN_AT_KEY = "explore-regen-at"
-
-/** Delay before retrying a thrown final GET (iOS resume network blip). */
-export const FINAL_GET_RETRY_MS = 1_500
 
 /**
  * Pure helper — true when the stored flag value indicates a background explore
@@ -113,11 +113,6 @@ export interface RailSessionState {
   isApplyingAdv: boolean
 }
 
-export interface Timers {
-  setInterval: (fn: () => void, ms: number) => unknown
-  clearInterval: (id: unknown) => void
-}
-
 export interface RailSessionDeps {
   initialRails: RailPayload[]
   initialGeneratedAt: string | null
@@ -162,19 +157,12 @@ export interface RailSession {
  */
 export function createRailSession(deps: RailSessionDeps): RailSession {
   const fetchImpl = deps.fetchImpl ?? fetch
-  const timers: Timers = deps.timers ?? {
-    setInterval: (fn, ms) => setInterval(fn, ms),
-    clearInterval: (id) => clearInterval(id as ReturnType<typeof setInterval>),
-  }
   const now = deps.now ?? Date.now
   const listeners = new Set<() => void>()
 
   let generatedAt = deps.initialGeneratedAt
-  let pollTimer: unknown = null
   /** The live poll. A newer poll absorbs the older one's settles (stuck-spinner fix). */
-  let poll: { captured: string | null; deadline: number; settles: Array<() => void>; inFlight: boolean } | null = null
-  /** Bumped per armed timer; ticks from an older generation are ignored. */
-  let pollGen = 0
+  let poll: { captured: string | null; deadline: number; settles: Array<() => void> } | null = null
   let started = false
   /** Unmounted: async continuations bail. start() after dispose() revives (StrictMode / Activity). */
   let disposed = false
@@ -209,13 +197,6 @@ export function createRailSession(deps: RailSessionDeps): RailSession {
     for (const l of listeners) l()
   }
 
-  function stopTimer() {
-    if (pollTimer !== null) {
-      timers.clearInterval(pollTimer)
-      pollTimer = null
-    }
-  }
-
   function clearRegenFlag() {
     try { deps.storage?.removeItem(EXPLORE_REGEN_AT_KEY) } catch { /* private mode */ }
   }
@@ -235,57 +216,34 @@ export function createRailSession(deps: RailSessionDeps): RailSession {
   }
 
   /**
-   * Fetch GET /api/explore/rails and swap the rails in when generatedAt has
-   * advanced past `captured`. Never throws: "threw" is a network/parse error
-   * (the poller stays alive; the final check retries it once).
-   */
-  async function pollOnce(captured: string | null, gen: number): Promise<"fresh" | "stale" | "threw"> {
-    try {
-      const res = await fetchImpl("/api/explore/rails")
-      if (!res.ok) return "stale"
-      const json = (await res.json()) as { rails: RailPayload[]; generatedAt: string | null }
-      if (disposed || gen !== pollGen) return "stale" // stale tick: never swap over a newer poll
-      if (!hasRegenCompleted(captured, json.generatedAt)) return "stale"
-      generatedAt = json.generatedAt
-      set({ rails: json.rails }) // activeKey re-validated by derive()
-      return "fresh"
-    } catch {
-      return "threw"
-    }
-  }
-
-  function armTimer() {
-    stopTimer()
-    const gen = ++pollGen
-    pollTimer = timers.setInterval(() => { void tick(gen) }, POLL_INTERVAL_MS)
-  }
-
-  /**
-   * One poll tick. Skipped while a GET is in flight; results from an older
-   * generation are dropped. Past the ceiling it still does one final GET (a
+   * One tick: GET /api/explore/rails and swap the rails in once generatedAt
+   * has advanced past the poll's `captured`. A thrown GET/parse keeps the
+   * poller alive (the final check retries it once); a superseded or disposed
+   * run never swaps. Past the ceiling the poller still does one final GET (a
    * frozen background tab resumes past the deadline) and only toasts when
    * that GET isn't fresh either.
    */
-  async function tick(gen: number) {
-    const p = poll
-    if (disposed || gen !== pollGen || !p || p.inFlight) return
-    p.inFlight = true
-    const finalCheck = now() >= p.deadline
-    let result = await pollOnce(p.captured, gen)
-    if (finalCheck && result === "threw" && !disposed && gen === pollGen) {
-      // The one final GET hit a resume network blip: retry once, not "Still building".
-      await new Promise((r) => setTimeout(r, FINAL_GET_RETRY_MS))
-      if (!disposed && gen === pollGen) result = await pollOnce(p.captured, gen)
-    }
-    const fresh = result === "fresh"
-    p.inFlight = false
-    if (disposed || gen !== pollGen) return
-    if (!fresh && !finalCheck) return
-    stopTimer()
-    poll = null
-    for (const settle of p.settles) settle()
-    if (!fresh) deps.toast("Still building — refresh in a moment", { duration: 4000 })
-  }
+  const poller = createPoller({
+    intervalMs: POLL_INTERVAL_MS,
+    timers: deps.timers,
+    now,
+    async check(isLive) {
+      const captured = poll?.captured ?? null
+      const res = await fetchImpl("/api/explore/rails")
+      if (!res.ok) return false
+      const json = (await res.json()) as { rails: RailPayload[]; generatedAt: string | null }
+      if (!isLive() || !hasRegenCompleted(captured, json.generatedAt)) return false // never swap over a newer poll
+      generatedAt = json.generatedAt
+      set({ rails: json.rails }) // activeKey re-validated by derive()
+      return true
+    },
+    onStop(fresh) {
+      const settles = poll?.settles ?? []
+      poll = null
+      for (const settle of settles) settle()
+      if (!fresh) deps.toast("Still building — refresh in a moment", { duration: 4000 })
+    },
+  })
 
   /**
    * Poll every POLL_INTERVAL_MS until generatedAt advances past `captured`, or
@@ -298,9 +256,8 @@ export function createRailSession(deps: RailSessionDeps): RailSession {
       captured: opts.captured,
       deadline: now() + POLL_CEILING_MS,
       settles: [...(poll?.settles ?? []), opts.onSettle],
-      inFlight: false,
     }
-    armTimer()
+    poller.start(poll.deadline)
   }
 
   /**
@@ -394,7 +351,7 @@ export function createRailSession(deps: RailSessionDeps): RailSession {
         // dispose() paused. Production mounts never reach here.
         if (disposed) {
           disposed = false
-          if (poll) armTimer()
+          if (poll) poller.start(poll.deadline)
         }
         return
       }
@@ -428,7 +385,7 @@ export function createRailSession(deps: RailSessionDeps): RailSession {
 
     dispose() {
       disposed = true
-      stopTimer() // `poll` is kept so a revive (start after dispose) can re-arm it
+      poller.stop() // `poll` is kept so a revive (start after dispose) can re-arm it
     },
   }
 }
