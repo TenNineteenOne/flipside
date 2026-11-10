@@ -159,7 +159,14 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
   }
 
   const shortcuts = <FeedShortcuts triage={triage} />
-  if (wide) return <>{shortcuts}<FeedDesktop triage={triage} /></>
+  if (wide) {
+    return (
+      <>
+        {shortcuts}
+        <FeedDesktop triage={triage} signalCount={signalCount} onLoadMore={handleGenerateMore} generating={isGenerating} />
+      </>
+    )
+  }
 
   return (
     <div style={{ position: "relative" }}>

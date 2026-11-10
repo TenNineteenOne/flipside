@@ -9,3 +9,9 @@ export function artworkFor(artist: {
 }): string | null {
   return artist.imageUrl || artist.topTracks[0]?.albumImageUrl || null
 }
+
+/** The letter on the no-artwork panel: the name's first grapheme, upper-cased ("" for a blank name). */
+export function letterFor(name: string): string {
+  const first = new Intl.Segmenter().segment(name.trim())[Symbol.iterator]().next().value
+  return first ? first.segment.toLocaleUpperCase() : ""
+}

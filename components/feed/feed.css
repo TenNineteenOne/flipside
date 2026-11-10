@@ -34,7 +34,7 @@
 
 /* No artwork: a colour panel with the first letter. */
 .ev-feed .ev-letter {
-  display: grid; place-items: center; background: var(--a); color: #fff;
+  display: grid; place-items: center; background: var(--a);
   font-weight: 650; letter-spacing: -0.03em; line-height: 1; user-select: none;
 }
 
@@ -206,6 +206,7 @@
 
 /* docked player (components/player/mini-player.tsx, docked variant) */
 .ev-feed .ev-player { --a-light: color-mix(in oklch, var(--a, var(--violet)) 55%, white); position: relative; display: flex; align-items: center; gap: 12px; padding: 12px 16px 14px; background: var(--rail); border-top: 1px solid var(--line); min-height: 68px; }
+.ev-feed .ev-player-blank.ev-letter { font-size: 18px; }
 .ev-feed .ev-player img, .ev-feed .ev-player-blank { width: 40px; height: 40px; border-radius: 6px; object-fit: cover; background: var(--a, var(--raise)); flex-shrink: 0; }
 .ev-feed .ev-player-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .ev-feed .ev-player-track { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -224,6 +225,34 @@
 .ev-feed .ev-chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .ev-feed .ev-chip { display: inline-flex; align-items: center; height: 24px; padding: 0 9px; border-radius: 6px; font-size: 13px; color: var(--fg-2); background: var(--raise); white-space: nowrap; }
 .ev-feed .ev-chip-more { color: var(--violet-ink); background: var(--violet-wash); }
+
+/* cold-start banner (existing component) at the top of the queue column */
+.ev-feed .ev-coldstart:not(:empty) { margin: 6px 0 12px; }
+.ev-feed .ev-queue-foot { padding: 20px 12px; color: var(--fg-3); font-size: 14px; }
+
+/* end of queue */
+.ev-feed .ev-end { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; padding: 48px 28px; animation: ev-feed-in 220ms var(--ease); }
+.ev-feed .ev-end-art { display: flex; margin-bottom: 10px; }
+.ev-feed .ev-end-img { width: 84px; height: 84px; border-radius: 10px; object-fit: cover; border: 3px solid var(--panel); margin-left: -18px; }
+.ev-feed .ev-end-img:first-child { margin-left: 0; }
+.ev-feed .ev-end-img.ev-letter { font-size: 34px; }
+.ev-feed .ev-end-title { font-size: 28px; letter-spacing: -0.03em; }
+.ev-feed .ev-end-body { color: var(--fg-2); max-width: 36ch; }
+.ev-feed .ev-end-body strong { color: var(--fg); font-weight: 600; }
+.ev-feed .ev-end-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.ev-feed .ev-btn-primary { background: var(--violet); color: #fff; }
+.ev-feed .ev-btn-primary:hover:not(:disabled) { background: var(--violet-hi); }
+.ev-feed .ev-btn-primary:disabled { cursor: default; opacity: 0.7; }
+.ev-feed .ev-btn-ghost { border: 1px solid var(--line-strong); color: var(--fg); text-decoration: none; }
+.ev-feed .ev-btn-ghost:hover { background: var(--raise); }
+
+/* loading skeleton (app/(app)/feed/loading.tsx): desktop panes ≥900px, card list below */
+.ev-feed .ev-skel-line { display: block; height: 12px; }
+.ev-feed .ev-skel-card { background: var(--panel); animation: none; }
+.ev-feed .ev-skel-card > .fs-skeleton { display: block; }
+.ev-feed.ev-skel-wide .ev-row { content-visibility: visible; }
+@media (max-width: 899px) { .ev-skel-wide { display: none !important; } }
+@media (min-width: 900px) { .ev-skel-narrow { display: none; } }
 
 @media (max-width: 1279px) {
   .ev-feed .ev-row { grid-template-columns: 48px minmax(0, 1fr) 80px 76px; }

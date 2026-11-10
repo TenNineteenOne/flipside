@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { counts, firstUndecided, nextUndecided, remaining, step, visibleQueue } from "./triage-queue"
+import { counts, firstUndecided, nextUndecided, reconcileSelection, remaining, step, visibleQueue } from "./triage-queue"
 
 const ids = ["a", "b", "c", "d", "e"]
 const sig = (entries: Record<string, string>) => new Map(Object.entries(entries))
@@ -109,5 +109,23 @@ describe("step", () => {
   it("is null when the visible queue is empty", () => {
     expect(step([], none, null, 1)).toBeNull()
     expect(step(["a"], sig({ a: "skip" }), "a", 1)).toBeNull()
+  })
+})
+
+describe("reconcileSelection", () => {
+  const none = new Map<string, string>()
+  it("keeps a loaded selection when artists are appended", () => {
+    expect(reconcileSelection(["a", "b", "c", "d"], none, "b")).toBe("b")
+  })
+  it("keeps a decided-but-loaded selection (e.g. a liked artist clicked again)", () => {
+    expect(reconcileSelection(["a", "b"], new Map([["a", "thumbs_up"]]), "a")).toBe("a")
+  })
+  it("end of queue: stays null until an undecided artist arrives, then selects it", () => {
+    const decided = new Map([["a", "thumbs_up"], ["b", "skip"]])
+    expect(reconcileSelection(["a", "b"], decided, null)).toBeNull()
+    expect(reconcileSelection(["a", "b", "c", "d"], decided, null)).toBe("c")
+  })
+  it("a selected id no longer in the list falls back to the first undecided", () => {
+    expect(reconcileSelection(["a", "b"], new Map([["a", "thumbs_down"]]), "gone")).toBe("b")
   })
 })

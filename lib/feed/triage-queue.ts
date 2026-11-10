@@ -69,3 +69,13 @@ export function step(ids: readonly string[], signals: Signals, selectedId: strin
   if (i < 0) return visible[0]
   return visible[Math.min(visible.length - 1, Math.max(0, i + dir))]
 }
+
+/**
+ * The selection to show after the list or signals change: the selected id while
+ * it is still loaded; otherwise (null = end of queue, or an id no longer in the
+ * list) the first undecided artist, so artists appended after the end of the
+ * queue get selected and appends never move an existing selection.
+ */
+export function reconcileSelection(ids: readonly string[], signals: Signals, selectedId: string | null): string | null {
+  return selectedId !== null && ids.includes(selectedId) ? selectedId : firstUndecided(ids, signals)
+}

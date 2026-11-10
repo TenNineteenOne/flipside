@@ -7,7 +7,7 @@ import { useAudio } from "@/lib/audio-context"
 import { artworkFor } from "@/lib/feed/artwork"
 import { decide, type Plan } from "@/lib/feed/decision"
 import { whyText } from "@/lib/feed/card-copy"
-import { counts, firstUndecided, remaining, step, visibleQueue, type Signal } from "@/lib/feed/triage-queue"
+import { counts, firstUndecided, reconcileSelection, remaining, step, visibleQueue, type Signal } from "@/lib/feed/triage-queue"
 import { tuning } from "@/lib/feed/tuning"
 import { getArtistLink, getShareableArtistLink, type MusicPlatform } from "@/lib/music-links"
 import { resolveArtistColor } from "@/lib/color-utils"
@@ -58,7 +58,10 @@ export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatfor
 
   const ids = useMemo(() => artists.map((a) => a.id), [artists])
   const byId = useMemo(() => new Map(artists.map((a) => [a.id, a])), [artists])
-  const [selectedId, setSelectedId] = useState<string | null>(() => firstUndecided(ids, signals))
+  const [chosenId, setSelectedId] = useState<string | null>(() => firstUndecided(ids, signals))
+  // Derived, not synced: appends keep the selection; at the end of the queue (null)
+  // the first newly arrived undecided artist is selected.
+  const selectedId = reconcileSelection(ids, signals, chosenId)
   const [lastPlan, setLastPlan] = useState<Plan | null>(null)
 
   // Tracks fetched on demand (useArtistTracks) for artists that arrived without any.

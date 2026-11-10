@@ -43,12 +43,16 @@ server component that queries Supabase, then hands data to a `"use client"` shel
   harness (404 in production) rendering the real shell and components with fixture artists and
   a stubbed same-origin `/api/*` fetch. Production code never imports it. Its layout passes
   `AppShell` `pathPrefix="/dev-preview"` so `/dev-preview/feed` marks Feed as current.
+  `/dev-preview/feed?start=N` starts with N artists and the stub serves the rest in batches of 6
+  per generate (exercises appends and Load more); `/dev-preview/feed-empty` and
+  `/dev-preview/feed-loading` show the empty-feed loader and the loading skeleton.
 - **`ArtistCard`** (`components/feed/artist-card.tsx`) — the primary card: 340px hero image
   (tinted by `artist_color`), `TrackStrip`, reason pill, actions. States via `dismissSignal`
   (collapse on down/skip, green outline on up). Hooks: `useAudio`, `useArtistTracks`,
   `useArtistColor`. "Open in {platform}" + Share + Bookmark + feedback strip.
 - **`useFeedTriage`** (`lib/hooks/use-feed-triage.ts`) — the feed's one triage object: selection
-  (initially `firstUndecided`), verdicts read only from `useArtistFeedback`'s `signals`, saves,
+  (initially `firstUndecided`, then `reconcileSelection`: kept across appends, and the first
+  newly arrived undecided artist once the queue had run out), verdicts read only from `useArtistFeedback`'s `signals`, saves,
   playback per artist, and `judge(id, signal, { toggle, advance })`, which runs the pure
   `decide()` (`lib/feed/decision.ts`) and executes its plan (send, select, play/pause), then
   shows one sonner toast (stable id, 5s) with an Undo action; `undoLast()` runs the plan's undo
@@ -59,7 +63,9 @@ server component that queries Supabase, then hands data to a `"use client"` shel
 - **`FeedDesktop`** (`components/feed/feed-desktop.tsx`, styles `feed.css` under `.ev-feed`) —
   queue column ("N of M left", strip, rows) and focus pane (artwork via `artworkFor` or a
   letter panel, why, popularity, Play preview, the three triage buttons, Save / Open in
-  {platform} / Share, up to three preview tracks, docked player), plus the rail "Tuning" block
+  {platform} / Share, up to three preview tracks, docked player; the end-of-queue state with
+  counts and "Load more artists" when nothing is selected), the cold-start banner at the top of
+  the queue, and the rail "Tuning" block
   via `<ShellSlot name="rail">`. No decision logic. `FeedClient` sets the Saved badge
   (`useShellBadge`) to saves made since the feed opened.
 - **`FeedShortcuts`** (`components/feed/feed-shortcuts.tsx`) — mounted by `FeedClient` at every
