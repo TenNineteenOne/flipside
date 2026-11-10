@@ -1,0 +1,156 @@
+/* Desktop feed (PRD #182 "Desktop feed"), ported from the design-lab prototype's evolved.css
+   (.ev-app, .ev-queue*, .ev-row*, .ev-focus*, .ev-card*, .ev-triage*, .ev-strip*).
+   Every rule is scoped under .ev-feed; tokens and fonts are global. */
+
+.ev-feed {
+  color: var(--fg);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "ss01";
+}
+/* Per-artist tint: only --a is set inline, the two shades are derived here. */
+.ev-feed .ev-row, .ev-feed .ev-card {
+  --a-dark: color-mix(in oklch, var(--a) 45%, black);
+  --a-light: color-mix(in oklch, var(--a) 55%, white);
+}
+.ev-feed *, .ev-feed *::before, .ev-feed *::after { box-sizing: border-box; }
+.ev-feed h1, .ev-feed h2, .ev-feed h3 { margin: 0; text-wrap: balance; font-weight: 600; }
+.ev-feed p { margin: 0; text-wrap: pretty; }
+.ev-feed ul, .ev-feed ol { margin: 0; padding: 0; list-style: none; }
+.ev-feed button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+.ev-feed img { display: block; }
+.ev-feed :focus-visible { outline: 2px solid var(--violet-ink); outline-offset: 2px; border-radius: 6px; }
+
+.ev-feed .ev-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 44px; padding: 0 18px; border-radius: 10px; font-weight: 600; font-size: 15px;
+  transition: background-color 150ms var(--ease), transform 150ms var(--ease), border-color 150ms var(--ease);
+}
+.ev-feed .ev-btn:active { transform: scale(0.98); }
+.ev-feed .ev-meter { display: inline-block; width: 44px; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; vertical-align: middle; }
+.ev-feed .ev-meter > span { display: block; height: 100%; background: var(--a-light, var(--fg-3)); border-radius: inherit; }
+
+/* No artwork: a colour panel with the first letter. */
+.ev-feed .ev-letter {
+  display: grid; place-items: center; background: var(--a); color: #fff;
+  font-weight: 650; letter-spacing: -0.03em; line-height: 1; user-select: none;
+}
+
+/* triage control */
+.ev-feed .ev-tri {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px; flex: 1;
+  min-height: 44px; padding: 0 12px; border-radius: 9px; font-size: 14px; font-weight: 550; color: var(--fg-2);
+  background: var(--raise); border: 1px solid transparent; white-space: nowrap;
+  transition: background-color 150ms var(--ease), color 150ms var(--ease), transform 120ms var(--ease);
+}
+.ev-feed button.ev-tri:hover { color: var(--fg); background: color-mix(in oklch, var(--raise), white 6%); }
+.ev-feed button.ev-tri:active { transform: scale(0.97); }
+.ev-feed .ev-tri-like { color: var(--violet-ink); }
+.ev-feed .ev-tri-like[aria-pressed="true"] { background: var(--violet); color: #fff; }
+
+/* Two panes filling the shell's main area (the rail is the shell's). */
+.ev-feed.ev-app {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(400px, 32vw, 500px);
+  grid-template-areas: "queue focus";
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* queue */
+.ev-feed .ev-queue { grid-area: queue; min-height: 0; overflow-y: auto; padding: 0 28px 96px; scrollbar-gutter: stable; }
+.ev-feed .ev-queue-head {
+  position: sticky; top: 0; z-index: 10; display: flex; align-items: flex-end; justify-content: space-between; gap: 24px;
+  padding: 28px 0 18px; margin-bottom: 6px; background: var(--bg); border-bottom: 1px solid var(--line);
+}
+.ev-feed .ev-queue-title { font-size: 26px; letter-spacing: -0.025em; line-height: 1.15; }
+.ev-feed .ev-queue-sub { margin-top: 4px; color: var(--fg-3); font-size: 14px; }
+.ev-feed .ev-progress { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex-shrink: 0; }
+.ev-feed .ev-progress-text { font-size: 13px; color: var(--fg-3); font-variant-numeric: tabular-nums; }
+.ev-feed .ev-progress-text strong { color: var(--fg); font-weight: 600; }
+.ev-feed .ev-strip { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 3px; }
+.ev-feed .ev-seg { width: 9px; height: 14px; border-radius: 2px; background: var(--line); transition: background-color 200ms var(--ease), transform 200ms var(--ease); }
+.ev-feed .ev-seg[data-v="liked"] { background: var(--violet); }
+.ev-feed .ev-seg[data-v="passed"], .ev-feed .ev-seg[data-v="dismissed"] { background: color-mix(in oklch, var(--fg-3) 30%, var(--bg)); transform: scaleY(0.45); }
+.ev-feed .ev-seg[data-sel] { background: var(--fg); }
+
+.ev-feed .ev-rows { display: flex; flex-direction: column; gap: 2px; }
+.ev-feed .ev-row {
+  position: relative; display: grid; align-items: center; gap: 14px;
+  grid-template-columns: 48px minmax(0, 1fr) 150px 80px 76px;
+  padding: 8px 12px 8px 8px; border-radius: 10px; border: 1px solid transparent;
+  transition: background-color 120ms var(--ease), border-color 120ms var(--ease);
+  content-visibility: auto; contain-intrinsic-size: auto 66px;
+}
+.ev-feed .ev-row:hover { background: var(--panel); }
+.ev-feed .ev-row[data-sel] { background: var(--raise); border-color: var(--line-strong); }
+.ev-feed .ev-row-select { position: absolute; inset: 0; border-radius: 10px; }
+.ev-feed .ev-row-select:focus-visible { outline-offset: -2px; }
+.ev-feed .ev-row-art { position: relative; z-index: 1; width: 48px; height: 48px; border-radius: 7px; overflow: hidden; background: var(--a-dark); }
+.ev-feed .ev-row-img { width: 100%; height: 100%; object-fit: cover; }
+.ev-feed .ev-row-art .ev-letter { font-size: 20px; }
+.ev-feed .ev-row-art-icon {
+  position: absolute; inset: 0; display: grid; place-items: center; color: #fff;
+  background: color-mix(in oklch, var(--a-dark) 70%, transparent); opacity: 0; transition: opacity 120ms var(--ease);
+}
+.ev-feed .ev-row-art:hover .ev-row-art-icon, .ev-feed .ev-row-art:focus-visible .ev-row-art-icon, .ev-feed .ev-row-art[data-playing] .ev-row-art-icon { opacity: 1; }
+.ev-feed .ev-row[data-sel] .ev-row-art { box-shadow: 0 0 0 2px var(--a); }
+.ev-feed .ev-row-text { display: flex; flex-direction: column; min-width: 0; pointer-events: none; }
+.ev-feed .ev-row-name { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev-feed .ev-row-why { font-size: 13px; color: var(--fg-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev-feed .ev-row-genre { font-size: 13px; color: var(--fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.ev-feed .ev-row-pop { display: flex; align-items: center; gap: 8px; pointer-events: none; }
+.ev-feed .ev-row-pop-n { font: 400 11px/1 var(--font-mono); color: var(--fg-3); }
+.ev-feed .ev-row-state { display: flex; justify-content: flex-end; pointer-events: none; }
+.ev-feed .ev-liked-tag { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; border-radius: 6px; font-size: 12px; font-weight: 600; color: #fff; background: var(--violet); }
+.ev-feed .ev-row[data-liked] .ev-row-name { color: var(--fg); }
+
+.ev-feed .ev-eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 12px; }
+.ev-feed .ev-eq i { width: 3px; height: 100%; background: var(--a-light); border-radius: 1px; transform-origin: bottom; animation: ev-feed-eq 900ms var(--ease) infinite alternate; }
+.ev-feed .ev-eq i:nth-child(2) { animation-delay: -300ms; }
+.ev-feed .ev-eq i:nth-child(3) { animation-delay: -600ms; }
+@keyframes ev-feed-eq { from { transform: scaleY(0.25); } to { transform: scaleY(1); } }
+
+/* focus pane */
+.ev-feed .ev-focus { grid-area: focus; display: flex; flex-direction: column; min-height: 0; background: var(--panel); border-left: 1px solid var(--line); }
+.ev-feed .ev-focus-scroll { flex: 1; min-height: 0; overflow-y: auto; }
+.ev-feed .ev-card {
+  display: flex; flex-direction: column; gap: 22px; padding: 24px 24px 28px; min-height: 100%;
+  /* tint from the artist's own colour, flat and fading out (not a glow) */
+  background: linear-gradient(to bottom, color-mix(in oklch, var(--a-dark) 42%, var(--panel)) 0, var(--panel) 420px);
+}
+.ev-feed .ev-card-hero { display: flex; flex-direction: column; gap: 18px; }
+.ev-feed .ev-card-art { width: min(100%, 40vh); height: auto; aspect-ratio: 1; object-fit: cover; border-radius: 12px; box-shadow: 0 18px 40px -18px color-mix(in oklch, var(--a-dark) 80%, black); }
+.ev-feed .ev-card-art.ev-letter { font-size: min(40cqw, 16vh); }
+.ev-feed .ev-card-hero { container-type: inline-size; }
+.ev-feed .ev-card-name { font-size: 32px; line-height: 1.05; letter-spacing: -0.03em; }
+.ev-feed .ev-card-genres { margin-top: 6px; color: var(--fg-2); font-size: 14px; }
+.ev-feed .ev-card-why { margin-top: 12px; font-size: 15px; color: var(--fg-2); }
+.ev-feed .ev-card-why strong { color: var(--fg); font-weight: 600; }
+.ev-feed .ev-card-pop { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 13px; color: var(--fg-3); }
+
+.ev-feed .ev-card-actions { display: flex; flex-direction: column; gap: 10px; container-type: inline-size; }
+@container (max-width: 360px) {
+  .ev-feed .ev-tri { padding: 0 6px; gap: 5px; font-size: 13px; }
+}
+.ev-feed .ev-btn-play { width: 100%; min-height: 50px; background: var(--fg); color: oklch(0.16 0.01 293); border-radius: 11px; font-size: 16px; }
+.ev-feed .ev-btn-play:hover:not(:disabled) { background: white; }
+.ev-feed .ev-btn-play[aria-pressed="true"] { background: var(--a-light); }
+.ev-feed .ev-btn-play:disabled { cursor: default; background: var(--raise); color: var(--fg-3); }
+.ev-feed .ev-triage { display: flex; gap: 6px; }
+
+@media (max-width: 1279px) {
+  .ev-feed .ev-row { grid-template-columns: 48px minmax(0, 1fr) 80px 76px; }
+  .ev-feed .ev-row-genre { display: none; }
+}
+@media (max-width: 1099px) {
+  .ev-feed.ev-app { grid-template-columns: minmax(0, 1fr) 380px; }
+  .ev-feed .ev-row-pop { display: none; }
+  .ev-feed .ev-row { grid-template-columns: 48px minmax(0, 1fr) 76px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ev-feed *, .ev-feed *::before, .ev-feed *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
+}

@@ -20,7 +20,8 @@ if (typeof window !== "undefined" && !("__devPreviewFetch" in window)) {
     const url = new URL(req.url, window.location.href)
     if (url.origin !== window.location.origin || !url.pathname.startsWith("/api/")) return realFetch(input, init)
     const body = respond(req.method, url.pathname)
-    console.info("[dev-preview]", req.method, url.pathname + url.search, "→ 200", body)
+    const sent = req.method === "GET" ? "" : await req.text()
+    console.info("[dev-preview]", req.method, url.pathname + url.search, sent, "→ 200", body)
     return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } })
   }
 }
