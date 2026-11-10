@@ -408,16 +408,24 @@ html:has(.ev-snap), html:has(.ev-snap) body { overflow: hidden; }
 .ev-feed .ev-m-page > .ev-end { padding: 24px 20px; width: min(100%, 480px); }
 .ev-feed .ev-m-page .ev-end-img { width: 72px; height: 72px; }
 
-/* cold-start hint: one dismissible line above the scroller */
+/* cold-start hint (components/feed/cold-start-banner.tsx): a panel at the top of the desktop queue,
+   one dismissible line above the scroller on phones and tablets. Mono only for the count. */
+.ev-feed .ev-cold { display: flex; flex-direction: column; gap: 10px; padding: 12px 16px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+.ev-feed .ev-cold-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.ev-feed .ev-cold-label { flex-shrink: 0; font-size: 14px; font-weight: 600; color: var(--fg-2); white-space: nowrap; }
+.ev-feed .ev-cold-n { font: 400 12px/1 var(--font-mono); color: var(--fg); font-variant-numeric: tabular-nums; }
+.ev-feed .ev-cold-sub { min-width: 0; font-size: 13px; color: var(--fg-3); text-align: right; }
+.ev-feed .ev-cold-track { height: 3px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.ev-feed .ev-cold-track > span { display: block; height: 100%; background: var(--violet); border-radius: inherit; transform-origin: left; transition: transform 250ms var(--ease); }
 .ev-feed .ev-coldline {
   position: relative; flex-shrink: 0; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 4px 2px 16px;
   border-bottom: 1px solid var(--line);
 }
-.ev-feed .ev-coldline-label { flex-shrink: 0; font-size: 10.5px; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: 0.18em; }
-.ev-feed .ev-coldline-sub { flex: 1; min-width: 0; font-size: 12px; color: var(--fg-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev-feed .ev-coldline .ev-cold-label { font-size: 13px; }
+.ev-feed .ev-coldline .ev-cold-sub { flex: 1; font-size: 13px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ev-feed .ev-coldline-x { display: grid; place-items: center; width: 44px; height: 44px; flex-shrink: 0; border-radius: 10px; color: var(--fg-3); }
 .ev-feed .ev-coldline-x:hover { color: var(--fg); }
-.ev-feed .ev-coldline-track { position: absolute; left: 16px; right: 16px; bottom: 6px; height: 2px; border-radius: 999px; background: rgba(255, 255, 255, 0.06); overflow: hidden; }
+.ev-feed .ev-coldline .ev-cold-track { position: absolute; left: 16px; right: 16px; bottom: 6px; height: 2px; }
 
 /* Small player bar (the docked player) between the scroller and the triage bar, as in the prototype. */
 .ev-feed .ev-m-mini { flex-shrink: 0; margin: 6px 16px 0; }

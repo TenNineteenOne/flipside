@@ -76,7 +76,7 @@ describe("FeedSnap server render", () => {
   })
 
   it("shows the cold-start line (with a dismiss button) until the listener has five signals", () => {
-    expect(render(artists, undefined, 2)).toMatch(/class="ev-coldline"[\s\S]*Flipside signal · 2 of 5[\s\S]*aria-label="Hide signal hint"/)
+    expect(render(artists, undefined, 2)).toMatch(/class="ev-coldline"[\s\S]*Flipside signal · <span class="ev-cold-n">2 of 5<\/span>[\s\S]*aria-label="Hide signal hint"/)
     expect(render(artists, undefined, 5)).not.toContain("ev-coldline")
   })
 })
