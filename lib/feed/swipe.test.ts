@@ -20,4 +20,12 @@ describe("swipeDirection", () => {
     expect(swipeDirection(60, -900)).toBe(0)
     expect(swipeDirection(-60, 900)).toBe(0)
   })
+  it("past the threshold, a fast flick back the other way cancels", () => {
+    expect(swipeDirection(150, -501)).toBe(0)
+    expect(swipeDirection(-150, 501)).toBe(0)
+  })
+  it("past the threshold, a slow movement back still commits", () => {
+    expect(swipeDirection(150, -500)).toBe(1)
+    expect(swipeDirection(-150, 500)).toBe(-1)
+  })
 })
