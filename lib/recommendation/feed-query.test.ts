@@ -13,7 +13,7 @@ interface Row {
 /** Minimal in-memory fake covering the two query shapes the function uses. */
 function makeSupabase(
   rows: Row[],
-  users?: { underground_mode?: boolean; error?: string },
+  users?: { fame_level?: number; error?: string },
 ) {
   return {
     from(table: string) {
@@ -25,7 +25,7 @@ function makeSupabase(
                 return {
                   async maybeSingle() {
                     if (users?.error) return { data: null, error: { message: users.error } }
-                    return { data: { underground_mode: users?.underground_mode ?? false }, error: null }
+                    return { data: { fame_level: users?.fame_level ?? 2 }, error: null }
                   },
                 }
               },
@@ -113,15 +113,21 @@ describe("getUnseenRecommendations — underground filtering", () => {
   })
 })
 
-describe("getUnseenRecommendations — internal underground_mode lookup", () => {
-  it("when undergroundMode is omitted, reads users.underground_mode itself and filters", async () => {
+describe("getUnseenRecommendations — internal fame_level lookup", () => {
+  it("when undergroundMode is omitted, reads users.fame_level itself; stop 0 filters", async () => {
     const rows = [
       row({ artist_id: "low", artist_data: { popularity: 10 }, score: 0.9 }),
       row({ artist_id: "high", artist_data: { popularity: 90 }, score: 0.8 }),
     ]
-    const supabase = makeSupabase(rows, { underground_mode: true })
+    const supabase = makeSupabase(rows, { fame_level: 0 })
     const result = await getUnseenRecommendations(supabase, "user-1", { limit: 20 })
     expect(result.map((r) => r.artist_id)).toEqual(["low"])
+  })
+
+  it("fame levels above 0 don't filter", async () => {
+    const rows = [row({ artist_id: "high", artist_data: { popularity: 90 } })]
+    const result = await getUnseenRecommendations(makeSupabase(rows, { fame_level: 1 }), "user-1", { limit: 20 })
+    expect(result.map((r) => r.artist_id)).toEqual(["high"])
   })
 
   it("degrades to unfiltered when the user lookup errors", async () => {

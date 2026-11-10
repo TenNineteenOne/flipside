@@ -1,12 +1,12 @@
 ---
 title: Data Model (Supabase)
-updated: 2026-10-24
+updated: 2026-11-10
 related: [[auth-and-session]], [[generation-engine]], [[api-routes]]
 ---
 
 # Data Model (Supabase)
 
-Postgres on Supabase, migrations in `supabase/migrations/` (`0001`–`0041`). **All tables
+Postgres on Supabase, migrations in `supabase/migrations/` (`0001`–`0042`). **All tables
 have RLS enabled.** The service-role key bypasses RLS; most privileged writes go through
 `createServiceClient()` (see [[auth-and-session]]).
 
@@ -39,12 +39,15 @@ all discovery settings.
 
 Key columns: `id` (uuid PK), `username_hash` (unique HMAC), `spotify_id` (legacy, nullable),
 `spotify_authorized` (bool), `market`, plus the settings block —
-`play_threshold` (int, obscurity), `popularity_curve` (numeric 0.90–1.00),
-`underground_mode`, `deep_discovery`, `adventurous` (bools),
+`fame_level` (smallint 0–4, def 2, check-constrained; 0042), `adventurous` (bool, "Wander
+farther"),
 `preferred_music_platform` (`spotify`|`apple_music`|`youtube_music`),
 `selected_genres` (text[]), encrypted `lastfm_username`/`statsfm_username`, and cooldown
 timestamps (`last_generated_at`, `last_accumulated_lastfm_at`,
 `last_accumulated_statsfm_at`, `onboarding_completed_at`). See [[settings-and-discovery]].
+Retired by 0042 but kept one release for rollback (never read or written by the app):
+`play_threshold` (reset to 5 for all rows), `popularity_curve`, `underground_mode`,
+`deep_discovery`.
 
 ### `listened_artists` — accumulated history
 Written by `lib/history/ingest.ts` (`ingestListens`) from Last.fm and stats.fm. Columns:
@@ -57,7 +60,8 @@ Unique partial indexes on `(user_id, artist_id) WHERE artist_id IS NOT NULL` and
 
 ### `recommendation_cache` — the Feed queue
 Per-user scored queue, unique `(user_id, artist_id)`. Columns: `user_id`, `artist_id`, `artist_data` (jsonb),
-`score`, `why` (jsonb), `seen_at` (drives 7-day cooldown), `skip_at` (drives 30-day
+`score`, `why` (jsonb: `sourceArtists`, `genres`, `friendBoost`, and `outsideUsual` on
+Wander-farther far picks — read back onto `CardArtist.why` by `assembleFeedCards`), `seen_at` (drives 7-day cooldown), `skip_at` (drives 30-day
 cooldown / permanent dismiss), `expires_at` (hard TTL), `source`. Hot query uses a partial
 index `WHERE seen_at IS NULL` on `(user_id, score DESC, expires_at DESC)`.
 RPCs: `rpc_record_feedback_v2`, `rpc_delete_feedback_v2`, `rpc_clear_dismiss_v2` (uuid-keyed, 0036).

@@ -171,7 +171,7 @@ function ArtistCardImpl({
             {popularityLabel(artist.popularity)} · popularity {artist.popularity}
           </p>
           {why && (
-            <p className="ex-card-why">
+            <p className="ex-card-why" data-far={why.far}>
               {why.lead}
               {why.names.length > 0
                 ? why.names.map((n, i) => (

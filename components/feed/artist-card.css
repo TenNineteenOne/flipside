@@ -122,3 +122,5 @@
   .ex-card button.ex-tri:hover, .ex-card .ex-track:hover { background: var(--raise); }
   .ex-card .ex-track-play { background: rgba(0, 0, 0, 0.5); }
 }
+/* Far pick (Wander farther): "Outside your usual: <genre>" in teal. */
+.ex-card .ex-card-why[data-far] { color: oklch(0.72 0.11 195); }

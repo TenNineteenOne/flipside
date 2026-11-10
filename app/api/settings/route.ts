@@ -6,16 +6,21 @@ import { isMusicPlatform } from "@/lib/music-links"
 import { onTasteChanged } from "@/lib/taste-change"
 import { encryptUsername } from "@/lib/crypto/username"
 import { withAuthedJsonRoute } from "@/lib/api/with-authed-route"
+import { isFameLevel } from "@/lib/settings/fame"
+
+/**
+ * Settings retired by #205 (fame_level + Wander farther replace them). A
+ * patch carrying any of them is rejected whole, so a stale client finds out
+ * instead of silently saving nothing.
+ */
+const RETIRED_KEYS = ["playThreshold", "popularityCurve", "undergroundMode", "deepDiscovery"] as const
 
 export const PATCH = withAuthedJsonRoute(async ({ userId, body: rawBody }) => {
   const body = rawBody as {
-    playThreshold?: number
-    popularityCurve?: number
+    fameLevel?: number
     lastfmUsername?: string
     statsfmUsername?: string
     selectedGenres?: string[]
-    undergroundMode?: boolean
-    deepDiscovery?: boolean
     adventurous?: boolean
     preferredMusicPlatform?: string
     onboardingCompleted?: boolean
@@ -23,21 +28,12 @@ export const PATCH = withAuthedJsonRoute(async ({ userId, body: rawBody }) => {
 
   const update: Record<string, unknown> = {}
 
-  if (body.playThreshold !== undefined) {
-    const threshold = body.playThreshold
-    if (!Number.isInteger(threshold) || threshold < 0 || threshold > 100) {
-      return apiError("playThreshold must be an integer between 0 and 100", 400)
-    }
-    update.play_threshold = threshold
-  }
+  const retired = RETIRED_KEYS.find((k) => (body as Record<string, unknown>)[k] !== undefined)
+  if (retired) return apiError(`${retired} is no longer a setting`, 400)
 
-  if (body.popularityCurve !== undefined) {
-    const curve = body.popularityCurve
-    if (typeof curve !== "number" || !Number.isFinite(curve) || curve < 0.9 || curve > 1.0) {
-      return apiError("popularityCurve must be a number between 0.9 and 1.0", 400)
-    }
-    // Clamp to 3 decimals to match the column definition
-    update.popularity_curve = Math.round(curve * 1000) / 1000
+  if (body.fameLevel !== undefined) {
+    if (!isFameLevel(body.fameLevel)) return apiError("fameLevel must be an integer between 0 and 4", 400)
+    update.fame_level = body.fameLevel
   }
 
   if (body.lastfmUsername !== undefined) {
@@ -65,16 +61,9 @@ export const PATCH = withAuthedJsonRoute(async ({ userId, body: rawBody }) => {
     update.selected_genres = body.selectedGenres.filter((g) => typeof g === "string" && g.length <= 80)
   }
 
-  if (body.undergroundMode !== undefined) {
-    update.underground_mode = !!body.undergroundMode
-  }
-
-  if (body.deepDiscovery !== undefined) {
-    update.deep_discovery = !!body.deepDiscovery
-  }
-
   if (body.adventurous !== undefined) {
-    update.adventurous = !!body.adventurous
+    if (typeof body.adventurous !== "boolean") return apiError("adventurous must be a boolean", 400)
+    update.adventurous = body.adventurous
   }
 
   if (body.preferredMusicPlatform !== undefined) {

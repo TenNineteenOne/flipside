@@ -5,6 +5,8 @@ import { getSpotifyClientToken } from "@/lib/spotify-client-token"
 import { claimCooldown } from "@/lib/cooldown"
 import { buildRecommendations } from "@/lib/recommendation/engine"
 import { formatGenTiming } from "@/lib/recommendation/gen-timing"
+import { FEED_PLAY_THRESHOLD } from "@/lib/recommendation/types"
+import { fameToEngine } from "@/lib/settings/fame"
 import { resetCalls, snapshotCalls } from "@/lib/metrics/api-call-counter"
 import { extractArtistColor } from "@/lib/colour-extraction"
 import { after, type NextRequest } from "next/server"
@@ -118,19 +120,20 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
   // the promise so it never becomes an unhandled rejection if unused.
   const clientTokenPromise = getSpotifyClientToken().catch(() => null)
 
-  // Read user row including play_threshold
+  // #205: fame_level is the one popularity setting; Wander farther
+  // (adventurous) also turns on the 2nd similarity hop; the play threshold is
+  // a fixed constant (users.play_threshold / popularity_curve /
+  // underground_mode / deep_discovery are retired, kept one release for rollback).
   const { data: user, error: userError } = await supabase
     .from("users")
-    .select("id, play_threshold, popularity_curve, underground_mode, deep_discovery, adventurous")
+    .select("id, fame_level, adventurous")
     .eq("id", userId)
     .maybeSingle()
 
   if (userError || !user) return apiError("User not found", 404)
 
-  // Default to 5 if the column is null (pre-migration rows)
-  const playThreshold: number = user.play_threshold ?? 5
-  // Default to 0.95 (legacy hardcoded value) for pre-migration rows
-  const popularityCurve: number = user.popularity_curve ?? 0.95
+  const { popularityCurve, undergroundMode } = fameToEngine(user.fame_level)
+  const adventurous = !!user.adventurous
 
   // Replace mode: wipe unseen queue before regenerating. Powers the Settings
   // "Generate my feed" button so newly-added anchors take immediate effect.
@@ -205,18 +208,25 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
     const { count: recCount, pending, finish, softenedFilters, metrics } = await buildRecommendations({
       userId: user.id,
       accessToken,
-      playThreshold,
+      playThreshold: FEED_PLAY_THRESHOLD,
       popularityCurve,
       genre,
-      undergroundMode: user.underground_mode ?? false,
-      deepDiscovery: user.deep_discovery ?? false,
-      adventurous: user.adventurous ?? false,
+      undergroundMode,
+      deepDiscovery: adventurous,
+      adventurous,
     })
     // Snapshot before logging — after() work runs after this point and is excluded.
     const apiCalls = snapshotCalls()
     console.log(formatGenTiming({
       userId: user.id,
-      phases: { firstBatch: metrics.firstBatchMs, primary: metrics.primaryMs, preview: metrics.previewMs },
+      phases: {
+        firstBatch: metrics.firstBatchMs,
+        primary: metrics.primaryMs,
+        preview: metrics.previewMs,
+        // Far pool (Wander farther): fetch wall-clock, and how long tier 1 blocked on it.
+        ...(metrics.farMs !== undefined ? { far: metrics.farMs } : {}),
+        ...(metrics.farWaitMs !== undefined ? { farWait: metrics.farWaitMs } : {}),
+      },
       totalMs: Date.now() - genStart,
       misses: metrics.misses,
       retries: metrics.retries,

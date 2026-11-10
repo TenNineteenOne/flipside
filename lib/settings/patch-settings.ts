@@ -6,13 +6,12 @@ export const STATSFM_USERNAME_RE = /^[a-zA-Z0-9._-]{1,30}$/
 
 /** Every key PATCH /api/settings accepts (see app/api/settings/route.ts). */
 export interface SettingsPatch {
-  playThreshold?: number
-  popularityCurve?: number
+  /** "How famous?" stop, integer 0–4 (lib/settings/fame.ts). */
+  fameLevel?: number
   lastfmUsername?: string
   statsfmUsername?: string
   selectedGenres?: string[]
-  undergroundMode?: boolean
-  deepDiscovery?: boolean
+  /** "Wander farther". */
   adventurous?: boolean
   preferredMusicPlatform?: MusicPlatform
   onboardingCompleted?: boolean

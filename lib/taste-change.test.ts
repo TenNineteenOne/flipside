@@ -21,12 +21,8 @@ describe("invalidationFor (policy table)", () => {
     ["undismiss", { kind: "undismiss" }, { explore: "all", feed: false }],
     ["seed add / remove", { kind: "seeds" }, { explore: "all", feed: false }],
     ["settings: selectedGenres", { kind: "settings", fields: ["selectedGenres"] }, { explore: "all", feed: true }],
-    ["settings: adventurous", { kind: "settings", fields: ["adventurous"] }, { explore: "all", feed: true }],
-    ["settings: undergroundMode", { kind: "settings", fields: ["undergroundMode"] }, { explore: "all", feed: true }],
-    ["settings: deepDiscovery", { kind: "settings", fields: ["deepDiscovery"] }, { explore: "all", feed: true }],
-    ["settings: popularityCurve", { kind: "settings", fields: ["popularityCurve"] }, { explore: "all", feed: false }],
-    ["settings: curve + genres", { kind: "settings", fields: ["popularityCurve", "selectedGenres"] }, { explore: "all", feed: true }],
-    ["settings: playThreshold (feed only)", { kind: "settings", fields: ["playThreshold"] }, { explore: null, feed: true }],
+    ["settings: fameLevel", { kind: "settings", fields: ["fameLevel"] }, { explore: "all", feed: true }],
+    ["settings: adventurous (next batch only, #205)", { kind: "settings", fields: ["adventurous"] }, { explore: "all", feed: false }],
     ["settings: usernames/platform", { kind: "settings", fields: ["lastfmUsername", "preferredMusicPlatform"] }, { explore: null, feed: false }],
   ]
   it.each(cases)("%s", (_label, change, expected) => {
@@ -58,7 +54,7 @@ describe("onTasteChanged", () => {
 
   it("feed-affecting settings wipe only the user's unseen rows", async () => {
     const { client, tables } = createFakeSupabase(rows())
-    await onTasteChanged(client, "u1", { kind: "settings", fields: ["adventurous"] })
+    await onTasteChanged(client, "u1", { kind: "settings", fields: ["fameLevel"] })
     expect(tables.recommendation_cache.map((r) => r.artist_id)).toEqual(["b", "c"])
   })
 
@@ -71,11 +67,10 @@ describe("onTasteChanged", () => {
     expect(queries.filter((q) => q.table === "users")).toHaveLength(0)
   })
 
-  it("playThreshold wipes the unseen feed queue but leaves Explore alone", async () => {
+  it("adventurous leaves the Feed queue alone (#205)", async () => {
     const { client, tables } = createFakeSupabase(rows())
-    await onTasteChanged(client, "u1", { kind: "settings", fields: ["playThreshold"] })
-    expect(invalidateExploreCache).not.toHaveBeenCalled()
-    expect(tables.recommendation_cache.map((r) => r.artist_id)).toEqual(["b", "c"])
+    await onTasteChanged(client, "u1", { kind: "settings", fields: ["adventurous"] })
+    expect(tables.recommendation_cache).toHaveLength(3)
   })
 
   it("no-op settings touch nothing", async () => {

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import dynamic from "next/dynamic"
 import { useRouter } from "next/navigation"
+import { toast } from "sonner"
 import { FeedShortcuts } from "@/components/feed/feed-shortcuts"
 import { FeedSkeleton } from "@/components/feed/feed-skeleton"
 import { useShellBadge } from "@/components/shell/shell-context"
@@ -10,6 +11,7 @@ import type { MusicPlatform } from "@/lib/music-links"
 import { useFeedFill } from "@/lib/hooks/use-feed-fill"
 import { useFeedGeneration } from "@/lib/hooks/use-feed-generation"
 import { useFeedTriage } from "@/lib/hooks/use-feed-triage"
+import { useAdventurousMode } from "@/lib/hooks/use-adventurous-mode"
 import type { CardArtist } from "@/lib/cards/card-artist"
 import type { GenerateResult } from "@/lib/client/feed-generation"
 import type { FeedLayout } from "@/lib/feed/layout-guess"
@@ -40,6 +42,8 @@ interface FeedClientProps {
   recommendations: CardArtist[]
   musicPlatform: MusicPlatform
   signalCount: number
+  /** users.adventurous: Wander farther, shown beside every Load more. */
+  initialAdventurous?: boolean
   /** The server's guess (lib/feed/layout-guess) for the first render; matchMedia takes over after hydration. */
   initialLayout?: FeedLayout
 }
@@ -71,11 +75,21 @@ const currentLayout = (): Layout =>
 const noSubscribe = () => () => {}
 const useHydrating = () => useSyncExternalStore(noSubscribe, () => false, () => true)
 
+/**
+ * Flip Wander farther: save the setting and nothing else. The cards on screen stay; the next
+ * Load more generates with the saved value (#205). Never rejects (a failed save toasts and rolls back).
+ */
+export function flipWander(on: boolean, save: (next: boolean) => Promise<void>): Promise<void> {
+  return save(!on).catch(() => {
+    toast.error("Couldn't save Wander farther")
+  })
+}
+
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
-export function FeedClient({ recommendations, musicPlatform, signalCount, initialLayout = "phone" }: FeedClientProps) {
+export function FeedClient({ recommendations, musicPlatform, signalCount, initialAdventurous = false, initialLayout = "phone" }: FeedClientProps) {
   // Generate requests (mount top-up + Load more) share one re-entry guard, so
   // a user's own "Load more" can't collide with the background top-up.
   const generation = useFeedGeneration()
@@ -181,7 +195,13 @@ export function FeedClient({ recommendations, musicPlatform, signalCount, initia
     }
   }, [mounted])
 
+  const { adventurous, setAdventurous } = useAdventurousMode(initialAdventurous)
+  // A Load more right after a flip waits for the save, so it generates with the new value.
+  const wanderSave = useRef<Promise<void>>(Promise.resolve())
+  const wander = { on: adventurous, toggle: () => void (wanderSave.current = flipWander(adventurous, setAdventurous)) }
+
   async function handleGenerateMore() {
+    await wanderSave.current
     const r = await generation.requestMore()
     if (r === null || !aliveRef.current) return
     if (r.kind === "unauthorized") {
@@ -209,7 +229,7 @@ export function FeedClient({ recommendations, musicPlatform, signalCount, initia
           <FeedSkeleton />
         </div>
       )}
-      <View triage={triage} signalCount={signalCount} onLoadMore={handleGenerateMore} generating={isGenerating} onShown={setShown} />
+      <View triage={triage} signalCount={signalCount} onLoadMore={handleGenerateMore} generating={isGenerating} wander={wander} onShown={setShown} />
     </>
   )
 }

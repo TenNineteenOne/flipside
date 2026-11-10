@@ -22,6 +22,8 @@ export interface CardArtist extends ArtistWithTracks {
 export interface CardWhy {
   sourceArtists: string[]
   genres: string[]
+  /** Set only on far-pool (Wander farther) picks: the genre they came from. */
+  outsideUsual?: string
 }
 
 /**

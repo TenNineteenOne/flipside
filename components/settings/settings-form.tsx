@@ -1,56 +1,37 @@
 "use client"
 
-import { useFeedGeneration } from "@/lib/hooks/use-feed-generation"
 import { ProfilePanel } from "@/components/settings/panels/profile-panel"
 import { AccountPanel } from "@/components/settings/panels/account-panel"
 import { PlatformPanel } from "@/components/settings/panels/platform-panel"
 import { ConnectedSourcesPanel } from "@/components/settings/panels/connected-sources-panel"
 import { SeedsPanel } from "@/components/settings/panels/seeds-panel"
-import { ObscurityPanel } from "@/components/settings/panels/obscurity-panel"
+import { DiscoveryPanel } from "@/components/settings/panels/discovery-panel"
 import type { SpotifyArtist } from "@/components/onboarding/artist-search"
 import type { MusicPlatform } from "@/lib/music-links"
 
 interface SettingsFormProps {
   userSeed: string
-  initialPlayThreshold: number
-  initialPopularityCurve: number
+  initialFameLevel: number
   initialLastfmUsername: string | null
   initialStatsfmUsername: string | null
   initialLastfmArtistCount: number
-  initialUndergroundMode: boolean
-  initialDeepDiscovery: boolean
   initialAdventurous: boolean
   initialSelectedGenres: string[]
   initialSeedArtists: SpotifyArtist[]
   initialMusicPlatform: MusicPlatform
-  exampleArtists: { popularity: number; artist: { name: string; popularity: number } | null }[]
 }
 
 export function SettingsForm({
   userSeed,
-  initialPlayThreshold,
-  initialPopularityCurve,
+  initialFameLevel,
   initialLastfmUsername,
   initialStatsfmUsername,
   initialLastfmArtistCount,
-  initialUndergroundMode,
-  initialDeepDiscovery,
   initialAdventurous,
   initialSelectedGenres,
   initialSeedArtists,
   initialMusicPlatform,
-  exampleArtists,
 }: SettingsFormProps) {
-  // Shared regeneration gate — multiple panels can trigger a rebuild, but only
-  // one may be in-flight at a time. isGenerating drives the UI (disabled button
-  // in ObscurityPanel); the controller's synchronous guard stops two rapid
-  // toggle-handlers both passing the re-entry check.
-  const { generating: isGenerating, rebuild } = useFeedGeneration()
-
-  async function handleRegenerateBoth() {
-    await rebuild()
-  }
-
   return (
     <>
       <style>{`
@@ -94,16 +75,8 @@ export function SettingsForm({
         <div className="col gap-16" style={{ marginTop: 8 }}>
           <ProfilePanel userSeed={userSeed} />
 
-          <ObscurityPanel
-            initialPlayThreshold={initialPlayThreshold}
-            initialPopularityCurve={initialPopularityCurve}
-            initialUndergroundMode={initialUndergroundMode}
-            initialDeepDiscovery={initialDeepDiscovery}
-            initialAdventurous={initialAdventurous}
-            exampleArtists={exampleArtists}
-            onRegenerate={handleRegenerateBoth}
-            isGenerating={isGenerating}
-          />
+          {/* Discovery changes apply to the next batch; nothing is rebuilt (#205). */}
+          <DiscoveryPanel initialFameLevel={initialFameLevel} initialAdventurous={initialAdventurous} />
 
           <SeedsPanel
             initialSelectedGenres={initialSelectedGenres}

@@ -4,6 +4,13 @@ import { formatDuration, listSeparator, popularityLabel, whyParts, whyText } fro
 const lead = "Because you like "
 
 describe("whyParts / whyText", () => {
+  it("a far pick (outsideUsual) reads Outside your usual: <genre> instead of the normal why", () => {
+    const why = { sourceArtists: ["A"], genres: ["g"], outsideUsual: "zouk" }
+    expect(whyParts(why)).toEqual({ lead: "Outside your usual: ", names: [], genres: ["zouk"], far: true })
+    expect(whyText(why)).toBe("Outside your usual: zouk")
+    expect(whyParts({ sourceArtists: ["A"], genres: [], outsideUsual: "" })?.far).toBeUndefined()
+  })
+
   it("one source artist", () => {
     const why = { sourceArtists: ["A"], genres: ["g"] }
     expect(whyParts(why)).toEqual({ lead, names: ["A"], genres: [] })

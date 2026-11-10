@@ -3,12 +3,12 @@ import type { ArtistWithTracks } from '../music-provider/types'
 export interface RecommendationInput {
   userId: string        // Supabase UUID
   accessToken: string   // Spotify access token (empty string if user has no Spotify)
-  playThreshold: number // from users.play_threshold
-  popularityCurve: number // from users.popularity_curve — base `k` of k^popularity scoring
+  playThreshold: number // FEED_PLAY_THRESHOLD (fixed since #205; users.play_threshold is retired)
+  popularityCurve: number // from users.fame_level via fameToEngine — base `k` of k^popularity scoring
   genre?: string        // optional genre filter for targeted generation
-  undergroundMode?: boolean // when true, applies additional discoveryScore penalty
-  deepDiscovery?: boolean   // when true, take a 2nd-hop walk from each seed's lowest-match similars
-  adventurous?: boolean     // when true, broadens For You (more adjacent bleed, softer mainstream-seed penalty)
+  undergroundMode?: boolean // fame_level 0: hard pop<=50 cap + discoveryScore penalty
+  deepDiscovery?: boolean   // when true, take a 2nd-hop walk from each seed's lowest-match similars (= adventurous since #205)
+  adventurous?: boolean     // "Wander farther": 10-slot exploration budget filled from the far pool, then adjacent bleed
 }
 
 /**
@@ -24,9 +24,18 @@ export interface SoftenedFilters {
 export interface ScoredArtist {
   artist: ArtistWithTracks
   score: number
-  why: { sourceArtists: string[]; genres: string[]; friendBoost: string[] }
+  why: {
+    sourceArtists: string[]
+    genres: string[]
+    friendBoost: string[]
+    /** Far-pool picks only (#205): the genre/tag the pick came from ("Outside your usual: <genre>"). */
+    outsideUsual?: string
+  }
   source: string
 }
+
+/** Listened-play cutoff for the Feed (#205: fixed for everyone; >5 plays never show). */
+export const FEED_PLAY_THRESHOLD = 5
 
 /**
  * When `undergroundMode` is on, any candidate whose Spotify `popularity` is
@@ -64,5 +73,9 @@ export interface BuildResult {
     misses: number
     retries: number
     rateLimited: boolean
+    /** Far-pool fetch wall-clock (ms), when Wander farther ran one. Overlaps the first hop. */
+    farMs?: number
+    /** Bleed-step start → far pool ready (ms); the bleed step overlaps it with the adjacent fetch. */
+    farWaitMs?: number
   }
 }

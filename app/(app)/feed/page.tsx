@@ -10,6 +10,7 @@ import { DEFAULT_MUSIC_PLATFORM, isMusicPlatform, type MusicPlatform } from "@/l
 import { getUnseenRecommendations, type UnseenRecommendation } from "@/lib/recommendation/feed-query"
 import { isRenderableRow, loadFeedCards } from "@/lib/cards/feed-cards"
 import { guessFeedLayout } from "@/lib/feed/layout-guess"
+import { fameToEngine } from "@/lib/settings/fame"
 
 export default async function FeedPage() {
   const session = await safeAuth()
@@ -38,14 +39,14 @@ export default async function FeedPage() {
     if ((count ?? 0) === 0) redirect("/onboarding")
   }
 
-  // Fetch cached recommendations, re-filtered by the user's current
-  // underground_mode so a just-toggled setting is honored on first paint
+  // Fetch cached recommendations, re-filtered by the user's current fame
+  // level (stop 0 = underground cap) so a just-changed setting is honored on first paint
   // instead of waiting for the client poll to replace the list.
   let recs: UnseenRecommendation[]
   try {
     recs = await getUnseenRecommendations(supabase, user.id, {
       limit: 20,
-      undergroundMode: !!user.underground_mode,
+      undergroundMode: fameToEngine(user.fame_level).undergroundMode,
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
@@ -92,6 +93,7 @@ export default async function FeedPage() {
         recommendations={cards}
         musicPlatform={musicPlatform}
         signalCount={signalCount}
+        initialAdventurous={!!user.adventurous}
         initialLayout={guessFeedLayout(await headers())}
       />
       <ExplorePrewarm />

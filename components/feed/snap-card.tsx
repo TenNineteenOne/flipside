@@ -137,7 +137,7 @@ export function SnapCard({ a, triage, eager = false, enter = false }: {
           </div>
         </div>
         {why && (
-          <p className="ev-m-why">
+          <p className="ev-m-why" data-far={why.far}>
             {why.lead}
             {why.names.length > 0
               ? why.names.map((n, i) => <span key={n}>{listSeparator(i, why.names.length)}<strong>{n}</strong></span>)

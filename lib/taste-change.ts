@@ -27,12 +27,11 @@ export interface Invalidation {
 }
 
 // Settings that both Explore rails and the Feed queue are built from.
-const FEED_AND_EXPLORE_SETTINGS = ["selectedGenres", "adventurous", "undergroundMode", "deepDiscovery"]
-// Settings only Explore rails depend on (explore-engine ranks rails by the curve).
-const EXPLORE_ONLY_SETTINGS = ["popularityCurve"]
-// Settings only the Feed queue depends on (Explore hides any listened artist,
-// regardless of the familiarity threshold).
-const FEED_ONLY_SETTINGS = ["playThreshold"]
+const FEED_AND_EXPLORE_SETTINGS = ["selectedGenres", "fameLevel"]
+// Wander farther (adventurous) changes the NEXT Feed batch only, never the
+// queued cards (#205 decision 4), so it leaves the Feed queue alone.
+const EXPLORE_ONLY_SETTINGS = ["adventurous"]
+const FEED_ONLY_SETTINGS: string[] = []
 
 /** The invalidation policy: which caches a taste change makes stale. Pure. */
 export function invalidationFor(change: TasteChange): Invalidation {

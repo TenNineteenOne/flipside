@@ -4,7 +4,8 @@ import "./feed.css"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Heart, ThumbsDown, X } from "lucide-react"
 import { ColdStartBanner } from "@/components/feed/cold-start-banner"
-import { EndState } from "@/components/feed/feed-parts"
+import { EndState, type Wander } from "@/components/feed/feed-parts"
+import { WanderSwitch } from "@/components/feed/wander-switch"
 import { SnapCard } from "@/components/feed/snap-card"
 import { MiniPlayer, useSuppressFloatingPlayer } from "@/components/player/mini-player"
 import { ShellSlot } from "@/components/shell/shell-context"
@@ -33,11 +34,13 @@ interface FeedSnapProps {
   /** "Load more artists" on the end page, and its in-flight state. */
   onLoadMore: () => void
   generating: boolean
+  /** Wander farther: the top-bar switch and the one beside Load more on the end page. */
+  wander: Wander
   /** Called once this layout is mounted (FeedClient enables the keyboard shortcuts then). */
   onShown?: (layout: "phone" | "tablet" | "desktop") => void
 }
 
-export function FeedSnap({ triage, signalCount, onLoadMore, generating, onShown }: FeedSnapProps) {
+export function FeedSnap({ triage, signalCount, onLoadMore, generating, wander, onShown }: FeedSnapProps) {
   useEffect(() => onShown?.("phone"), [onShown])
   const { ids, selectedId } = triage
   const ended = triage.remaining === 0
@@ -137,7 +140,7 @@ export function FeedSnap({ triage, signalCount, onLoadMore, generating, onShown 
 
   return (
     <div className="ev-feed ev-snap">
-      <TopBarProgress triage={triage} />
+      <TopBarProgress triage={triage} wander={wander} />
       <ColdLine signalCount={signalCount} />
 
       <main className="ev-m-snap" ref={scrollerRef} aria-label="Artists">
@@ -151,7 +154,7 @@ export function FeedSnap({ triage, signalCount, onLoadMore, generating, onShown 
         })}
         {ended && (
           <section className="ev-m-page" data-id={END} aria-label="End of today's artists">
-            <EndState triage={triage} onLoadMore={onLoadMore} generating={generating} />
+            <EndState triage={triage} onLoadMore={onLoadMore} generating={generating} wander={wander} />
           </section>
         )}
       </main>
@@ -164,11 +167,16 @@ export function FeedSnap({ triage, signalCount, onLoadMore, generating, onShown 
 
 /* ---- pieces shared by the phone (Snap) and tablet feeds ---- */
 
-/** "N of M left" in the shell top bar and the segment strip as its second row. */
-export function TopBarProgress({ triage }: { triage: FeedTriage }) {
+/** Wander farther + "N of M left" in the shell top bar, and the segment strip as its second row. */
+export function TopBarProgress({ triage, wander }: { triage: FeedTriage; wander: Wander }) {
   return (
     <>
-      <ShellSlot name="top"><SnapCount triage={triage} /></ShellSlot>
+      <ShellSlot name="top">
+        <span className="ev-feed ev-m-topbar">
+          <WanderSwitch on={wander.on} onToggle={wander.toggle} compact />
+          <SnapCount triage={triage} />
+        </span>
+      </ShellSlot>
       <ShellSlot name="topSub">
         <ol className="ev-feed ev-m-strip" aria-hidden>
           {triage.ids.map((id) => (

@@ -13,13 +13,13 @@ describe("patchSettings", () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true })
     vi.stubGlobal("fetch", mockFetch)
 
-    await patchSettings({ playThreshold: 10 })
+    await patchSettings({ fameLevel: 3 })
 
     expect(mockFetch).toHaveBeenCalledOnce()
     const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit]
     expect(url).toBe("/api/settings")
     expect(init.method).toBe("PATCH")
-    expect(JSON.parse(init.body as string)).toEqual({ playThreshold: 10 })
+    expect(JSON.parse(init.body as string)).toEqual({ fameLevel: 3 })
   })
 
   it("throws with server error message when response is not ok", async () => {
@@ -29,7 +29,7 @@ describe("patchSettings", () => {
     })
     vi.stubGlobal("fetch", mockFetch)
 
-    await expect(patchSettings({ undergroundMode: true })).rejects.toThrow("quota exceeded")
+    await expect(patchSettings({ adventurous: true })).rejects.toThrow("quota exceeded")
   })
 
   it("throws generic message when error body is empty", async () => {
@@ -39,7 +39,7 @@ describe("patchSettings", () => {
     })
     vi.stubGlobal("fetch", mockFetch)
 
-    await expect(patchSettings({ undergroundMode: true })).rejects.toThrow("Failed to save")
+    await expect(patchSettings({ adventurous: true })).rejects.toThrow("Failed to save")
   })
 
   it("rejects with SettingsSaveError carrying the status; network errors pass through", async () => {

@@ -38,7 +38,7 @@ function Desktop({ artists, decided }: { artists: CardArtist[]; decided?: Map<st
         visible: visibleQueue(t.ids, decided).map((id) => artists.find((a) => a.id === id)!),
       }
     : t
-  return <FeedDesktop triage={triage} signalCount={10} onLoadMore={() => {}} generating={false} />
+  return <FeedDesktop triage={triage} signalCount={10} onLoadMore={() => {}} generating={false} wander={{ on: false, toggle: () => {} }} />
 }
 
 // Text only: drop React's <!-- --> separators between adjacent text nodes.
@@ -56,7 +56,7 @@ describe("FeedDesktop server render", () => {
     expect(html).toMatch(/aria-label="Select Yin Yin" aria-current="true"/)
     // "Load more artists" is always at the end of the queue column, not only in the end state.
     const queue = html.slice(html.indexOf('class="ev-queue"'), html.indexOf('class="ev-focus"'))
-    expect(queue).toMatch(/class="ev-queue-more"><button type="button" class="ev-btn ev-btn-ghost">Load more artists<\/button>/)
+    expect(queue).toMatch(/class="ev-queue-more"><button type="button" class="ev-btn ev-btn-ghost">Load more artists<\/button><button type="button" role="switch"/)
   })
 
   it("labels the queue columns, and each row names its genre and popularity for screen readers", () => {
@@ -100,10 +100,51 @@ describe("FeedDesktop server render", () => {
 describe("LoadMore", () => {
   it("stays focusable while generating: aria-disabled, not disabled, with the Generating label", async () => {
     const { LoadMore } = await import("./feed-parts")
-    const busy = renderToString(<LoadMore onLoadMore={() => {}} generating />)
+    const busy = renderToString(<LoadMore onLoadMore={() => {}} generating wander={{ on: false, toggle: () => {} }} />)
     expect(busy).toContain('aria-disabled="true"')
     expect(busy).not.toMatch(/\sdisabled=""/)
     expect(busy).toContain("Generating…")
-    expect(renderToString(<LoadMore onLoadMore={() => {}} generating={false} />)).not.toContain("aria-disabled")
+    expect(renderToString(<LoadMore onLoadMore={() => {}} generating={false} wander={{ on: false, toggle: () => {} }} />)).not.toContain("aria-disabled")
+  })
+})
+
+describe("Wander farther", () => {
+  const artists = [artist("a", "Yin Yin"), artist("b", "Altın Gün")]
+  const renderWith = (on: boolean, decided?: Map<string, string>) =>
+    renderToString(
+      <AudioProvider><WanderDesktop artists={artists} on={on} decided={decided} /></AudioProvider>,
+    ).replaceAll("<!-- -->", "")
+  function WanderDesktop({ artists, on, decided }: { artists: CardArtist[]; on: boolean; decided?: Map<string, string> }) {
+    const t = useFeedTriage(artists, "spotify")
+    const triage: FeedTriage = decided
+      ? { ...t, signals: decided, selectedId: null, selected: null, remaining: 0, counts: counts(t.ids, decided), tuning: tuning(artists, decided), visible: [] }
+      : t
+    return <FeedDesktop triage={triage} signalCount={10} onLoadMore={() => {}} generating={false} wander={{ on, toggle: () => {} }} />
+  }
+  const switches = (html: string) => [...html.matchAll(/role="switch" aria-checked="(true|false)"/g)].map((m) => m[1])
+
+  it("every switch (header, end of queue, end state) shows the one value", () => {
+    const decided = new Map([["a", "skip"], ["b", "skip"]])
+    expect(switches(renderWith(true, decided))).toEqual(["true", "true", "true"])
+    expect(switches(renderWith(false, decided))).toEqual(["false", "false", "false"])
+    expect(switches(renderWith(true))).toEqual(["true", "true"])
+  })
+
+  it("on: the Load more buttons go rainbow and the next-batch note shows; off: neither", () => {
+    const on = renderWith(true)
+    expect(on.match(/class="ev-btn [^"]*wander-btn-on"/g)).toHaveLength(2)
+    expect(on).toContain("Your <b>next batch</b> goes farther afield.")
+    expect(on).toMatch(/class="ev-btn ev-btn-primary wander-btn-on"[^>]*>Load more<\/button>/)
+    const off = renderWith(false)
+    expect(off).not.toContain("wander-btn-on")
+    expect(off).not.toContain("next batch")
+  })
+
+  it("a far pick's why-line reads Outside your usual, marked for the teal accent", () => {
+    const far = { ...artist("f", "Far One"), why: { sourceArtists: ["Khruangbin"], genres: [], outsideUsual: "zouk" } }
+    const html = renderToString(<AudioProvider><Desktop artists={[far]} /></AudioProvider>).replaceAll("<!-- -->", "")
+    expect(html).toContain('<p class="ev-card-why" data-far="true">Outside your usual: zouk</p>')
+    expect(html).toContain('<span class="ev-row-why" data-far="true">Outside your usual: zouk</span>')
+    expect(html).not.toContain("Because you like")
   })
 })

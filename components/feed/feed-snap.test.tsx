@@ -30,7 +30,7 @@ function Snap({ artists, decided, signalCount = 0 }: { artists: CardArtist[]; de
     : t
   return (
     <>
-      <FeedSnap triage={triage} signalCount={signalCount} onLoadMore={() => {}} generating={false} />
+      <FeedSnap triage={triage} signalCount={signalCount} onLoadMore={() => {}} generating={false} wander={{ on: false, toggle: () => {} }} />
       {/* The count is portalled into the shell top bar, which a server render has no slot for. */}
       <SnapCount triage={triage} />
     </>

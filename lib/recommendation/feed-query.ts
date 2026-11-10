@@ -1,5 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/server"
 import { UNDERGROUND_MAX_POPULARITY } from "@/lib/recommendation/types"
+import { fameToEngine } from "@/lib/settings/fame"
 
 export interface UnseenRecommendation {
   artist_id: string
@@ -11,8 +12,8 @@ export interface UnseenRecommendation {
 
 /**
  * Unseen (not-yet-shown, not-expired) recommendation_cache rows for `userId`,
- * re-filtered by the user's *current* underground_mode so toggling the
- * setting takes effect on first paint without requiring an explicit
+ * re-filtered by the user's *current* fame level (stop 0 = the popularity
+ * <= 50 cap, via fameToEngine) so changing the setting takes effect on first paint without requiring an explicit
  * regenerate. Overfetches 40 so filtering still leaves enough rows to fill
  * `limit`, then slices down to `limit`.
  *
@@ -37,7 +38,7 @@ export async function getUnseenRecommendations(
       .order("score", { ascending: false })
       .limit(40),
     undergroundMode === undefined
-      ? supabase.from("users").select("underground_mode").eq("id", userId).maybeSingle()
+      ? supabase.from("users").select("fame_level").eq("id", userId).maybeSingle()
       : Promise.resolve(null),
   ])
 
@@ -48,7 +49,7 @@ export async function getUnseenRecommendations(
     if (userResult.error) {
       console.error("[recommendations/fetch] user lookup:", userResult.error.message)
     }
-    mode = !!userResult.data?.underground_mode
+    mode = !!userResult.data && fameToEngine(userResult.data.fame_level).undergroundMode
   }
 
   let recommendations = (data ?? []) as UnseenRecommendation[]

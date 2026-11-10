@@ -715,3 +715,20 @@ body:has(.ev-snap) [data-sonner-toaster][data-y-position="top"] {
   .ev-feed .ev-m-tri-like { background: var(--raise); }
   .ev-feed button.ev-m-chip, .ev-feed button.ev-m-chip[data-current] { background: var(--raise); }
 }
+
+/* ---------- Wander farther (#205): switches beside Load more, rainbow buttons, far-pick why-line ----------
+   The switch and note themselves are in wander.css (shared with Settings). */
+.ev-feed .ev-wander-bar { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 16px; }
+.ev-feed .ev-wander-bar .wander-note { margin-right: auto; }
+.ev-feed .ev-wander-ctl { display: flex; align-items: center; gap: 16px; }
+.ev-feed .ev-queue-more { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.ev-feed .ev-m-rail > li.ev-m-rail-more { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.ev-feed .ev-end-actions { align-items: center; }
+.ev-feed .ev-end .wander-note { margin-top: -6px; }
+.ev-feed .ev-btn.wander-btn-on { background: var(--wander-rainbow); border-color: transparent; color: oklch(0.16 0.01 293); }
+.ev-feed .ev-btn.wander-btn-on:hover:not([aria-disabled="true"]) { background: var(--wander-rainbow); filter: brightness(1.06); }
+/* Phone / tablet top bar: the switch, then "N of M left". */
+.ev-feed.ev-m-topbar { display: flex; align-items: center; justify-content: flex-end; gap: 12px; min-width: 0; margin-left: auto; }
+@media (width < 360px) { .ev-feed.ev-m-topbar { gap: 8px; } }
+/* Far pick: "Outside your usual: <genre>" in teal, no other marking. */
+.ev-feed [data-far] { color: oklch(0.72 0.11 195); }
