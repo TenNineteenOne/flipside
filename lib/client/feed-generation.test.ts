@@ -5,10 +5,8 @@ import {
   loaderAction,
   pollRecsUntilReady,
   postGenerate,
-  rebuildFailureMessage,
   type ToastLike,
 } from "./feed-generation"
-import { EXPLORE_REGEN_AT_KEY } from "./rail-session"
 
 function res(status: number, body: unknown = {}): Response {
   return { ok: status >= 200 && status < 300, status, json: () => Promise.resolve(body) } as Response
@@ -169,80 +167,5 @@ describe("createFeedGeneration.requestMore", () => {
     await run
     expect(toast.error).not.toHaveBeenCalled()
     expect(changes).toEqual([true, false])
-  })
-})
-
-describe("createFeedGeneration.rebuild", () => {
-  function setup(feed: Response | Error, explore: Response | Error) {
-    const toast = makeToast()
-    const storage = { setItem: vi.fn(), removeItem: vi.fn() }
-    const fetchImpl = vi.fn((url: string) => {
-      const r = url.startsWith("/api/explore") ? explore : feed
-      return r instanceof Error ? Promise.reject(r) : Promise.resolve(r)
-    }) as unknown as typeof fetch
-    const gen = createFeedGeneration({ fetchImpl, toast, storage, now: () => 1234 })
-    return { gen, toast, storage, fetchImpl }
-  }
-
-  it("hits both endpoints, sets the explore regen flag, toasts success", async () => {
-    const { gen, toast, storage, fetchImpl } = setup(res(200, { count: 5 }), res(200))
-    await gen.rebuild()
-    const urls = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0])
-    expect(urls).toEqual(["/api/recommendations/generate?replace=true", "/api/explore/generate?force=true"])
-    expect(storage.setItem).toHaveBeenCalledWith(EXPLORE_REGEN_AT_KEY, "1234")
-    expect(toast.success).toHaveBeenCalledWith("Rebuilding feed & Explore — new picks are loading")
-  })
-
-  it("Explore 429 (already refreshing) is a silent success", async () => {
-    const { gen, toast } = setup(res(200, { count: 5 }), res(429, { error: "Explore is already refreshing — please wait a moment" }))
-    await gen.rebuild()
-    expect(toast.error).not.toHaveBeenCalled()
-    expect(toast.success).toHaveBeenCalledWith("Rebuilding feed & Explore — new picks are loading")
-  })
-
-  it("explore 500 → 'Feed rebuilt, but Explore failed'; both fail → 'Couldn't rebuild'", async () => {
-    const a = setup(res(200, { count: 5 }), res(500))
-    await a.gen.rebuild()
-    expect(a.toast.error).toHaveBeenCalledWith("Feed rebuilt, but Explore failed")
-    const b = setup(res(500), res(500))
-    await b.gen.rebuild()
-    expect(b.toast.error).toHaveBeenCalledWith("Couldn't rebuild — try again")
-  })
-
-  it("feed failures map to actionable copy", async () => {
-    for (const [r, msg] of [
-      [res(429, COOLDOWN), "Cooling down — wait a few seconds and try again"],
-      [res(429, QUEUE), "Queue is full — review some artists first"],
-      [res(503), "Music service temporarily unavailable — try again in a moment"],
-      [res(500), "Explore rebuilt, but feed failed"],
-    ] as const) {
-      const { gen, toast } = setup(r, res(200))
-      await gen.rebuild()
-      expect(toast.error).toHaveBeenCalledWith(msg)
-    }
-  })
-
-  it("#175 Y3-a: writes the regen flag BEFORE the POSTs; an Explore failure removes it", async () => {
-    const { gen, storage, fetchImpl } = setup(res(200, { count: 5 }), res(500))
-    await gen.rebuild()
-    const setOrder = storage.setItem.mock.invocationCallOrder[0]
-    const fetchOrder = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]
-    expect(setOrder).toBeLessThan(fetchOrder)
-    expect(storage.removeItem).toHaveBeenCalledWith(EXPLORE_REGEN_AT_KEY)
-  })
-
-  it("softened toast fires alongside success; a network error toasts Couldn't rebuild (flag kept: the POST may have landed)", async () => {
-    const a = setup(res(200, { count: 5, softenedFilters: { playThreshold: true } }), res(200))
-    await a.gen.rebuild()
-    expect(a.toast).toHaveBeenCalledWith("Widened the search for this batch — loosening the familiarity cap.")
-    const b = setup(new TypeError("offline"), res(200))
-    await b.gen.rebuild()
-    expect(b.toast.error).toHaveBeenCalledWith("Couldn't rebuild — try again")
-    expect(b.storage.removeItem).not.toHaveBeenCalled()
-    expect(b.gen.generating).toBe(false)
-  })
-
-  it("rebuildFailureMessage is keyed on kind, not message text", () => {
-    expect(rebuildFailureMessage({ kind: "queue-full", status: 429, ok: false, body: {} })).toBe("Queue is full — review some artists first")
   })
 })

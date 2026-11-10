@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Feed Merge Options</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@400;500;600;700&family=Martian+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: oklch(0.155 0.007 293); --panel: oklch(0.185 0.008 293); --raise: oklch(0.225 0.01 293);
+  --line: oklch(0.27 0.01 293); --line-strong: oklch(0.36 0.012 293);
+  --fg: oklch(0.965 0.004 293); --fg-2: oklch(0.82 0.008 293); --fg-3: oklch(0.68 0.01 293);
+  --violet: #8b5cf6; --violet-ink: oklch(0.8 0.12 293);
+  --violet-fill: color-mix(in oklch, var(--violet) 94%, black);
+  --teal: oklch(0.72 0.11 195);
+  --font-mono: "Martian Mono", ui-monospace, monospace;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 "Familjen Grotesk", system-ui, sans-serif; }
+.page { max-width: 1240px; margin: 0 auto; padding: 32px 16px 120px; }
+h1 { font-size: 28px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 6px; }
+h2 { font-size: 20px; font-weight: 600; margin: 48px 0 4px; }
+.lede, .sec-lede { color: var(--fg-2); max-width: 72ch; margin: 0 0 20px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr)); gap: 32px 20px; }
+.opt-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+.opt-letter { font: 500 12px var(--font-mono); color: var(--violet-ink); }
+.opt-name { font-weight: 600; font-size: 17px; }
+.opt-desc { font-size: 13px; color: var(--fg-3); margin: 0 0 12px; min-height: 4.5em; }
+.pick { margin-top: 12px; width: 100%; min-height: 40px; border-radius: 9px; border: 1px solid var(--line-strong); background: none; color: var(--fg-2); font: inherit; font-size: 14px; cursor: pointer; }
+.pick:hover { background: var(--raise); color: var(--fg); }
+.opt[data-picked] .pick { background: var(--violet-fill); border-color: var(--violet); color: #fff; }
+.opt[data-picked] .frame { outline: 2px solid var(--violet); outline-offset: 3px; }
+.picked-bar { position: sticky; bottom: 16px; margin-top: 32px; padding: 12px 16px; border-radius: 12px; background: var(--raise); border: 1px solid var(--line-strong); font-size: 14px; color: var(--fg-2); }
+
+/* mock surfaces */
+.frame { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 16px; min-height: 150px; }
+.q-title { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; margin: 0; }
+.q-sub { font-size: 13px; color: var(--fg-3); margin: 2px 0 0; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.prog { font-size: 12px; color: var(--fg-3); }
+.prog strong { color: var(--fg); }
+.btn { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 14px; border-radius: 9px; font: inherit; font-size: 14px; border: 1px solid var(--line-strong); background: none; color: var(--fg-2); cursor: pointer; }
+.btn.primary { background: var(--violet-fill); border-color: var(--violet); color: #fff; }
+
+/* switch */
+.sw { display: inline-flex; align-items: center; gap: 10px; text-align: left; cursor: pointer; font-size: 14px; color: var(--fg-2); background: none; border: 0; padding: 0; font-family: inherit; }
+.sw .track { width: 38px; height: 22px; border-radius: 11px; background: var(--line-strong); position: relative; transition: background .2s; flex: none; }
+.sw .track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--fg); transition: transform .2s; }
+.sw[aria-checked="true"] .track { background: var(--violet); }
+.sw[aria-checked="true"] .track::after { transform: translateX(16px); }
+.sw small { display: block; font-size: 12px; color: var(--fg-3); }
+
+/* segmented */
+.seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 10px; padding: 3px; gap: 2px; margin-top: 12px; }
+.seg button { font: inherit; font-size: 13px; border: 0; background: none; color: var(--fg-3); padding: 6px 12px; border-radius: 7px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--raise); color: var(--fg); }
+
+/* chip toggle */
+.chip { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px dashed var(--line-strong); background: none; color: var(--fg-3); cursor: pointer; margin-left: 4px; }
+.chip[aria-pressed="true"] { border-style: solid; border-color: var(--violet); color: var(--violet-ink); background: color-mix(in oklch, var(--violet) 14%, transparent); }
+
+/* mini card */
+.card { display: flex; gap: 12px; padding: 10px; border-radius: 12px; background: var(--raise); position: relative; margin-top: 10px; }
+.art { width: 64px; height: 64px; border-radius: 9px; flex: none; background: radial-gradient(circle at 40% 40%, oklch(0.7 0.12 var(--h)), oklch(0.4 0.1 var(--h))); }
+.c-name { font-weight: 600; font-size: 16px; margin: 0; }
+.c-gen { font-size: 12px; color: var(--fg-3); margin: 0; }
+.c-why { font-size: 13px; color: var(--fg-2); margin: 4px 0 0; }
+.c-why strong { color: var(--fg); }
+.far-why { color: var(--teal); }
+.tag { position: absolute; top: 8px; right: 8px; font: 500 10px var(--font-mono); letter-spacing: .04em; text-transform: uppercase; color: var(--teal); border: 1px solid color-mix(in oklch, var(--teal) 50%, transparent); border-radius: 5px; padding: 2px 6px; }
+.edge { box-shadow: inset 3px 0 0 var(--teal); }
+
+/* settings mocks */
+.s-label { font: 500 11px var(--font-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--fg-3); margin: 0 0 8px; }
+.s-block + .s-block { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+input[type=range] { width: 100%; accent-color: var(--violet); }
+.scale { display: flex; justify-content: space-between; font-size: 11px; color: var(--fg-3); }
+.s-val { font-size: 14px; color: var(--fg); margin: 4px 0 0; }
+.s-val span { color: var(--fg-3); }
+.presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.presets button { font: inherit; font-size: 13px; padding: 10px 6px; border-radius: 9px; border: 1px solid var(--line-strong); background: none; color: var(--fg-2); cursor: pointer; text-align: left; }
+.presets button small { display: block; font-size: 11px; color: var(--fg-3); }
+.presets button[aria-pressed="true"] { border-color: var(--violet); background: color-mix(in oklch, var(--violet) 14%, transparent); color: var(--fg); }
+.gone { font-size: 12px; color: var(--fg-3); margin-top: 14px; }
+.gone s { color: var(--fg-3); }
+/* rainbow (old Adventurous theming, commit f9d9100: amber → pink → mint → periwinkle) */
+:root { --rainbow: linear-gradient(135deg, #f5b047 0%, #ec6fb5 42%, #7dd9c6 78%, #a8c7fa 100%); }
+.sw.rb[aria-checked="true"] .track { background: var(--rainbow); }
+.btn.rb-on { border-color: transparent; color: oklch(0.16 0.01 293); background: var(--rainbow); font-weight: 600; }
+.btn.rb-ring { border: 1.5px solid transparent; background: linear-gradient(var(--panel), var(--panel)) padding-box, var(--rainbow) border-box; color: var(--fg); }
+.next-note { font-size: 12px; color: var(--fg-3); margin: 6px 0 0; min-height: 1.5em; }
+.next-note b { background: var(--rainbow); -webkit-background-clip: text; background-clip: text; color: transparent; font-weight: 600; }
+.split { display: inline-flex; border-radius: 10px; overflow: hidden; border: 1px solid var(--line-strong); }
+.split button { font: inherit; font-size: 14px; height: 36px; padding: 0 14px; border: 0; background: none; color: var(--fg-2); cursor: pointer; }
+.split .go { background: var(--violet-fill); color: #fff; }
+.split .wd { border-left: 1px solid var(--line-strong); }
+.split .wd[aria-pressed="true"] { background: var(--rainbow); color: oklch(0.16 0.01 293); font-weight: 600; }
+.split[data-wander] .go { background: var(--rainbow); color: oklch(0.16 0.01 293); }
+.mini-label { font: 500 10px var(--font-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--fg-3); margin: 16px 0 6px; }
+/* challenge */
+.chal { margin-top: 12px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--raise); }
+.chal-row { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.chal-row p { margin: 0; font-size: 13px; color: var(--fg-2); }
+.chal-row strong { color: var(--fg); }
+.chal-n { font: 500 12px var(--font-mono); color: var(--fg-2); }
+.chal-track { height: 4px; border-radius: 2px; background: var(--line); margin-top: 8px; overflow: hidden; }
+.chal-track span { display: block; height: 100%; width: calc(var(--p) * 100%); background: var(--rainbow); }
+.banner { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 8px 12px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: 13px; color: var(--fg-2); }
+.banner strong { color: var(--fg); }
+.banner .x { margin-left: auto; color: var(--fg-3); }
+.dots { display: inline-flex; gap: 4px; }
+.dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--line-strong); }
+.dots i.on { background: var(--rainbow); }
+.ring-chip { display: inline-flex; align-items: center; gap: 6px; font: 500 12px var(--font-mono); color: var(--fg-2); background: none; border: 1px solid var(--line-strong); border-radius: 999px; padding: 3px 10px 3px 4px; cursor: pointer; }
+.ring-pop { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: var(--raise); font-size: 13px; color: var(--fg-2); }
+.ring-pop strong { color: var(--fg); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Feed merge: options</h1>
+  <p class="lede">Explore goes away and its far-from-taste picks fold into Feed. Adventurous becomes one visible toggle on Feed and in Settings. Toggles here work, so try them. Pick one per section; your picks show in the bar at the bottom.</p>
+
+  <!-- ===== 1. Toggle on Feed ===== -->
+  <h2>1 · Where the toggle lives on Feed</h2>
+  <p class="sec-lede">The same setting (<code>users.adventurous</code>) mirrored in Settings. Placeholder name: “Wander further”. Naming comes in the next round.</p>
+  <div class="grid" data-sec="Feed toggle">
+    <div class="opt" data-letter="A">
+      <div class="opt-head"><span class="opt-letter">A</span><span class="opt-name">Header switch</span></div>
+      <p class="opt-desc">A switch at the right of the queue header with a one-line caption. Always visible and plainly a setting.</p>
+      <div class="frame">
+        <div class="row">
+          <div><p class="q-title">Today’s flipside</p><p class="q-sub">20 artists you’ve never played.</p></div>
+          <button class="sw" role="switch" aria-checked="false"><span class="track"></span><span>Wander further<small>More picks outside your usual</small></span></button>
+        </div>
+        <p class="prog" style="margin-top:14px"><strong>14</strong> of 20 left</p>
+      </div>
+      <button class="pick">Pick A</button>
+    </div>
+
+    <div class="opt" data-letter="B">
+      <div class="opt-head"><span class="opt-letter">B</span><span class="opt-name">Segmented: two modes</span></div>
+      <p class="opt-desc">Reads as “which feed am I in”. Clearer than a switch, but it suggests two different feeds, which is the split you just removed.</p>
+      <div class="frame">
+        <p class="q-title">Today’s flipside</p><p class="q-sub">20 artists you’ve never played.</p>
+        <div class="seg" role="group"><button aria-pressed="true">Close to home</button><button aria-pressed="false">Further out</button></div>
+      </div>
+      <button class="pick">Pick B</button>
+    </div>
+
+    <div class="opt" data-letter="C">
+      <div class="opt-head"><span class="opt-letter">C</span><span class="opt-name">Chip in the subtitle</span></div>
+      <p class="opt-desc">A small chip inside the sentence under the title. The quietest of the visible options. Easy to miss on a phone.</p>
+      <div class="frame">
+        <p class="q-title">Today’s flipside</p>
+        <p class="q-sub">20 artists you’ve never played, picked from what you told us <button class="chip" aria-pressed="false">＋ wander further</button></p>
+        <p class="prog" style="margin-top:14px"><strong>14</strong> of 20 left</p>
+      </div>
+      <button class="pick">Pick C</button>
+    </div>
+
+    <div class="opt" data-letter="D">
+      <div class="opt-head"><span class="opt-letter">D</span><span class="opt-name">Next to “Load more artists”</span></div>
+      <p class="opt-desc">Sits beside the button that makes the next batch, so flipping it means “the next batch goes further”. Only shows at the end of the queue.</p>
+      <div class="frame">
+        <p class="q-title" style="font-size:18px">You’ve heard all 20.</p>
+        <p class="q-sub">9 liked, 4 less like this, 7 dismissed.</p>
+        <div class="row" style="margin-top:16px; justify-content:flex-start">
+          <button class="btn primary">Load more artists</button>
+          <button class="sw" role="switch" aria-checked="false"><span class="track"></span><span>Wander further</span></button>
+        </div>
+      </div>
+      <button class="pick">Pick D</button>
+    </div>
+  </div>
+
+  <!-- ===== 2. Far picks on cards ===== -->
+  <h2>2 · How a far-afield pick looks on its card</h2>
+  <p class="sec-lede">You said “silently, almost”. These range from fully silent to lightly marked. Both cards are in the same feed: the first is a core pick, the second comes from the old Explore logic.</p>
+  <div class="grid" data-sec="Far-pick marking">
+    <div class="opt" data-letter="E">
+      <div class="opt-head"><span class="opt-letter">E</span><span class="opt-name">Fully silent</span></div>
+      <p class="opt-desc">No difference at all. The why-line still names a reason, so a far pick reads like any other card.</p>
+      <div class="frame">
+        <div class="card"><div class="art" style="--h:280"></div><div><p class="c-name">Mount Kimbie</p><p class="c-gen">electronic · post-dubstep</p><p class="c-why">Because you liked <strong>Bonobo</strong></p></div></div>
+        <div class="card"><div class="art" style="--h:20"></div><div><p class="c-name">Mdou Moctar</p><p class="c-gen">tuareg · desert rock</p><p class="c-why">From <strong>desert rock</strong></p></div></div>
+      </div>
+      <button class="pick">Pick E</button>
+    </div>
+
+    <div class="opt" data-letter="F">
+      <div class="opt-head"><span class="opt-letter">F</span><span class="opt-name">Says so in the why-line</span></div>
+      <p class="opt-desc">Uses the line the card already has, so there’s no new element. The words tell you it’s a stretch, which makes a miss feel deliberate rather than broken.</p>
+      <div class="frame">
+        <div class="card"><div class="art" style="--h:280"></div><div><p class="c-name">Mount Kimbie</p><p class="c-gen">electronic · post-dubstep</p><p class="c-why">Because you liked <strong>Bonobo</strong></p></div></div>
+        <div class="card"><div class="art" style="--h:20"></div><div><p class="c-name">Mdou Moctar</p><p class="c-gen">tuareg · desert rock</p><p class="c-why far-why">Outside your usual: desert rock</p></div></div>
+      </div>
+      <button class="pick">Pick F</button>
+    </div>
+
+    <div class="opt" data-letter="G">
+      <div class="opt-head"><span class="opt-letter">G</span><span class="opt-name">Corner tag</span></div>
+      <p class="opt-desc">A small “further out” label. Easiest to scan for, and the loudest. It brings back the separation, just smaller.</p>
+      <div class="frame">
+        <div class="card"><div class="art" style="--h:280"></div><div><p class="c-name">Mount Kimbie</p><p class="c-gen">electronic · post-dubstep</p><p class="c-why">Because you liked <strong>Bonobo</strong></p></div></div>
+        <div class="card"><span class="tag">further out</span><div class="art" style="--h:20"></div><div><p class="c-name">Mdou Moctar</p><p class="c-gen">tuareg · desert rock</p><p class="c-why">From <strong>desert rock</strong></p></div></div>
+      </div>
+      <button class="pick">Pick G</button>
+    </div>
+
+    <div class="opt" data-letter="H">
+      <div class="opt-head"><span class="opt-letter">H</span><span class="opt-name">Edge stripe</span></div>
+      <p class="opt-desc">A thin coloured left edge with no words. You learn what it means after a few cards. Nearly silent, but it can be scanned.</p>
+      <div class="frame">
+        <div class="card"><div class="art" style="--h:280"></div><div><p class="c-name">Mount Kimbie</p><p class="c-gen">electronic · post-dubstep</p><p class="c-why">Because you liked <strong>Bonobo</strong></p></div></div>
+        <div class="card edge"><div class="art" style="--h:20"></div><div><p class="c-name">Mdou Moctar</p><p class="c-gen">tuareg · desert rock</p><p class="c-why">From <strong>desert rock</strong></p></div></div>
+      </div>
+      <button class="pick">Pick H</button>
+    </div>
+  </div>
+
+  <!-- ===== 3. Knob pile ===== -->
+  <h2>3 · The knob pile in Settings</h2>
+  <p class="sec-lede">Today there are five controls: Obscurity (how many of your own plays hide an artist), Popularity curve, Underground (hard cap: popularity ≤ 50), Deep discovery (a second similarity hop) and Adventurous. Really there are two axes: <strong>how famous</strong> and <strong>how far from your taste</strong>. Each option below says what it removes.</p>
+  <div class="grid" data-sec="Knob pile">
+    <div class="opt" data-letter="I">
+      <div class="opt-head"><span class="opt-letter">I</span><span class="opt-name">One slider + the toggle</span></div>
+      <p class="opt-desc">A “How famous?” slider merges the curve and Underground: its bottom stop is the hard cap. The Wander toggle absorbs Deep discovery. The play threshold becomes a fixed default.</p>
+      <div class="frame">
+        <div class="s-block"><p class="s-label">How famous?</p><input type="range" min="0" max="4" value="2" data-labels="Underground only|Mostly niche|Balanced|Mostly popular|Anything goes"><div class="scale"><span>underground</span><span>anything</span></div><p class="s-val">Balanced</p></div>
+        <div class="s-block"><button class="sw" role="switch" aria-checked="false"><span class="track"></span><span>Wander further<small>Also on Feed</small></span></button></div>
+        <p class="gone">Removed: <s>Obscurity</s> <s>Curve</s> <s>Underground</s> <s>Deep discovery</s></p>
+      </div>
+      <button class="pick">Pick I</button>
+    </div>
+
+    <div class="opt" data-letter="J">
+      <div class="opt-head"><span class="opt-letter">J</span><span class="opt-name">Three presets + the toggle</span></div>
+      <p class="opt-desc">Same merge as I, but three named buttons instead of a slider. Each preset sets curve + cap underneath. No fiddly in-between values.</p>
+      <div class="frame">
+        <div class="s-block"><p class="s-label">How famous?</p>
+          <div class="presets" role="group"><button aria-pressed="false">Deep cuts<small>never charted</small></button><button aria-pressed="true">Balanced<small>default</small></button><button aria-pressed="false">Some hits<small>known names ok</small></button></div></div>
+        <div class="s-block"><button class="sw" role="switch" aria-checked="false"><span class="track"></span><span>Wander further<small>Also on Feed</small></span></button></div>
+        <p class="gone">Removed: <s>Obscurity</s> <s>Curve</s> <s>Underground</s> <s>Deep discovery</s></p>
+      </div>
+      <button class="pick">Pick J</button>
+    </div>
+
+    <div class="opt" data-letter="K">
+      <div class="opt-head"><span class="opt-letter">K</span><span class="opt-name">Toggle only</span></div>
+      <p class="opt-desc">The biggest deletion. Fame is fixed at today’s defaults. Flipside’s whole pitch is “never heard of them”, so maybe nobody needs a fame dial. Risk: friends who want more known names lose that lever.</p>
+      <div class="frame">
+        <div class="s-block"><button class="sw" role="switch" aria-checked="false"><span class="track"></span><span>Wander further<small>Also on Feed</small></span></button></div>
+        <p class="gone">Removed: <s>Obscurity</s> <s>Curve</s> <s>Underground</s> <s>Deep discovery</s>, fame fixed at Balanced</p>
+      </div>
+      <button class="pick">Pick K</button>
+    </div>
+
+    <div class="opt" data-letter="L">
+      <div class="opt-head"><span class="opt-letter">L</span><span class="opt-name">Two sliders, both axes</span></div>
+      <p class="opt-desc">Fame slider plus a “How far from your taste?” slider instead of an on/off. The Feed toggle would flip this between 1 and 3. Most control, but more to explain.</p>
+      <div class="frame">
+        <div class="s-block"><p class="s-label">How famous?</p><input type="range" min="0" max="4" value="2" data-labels="Underground only|Mostly niche|Balanced|Mostly popular|Anything goes"><p class="s-val">Balanced</p></div>
+        <div class="s-block"><p class="s-label">How far from your taste?</p><input type="range" min="0" max="3" value="1" data-labels="Stay close|A little (default)|Further out|Way out"><p class="s-val">A little (default)</p></div>
+        <p class="gone">Removed: <s>Obscurity</s> <s>Curve</s> <s>Underground</s> <s>Deep discovery</s> <s>Adventurous</s> (now a stop)</p>
+      </div>
+      <button class="pick">Pick L</button>
+    </div>
+  </div>
+
+  <!-- ===== 4. Revised toggle ===== -->
+  <h2>4 · Revised toggle: next batch only, button beside it, rainbow</h2>
+  <p class="sec-lede">From your round-3 answers. The toggle never rebuilds the cards already on screen: it sets what the <em>next</em> batch does. Each option shows the queue header (top) and the end of the queue (bottom), the D placement. Flip the toggles.</p>
+  <div class="grid" data-sec="Revised toggle">
+    <div class="opt" data-letter="M">
+      <div class="opt-head"><span class="opt-letter">M</span><span class="opt-name">Rainbow switch, plain button</span></div>
+      <p class="opt-desc">The switch track turns rainbow when on. The button stays violet. A small line under it says the next batch goes further.</p>
+      <div class="frame wander-group">
+        <p class="mini-label">Top of Feed</p>
+        <div class="row"><div><p class="q-title">Today’s flipside</p><p class="q-sub">20 artists you’ve never played.</p></div>
+          <div class="row"><button class="sw rb" role="switch" aria-checked="false"><span class="track"></span><span>Wander further</span></button><button class="btn primary">Load more</button></div></div>
+        <p class="next-note"></p>
+        <p class="mini-label">End of queue</p>
+        <div class="row" style="justify-content:flex-start"><button class="btn primary">Load more artists</button><button class="sw rb" role="switch" aria-checked="false"><span class="track"></span><span>Wander further</span></button></div>
+      </div>
+      <button class="pick">Pick M</button>
+    </div>
+
+    <div class="opt" data-letter="N">
+      <div class="opt-head"><span class="opt-letter">N</span><span class="opt-name">Button goes rainbow too</span></div>
+      <p class="opt-desc">Like the old “Regenerate” button: solid when off, full rainbow fill when on. The button itself tells you what the next batch will be. Loudest.</p>
+      <div class="frame wander-group" data-fill="on">
+        <p class="mini-label">Top of Feed</p>
+        <div class="row"><div><p class="q-title">Today’s flipside</p><p class="q-sub">20 artists you’ve never played.</p></div>
+          <div class="row"><button class="sw rb" role="switch" aria-checked="false"><span class="track"></span><span>Wander further</span></button><button class="btn primary wbtn">Load more</button></div></div>
+        <p class="next-note"></p>
+        <p class="mini-label">End of queue</p>
+        <div class="row" style="justify-content:flex-start"><button class="btn primary wbtn">Load more artists</button><button class="sw rb" role="switch" aria-checked="false"><span class="track"></span><span>Wander further</span></button></div>
+      </div>
+      <button class="pick">Pick N</button>
+    </div>
+
+    <div class="opt" data-letter="O">
+      <div class="opt-head"><span class="opt-letter">O</span><span class="opt-name">Rainbow ring on the button</span></div>
+      <p class="opt-desc">A middle ground. The switch goes rainbow and the button gets a rainbow outline, not a fill. You can see it at a glance without the whole header turning into a sunset.</p>
+      <div class="frame wander-group" data-fill="ring">
+        <p class="mini-label">Top of Feed</p>
+        <div class="row"><div><p class="q-title">Today’s flipside</p><p class="q-sub">20 artists you’ve never played.</p></div>
+          <div class="row"><button class="sw rb" role="switch" aria-checked="false"><span class="track"></span><span>Wander further</span></button><button class="btn primary wbtn">Load more</button></div></div>
+        <p class="next-note"></p>
+        <p class="mini-label">End of queue</p>
+        <div class="row" style="justify-content:flex-start"><button class="btn primary wbtn">Load more artists</button><button class="sw rb" role="switch" aria-checked="false"><span class="track"></span><span>Wander further</span></button></div>
+      </div>
+      <button class="pick">Pick O</button>
+    </div>
+
+    <div class="opt" data-letter="P">
+      <div class="opt-head"><span class="opt-letter">P</span><span class="opt-name">One split button</span></div>
+      <p class="opt-desc">Toggle and button fused: “Load more | ✦ Wander”. The ✦ half is the toggle. On, both halves go rainbow. Most compact, but less clearly a setting that sticks.</p>
+      <div class="frame">
+        <p class="mini-label">Top of Feed</p>
+        <div class="row"><div><p class="q-title">Today’s flipside</p><p class="q-sub">20 artists you’ve never played.</p></div>
+          <div class="split"><button class="go">Load more</button><button class="wd" aria-pressed="false">✦ Wander</button></div></div>
+        <p class="mini-label">End of queue</p>
+        <div class="split"><button class="go">Load more artists</button><button class="wd" aria-pressed="false">✦ Wander further</button></div>
+      </div>
+      <button class="pick">Pick P</button>
+    </div>
+  </div>
+
+  <!-- ===== 5. Settled ===== -->
+  <h2>5 · Settled design</h2>
+  <p class="sec-lede">N on Feed + I in Settings, with the toggle labeled under “How close to your taste?”. Not a pick, just a check that it reads right.</p>
+  <div class="grid">
+    <div class="opt">
+      <div class="opt-head"><span class="opt-letter">Feed</span><span class="opt-name">Top + end of queue</span></div>
+      <div class="frame wander-group" data-fill="on">
+        <p class="mini-label">Top of Feed</p>
+        <div class="row"><div><p class="q-title">Today’s flipside</p><p class="q-sub">20 artists you’ve never played.</p></div>
+          <div class="row"><button class="sw rb" role="switch" aria-checked="false"><span class="track"></span><span>Wander farther</span></button><button class="btn primary wbtn">Load more</button></div></div>
+        <p class="next-note"></p>
+        <p class="mini-label">End of queue</p>
+        <div class="row" style="justify-content:flex-start"><button class="btn primary wbtn">Load more artists</button><button class="sw rb" role="switch" aria-checked="false"><span class="track"></span><span>Wander farther</span></button></div>
+      </div>
+    </div>
+    <div class="opt">
+      <div class="opt-head"><span class="opt-letter">Settings</span><span class="opt-name">Discovery card</span></div>
+      <div class="frame wander-group">
+        <div class="s-block"><p class="s-label">How famous?</p><input type="range" min="0" max="4" value="2" data-labels="Underground only|Mostly niche|Balanced|Mostly popular|Anything goes"><div class="scale"><span>underground</span><span>anything</span></div><p class="s-val">Balanced</p></div>
+        <div class="s-block"><p class="s-label">How close to your taste?</p><button class="sw rb" role="switch" aria-checked="false"><span class="track"></span><span>Wander farther<small>About half of each new batch comes from outside your usual genres. Also on Feed.</small></span></button><p class="next-note"></p></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 6. Weekly challenge on Feed ===== -->
+  <h2>6 · Where the weekly challenge lives on Feed</h2>
+  <p class="sec-lede">It used to sit on top of Explore: one line (“<strong>Five in a week</strong>: like 5 artists this week”), a 2/5 count, and a thin progress bar. Thumbs-ups still count toward it. Example challenge below: 2 of 5 done.</p>
+  <div class="grid" data-sec="Challenge">
+    <div class="opt" data-letter="Q">
+      <div class="opt-head"><span class="opt-letter">Q</span><span class="opt-name">Strip under the header</span></div>
+      <p class="opt-desc">The old Explore card, moved under the Feed header. Always visible, but it costs a row of height on a phone.</p>
+      <div class="frame">
+        <div class="row"><div><p class="q-title">Today’s flipside</p><p class="q-sub">20 artists you’ve never played.</p></div><button class="btn primary">Load more</button></div>
+        <div class="chal"><div class="chal-row"><p><strong>Five in a week</strong> · like 5 artists this week</p><span class="chal-n">2/5</span></div><div class="chal-track"><span style="--p:.4"></span></div></div>
+        <div class="card"><div class="art" style="--h:280"></div><div><p class="c-name">Mount Kimbie</p><p class="c-gen">electronic · post-dubstep</p></div></div>
+      </div>
+      <button class="pick">Pick Q</button>
+    </div>
+
+    <div class="opt" data-letter="R">
+      <div class="opt-head"><span class="opt-letter">R</span><span class="opt-name">Shares the “signal” banner slot</span></div>
+      <p class="opt-desc">Feed already has a dismissible banner (“Flipside signal · 0 of 5”) that new users see until they’ve given 5 signals. Once that’s done, the challenge takes the same slot, so it adds no new row.</p>
+      <div class="frame">
+        <div class="row"><div><p class="q-title">Today’s flipside</p><p class="q-sub">20 artists you’ve never played.</p></div><button class="btn primary">Load more</button></div>
+        <div class="banner"><span><strong>This week</strong> · Five in a week</span><span class="dots"><i class="on"></i><i class="on"></i><i></i><i></i><i></i></span><span class="x">×</span></div>
+        <div class="card"><div class="art" style="--h:280"></div><div><p class="c-name">Mount Kimbie</p><p class="c-gen">electronic · post-dubstep</p></div></div>
+      </div>
+      <button class="pick">Pick R</button>
+    </div>
+
+    <div class="opt" data-letter="S">
+      <div class="opt-head"><span class="opt-letter">S</span><span class="opt-name">Chip by the count, details on tap</span></div>
+      <p class="opt-desc">A small ring next to “14 of 20 left” that fills as you go. Tap it and the challenge text drops down. The quietest option, and it fits the phone top bar.</p>
+      <div class="frame">
+        <div class="row"><div><p class="q-title">Today’s flipside</p><p class="q-sub">20 artists you’ve never played.</p></div>
+          <div class="row" style="gap:10px"><button class="ring-chip" aria-expanded="false"><svg viewBox="0 0 36 36" width="22" height="22" aria-hidden="true"><circle cx="18" cy="18" r="15" fill="none" stroke="var(--line-strong)" stroke-width="4"/><circle cx="18" cy="18" r="15" fill="none" stroke="url(#rb)" stroke-width="4" stroke-dasharray="37.7 94.2" transform="rotate(-90 18 18)" stroke-linecap="round"/><defs><linearGradient id="rb" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f5b047"/><stop offset=".5" stop-color="#ec6fb5"/><stop offset="1" stop-color="#7dd9c6"/></linearGradient></defs></svg>2/5</button><span class="prog"><strong>14</strong> of 20 left</span></div></div>
+        <div class="ring-pop" hidden><strong>Five in a week</strong> · like 5 artists this week. Resets Monday.</div>
+        <div class="card"><div class="art" style="--h:280"></div><div><p class="c-name">Mount Kimbie</p><p class="c-gen">electronic · post-dubstep</p></div></div>
+      </div>
+      <button class="pick">Pick S</button>
+    </div>
+
+    <div class="opt" data-letter="T">
+      <div class="opt-head"><span class="opt-letter">T</span><span class="opt-name">End of queue only</span></div>
+      <p class="opt-desc">Shows on the “You’ve heard all 20” screen, next to the batch recap. It stays out of the way while you listen, but you only see it once you finish a batch.</p>
+      <div class="frame">
+        <p class="q-title" style="font-size:18px">You’ve heard all 20.</p>
+        <p class="q-sub">9 liked, 4 less like this, 7 dismissed.</p>
+        <div class="chal" style="margin-top:14px"><div class="chal-row"><p><strong>Five in a week</strong> · like 5 artists this week</p><span class="chal-n">2/5</span></div><div class="chal-track"><span style="--p:.4"></span></div></div>
+        <div class="row" style="margin-top:14px; justify-content:flex-start"><button class="btn primary">Load more artists</button></div>
+      </div>
+      <button class="pick">Pick T</button>
+    </div>
+  </div>
+
+  <div class="picked-bar" id="bar">Nothing picked yet.</div>
+</div>
+<script>
+const picks = {};
+const bar = document.getElementById('bar');
+function render() {
+  const parts = Object.entries(picks).map(([s, l]) => `${s}: <strong>${l}</strong>`);
+  bar.innerHTML = parts.length ? parts.join(' · ') : 'Nothing picked yet.';
+}
+document.querySelectorAll('.grid').forEach(grid => {
+  grid.addEventListener('click', e => {
+    const btn = e.target.closest('.pick');
+    if (!btn) return;
+    const opt = btn.closest('.opt');
+    grid.querySelectorAll('.opt').forEach(o => o.removeAttribute('data-picked'));
+    opt.setAttribute('data-picked', '');
+    picks[grid.dataset.sec] = opt.dataset.letter;
+    render();
+  });
+});
+document.querySelectorAll('.sw').forEach(s => s.addEventListener('click', () => {
+  const on = s.getAttribute('aria-checked') !== 'true';
+  const group = s.closest('.wander-group');
+  if (!group) return s.setAttribute('aria-checked', on);
+  // one setting: both switches in a group mirror each other
+  group.querySelectorAll('.sw').forEach(x => x.setAttribute('aria-checked', on));
+  group.querySelectorAll('.wbtn').forEach(b => b.classList.toggle(group.dataset.fill === 'ring' ? 'rb-ring' : 'rb-on', on));
+  group.querySelector('.next-note').innerHTML = on ? 'Your <b>next batch</b> goes farther afield.' : '';
+}));
+document.querySelectorAll('.ring-chip').forEach(c => c.addEventListener('click', () => {
+  const pop = c.closest('.frame').querySelector('.ring-pop');
+  pop.hidden = !pop.hidden; c.setAttribute('aria-expanded', !pop.hidden);
+}));
+document.querySelectorAll('.split').forEach(sp => sp.querySelector('.wd').addEventListener('click', () => {
+  const on = !sp.hasAttribute('data-wander');
+  sp.toggleAttribute('data-wander', on);
+  sp.querySelector('.wd').setAttribute('aria-pressed', on);
+}));
+document.querySelectorAll('.chip').forEach(c => c.addEventListener('click', () => c.setAttribute('aria-pressed', c.getAttribute('aria-pressed') !== 'true')));
+document.querySelectorAll('.seg, .presets').forEach(g => g.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  g.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
+}));
+document.querySelectorAll('input[type=range][data-labels]').forEach(r => {
+  const labels = r.dataset.labels.split('|');
+  const out = r.parentElement.querySelector('.s-val');
+  r.addEventListener('input', () => { out.textContent = labels[r.value]; });
+});
+</script>
+</body>
+</html>

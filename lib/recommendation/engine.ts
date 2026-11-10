@@ -17,6 +17,7 @@ import coldStartData from '@/data/cold-start-seeds.json'
 import { sampleLikes, LIKE_SAMPLE_SIZE } from './window'
 import { applyClusterCap } from './cluster-cap'
 import { splitResolvePools } from './resolve-pools'
+import { fetchFarNames, loadListenedGenres, type FarName } from './far-picks'
 
 /** Adventurous soft penalty applied to candidates whose Spotify popularity > 50. */
 const ADVENTUROUS_MAINSTREAM_PENALTY = 0.08
@@ -24,6 +25,15 @@ const ADVENTUROUS_MAINSTREAM_PENALTY = 0.08
 const ADJACENT_BLEED_BONUS = 0.08
 /** User needs this many selected_genres before seed cap widens 10 → 15 and medium adjacency opens up. */
 const ADAPTIVE_BROADEN_THRESHOLD = 10
+/** Longest tier 1's bleed step waits on the far pool; past it this run's bleed is adjacent-only. */
+export const FAR_WAIT_BUDGET_MS = 1500
+
+/** `p`'s value, or undefined if it hasn't settled within `ms`. The timer is always cleared. */
+export function withinBudget<T>(p: Promise<T>, ms: number): Promise<T | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<undefined>((resolve) => { timer = setTimeout(() => resolve(undefined), ms) })
+  return Promise.race([p, timeout]).finally(() => clearTimeout(timer))
+}
 
 /**
  * Resolver tuning (safe-C). Conservative bump over the resolver defaults
@@ -60,8 +70,8 @@ async function gatherSeedContext(
       .then(({ data }) => (data ?? []).map((r) => r.name as string).filter(Boolean)),
 
     // Fetch the full thumbs-up set; sampling is applied below via
-    // sampleLikes() so the Feed draws the same 10 random likes Explore uses
-    // within a cache window. See docs/prd-diversity-overhaul.md (M1).
+    // sampleLikes() so the Feed draws a stable 10 random likes within a
+    // cache window. See docs/prd-diversity-overhaul.md (M1).
     readFeedbackIds(supabase, userId, 'thumbs_up').then(({ data }) =>
       data.map((r) => r.artist_id).filter(Boolean)
     ),
@@ -280,10 +290,12 @@ export function backfillToTarget(
 }
 
 /**
- * Post-pipeline merge that injects a small number of adjacent-genre picks at
- * positions where they can't displace the top relevance picks. Treats
- * `userGenres` as the root set and samples close (and optionally medium)
- * adjacent tags, excluding tags the user already selected.
+ * Post-pipeline merge that injects the exploration budget at positions where
+ * it can't displace the top relevance picks: 4 slots normally, 10 under
+ * Wander farther (`adventurous`). Under Wander farther the slots fill from
+ * the far pool first (`far`, #205) and adjacent-genre bleed covers any
+ * shortfall; otherwise only adjacent bleed (close, optionally medium,
+ * adjacent tags of `userGenres`, excluding tags the user already selected).
  *
  * Position constraint lives ONLY here — `greedyPickTop` is pure relevance,
  * bleed is pure discovery, and the merge is where the policy lands.
@@ -297,101 +309,122 @@ export interface AugmentAdjacentOpts {
   fetchTagArtists: (tag: string) => Promise<string[]>
   /** Resolve names → artists, keyed by input name, with the user's exclusions already applied. */
   resolveArtists: (names: string[]) => Promise<Map<string, Artist>>
+  /**
+   * The far pool (used only when `adventurous`): already-gated artists keyed by
+   * input name (null = nothing), and each name's genre label for `why.outsideUsual`.
+   */
+  far?: { resolved: Promise<Map<string, Artist> | null>; labelOf: (name: string) => string | undefined }
 }
 
-export async function augmentWithAdjacent(
-  base: ScoredArtist[],
-  opts: AugmentAdjacentOpts
-): Promise<ScoredArtist[]> {
-  if (base.length === 0 || opts.userGenres.length === 0) return base
+/** Same formula for far and adjacent picks: main-pool scoring at a fixed relevance, plus the bleed bonus. */
+function bleedScore(artist: Artist, opts: AugmentAdjacentOpts): number {
+  const tier = tierMultiplier(artist.popularity, opts.popularityCurve)
+  const discoveryPenalty = opts.undergroundMode ? Math.pow((100 - artist.popularity) / 100, 2) : 1
+  const baseScore = tier * 0.8 + 0.3 * 0.2
+  const mainstreamPenalty = opts.adventurous && artist.popularity > 50 ? ADVENTUROUS_MAINSTREAM_PENALTY : 0
+  return baseScore * discoveryPenalty + ADJACENT_BLEED_BONUS - mainstreamPenalty
+}
+
+async function adjacentCandidates(base: ScoredArtist[], opts: AugmentAdjacentOpts): Promise<ScoredArtist[]> {
   const adventurous = !!opts.adventurous
-  const adaptive = !!opts.adaptiveBroadening
-
-  // Exploration budget (M3): 4 / 10 injections for 20% / 50% of a 20-item feed.
-  const N = adventurous ? 10 : 4
-  const startPos = adventurous ? 3 : 5
-  if (base.length <= startPos) return base
-
   const userGenreKeys = new Set(opts.userGenres.map((g) => normalizeGenre(g)))
   const tagSet = new Set<string>()
   for (const g of opts.userGenres.slice(0, 5)) {
     for (const adj of adjacentGenres(g, 'close')) {
       if (!userGenreKeys.has(normalizeGenre(adj))) tagSet.add(adj)
     }
-    if (adaptive) {
+    if (opts.adaptiveBroadening) {
       for (const adj of adjacentGenres(g, 'medium')) {
         if (!userGenreKeys.has(normalizeGenre(adj))) tagSet.add(adj)
       }
     }
   }
 
-  const tags = [...tagSet]
-  for (let i = tags.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[tags[i], tags[j]] = [tags[j], tags[i]]
-  }
+  const tags = shuffle([...tagSet])
   // Each tag yields ~20 Last.fm names, from which most filter out. maxTags
   // needs to scale with N so 10-pick Adventurous has enough surviving
   // candidates after dedup + thumbs-down + listened filters.
-  const maxTags = adventurous ? 10 : 5
-  const sampled = tags.slice(0, maxTags)
-  if (sampled.length === 0) return base
+  const sampled = tags.slice(0, adventurous ? 10 : 5)
+  if (sampled.length === 0) return []
 
-  const tagToNames = new Map<string, string[]>()
   const fetchResults = await Promise.all(
     sampled.map(async (tag) => ({ tag, names: await opts.fetchTagArtists(tag) }))
   )
-  const allNames = new Set<string>()
-  for (const { tag, names } of fetchResults) {
-    tagToNames.set(tag, names)
-    for (const n of names) allNames.add(n)
-  }
-
-  const baseNameLc = new Set(base.map((b) => b.artist.name.toLowerCase()))
-  const toResolve = [...allNames].filter((n) => !baseNameLc.has(n.toLowerCase()))
-  if (toResolve.length === 0) return base
-
-  const resolved = await opts.resolveArtists(toResolve)
-  const baseIds = new Set(base.map((b) => b.artist.id))
   const nameToTag = new Map<string, string>()
-  for (const [tag, names] of tagToNames) {
+  for (const { tag, names } of fetchResults) {
     for (const n of names) {
       const key = n.toLowerCase()
       if (!nameToTag.has(key)) nameToTag.set(key, tag)
     }
   }
 
+  const baseNameLc = new Set(base.map((b) => b.artist.name.toLowerCase()))
+  const toResolve = [...new Set(fetchResults.flatMap((r) => r.names))].filter((n) => !baseNameLc.has(n.toLowerCase()))
+  if (toResolve.length === 0) return []
+
+  const resolved = await opts.resolveArtists(toResolve)
   const scored: ScoredArtist[] = []
   for (const [name, artist] of resolved.entries()) {
-    if (baseIds.has(artist.id)) continue
-    if (opts.undergroundMode && (artist.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) continue
-
     const tag = nameToTag.get(name.toLowerCase()) ?? ''
-    const seedRelevance = 0.3
-    const tier = tierMultiplier(artist.popularity, opts.popularityCurve)
-    const discoveryPenalty = opts.undergroundMode
-      ? Math.pow((100 - artist.popularity) / 100, 2)
-      : 1
-    const baseScore = tier * 0.8 + seedRelevance * 0.2
-    const mainstreamPenalty =
-      adventurous && artist.popularity > 50 ? ADVENTUROUS_MAINSTREAM_PENALTY : 0
-    const score = baseScore * discoveryPenalty + ADJACENT_BLEED_BONUS - mainstreamPenalty
-
     scored.push({
       artist: { ...artist, topTracks: artist.topTracks ?? [] },
-      score,
-      why: {
-        sourceArtists: tag ? [tag] : [],
-        genres: artist.genres.slice(0, 2),
-        friendBoost: [],
-      },
+      score: bleedScore(artist, opts),
+      why: { sourceArtists: tag ? [tag] : [], genres: artist.genres.slice(0, 2), friendBoost: [] },
       source: 'adjacent_bleed',
     })
   }
+  return scored
+}
 
-  if (scored.length === 0) return base
-  scored.sort((a, b) => b.score - a.score)
-  const picks = scored.slice(0, N)
+async function farCandidates(far: NonNullable<AugmentAdjacentOpts['far']>, opts: AugmentAdjacentOpts): Promise<ScoredArtist[]> {
+  const resolved = await far.resolved
+  const scored: ScoredArtist[] = []
+  for (const [name, artist] of resolved ?? []) {
+    const label = far.labelOf(name)
+    if (!label) continue
+    scored.push({
+      artist: { ...artist, topTracks: artist.topTracks ?? [] },
+      score: bleedScore(artist, opts),
+      // sourceArtists = the label so the feed interleave spreads far picks out.
+      why: { sourceArtists: [label], genres: artist.genres.slice(0, 2), friendBoost: [], outsideUsual: label },
+      source: 'far_pool',
+    })
+  }
+  return scored
+}
+
+export async function augmentWithAdjacent(
+  base: ScoredArtist[],
+  opts: AugmentAdjacentOpts
+): Promise<ScoredArtist[]> {
+  const adventurous = !!opts.adventurous
+  const far = adventurous ? opts.far : undefined
+  if (base.length === 0 || (opts.userGenres.length === 0 && !far)) return base
+
+  // Exploration budget (M3): 4 / 10 injections for 20% / 50% of a 20-item feed.
+  const N = adventurous ? 10 : 4
+  const startPos = adventurous ? 3 : 5
+  if (base.length <= startPos) return base
+
+  // Far and adjacent run concurrently: adjacent only tops up a far shortfall,
+  // but waiting for far first would put its resolve on the serial path.
+  const [farScored, adjScored] = await Promise.all([
+    far ? farCandidates(far, opts) : Promise.resolve([]),
+    opts.userGenres.length > 0 ? adjacentCandidates(base, opts) : Promise.resolve([]),
+  ])
+
+  const used = new Set(base.map((b) => b.artist.id))
+  const picks: ScoredArtist[] = []
+  for (const list of [farScored, adjScored]) {
+    for (const c of list.sort((a, b) => b.score - a.score)) {
+      if (picks.length >= N) break
+      if (used.has(c.artist.id)) continue
+      if (opts.undergroundMode && (c.artist.popularity ?? 0) > UNDERGROUND_MAX_POPULARITY) continue
+      used.add(c.artist.id)
+      picks.push(c)
+    }
+  }
+  if (picks.length === 0) return base
 
   const mergeable = base.slice(startPos).map((item, idx) => ({
     score: item.score,
@@ -433,6 +466,12 @@ export interface RunPipelineOpts {
    * instances racing over the same names each mint a row.
    */
   identity?: ArtistIdentity
+  /**
+   * The far pool (#205, Wander farther only): started once per build in
+   * parallel with the first-hop similarity fetch and shared by soften runs.
+   * Never rejects. `ms` = the fetch's own wall-clock.
+   */
+  farNames?: Promise<{ names: FarName[]; ms: number }>
 }
 
 /**
@@ -536,6 +575,24 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
     return true
   }
 
+  // Far pool (#205): resolved + gated in parallel with the primary resolve, so
+  // only a far fetch slower than the whole primary path can block tier 1.
+  // Skipped under a genre filter (the bleed step is too).
+  const farLabels = new Map<string, string>()
+  let farMs: number | undefined
+  let farWaitMs: number | undefined
+  let farTimedOut = false
+  const farResolved: Promise<Map<string, Artist> | null> | null = o.farNames && !genre
+    ? o.farNames.then(async ({ names, ms }) => {
+        farMs = ms
+        for (const f of names) farLabels.set(f.name.toLowerCase(), f.label)
+        if (names.length === 0) return null
+        return (await candidates.resolve(names.map((f) => f.name), { keep: (a) => feedKeeps(a) })).artists
+      }).catch((err) => {
+        console.error(`[engine] far_resolve_fail source=${source} err=${err instanceof Error ? err.message : err}`)
+        return null
+      })
+    : null
   // Fire the secondary resolution in parallel with primary. It's still best-
   // effort and its confirm/write happens later in `runSecondary` (from an
   // `after()` block), but the Last.fm round-trips overlap with the primary
@@ -648,7 +705,8 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
   // Post-pipeline adjacent-genre bleed. Skipped when the user has filtered
   // to one genre (?genre=X) — we respect the explicit narrow intent.
   let top = baseTop
-  if (!genre && userGenres.length > 0) {
+  if (!genre && (userGenres.length > 0 || farResolved)) {
+    const augmentStart = Date.now()
     top = await augmentWithAdjacent(baseTop, {
       userGenres,
       adventurous,
@@ -660,6 +718,19 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
       // pick with a cached preview (or a fresh negative) never re-hits iTunes.
       resolveArtists: async (names) =>
         (await candidates.resolve(names, { keep: (a) => !exclusions.reason(a) })).artists,
+      far: farResolved
+        ? {
+            // Bleed-step start → far pool ready (≈0 when it finished during the primary resolve).
+            // A far pool slower than FAR_WAIT_BUDGET_MS is dropped for this run (adjacent bleed only).
+            resolved: withinBudget(farResolved, FAR_WAIT_BUDGET_MS).then((r) => {
+              farWaitMs = Date.now() - augmentStart
+              if (r !== undefined) return r
+              farTimedOut = true
+              return null
+            }),
+            labelOf: (name) => farLabels.get(name.toLowerCase()),
+          }
+        : undefined,
     })
   }
 
@@ -913,6 +984,9 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
       misses: resolved.cacheMisses,
       retries: resolved.searchRetries,
       rateLimited: resolved.rateLimited,
+      ...(farMs !== undefined ? { farMs } : {}),
+      ...(farWaitMs !== undefined ? { farWaitMs } : {}),
+      ...(farTimedOut ? { farTimedOut } : {}),
     },
   }
 }
@@ -1020,6 +1094,7 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
 
   const { seedNames, pinnedSeeds, userGenres } = await gatherSeedContext(userId, supabase)
   const identity = new ArtistIdentity(supabase)
+  const farNames = adventurous && !genre ? startFarFetch(supabase, userId, userGenres) : undefined
 
   const makeBaseOpts = (overrides: Partial<RunPipelineOpts>): RunPipelineOpts => ({
     seedNames,
@@ -1036,6 +1111,7 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     adventurous,
     userGenres,
     identity,
+    farNames,
     ...overrides,
   })
 
@@ -1054,6 +1130,33 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
   const coldSeeds = sampleColdStartSeeds()
   const run = await runPipeline(makeBaseOpts({ seedNames: coldSeeds, source: 'cold_start', userGenres: [] }))
   return composeResult(run, [run])
+}
+
+/**
+ * Kick off the far-pool fetch (listened genres → ≤FAR_TAG_CALLS Last.fm tag
+ * lookups). Returned un-awaited so it overlaps the first-hop similarity
+ * fetch. A fresh seed per build varies the tags batch to batch. Never rejects.
+ */
+function startFarFetch(supabase: SupabaseClient, userId: string, userGenres: string[]) {
+  const start = Date.now()
+  return loadListenedGenres(supabase, userId)
+    .then((listened) =>
+      fetchFarNames({
+        selectedGenres: userGenres,
+        listened,
+        seed: (Math.random() * 2 ** 32) >>> 0,
+        fetchTagArtists: (tag, limit) => lastfm.tagTopArtists(tag, limit),
+      }),
+    )
+    .catch((err) => {
+      console.error(`[engine] far_fetch_fail userId=${userId} err=${err instanceof Error ? err.message : err}`)
+      return [] as FarName[]
+    })
+    .then((names) => {
+      const ms = Date.now() - start
+      console.log(`[engine] far-fetch userId=${userId} names=${names.length} ms=${ms}`)
+      return { names, ms }
+    })
 }
 
 function sampleColdStartSeeds(): string[] {

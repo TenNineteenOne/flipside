@@ -1,6 +1,6 @@
 ---
 title: Auth & Session
-updated: 2026-10-24
+updated: 2026-11-10
 related: [[data-model]], [[api-routes]], [[infra-and-ops]]
 ---
 
@@ -72,7 +72,7 @@ Idempotent (already-encrypted passes through). One-time backfill:
 - **Middleware** (`proxy.ts`): gates all pages + `/api/*` except `/api/auth/*` and
   `/api/cron/*`. See [[infra-and-ops]]. A signed-in user is bounced from `/` and
   `/sign-in` to `/feed` (so "New account" can't silently switch accounts). Exception:
-  `/sign-in?reauth=1`, which Feed/Explore/Saved use when the JWT is valid but the `users`
+  `/sign-in?reauth=1`, which Feed/Saved use when the JWT is valid but the `users`
   row is gone (otherwise `/feed` → `/sign-in` → `/feed` would loop).
 - **Onboarding resume**: `/feed` (server) redirects to `/onboarding` while the user has no
   `onboarding_completed_at`, no Last.fm username and no seed artists (the

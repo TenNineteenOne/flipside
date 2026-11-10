@@ -6,6 +6,8 @@ import {
   runDeepHop,
   augmentWithAdjacent,
   runWithSoftening,
+  withinBudget,
+  FAR_WAIT_BUDGET_MS,
   type RunPipelineOpts,
   type PipelineRun,
 } from "./engine"
@@ -489,6 +491,114 @@ describe("augmentWithAdjacent", () => {
     const injected = result.filter((r) => r.source === "adjacent_bleed")
     // 10 low + 1 high candidates → all 10 low slots filled ahead of the high.
     expect(injected.every((r) => r.artist.popularity <= 50)).toBe(true)
+  })
+
+  describe("far pool (Wander farther, #205)", () => {
+    const resolveAs = (genre: string) => async (names: string[]) =>
+      new Map(names.map((n) => [n, mkArtist(`id_${n}`, 30, genre)] as [string, Artist]))
+    const far = (names: string[]) => ({
+      resolved: resolveAs("black-metal")(names),
+      labelOf: (n: string) => (n.startsWith("far") ? "black metal" : undefined),
+    })
+
+    it("fills the 10 slots from the far pool first and marks them outsideUsual", async () => {
+      const result = await augmentWithAdjacent(makeBase(20), {
+        userGenres: ["indie-rock"],
+        adventurous: true,
+        popularityCurve: 0.95,
+        fetchTagArtists: async () => Array.from({ length: 12 }, (_, i) => `adj${i}`),
+        resolveArtists: resolveAs("indie-pop"),
+        far: far(Array.from({ length: 12 }, (_, i) => `far${i}`)),
+      })
+      const farPicks = result.filter((r) => r.source === "far_pool")
+      expect(farPicks).toHaveLength(10)
+      expect(result.some((r) => r.source === "adjacent_bleed")).toBe(false)
+      for (const p of farPicks) expect(p.why.outsideUsual).toBe("black metal")
+      for (let i = 0; i < 3; i++) expect(result[i].source).toBe("test")
+    })
+
+    it("adjacent bleed covers a far shortfall and is never marked", async () => {
+      const result = await augmentWithAdjacent(makeBase(20), {
+        userGenres: ["indie-rock"],
+        adventurous: true,
+        popularityCurve: 0.95,
+        fetchTagArtists: async () => Array.from({ length: 12 }, (_, i) => `adj${i}`),
+        resolveArtists: resolveAs("indie-pop"),
+        far: far(["far0", "far1", "far2"]),
+      })
+      expect(result.filter((r) => r.source === "far_pool")).toHaveLength(3)
+      const adj = result.filter((r) => r.source === "adjacent_bleed")
+      expect(adj).toHaveLength(7)
+      for (const a of adj) expect(a.why.outsideUsual).toBeUndefined()
+    })
+
+    it("runs with no selected genres; ignored when not adventurous", async () => {
+      const on = await augmentWithAdjacent(makeBase(20), {
+        userGenres: [],
+        adventurous: true,
+        popularityCurve: 0.95,
+        fetchTagArtists: async () => [],
+        resolveArtists: resolveAs("x"),
+        far: far(["far0"]),
+      })
+      expect(on.filter((r) => r.source === "far_pool")).toHaveLength(1)
+
+      const off = await augmentWithAdjacent(makeBase(20), {
+        userGenres: [],
+        adventurous: false,
+        popularityCurve: 0.95,
+        fetchTagArtists: async () => [],
+        resolveArtists: resolveAs("x"),
+        far: far(["far0"]),
+      })
+      expect(off.every((r) => r.source === "test")).toBe(true)
+    })
+
+    it("a null far result degrades to adjacent only", async () => {
+      const result = await augmentWithAdjacent(makeBase(20), {
+        userGenres: ["indie-rock"],
+        adventurous: true,
+        popularityCurve: 0.95,
+        fetchTagArtists: async () => ["adj0", "adj1"],
+        resolveArtists: resolveAs("indie-pop"),
+        far: { resolved: Promise.resolve(null), labelOf: () => "x" },
+      })
+      expect(result.filter((r) => r.source === "adjacent_bleed")).toHaveLength(2)
+    })
+
+    it("a far pool slower than the budget is dropped: tier 1 gets adjacent only, no hang", async () => {
+      vi.useFakeTimers()
+      try {
+        let settleFar!: (m: Map<string, Artist>) => void
+        const slowFar = new Promise<Map<string, Artist>>((r) => { settleFar = r })
+        const run = augmentWithAdjacent(makeBase(20), {
+          userGenres: ["indie-rock"],
+          adventurous: true,
+          popularityCurve: 0.95,
+          fetchTagArtists: async () => ["adj0", "adj1"],
+          resolveArtists: resolveAs("indie-pop"),
+          far: { resolved: withinBudget(slowFar, FAR_WAIT_BUDGET_MS).then((r) => r ?? null), labelOf: () => "x" },
+        })
+        await vi.advanceTimersByTimeAsync(FAR_WAIT_BUDGET_MS)
+        const result = await run
+        expect(result.some((r) => r.source === "far_pool")).toBe(false)
+        expect(result.filter((r) => r.source === "adjacent_bleed")).toHaveLength(2)
+        settleFar(new Map()) // a late far result is ignored
+        expect(vi.getTimerCount()).toBe(0)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it("withinBudget passes a fast value through and clears its timer", async () => {
+      vi.useFakeTimers()
+      try {
+        await expect(withinBudget(Promise.resolve("ok"), FAR_WAIT_BUDGET_MS)).resolves.toBe("ok")
+        expect(vi.getTimerCount()).toBe(0)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
   })
 
   it("returns base unchanged when base has ≤ startPos items", async () => {

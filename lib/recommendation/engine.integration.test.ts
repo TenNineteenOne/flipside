@@ -129,7 +129,7 @@ afterEach(() => {
   vi.unstubAllEnvs()
   // Restore any vi.spyOn (e.g. the cold-start test's similarArtists spy,
   // the run-2 test's Math.random spy) so it can't leak into a later test's
-  // module mocks. Mirrors the explore integration suite's afterEach.
+  // module mocks.
   vi.restoreAllMocks()
 })
 
@@ -407,6 +407,46 @@ describe("buildRecommendations — adjacent bleed is rehydrated (#175 D2)", () =
     expect(bleedRow?.artist_data.topTracks[0].id).toBe("it-cached-bleed")
     // Old code handed bleed picks `topTracks: []` (never rehydrated) → iTunes.
     expect(h.calls.itunes).not.toContain("BleedArtist")
+  })
+})
+
+// ── #205: Wander farther far pool goes through the same pipeline ────────────
+describe("buildRecommendations — far pool (Wander farther, #205)", () => {
+  it("writes far picks with why.outsideUsual; a thumbs-down far artist never lands", async () => {
+    const downId = "fa400000-0000-4000-8000-000000000001"
+    seed({
+      seed_artists: [{ user_id: "u1", name: "SeedA" }],
+      artists: [artistsRow(downId, "FarDisliked")],
+      feedback: [{ user_id: "u1", artist_id: downId, signal: "thumbs_down", deleted_at: null }],
+    })
+    lf.similars.set("SeedA", similarRefs(Array.from({ length: 10 }, (_, i) => `Base${i}`)))
+    // Every tag: a 10-name mainstream head (skipped), then the far candidates.
+    const head = Array.from({ length: 10 }, (_, i) => `Head${i}`)
+    lf.tags = (tag) => [...head, "FarDisliked", `Far-${tag}`]
+
+    const result = await buildRecommendations({ ...baseInput(), adventurous: true, deepDiscovery: true })
+    await result.finish()
+
+    const far = cacheRows().filter((r) => r.source === "far_pool")
+    expect(far.length).toBeGreaterThan(0)
+    for (const r of far) {
+      expect(typeof r.why.outsideUsual).toBe("string")
+      expect(r.artist_data.name.startsWith("Far-")).toBe(true)
+    }
+    expect(cacheRows().some((r) => r.artist_id === downId)).toBe(false)
+    expect(cacheRows().some((r) => String(r.artist_data.name).startsWith("Head"))).toBe(false)
+    expect(result.metrics.farMs).toBeTypeOf("number")
+  })
+
+  it("no far fetch when Wander farther is off", async () => {
+    seed({ seed_artists: [{ user_id: "u1", name: "SeedA" }] })
+    lf.similars.set("SeedA", similarRefs(Array.from({ length: 10 }, (_, i) => `Base${i}`)))
+    const tags = vi.fn(() => [] as string[])
+    lf.tags = tags
+    const result = await buildRecommendations(baseInput())
+    await result.finish()
+    expect(tags).not.toHaveBeenCalled()
+    expect(result.metrics.farMs).toBeUndefined()
   })
 })
 

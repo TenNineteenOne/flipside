@@ -1,4 +1,4 @@
-/** #175: a thumbs-up before /explore was ever loaded this week still credits the challenge. */
+/** #175: a thumbs-up before this week's challenge row exists still credits the challenge. */
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { createRouteFakeDb } from "@/lib/api/__fixtures__/route-fake-db"
 

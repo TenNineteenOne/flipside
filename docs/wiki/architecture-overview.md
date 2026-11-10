@@ -13,7 +13,7 @@ flipside is a **Next.js 16 App Router** app (React 19, TypeScript, Tailwind v4) 
 
 | Group | Routes | Auth | Wrapper |
 |---|---|---|---|
-| `app/(app)` | `/feed`, `/explore`, `/history`, `/saved`, `/stats`, `/settings` | required (redirect to `/sign-in`) | `AudioProvider` + `AppShell` (rail / top bar + tab bar) + `MiniPlayer` |
+| `app/(app)` | `/feed`, `/history`, `/saved`, `/stats`, `/settings` | required (redirect to `/sign-in`) | `AudioProvider` + `AppShell` (rail / top bar + tab bar) + `MiniPlayer` |
 | `app/(marketing)` | `/sign-in`, `/onboarding` | public | bare layout |
 | `app/page.tsx` | `/` (landing) | public; signed-in visitors are redirected to `/feed` by the proxy | static (prerendered), its own `AudioProvider` around the hero card |
 | `app/dev-preview` | `/dev-preview/*` | development only: 404 in production | the real shell and components with fixture data and a stubbed `/api/*` fetch |
@@ -35,8 +35,8 @@ hands serialized data to a `"use client"` shell for interactivity. A single
 
 ## The generation flow (the heart of the app)
 
-Both the **Feed** ([[generation-engine]]) and **Explore** ([[explore-engine]]) share one
-resolver/confirm core:
+The **Feed** ([[generation-engine]]) runs one resolver/confirm core (Explore was folded into
+it on 2026-11-10; `/explore` 308-redirects to `/feed` via `next.config.ts` `redirects()`):
 
 ```
 seeds ─▶ Last.fm similarity / tag fan-out ─▶ candidate names
@@ -45,7 +45,7 @@ seeds ─▶ Last.fm similarity / tag fan-out ─▶ candidate names
       ─▶ filter (listened / thumbs-down / cooldown / underground cap)
       ─▶ score (k^popularity) + diversity (greedy + 25% cluster cap)
       ─▶ confirm playable preview (iTunes first → Spotify fallback)
-      ─▶ write to cache (recommendation_cache / explore_cache)
+      ─▶ write to cache (recommendation_cache)
 ```
 
 Key design properties:
@@ -87,7 +87,7 @@ See [[index]] for the full module map.
 
 ## Where to go next
 
-- Editing recommendations? → [[generation-engine]] / [[explore-engine]]
+- Editing recommendations? → [[generation-engine]]
 - Touching external calls or breakers? → [[music-providers]] / [[external-apis]]
 - Schema change? → [[data-model]]
 - Evaluating the Spotify dependency? → [[spotify-dependency]]

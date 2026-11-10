@@ -20,6 +20,8 @@ function feedback(extra: Partial<Parameters<typeof createArtistFeedback>[0]> = {
   const c = createArtistFeedback({ fetchImpl: f.fetchImpl, toast, ...extra })
   return { ...f, toast, c, sig: (id = "a") => c.store.get(id) }
 }
+/** Start artist "a" at a confirmed verdict, with no network call. */
+const seed = (c: ReturnType<typeof feedback>["c"], v: string) => c.store.confirmedOp("a", v, async () => {})
 
 describe("feedback: optimistic before queue", () => {
   it("both taps show immediately; calls go out one at a time in tap order", async () => {
@@ -80,33 +82,7 @@ describe("feedback: optimistic before queue", () => {
     expect(toast.error).toHaveBeenCalledWith("Couldn't undo — try again")
   })
 
-  it("local-only signals skip the network but still queue behind in-flight calls", async () => {
-    const { c, calls, sig } = feedback({ localOnlySignals: ["skip"] })
-    c.setSignal("a", "thumbs_up")
-    const t2 = c.setSignal("a", "skip")
-    expect(sig()).toBe("skip")
-    await flush()
-    calls[0].resolve(false) // like fails while skip is queued
-    await t2
-    expect(sig()).toBe("skip")
-    expect(calls).toHaveLength(1)
-  })
 
-  it("#175 Y3: sends the rail current at tap time, even when the POST is queued", async () => {
-    const { c, calls } = feedback({ railKey: "adjacent" })
-    c.setSignal("a", "thumbs_up")
-    c.setSignal("a", "thumbs_down") // queued behind the like, tapped on adjacent
-    c.setRailKey("outside")
-    await flush()
-    expect(body(calls[0].init).railKey).toBe("adjacent")
-    calls[0].resolve(true)
-    await flush()
-    expect(body(calls[1].init).railKey).toBe("adjacent")
-    c.setRailKey(undefined)
-    c.setSignal("b", "thumbs_down")
-    await flush()
-    expect(body(calls[2].init)).toEqual({ artistId: "b", signal: "thumbs_down" })
-  })
 
   it("other artists are independent", async () => {
     const { c, calls } = feedback()
@@ -147,21 +123,6 @@ describe("feedback: confirmed ops (History undo/unblock)", () => {
     calls[0].resolve(true)
     expect(await p).toBe(true)
   })
-
-  it("bulk replace drops signals locally and from the rollback baseline", async () => {
-    const { c, calls, sig } = feedback()
-    c.setSignal("a", "thumbs_up")
-    await flush()
-    calls[0].resolve(true)
-    await flush()
-    c.store.replace(() => new Map())
-    expect(sig()).toBeUndefined()
-    const t = c.setSignal("a", "thumbs_down")
-    await flush()
-    calls[1].resolve(false)
-    await t
-    expect(sig()).toBeUndefined() // not resurrected
-  })
 })
 
 describe("feedback: restore (feed undo)", () => {
@@ -189,7 +150,7 @@ describe("feedback: restore (feed undo)", () => {
     [undefined, undefined, []],
   ] as const)("%s → %s sends %j and shows the previous verdict at once", async (current, previous, expected) => {
     const { c, calls, sig } = feedback()
-    c.store.replace(() => (current ? new Map([["a", current]]) : new Map()))
+    if (current) await seed(c, current)
     const p = c.restore("a", previous)
     expect(sig()).toBe(previous)
     expect(await drain(calls)).toEqual(expected)
@@ -211,7 +172,7 @@ describe("feedback: restore (feed undo)", () => {
 
   it("a failed undo rolls back to the confirmed verdict and toasts", async () => {
     const { c, calls, sig, toast } = feedback()
-    c.store.replace(() => new Map([["a", "thumbs_down"]]))
+    await seed(c, "thumbs_down")
     const p = c.restore("a", undefined)
     expect(sig()).toBeUndefined()
     await drain(calls, false)
@@ -222,7 +183,7 @@ describe("feedback: restore (feed undo)", () => {
 
   it("skip → thumbs: once the DELETE succeeded, a failed POST still counts as undone (no rollback, no toast)", async () => {
     const { c, calls, sig, toast } = feedback()
-    c.store.replace(() => new Map([["a", "skip"]]))
+    await seed(c, "skip")
     const p = c.restore("a", "thumbs_up")
     await flush()
     calls[0].resolve(true) // DELETE /api/dismiss/a
@@ -235,7 +196,7 @@ describe("feedback: restore (feed undo)", () => {
 
   it("skip → thumbs: a failed DELETE rolls back to skip and toasts", async () => {
     const { c, calls, sig, toast } = feedback()
-    c.store.replace(() => new Map([["a", "skip"]]))
+    await seed(c, "skip")
     const p = c.restore("a", "thumbs_up")
     await flush()
     calls[0].resolve(false)

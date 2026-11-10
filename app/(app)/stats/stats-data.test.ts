@@ -7,7 +7,7 @@ const art = (id: string, name: string, genres: string[], popularity: number | nu
 const fb = (artist_id: string, signal: string, deleted_at: string | null = null, user_id = "u1") => ({ id: `f-${artist_id}-${user_id}`, user_id, artist_id, signal, deleted_at })
 
 describe("loadStats", () => {
-  it("assembles from artists by id, even with no recommendation_cache rows (Explore / pruned)", async () => {
+  it("assembles from artists by id, even with no recommendation_cache rows (pruned)", async () => {
     const db = createRouteFakeDb({
       artists: [art("a1", "Alpha", ["indie", "rock"], 30), art("a2", "Beta", ["indie"], null), art("a3", "Gamma", ["jazz"], 70), art("a4", "Delta", ["pop"])],
       feedback: [fb("a1", "thumbs_up"), fb("a2", "thumbs_up"), fb("a3", "thumbs_up"), fb("a4", "thumbs_down"), fb("a1", "thumbs_up", null, "u2")],

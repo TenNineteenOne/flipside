@@ -6,7 +6,7 @@ const NOW = new Date("2026-04-20T00:00:00Z")
 const daysAgo = (d: number) => new Date(NOW.getTime() - d * 24 * 60 * 60 * 1000).toISOString()
 
 const FEED: ExclusionPolicy = { playThreshold: 5, nameFallback: true }
-const EXPLORE: ExclusionPolicy = { playThreshold: "any", nameFallback: false }
+const ID_ONLY: ExclusionPolicy = { playThreshold: 5, nameFallback: false }
 
 async function load(tables: Tables, policy: ExclusionPolicy) {
   const fake = createFakeSupabase({ listened_artists: [], feedback: [], recommendation_cache: [], ...tables })
@@ -36,11 +36,10 @@ describe("loadExclusions — listened", () => {
     expect(ex.reason(a("other-user"))).toBeNull()
   })
 
-  it("explore: ANY listened row hides (owner decision #3), ids only", async () => {
-    const ex = await load(listened, EXPLORE)
-    for (const id of ["over", "at", "zero", "nullcount"]) expect(ex.reason(a(id))).toBe("listened")
+  it("without nameFallback, id-less rows never match by name", async () => {
+    const ex = await load(listened, ID_ONLY)
+    expect(ex.reason(a("over"))).toBe("listened")
     expect(ex.reason(a("x", "Boards Of Canada"))).toBeNull()
-    expect(ex.reason(a("other-user"))).toBeNull()
   })
 })
 
@@ -61,7 +60,7 @@ describe("loadExclusions — feedback + cooldown", () => {
   }
 
   it("thumbs-down (active only), 7-day seen cooldown, and permanent dismiss — same for both policies", async () => {
-    for (const policy of [FEED, EXPLORE]) {
+    for (const policy of [FEED, ID_ONLY]) {
       const ex = await load(tables, policy)
       expect(ex.reason(a("down"))).toBe("thumbs_down") // thumbs_down wins over listened
       expect(ex.reason(a("undone"))).toBeNull()

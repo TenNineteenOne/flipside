@@ -25,7 +25,7 @@
    widening a pane; single-line ones keep their ellipsis. */
 .ev-feed .ev-card-name, .ev-feed .ev-card-genres, .ev-feed .ev-card-why, .ev-feed .ev-m-name, .ev-feed .ev-m-why,
 .ev-feed .ev-row-name, .ev-feed .ev-m-thumb-text, .ev-feed .ev-end-title, .ev-feed .ev-end-body, .ev-feed .ev-player-text,
-.ev-feed .ev-cold-sub, [data-sonner-toast].ev-toast { overflow-wrap: anywhere; }
+[data-sonner-toast].ev-toast { overflow-wrap: anywhere; }
 .ev-feed .ev-card-hero, .ev-feed .ev-card-id, .ev-feed .ev-tuning, .ev-feed .ev-tune-group { min-width: 0; }
 .ev-feed :focus-visible { outline: 2px solid var(--violet-ink); outline-offset: 2px; border-radius: 6px; }
 
@@ -289,8 +289,30 @@
 .ev-feed .ev-chip { display: block; max-width: 100%; height: 24px; line-height: 24px; padding: 0 9px; border-radius: 6px; font-size: 13px; color: var(--fg-2); background: var(--raise); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ev-feed .ev-chip-more { color: var(--violet-ink); background: var(--violet-wash); }
 
-/* cold-start banner (existing component) at the top of the queue column */
-.ev-feed .ev-coldstart:not(:empty) { margin: 6px 0 12px; }
+/* Weekly challenge strip (components/feed/challenge-strip.tsx; mockup feed-merge.html §6 option Q): one line,
+   a mono count that never truncates, and a thin bar in the Wander rainbow. On desktop a light line in the
+   queue header's Load more row (.ev-wander-chal); a full-width line under the top bar on phones and tablets (in the feed's own column, so the snap
+   scroller below just gets shorter and --ev-snap-top is unchanged). */
+.ev-feed .ev-chal { position: relative; display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.ev-feed .ev-chal-text { flex: 1; min-width: 0; font-size: 13px; color: var(--fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev-feed .ev-chal-title { font-weight: 600; color: var(--fg); }
+.ev-feed .ev-chal-n { flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; font: 500 12px/1 var(--font-mono); color: var(--fg-2); font-variant-numeric: tabular-nums; }
+.ev-feed .ev-chal[data-done] .ev-chal-n { color: var(--violet-ink); }
+.ev-feed .ev-chal-track { flex-basis: 100%; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.ev-feed .ev-chal-track > span {
+  display: block; height: 100%; background: var(--wander-rainbow); border-radius: inherit;
+  transform-origin: left; transform: scaleX(var(--p, 0)); transition: transform 600ms var(--ease);
+}
+.ev-feed .ev-chal-skel-line { display: block; flex: none; width: min(320px, 70%); height: 12px; margin: 2px 0 1px; }
+.ev-feed.ev-app .ev-chal { flex-wrap: nowrap; row-gap: 0; padding-bottom: 8px; }
+.ev-feed.ev-app .ev-chal-track { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; }
+/* Phones and tablets: 36px line, bar along its foot. */
+.ev-feed.ev-snap .ev-chal { flex-shrink: 0; flex-wrap: nowrap; align-items: center; min-height: 36px; padding: 0 16px 2px; border-bottom: 1px solid var(--line); }
+.ev-feed.ev-snap .ev-chal-track { position: absolute; left: 16px; right: 16px; bottom: 6px; height: 2px; }
+.ev-feed.ev-snap .ev-chal-skel-line { margin: 0; }
+/* Phones in landscape: too little height for the card already. */
+@media (height < 480px) { .ev-feed.ev-snap:not(.ev-tablet) .ev-chal { display: none; } }
+
 .ev-feed .ev-queue-foot { padding: 20px 12px; color: var(--fg-3); font-size: 14px; }
 /* "Load more artists" at the end of the queue column and the tablet Up next list: always there. */
 .ev-feed .ev-queue-more { padding: 16px 12px 0; }
@@ -486,7 +508,7 @@ html:has(.ev-snap), html:has(.ev-snap) body { overflow: hidden; }
 /* No tracks yet / none: the desktop pane's copy, in the chips' place and height. */
 .ev-feed .ev-m-chips-note { align-items: center; height: 40px; font-size: 13px; color: var(--fg-3); }
 
-/* Short pages (iPhone SE in Safari, the cold line or the player bar showing, phones in landscape).
+/* Short pages (iPhone SE in Safari, the challenge line or the player bar showing, phones in landscape).
    The card adapts to the page's height so nothing is clipped from 220px up: first the artwork
    shrinks further, then the track chips go, then the why sentence. The play button, the name and
    the save / open / share row always stay. Wide and short pages (landscape) put the artwork beside
@@ -517,7 +539,7 @@ html:has(.ev-snap), html:has(.ev-snap) body { overflow: hidden; }
   .ev-feed .ev-m-page > .ev-m-card { padding-block: 4px; }
 }
 /* The tablet stage keeps the card upright at any width, so a wide short stage (888-899px wide
-   with the player bar and the cold-start line showing) shrinks it as a narrow page does. */
+   with the player bar and the challenge line showing) shrinks it as a narrow page does. */
 @container ev-page (width >= 560px) and (height < 356px) { .ev-feed .ev-m-stage .ev-m-art { min-height: 76px; } }
 @container ev-page (width >= 560px) and (height < 312px) {
   .ev-feed .ev-m-stage .ev-m-chips { display: none; }
@@ -548,27 +570,6 @@ html:has(.ev-snap), html:has(.ev-snap) body { overflow: hidden; }
 /* end of queue: the final snap page */
 .ev-feed .ev-m-page > .ev-end { padding: 24px 20px; width: min(100%, 480px); }
 .ev-feed .ev-m-page .ev-end-img { width: 72px; height: 72px; }
-
-/* cold-start hint (components/feed/cold-start-banner.tsx): a panel at the top of the desktop queue,
-   one dismissible line above the scroller on phones and tablets. Mono only for the count. */
-.ev-feed .ev-cold { display: flex; flex-direction: column; gap: 10px; padding: 12px 16px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
-.ev-feed .ev-cold-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-.ev-feed .ev-cold-label { flex-shrink: 0; font-size: 14px; font-weight: 600; color: var(--fg-2); white-space: nowrap; }
-.ev-feed .ev-cold-n { font: 400 12px/1 var(--font-mono); color: var(--fg); font-variant-numeric: tabular-nums; }
-.ev-feed .ev-cold-sub { min-width: 0; font-size: 13px; color: var(--fg-3); text-align: right; }
-.ev-feed .ev-cold-track { height: 3px; border-radius: 999px; background: var(--line); overflow: hidden; }
-.ev-feed .ev-cold-track > span { display: block; height: 100%; background: var(--violet); border-radius: inherit; transform-origin: left; transition: transform 250ms var(--ease); }
-.ev-feed .ev-coldline {
-  position: relative; flex-shrink: 0; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 4px 2px 16px;
-  border-bottom: 1px solid var(--line);
-}
-.ev-feed .ev-coldline .ev-cold-label { font-size: 13px; }
-.ev-feed .ev-coldline .ev-cold-sub { flex: 1; font-size: 13px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ev-feed .ev-coldline-x { display: grid; place-items: center; width: 44px; height: 44px; flex-shrink: 0; border-radius: 10px; color: var(--fg-3); }
-.ev-feed .ev-coldline-x:hover { color: var(--fg); }
-.ev-feed .ev-coldline .ev-cold-track { position: absolute; left: 16px; right: 16px; bottom: 6px; height: 2px; }
-/* Phones in landscape: the line would leave the card too little height, so it waits for a taller view. */
-@media (height < 480px) { .ev-feed.ev-snap:not(.ev-tablet) .ev-coldline { display: none; } }
 
 /* Small player bar (the docked player) between the scroller and the triage bar, as in the prototype. */
 .ev-feed .ev-m-mini { flex-shrink: 0; margin: 6px 16px 0; }
@@ -624,10 +625,10 @@ body:has(.ev-snap) [data-sonner-toaster][data-y-position="top"] {
   --ev-snap-top: calc(var(--top-h) + var(--safe-t) + 14px + 1px);
   display: grid; grid-template-columns: minmax(0, 1fr) 280px;
   grid-template-rows: auto minmax(0, 1fr) auto auto;
-  grid-template-areas: "cold cold" "stage rail" "mini rail" "tri rail";
+  grid-template-areas: "chal chal" "stage rail" "mini rail" "tri rail";
 }
-.ev-feed .ev-t-cold { grid-area: cold; }
-.ev-feed .ev-t-cold:empty { display: none; }
+.ev-feed .ev-t-chal { grid-area: chal; }
+.ev-feed .ev-t-chal:empty { display: none; }
 .ev-feed .ev-m-stage {
   grid-area: stage; min-height: 0; container-type: size;
   display: flex; justify-content: center; align-items: center; padding: 24px 24px 0;
@@ -693,8 +694,8 @@ body:has(.ev-snap) [data-sonner-toaster][data-y-position="top"] {
   .ev-feed .ev-seg[data-v="passed"], .ev-feed .ev-seg[data-v="dismissed"] { background: GrayText; border-color: GrayText; }
   .ev-feed .ev-seg[data-sel] { background: Highlight; border-color: Highlight; }
   .ev-feed .ev-row[data-sel], .ev-feed .ev-m-thumb[aria-current="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
-  .ev-feed .ev-meter, .ev-feed .ev-cold-track { border: 1px solid CanvasText; }
-  .ev-feed .ev-meter > span, .ev-feed .ev-cold-track > span { forced-color-adjust: none; background: CanvasText; }
+  .ev-feed .ev-meter, .ev-feed .ev-chal-track { border: 1px solid CanvasText; }
+  .ev-feed .ev-meter > span, .ev-feed .ev-chal-track > span { forced-color-adjust: none; background: CanvasText; }
   /* Background-only controls get a visible edge. */
   .ev-feed .ev-m-tri, .ev-feed .ev-m-chip, .ev-feed .ev-btn-play { border: 1px solid ButtonText; }
 }
@@ -715,3 +716,44 @@ body:has(.ev-snap) [data-sonner-toaster][data-y-position="top"] {
   .ev-feed .ev-m-tri-like { background: var(--raise); }
   .ev-feed button.ev-m-chip, .ev-feed button.ev-m-chip[data-current] { background: var(--raise); }
 }
+
+/* ---------- Wander farther (#205): switches beside Load more, rainbow buttons, far-pick why-line ----------
+   The switch and note themselves are in wander.css (shared with Settings). */
+/* Desktop header row: the weekly challenge (left, ellipsizes) beside Load more + switch (right); the Wander
+   note sits right-aligned under the controls. A narrow queue (<560px) gives the challenge its own line above
+   the controls. With no challenge the note takes the empty left cell instead, as before. */
+.ev-feed .ev-wander-bar { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 24px; }
+.ev-feed .ev-wander-chal { grid-area: 1 / 1 / 2 / 3; min-width: 0; }
+.ev-feed .ev-wander-chal:empty { display: none; }
+.ev-feed .ev-wander-ctl { grid-area: 2 / 2; display: flex; align-items: center; gap: 16px; }
+.ev-feed .ev-wander-bar .wander-note { grid-area: 3 / 2; justify-self: end; margin: -6px 0 0; }
+.ev-feed .ev-wander-bar:has(> .ev-wander-chal:empty) .ev-wander-ctl { grid-area: 1 / 2; }
+.ev-feed .ev-wander-bar:has(> .ev-wander-chal:empty) .wander-note { grid-area: 1 / 1; justify-self: start; margin: 0; }
+@container ev-queue (width >= 560px) {
+  .ev-feed .ev-wander-bar { row-gap: 2px; }
+  .ev-feed .ev-wander-chal { grid-area: 1 / 1; max-width: 460px; }
+  .ev-feed .ev-wander-ctl { grid-area: 1 / 2; }
+  .ev-feed .ev-wander-bar .wander-note { grid-area: 2 / 2; margin: 0; }
+}
+.ev-feed .ev-queue-more { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.ev-feed .ev-m-rail > li.ev-m-rail-more { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.ev-feed .ev-end-actions { align-items: center; }
+.ev-feed .ev-end .wander-note { margin-top: -6px; }
+.ev-feed .ev-btn.wander-btn-on { background: var(--wander-rainbow); border-color: transparent; color: oklch(0.16 0.01 293); }
+.ev-feed .ev-btn.wander-btn-on:hover:not([aria-disabled="true"]) { background: var(--wander-rainbow); filter: brightness(1.06); }
+/* Phone / tablet top bar: the switch, then "N of M left". */
+.ev-feed.ev-m-topbar { display: flex; align-items: center; justify-content: flex-end; gap: 12px; min-width: 0; margin-left: auto; }
+/* padding-left keeps the switch off the wordmark; the tighter gap below 400px pays for it */
+.ev-feed.ev-m-topbar { padding-left: 8px; }
+@media (width < 400px) { .ev-feed.ev-m-topbar { gap: 8px; } }
+/* Below 400px the switch + Load more leave no room for "of M": show "N left" */
+@media (width < 400px) { .ev-feed .ev-m-count-of { display: none; } }
+/* Header Load more: a 40px icon button on phones, icon + "Load more" from 600px wide. */
+.ev-feed .ev-btn.ev-m-more { flex: none; min-height: 40px; min-width: 40px; padding: 0; gap: 6px; font-size: 14px; }
+.ev-feed .ev-m-more-text { display: none; }
+@media (width >= 600px) {
+  .ev-feed .ev-btn.ev-m-more { padding: 0 14px 0 10px; }
+  .ev-feed .ev-m-more-text { display: inline; }
+}
+/* Far pick: "Outside your usual: <genre>" in teal, no other marking. */
+.ev-feed [data-far] { color: oklch(0.72 0.11 195); }

@@ -220,8 +220,8 @@ export async function resolveArtistsByName(
           firstSuccessfulSearch = false
         } else {
           // Mint failed (e.g. DB unavailable). We must NEVER let a non-uuid id
-          // leak downstream as the artist identity — recommendation_cache /
-          // explore now key on artists.id (a uuid FK), so a placeholder `.id`
+          // leak downstream as the artist identity — recommendation_cache
+          // keys on artists.id (a uuid FK), so a placeholder `.id`
           // would either violate the FK or poison dedup. Drop the name: skip
           // both the resolved map and the cache write, count as a fail.
           result.searchFail++

@@ -25,7 +25,7 @@ export const ADVENTUROUS_EVENT_NAME = "flipside:adventurous-change"
  * a fresh device saw adventurous mode switch off after mount — their saved
  * preference silently dropped until they re-toggled in Settings.
  *
- * Every consumer (the app shell's adventurous line, Settings, Explore)
+ * Every consumer (the app shell's adventurous line, Settings, the Feed switch)
  * treats the server as authoritative on first render. localStorage acts as a
  * write-through cache for in-tab and cross-tab sync, not as the source of
  * truth.
@@ -49,6 +49,58 @@ export function writeAdventurousToStorage(next: boolean): void {
     localStorage.setItem(ADVENTUROUS_STORAGE_KEY, next ? "1" : "0")
   } catch {
     // noop — private browsing / blocked storage
+  }
+}
+
+/**
+ * Mount reconciliation: the server-rendered value is authoritative, so it
+ * overwrites whatever an earlier session left in storage (a stale "0" must not
+ * flip a server `true` off, or the reverse). Returns the value to show.
+ */
+export function adoptServerAdventurous(initial: boolean): boolean {
+  const value = (confirmed ??= initial)
+  writeAdventurousToStorage(value)
+  return value
+}
+
+/**
+ * The last value the server confirmed in this page session. It outlives client navigations
+ * (Back can restore a cached Feed whose `initial` predates a toggle) and resets on a hard load,
+ * so a value set on another device still wins after a reload.
+ */
+let confirmed: boolean | null = null
+export function resetConfirmedAdventurous(): void { confirmed = null }
+
+/**
+ * The writer behind setAdventurous, React-free so it can be tested. Saves run one at a time in
+ * call order; the optimistic state flips at once, so rapid clicks read the value they see. Only
+ * the newest save broadcasts or rolls back (to the last confirmed value), so an older save landing
+ * never flickers the switch. Rejects when its own save fails (callers toast).
+ */
+export function createAdventurousWriter(deps: {
+  setState: (v: boolean) => void
+  fallback: () => boolean
+  patch?: (next: boolean) => Promise<void>
+}): (next: boolean) => Promise<void> {
+  const patch = deps.patch ?? patchAdventurousSetting
+  let chain: Promise<void> = Promise.resolve()
+  let latest = 0
+  return (next) => {
+    deps.setState(next)
+    const id = ++latest
+    const run = chain.then(() => patch(next)).then(
+      () => {
+        confirmed = next
+        writeAdventurousToStorage(next)
+        if (id === latest) dispatchAdventurousEvent()
+      },
+      (err) => {
+        if (id === latest) deps.setState(confirmed ?? deps.fallback())
+        throw err
+      },
+    )
+    chain = run.catch(() => {})
+    return run
   }
 }
 
@@ -79,11 +131,11 @@ export interface UseAdventurousModeResult {
  *
  * Owns the localStorage + window event + PATCH pattern for every consumer:
  * the app shell (adventurous line on the rail / under the top bar), the
- * Settings obscurity panel and Explore's rail session.
+ * Settings discovery panel and the Feed's Wander farther switch.
  *
- * SSR-safe: the initial render uses `initial` (from the server).  On mount the
- * hook reconciles with localStorage in case another tab wrote a newer value
- * before this component mounted.
+ * SSR-safe: the initial render uses `initial` (from the server), and on mount
+ * that value is written to localStorage (server-authoritative). Storage is only
+ * read for in-tab and cross-tab sync events after that.
  *
  * The hook does NOT toast on failure and does NOT call any rebuild helpers —
  * those are caller responsibilities so each surface can react differently.
@@ -91,21 +143,20 @@ export interface UseAdventurousModeResult {
 export function useAdventurousMode(initial: boolean): UseAdventurousModeResult {
   const [adventurous, setAdventurousState] = useState(initial)
 
-  // ── Mount effect: reconcile with localStorage + subscribe to sync events ──
+  // ── Mount effect: adopt the server value + subscribe to sync events ──
   useEffect(() => {
-    // Re-read localStorage and update state from it.  Used for both the initial
-    // reconciliation and for in-tab / cross-tab event-driven updates.
+    // Re-read localStorage on in-tab / cross-tab sync events.
     const syncFromStorage = () => {
       setAdventurousState(readAdventurousFromStorage(initial))
     }
-
-    // Reconcile: another tab or a previous session may have written a newer
-    // value before this component mounted.  We call syncFromStorage as a
-    // callback (not inline) to satisfy the react-hooks/set-state-in-effect rule.
-    syncFromStorage()
+    // The server value wins on mount (a changed `initial` prop re-adopts it).
+    // Called as a callback (not inline) to satisfy react-hooks/set-state-in-effect.
+    const adopt = () => setAdventurousState(adoptServerAdventurous(initial))
+    adopt()
 
     const handleStorageEvent = (e: StorageEvent) => {
       if (e.key === ADVENTUROUS_STORAGE_KEY) {
+        confirmed = readAdventurousFromStorage(initial) // another tab saved it
         syncFromStorage()
       }
     }
@@ -119,24 +170,10 @@ export function useAdventurousMode(initial: boolean): UseAdventurousModeResult {
     }
   }, [initial])
 
-  // ── Writer ───────────────────────────────────────────────────────────────
-  const setAdventurous = async (next: boolean): Promise<void> => {
-    // 1. Optimistic update
-    setAdventurousState(next)
-
-    try {
-      // 2. Persist to the server
-      await patchAdventurousSetting(next)
-
-      // 3. On success: write localStorage + broadcast in-tab event
-      writeAdventurousToStorage(next)
-      dispatchAdventurousEvent()
-    } catch (err) {
-      // 4. On failure: roll back and re-throw so callers can handle (e.g. toast)
-      setAdventurousState(!next)
-      throw err
-    }
-  }
+  // ── Writer: ordered saves, newest-wins rollback (createAdventurousWriter) ──
+  // One writer per hook instance (stable across renders). After mount `confirmed` is always set
+  // (adoptServerAdventurous), so the creation-time fallback only matters before the first effect.
+  const [setAdventurous] = useState(() => createAdventurousWriter({ setState: setAdventurousState, fallback: () => initial }))
 
   return { adventurous, setAdventurous }
 }

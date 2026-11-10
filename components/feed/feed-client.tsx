@@ -1,15 +1,18 @@
 "use client"
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react"
+import { Suspense, useEffect, useRef, useState, useSyncExternalStore } from "react"
 import dynamic from "next/dynamic"
 import { useRouter } from "next/navigation"
+import { toast } from "sonner"
 import { FeedShortcuts } from "@/components/feed/feed-shortcuts"
 import { FeedSkeleton } from "@/components/feed/feed-skeleton"
+import { ChallengeSkeleton, ChallengeSlot, type ChallengePayload } from "@/components/feed/challenge-strip"
 import { useShellBadge } from "@/components/shell/shell-context"
 import type { MusicPlatform } from "@/lib/music-links"
 import { useFeedFill } from "@/lib/hooks/use-feed-fill"
 import { useFeedGeneration } from "@/lib/hooks/use-feed-generation"
 import { useFeedTriage } from "@/lib/hooks/use-feed-triage"
+import { useAdventurousMode } from "@/lib/hooks/use-adventurous-mode"
 import type { CardArtist } from "@/lib/cards/card-artist"
 import type { GenerateResult } from "@/lib/client/feed-generation"
 import type { FeedLayout } from "@/lib/feed/layout-guess"
@@ -39,9 +42,12 @@ const preloadLayouts = () => loaders.forEach((load) => void load())
 interface FeedClientProps {
   recommendations: CardArtist[]
   musicPlatform: MusicPlatform
-  signalCount: number
+  /** users.adventurous: Wander farther, shown beside every Load more. */
+  initialAdventurous?: boolean
   /** The server's guess (lib/feed/layout-guess) for the first render; matchMedia takes over after hydration. */
   initialLayout?: FeedLayout
+  /** The weekly challenge, unawaited (the feed paints first; the strip streams in). Resolves null for none or a failed load. */
+  challengePromise?: Promise<ChallengePayload | null>
 }
 
 // Below this many unseen recs on load, quietly top up in the background so the
@@ -75,7 +81,7 @@ const useHydrating = () => useSyncExternalStore(noSubscribe, () => false, () => 
 // Main component
 // ---------------------------------------------------------------------------
 
-export function FeedClient({ recommendations, musicPlatform, signalCount, initialLayout = "phone" }: FeedClientProps) {
+export function FeedClient({ recommendations, musicPlatform, initialAdventurous = false, initialLayout = "phone", challengePromise }: FeedClientProps) {
   // Generate requests (mount top-up + Load more) share one re-entry guard, so
   // a user's own "Load more" can't collide with the background top-up.
   const generation = useFeedGeneration()
@@ -181,7 +187,17 @@ export function FeedClient({ recommendations, musicPlatform, signalCount, initia
     }
   }, [mounted])
 
+  const { adventurous, setAdventurous } = useAdventurousMode(initialAdventurous)
+  // Flipping only saves the setting; the cards on screen stay (#205). Saves run in order inside the
+  // hook, so a Load more waiting on the newest one generates with the latest value.
+  const wanderSave = useRef<Promise<void>>(Promise.resolve())
+  const wander = {
+    on: adventurous,
+    toggle: () => void (wanderSave.current = setAdventurous(!adventurous).catch(() => { toast.error("Couldn't save Wander farther") })),
+  }
+
   async function handleGenerateMore() {
+    await wanderSave.current
     const r = await generation.requestMore()
     if (r === null || !aliveRef.current) return
     if (r.kind === "unauthorized") {
@@ -196,6 +212,11 @@ export function FeedClient({ recommendations, musicPlatform, signalCount, initia
     }
   }
 
+  const challenge = challengePromise && (
+    <Suspense fallback={<ChallengeSkeleton />}>
+      <ChallengeSlot challengePromise={challengePromise} />
+    </Suspense>
+  )
   const View = layout === "desktop" ? FeedDesktop : layout === "tablet" ? FeedTablet : FeedSnap
   return (
     <>
@@ -209,7 +230,7 @@ export function FeedClient({ recommendations, musicPlatform, signalCount, initia
           <FeedSkeleton />
         </div>
       )}
-      <View triage={triage} signalCount={signalCount} onLoadMore={handleGenerateMore} generating={isGenerating} onShown={setShown} />
+      <View triage={triage} onLoadMore={handleGenerateMore} generating={isGenerating} wander={wander} challenge={challenge} onShown={setShown} />
     </>
   )
 }

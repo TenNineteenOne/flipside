@@ -30,7 +30,7 @@ function respond(method: string, path: string): unknown {
     return { count: served - before, pending: false }
   }
   if (/^\/api\/artists\/[^/]+\/tracks$/.test(path)) return { tracks: [] }
-  return {} // feedback, saves, dismiss, settings, explore preload, …
+  return {} // feedback, saves, dismiss, settings, …
 }
 
 if (typeof window !== "undefined" && !("__devPreviewFetch" in window)) {

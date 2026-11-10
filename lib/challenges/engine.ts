@@ -1,5 +1,6 @@
 /**
- * Weekly challenges — small rotating quests surfaced on /explore.
+ * Weekly challenges — small rotating quests. Their only surface was the
+ * retired Explore page; the feedback route still assigns and credits them.
  *
  * Model: one active challenge per user per ISO week. The challenge_key
  * encodes the qualifying feedback signal (prefix before `_`) so the
@@ -16,8 +17,8 @@
  * templates are skipped, we fall back to the default `thumbs_up_any`.
  *
  * The row must exist before any feedback of the week: the progress RPC
- * no-ops without it. /explore assigns it on load (ensureWeeklyChallenge) and
- * POST /api/feedback assigns it before a thumbs-up (ensureCurrentChallenge).
+ * no-ops without it. POST /api/feedback assigns it before a thumbs-up
+ * (ensureCurrentChallenge).
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -124,7 +125,7 @@ export function pickWeeklyTemplate(ctx: ChallengeApplicabilityCtx, weekStart: st
  * concurrent assigns on Monday morning can't spawn duplicates. `ctx` may be a
  * loader so callers that usually find an existing row skip its reads.
  */
-export async function ensureWeeklyChallenge(
+async function ensureWeeklyChallenge(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: SupabaseClient<any, any, any>,
   userId: string,
@@ -189,15 +190,9 @@ export interface UserChallenge {
 }
 
 /**
- * Build the ChallengeApplicabilityCtx from the same pieces loadUserContext
- * pulls for rail generation. Keeping this synchronous + pure makes it
- * cheap to call from the /explore page.
- */
-/**
  * Ensure the user's current-week challenge row exists, loading the
- * applicability ctx only when it has to assign one. Same reads as the
- * /explore page's loadChallenge (selected genres, ≤500 listened artists'
- * primary genres, any live thumbs-up).
+ * applicability ctx only when it has to assign one (selected genres, ≤500
+ * listened artists' primary genres, any live thumbs-up).
  */
 export function ensureCurrentChallenge(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -227,7 +222,11 @@ export function ensureCurrentChallenge(
   }, now)
 }
 
-export function buildApplicabilityCtx(args: {
+/**
+ * Build the ChallengeApplicabilityCtx from the user's selected genres,
+ * listened primary genres and likes. Synchronous + pure.
+ */
+function buildApplicabilityCtx(args: {
   selectedGenres: string[]
   listened: Array<{ genres: string[] }>
   hasThumbsUp: boolean

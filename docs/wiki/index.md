@@ -1,6 +1,6 @@
 ---
 title: flipside — Codebase Wiki
-updated: 2026-10-24
+updated: 2026-11-10
 kind: hub
 ---
 
@@ -18,14 +18,14 @@ links into the subsystem you care about.
 ## What flipside is
 
 flipside is a **music-discovery app** (Next.js 16, App Router, React 19, Supabase).
-You log in with **just a username** — there is no Spotify login. It builds two
-personalized discovery surfaces:
-
-- the **Feed** ("For You") — a scored, diversity-capped stack of artist cards, and
-- **Explore** — four themed rails (After Hours / Uncharted / Rabbit Holes / Curveballs).
+You log in with **just a username** — there is no Spotify login. It builds one
+personalized discovery surface, the **Feed** ("For You"): a scored, diversity-capped stack
+of artist cards. A **Wander farther** switch fills about half of each new batch from outside
+your usual genres. (Explore, the old rails page, was folded into Feed on 2026-11-10, #205;
+`/explore` redirects to `/feed`.)
 
 Recommendations are grown by walking the **Last.fm** artist-similarity graph from your
-seeds, resolving candidate names to artists, scoring them by a tunable
+seeds, resolving candidate names to artists, scoring them by a "How famous?"
 popularity curve, capping genre clustering for diversity, and confirming each artist
 has a **playable 30-second preview** (iTunes first, Spotify fallback) before showing it.
 
@@ -35,7 +35,6 @@ has a **playable 30-second preview** (iTunes first, Spotify fallback) before sho
 graph TD
   subgraph Client[UI · pages-and-components]
     FEED[Feed]
-    EXP[Explore]
     HIST[History]
     SAVED[Saved]
     STATS[Stats]
@@ -46,7 +45,6 @@ graph TD
 
   subgraph API[api-routes]
     R_GEN[/recommendations/generate/]
-    R_EXP[/explore/*/]
     R_TRK[/artists/:id/tracks/]
     R_FB[/feedback · /saves · /dismiss/]
     R_SRCH[/onboarding/search/]
@@ -54,7 +52,7 @@ graph TD
     R_HIST[/history/accumulate/]
   end
 
-  subgraph Engine[generation-engine · explore-engine]
+  subgraph Engine[generation-engine]
     PC[PlayableCandidates]
     CONFIRM[confirm-previews · PreviewStore]
     SCORE[scoring + cluster-cap]
@@ -105,13 +103,12 @@ graph TD
 | [[auth-and-session]] | Username-only NextAuth, HMAC, JWT cookie, CSRF, middleware gate |
 | [[data-model]] | Every Supabase table, columns, RLS, RPCs |
 | [[generation-engine]] | The Feed pipeline: seeds → similarity → score → diversity → confirm → cache |
-| [[explore-engine]] | The four Explore rails and how each is built |
 | [[music-providers]] | The Last.fm / Spotify / iTunes adapters, module layering, and the breakers/limiters around external calls |
 | [[external-apis]] | Catalog of every external service: Spotify, Last.fm, iTunes, stats.fm — what each provides |
 | [[api-routes]] | The HTTP surface: every route, auth, inputs, what it calls |
 | [[pages-and-components]] | Screens, shared components, client hooks, playback + "open in platform" UX |
 | [[genre-system]] | The 4-level genre tree, normalization, adjacency scoring, build scripts |
-| [[settings-and-discovery]] | Discovery settings model (obscurity, curve, adventurous, deep discovery) |
+| [[settings-and-discovery]] | Discovery settings model (How famous? slider, Wander farther) |
 | [[infra-and-ops]] | next.config/CSP, middleware, cron, color extraction, scripts |
 | [[spotify-dependency]] | **The analysis**: exactly what Spotify is used for and how replaceable it is |
 
@@ -119,27 +116,33 @@ graph TD
 
 | Module | What it owns |
 |---|---|
-| `recommendation/engine.ts`, `explore-engine.ts` | Feed and Explore orchestration ([[generation-engine]], [[explore-engine]]) |
-| `recommendation/playable-candidates.ts` | name → confirmed-playable pipeline shared by both engines; `livePlayablePorts` |
+| `recommendation/engine.ts` | Feed orchestration ([[generation-engine]]) |
+| `recommendation/far-picks.ts` | the Wander farther far pool (ported from Explore's discovery rails) |
+| `recommendation/playable-candidates.ts` | name → confirmed-playable pipeline (primary pool, bleed, far pool); `livePlayablePorts` |
 | `recommendation/preview-store.ts` | `PreviewStore`, sole owner of `artist_tracks_cache` |
 | `recommendation/exclusions.ts` | the one "never show this artist" policy |
 | `lastfm/` | the one Last.fm adapter: key, timeouts, gate (`limit.ts`), `lastfm_cache` (`cache.ts`), counters |
 | `music-provider/` | `itunes.ts` (previews, `itunesFetch`), `spotify.ts` (client-creds top-tracks + script search), shared types |
 | `artist-identity/` | the doorway (`ArtistIdentity`), `artistNameKey`, Last.fm lookup (`lastfm-lookup.ts`), MusicBrainz (`musicbrainz.ts`) — ADR-0001 |
-| `cards/` | server-side card assembly (`CardArtist`, `feed-cards.ts`, `explore-rail-payloads.ts`) |
-| `client/` | framework-free UI controllers (feed generation, rail session, artist signals) under thin hooks in `hooks/` |
+| `cards/` | server-side card assembly (`CardArtist`, `feed-cards.ts`) |
+| `client/` | framework-free UI controllers (feed generation, artist signals) under thin hooks in `hooks/` |
 | `history/` | Last.fm / stats.fm listening history → `ingestListens` |
 | `metrics/api-call-counter.ts` | per-upstream live-call counters for `[gen-timing]` |
 | `limiter.ts` | generic gate (`createLimiter`) behind the Last.fm and iTunes limiters |
 | `cooldown.ts` | atomic per-user generation cooldown claim |
-| `taste-change.ts` | taste-change invalidation policy (feedback / saves → cache invalidation) |
-| `explore-input.ts` | Explore user-row mapping + client-credentials token |
+| `taste-change.ts` | taste-change invalidation policy (genre filter → unseen Feed wipe) |
 | `external-links.ts` | `linkFor`: "Open in Apple Music" link resolution |
 
 **Removed in #175:** the Spotify user-token surface (`/api/spotify/*`, history syncer,
 like / save→playlist; tag `archive/spotify-user-token`), the `MusicProvider` interface,
 `provider.ts` / `spotify-provider.ts`, `lastfm-search.ts`, `enrich-artist.ts`,
 `history/name-utils.ts`, top-level `lastfm-cache.ts` / `lastfm-limit.ts` (now `lib/lastfm/`).
+
+**Removed in #205 (2026-11-10):** the Explore page and everything only it used —
+`app/(app)/explore`, `/api/explore/*`, `components/explore/`, the Explore `ArtistCard` /
+`TrackStrip`, `ExplorePrewarm`, `explore-engine.ts`, `explore-rail-payloads.ts`,
+`explore-input.ts`, the rail session (`client/rail-session.ts`, `hooks/use-rail-session.ts`),
+`useArtistColor`, and the Settings `rebuild()`. Its two discovery rails became `far-picks.ts`.
 
 ## Sources
 

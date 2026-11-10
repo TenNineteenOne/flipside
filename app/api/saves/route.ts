@@ -17,8 +17,8 @@ export const POST = withAuthedJsonRoute(async ({ userId, body: rawBody }) => {
   const supabase = createServiceClient()
 
   // Resolve artist name: the user's recommendation_cache row first, then the
-  // canonical `artists` row (Explore artists aren't in recommendation_cache, so
-  // without this /saved showed the raw uuid).
+  // canonical `artists` row (artists outside recommendation_cache, e.g. from
+  // the retired Explore page, otherwise showed the raw uuid on /saved).
   let resolvedArtistName = ""
   {
     const { data: cached } = await supabase
@@ -54,10 +54,8 @@ export const POST = withAuthedJsonRoute(async ({ userId, body: rawBody }) => {
 
   if (saveError) return dbError(saveError, "saves/upsert")
 
-  // A save is a strong positive signal — invalidate the explore rail cache so
-  // the next /explore load picks fresh candidates (the saved artist should
-  // not reappear, and adjacent picks may shift). Awaited so the serverless
-  // function doesn't terminate mid-delete after the response is sent.
+  // A save is a taste signal (see lib/taste-change). Awaited so the serverless
+  // function doesn't terminate mid-write after the response is sent.
   await onTasteChanged(supabase, userId, { kind: "save" })
 
   const { error: seenError } = await supabase

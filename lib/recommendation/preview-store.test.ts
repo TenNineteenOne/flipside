@@ -5,7 +5,7 @@
  */
 import { describe, it, expect, vi, afterEach } from "vitest"
 import { createFakeSupabase, type Row } from "./__fixtures__/fake-supabase"
-import { PreviewStore, PREVIEW_TTL_MS, resetPersisted, snapshotPersisted } from "./preview-store"
+import { PreviewStore, PREVIEW_TTL_MS } from "./preview-store"
 import type { ConfirmOutcome } from "./confirm-previews"
 import type { Artist, Track } from "@/lib/music-provider/types"
 
@@ -129,7 +129,6 @@ describe("PreviewStore.collector", () => {
   })
 
   it("persists a positive as source=itunes with tracks + fetched_at", async () => {
-    resetPersisted()
     const fake = createFakeSupabase()
     const c = new PreviewStore(fake.client).collector()
     c.onConfirmOutcome(positive(UUID_A))
@@ -139,7 +138,6 @@ describe("PreviewStore.collector", () => {
     expect(rows(fake)[0].tracks).toHaveLength(1)
     expect(typeof rows(fake)[0].fetched_at).toBe("string")
     expect(rows(fake)[0].name).toBeUndefined() // the guard's name never lands in the table
-    expect(snapshotPersisted()).toBe(1)
   })
 
   it("persists a negative as source=none with empty tracks", async () => {

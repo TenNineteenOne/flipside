@@ -64,7 +64,7 @@ export function assembleFeedCards(
   for (const row of rows) {
     if (!isRenderableRow(row)) continue
     const a = row.artist_data as ArtistDataRow
-    const why = (row.why ?? {}) as { sourceArtists?: string[]; genres?: string[] }
+    const why = (row.why ?? {}) as { sourceArtists?: string[]; genres?: string[]; outsideUsual?: unknown }
     const baked = a.topTracks
     const topTracks = baked && baked.length > 0 ? baked : tracksByArtistId.get(row.artist_id) ?? []
     if (!hasPlayablePreview(topTracks)) continue
@@ -77,7 +77,11 @@ export function assembleFeedCards(
       popularity: a.popularity ?? 0,
       topTracks,
       artistColor: liftArtistColor(a),
-      why: { sourceArtists: why.sourceArtists ?? [], genres: why.genres ?? [] },
+      why: {
+        sourceArtists: why.sourceArtists ?? [],
+        genres: why.genres ?? [],
+        ...(typeof why.outsideUsual === "string" && why.outsideUsual ? { outsideUsual: why.outsideUsual } : {}),
+      },
     })
   }
   return interleave(cards)

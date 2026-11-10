@@ -11,7 +11,7 @@ export async function GET(): Promise<Response> {
   const userId = session.user.id
   const supabase = createServiceClient()
 
-  // underground_mode lookup happens inside getUnseenRecommendations, in
+  // fame_level (underground cap) lookup happens inside getUnseenRecommendations, in
   // parallel with the cache fetch.
   let recommendations
   try {

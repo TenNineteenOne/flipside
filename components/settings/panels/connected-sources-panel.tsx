@@ -4,7 +4,7 @@ import { useState } from "react"
 import { toast } from "sonner"
 import { hexToRgba } from "@/lib/color-utils"
 import { patchSettings } from "@/lib/settings/patch-settings"
-import { MINT, LASTFM_RED, STATSFM_PURPLE } from "@/lib/settings/obscurity"
+import { MINT, LASTFM_RED, STATSFM_PURPLE } from "@/lib/settings/colors"
 
 /**
  * One source username field: `draft` is the input, `saved` the last value the

@@ -58,6 +58,15 @@ describe("assembleFeedCards", () => {
     expect(cards.map((c) => c.id)).toEqual(["a1", "b1", "c1", "a2"])
     expect(cards[2].why).toEqual({ sourceArtists: [], genres: [] })
   })
+
+  it("carries a stored why.outsideUsual onto the card (far picks, #205)", () => {
+    const [far, plain] = assembleFeedCards(
+      [row("f", {}, { sourceArtists: ["x"], genres: [], outsideUsual: "dutch black metal" }), row("p", {}, { sourceArtists: ["y"], genres: [], outsideUsual: 5 })],
+      new Map(),
+    )
+    expect(far.why.outsideUsual).toBe("dutch black metal")
+    expect(plain.why).not.toHaveProperty("outsideUsual")
+  })
 })
 
 describe("colour rules", () => {

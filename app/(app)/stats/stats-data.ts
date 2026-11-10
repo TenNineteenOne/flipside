@@ -19,13 +19,14 @@ export interface StatsData {
 /**
  * Everything /stats renders. Artist metadata (name, genres, popularity) comes
  * from `artists` by id (#175): `recommendation_cache` rows are hard-deleted by
- * the cron after ~33 days and Explore likes/saves never write there, so reading
+ * the cron after ~33 days (and likes/saves from the retired Explore page never
+ * wrote there), so reading
  * metadata from the cache emptied Top Genres and the taste profile over time.
  *
  * "Discovered" = distinct artists the user has met: seen Feed rows still in
  * the cache ∪ every feedback row (incl. un-thumbed) ∪ saves. Feedback and saves
  * are permanent, so the count no longer shrinks when the cron prunes old seen
- * rows, and Explore discoveries the user acted on now count too.
+ * rows.
  */
 export async function loadStats(supabase: SupabaseClient, userId: string): Promise<StatsData> {
   const ids = (table: "recommendation_cache" | "feedback" | "saves", seenOnly = false) =>

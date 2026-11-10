@@ -54,10 +54,18 @@ const POS = "aaaaaaaa-0000-4000-8000-000000000001"
 const NEG = "bbbbbbbb-0000-4000-8000-000000000002"
 const fresh = () => new Date().toISOString()
 
-describe("PlayableCandidates.playable (Explore one-shot)", () => {
-  it("keys results by the INPUT name even when the roster row is spelled differently (Explore casing-drop regression)", async () => {
+/** resolve → confirm → flush, awaited: the whole pipeline in one call. */
+async function playable(pipeline: PlayableCandidates, names: string[], target: number, keep?: (artist: Artist) => boolean) {
+  const { artists } = await pipeline.resolve(names, { keep })
+  const { kept } = await pipeline.confirm([...artists].map(([name, artist]) => ({ name, artist })), target)
+  await pipeline.flush()
+  return new Map(kept.map((k) => [k.name, k.artist]))
+}
+
+describe("PlayableCandidates resolve → confirm → flush", () => {
+  it("keys results by the INPUT name even when the roster row is spelled differently (casing-drop regression)", async () => {
     const { pipeline } = setup({ artists: [artistsRow(BOC, "Boards of Canada")] })
-    const out = await pipeline.playable(["Boards Of Canada"], 5)
+    const out = await playable(pipeline, ["Boards Of Canada"], 5)
     // Old code rebuilt the map from a.name ("Boards of Canada") and looked up
     // "Boards Of Canada" → miss → confirmed, persisted, never shown.
     expect(out.get("Boards Of Canada")?.id).toBe(BOC)
@@ -66,12 +74,12 @@ describe("PlayableCandidates.playable (Explore one-shot)", () => {
 
   it("mints fresh names, confirms via iTunes, and persists positives BEFORE returning", async () => {
     const { pipeline, fake, calls } = setup()
-    const out = await pipeline.playable(["New Artist"], 5)
+    const out = await playable(pipeline, ["New Artist"], 5)
     const a = out.get("New Artist")!
     expect(a.topTracks).toHaveLength(1)
     expect(calls.itunes).toEqual(["New Artist"])
     expect(fake.tables.artists.map((r) => r.name)).toEqual(["New Artist"])
-    // Read-after-write (#162): the row is there the moment playable() resolves.
+    // Read-after-write (#162): the row is there the moment flush() resolves.
     expect(fake.tables.artist_tracks_cache).toEqual([
       expect.objectContaining({ artist_id: a.id, source: "itunes" }),
     ])
@@ -84,7 +92,7 @@ describe("PlayableCandidates.playable (Explore one-shot)", () => {
     const { pipeline, fake } = setup({
       artists: [artistsRow(BOC, "Boards of Canada"), artistsRow(MONO_A, "MONO"), artistsRow(MONO_B, "Mono")],
     })
-    const out = await pipeline.playable(["boards of canada", "Brand New Name", "mono"], 5)
+    const out = await playable(pipeline, ["boards of canada", "Brand New Name", "mono"], 5)
     expect(out.size).toBe(3)
     for (const a of out.values()) {
       const row = fake.tables.artists.find((r) => r.id === a.id)!
@@ -101,7 +109,7 @@ describe("PlayableCandidates.playable (Explore one-shot)", () => {
         { artist_id: NEG, tracks: [], source: "none", fetched_at: fresh() },
       ],
     })
-    const out = await pipeline.playable(["Warm", "Dead"], 5)
+    const out = await playable(pipeline, ["Warm", "Dead"], 5)
     expect(calls.itunes).toEqual([])
     expect(out.get("Warm")?.topTracks?.[0].id).toBe("it-cached")
     expect(out.has("Dead")).toBe(false)
@@ -109,7 +117,7 @@ describe("PlayableCandidates.playable (Explore one-shot)", () => {
 
   it("persists a definitive negative; an iTunes failure writes nothing", async () => {
     const { pipeline, fake } = setup({}, { Empty: [], Broken: null })
-    const out = await pipeline.playable(["Empty", "Broken"], 5)
+    const out = await playable(pipeline, ["Empty", "Broken"], 5)
     expect(out.size).toBe(0)
     const rows = fake.tables.artist_tracks_cache
     const idOf = (n: string) => fake.tables.artists.find((r) => r.name === n)!.id
@@ -118,14 +126,14 @@ describe("PlayableCandidates.playable (Explore one-shot)", () => {
 
   it("the keep gate runs before confirm: an excluded artist costs no iTunes call", async () => {
     const { pipeline, calls } = setup({ artists: [artistsRow(POS, "Hidden")] })
-    const out = await pipeline.playable(["Hidden", "Shown"], 5, (a: Artist) => a.id !== POS)
+    const out = await playable(pipeline, ["Hidden", "Shown"], 5, (a: Artist) => a.id !== POS)
     expect([...out.keys()]).toEqual(["Shown"])
     expect(calls.itunes).toEqual(["Shown"])
   })
 
   it("stops confirming at the target", async () => {
     const { pipeline, calls } = setup()
-    const out = await pipeline.playable(["A", "B", "C", "D"], 2)
+    const out = await playable(pipeline, ["A", "B", "C", "D"], 2)
     expect(out.size).toBe(2)
     expect(calls.itunes).toHaveLength(2)
   })

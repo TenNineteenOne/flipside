@@ -6,10 +6,15 @@ export interface WhyParts {
   names: string[]
   /** Only set when there are no source artists; joined with ", ". */
   genres: string[]
+  /** A far pick (Wander farther): the UI renders the line in the teal accent. */
+  far?: true
 }
 
-/** The "why" sentence as parts, or null when there is nothing to say. */
-export function whyParts(why: { sourceArtists: readonly string[]; genres: readonly string[] }): WhyParts | null {
+type Why = { sourceArtists: readonly string[]; genres: readonly string[]; outsideUsual?: string }
+
+/** The "why" sentence as parts, or null when there is nothing to say. A far pick reads "Outside your usual: <genre>". */
+export function whyParts(why: Why): WhyParts | null {
+  if (why.outsideUsual) return { lead: "Outside your usual: ", names: [], genres: [why.outsideUsual], far: true }
   if (why.sourceArtists.length > 0) return { lead: "Because you like ", names: [...why.sourceArtists], genres: [] }
   if (why.genres.length > 0) return { lead: "Because you like ", names: [], genres: [...why.genres] }
   return null
@@ -22,7 +27,7 @@ export function listSeparator(i: number, n: number): string {
 }
 
 /** The "why" sentence as plain text (share text, labels), or null. */
-export function whyText(why: { sourceArtists: readonly string[]; genres: readonly string[] }): string | null {
+export function whyText(why: Why): string | null {
   const p = whyParts(why)
   if (!p) return null
   if (p.names.length === 0) return p.lead + p.genres.join(", ")

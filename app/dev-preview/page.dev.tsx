@@ -6,12 +6,9 @@ const PAGES = [
   { href: "/dev-preview/feed?start=3", label: "Feed, 3 to start", note: "Starts with 3 artists; the mount top-up and each Load more append the next 6 through the real fill hook" },
   { href: "/dev-preview/feed?real=1", label: "Feed, real-data shapes", note: "Popularity 0, long hyphenated genres and a long name swapped into a few rows; add &n=40 or &n=80 to repeat the fixtures up to that many artists (header strip stress)" },
   { href: "/dev-preview/feed-loading", label: "Feed loading", note: "The feed route's loading skeleton" },
-  { href: "/dev-preview/explore", label: "Explore", note: "Production ExploreClient with fixture rails. ?adventurous=1 starts with Adventurous on, ?cold=1 paints with no cached rails (generate + poll), ?challenge=done|none the completed / missing weekly challenge, ?gen=429|500 the generate route's cooldown / failure, ?platform=apple_music|youtube_music the music platform" },
-  { href: "/dev-preview/explore/skeleton", label: "Explore loading", note: "The Explore route's loading skeleton" },
-  { href: "/dev-preview/explore-card", label: "Explore card", note: "Explore's artist card: expanded, liked + saved, no image, no tracks, passed, dismissed (buttons toggle locally); ?platform=apple_music|youtube_music" },
   { href: "/dev-preview/stats", label: "Stats", note: "Production StatsClient with a full account; ?empty=1 a new account, ?stress=1 long genres, large counts and 200 points" },
   { href: "/dev-preview/stats-loading", label: "Stats loading", note: "The Stats route's loading skeleton" },
-  { href: "/dev-preview/feed-empty", label: "Empty feed", note: "No recommendations yet: the loader (generate stays pending) and Explore pre-warm" },
+  { href: "/dev-preview/feed-empty", label: "Empty feed", note: "No recommendations yet: the loader (generate stays pending)" },
   { href: "/dev-preview/genre-picker", label: "Genre picker", note: "Onboarding's genre picker (search, browse, related chips, 50 cap) with the saved value shown below" },
 ]
 

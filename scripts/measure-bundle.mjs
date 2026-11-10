@@ -16,7 +16,6 @@ const ROUTES = {
   "/sign-in": "(marketing)/sign-in/page",
   "/onboarding": "(marketing)/onboarding/page",
   "/feed": "(app)/feed/page",
-  "/explore": "(app)/explore/page",
   "/history": "(app)/history/page",
   "/saved": "(app)/saved/page",
   "/stats": "(app)/stats/page",

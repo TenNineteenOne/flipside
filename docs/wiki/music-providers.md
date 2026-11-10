@@ -1,6 +1,6 @@
 ---
 title: Music Providers & Resilience
-updated: 2026-10-24
+updated: 2026-11-10
 related: [[external-apis]], [[generation-engine]], [[spotify-dependency]], [[api-routes]]
 ---
 
@@ -66,7 +66,7 @@ The user-token surface is gone (restore tag `archive/spotify-user-token`). Two f
   only by `scripts/seed-artist-cache.ts`.
 
 The token is `getSpotifyClientToken()` (`lib/spotify-client-token.ts`: in-memory cache,
-in-flight dedup), fetched by the generate route and `loadExploreInput`. `RateLimited` /
+in-flight dedup), fetched by the generate route. `RateLimited` /
 `isRateLimited` stay in `lib/music-provider/index.ts`.
 
 ## iTunes — `lib/music-provider/itunes.ts`

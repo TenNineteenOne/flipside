@@ -4,12 +4,14 @@ import { safeAuth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { getCachedUser } from "@/lib/user-cache"
 import { FeedClient } from "@/components/feed/feed-client"
-import { ExplorePrewarm } from "@/components/feed/explore-prewarm"
 import { RecommendationsLoader } from "@/components/feed/recommendations-loader"
 import { DEFAULT_MUSIC_PLATFORM, isMusicPlatform, type MusicPlatform } from "@/lib/music-links"
 import { getUnseenRecommendations, type UnseenRecommendation } from "@/lib/recommendation/feed-query"
 import { isRenderableRow, loadFeedCards } from "@/lib/cards/feed-cards"
 import { guessFeedLayout } from "@/lib/feed/layout-guess"
+import { fameToEngine } from "@/lib/settings/fame"
+import { ensureCurrentChallenge } from "@/lib/challenges/engine"
+import type { ChallengePayload } from "@/components/feed/challenge-strip"
 
 export default async function FeedPage() {
   const session = await safeAuth()
@@ -38,14 +40,14 @@ export default async function FeedPage() {
     if ((count ?? 0) === 0) redirect("/onboarding")
   }
 
-  // Fetch cached recommendations, re-filtered by the user's current
-  // underground_mode so a just-toggled setting is honored on first paint
+  // Fetch cached recommendations, re-filtered by the user's current fame
+  // level (stop 0 = underground cap) so a just-changed setting is honored on first paint
   // instead of waiting for the client poll to replace the list.
   let recs: UnseenRecommendation[]
   try {
     recs = await getUnseenRecommendations(supabase, user.id, {
       limit: 20,
-      undergroundMode: !!user.underground_mode,
+      undergroundMode: fameToEngine(user.fame_level).undergroundMode,
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
@@ -62,39 +64,35 @@ export default async function FeedPage() {
 
   // No valid recommendations — client component triggers generation and refreshes
   if (validRecs.length === 0) {
-    return (
-      <>
-        <RecommendationsLoader />
-        <ExplorePrewarm />
-      </>
-    )
+    return <RecommendationsLoader />
   }
 
-  // Assemble cards (tracks-cache fallback, colour lift, playable filter,
-  // interleave — see lib/cards/feed-cards) + signal counts in parallel.
-  const [
-    cards,
-    { count: artistCount },
-    { count: feedbackCount },
-    { count: saveCount },
-  ] = await Promise.all([
-    loadFeedCards(supabase, validRecs),
-    supabase.from("listened_artists").select("*", { count: "exact", head: true }).eq("user_id", user.id),
-    supabase.from("feedback").select("*", { count: "exact", head: true }).eq("user_id", user.id).is("deleted_at", null),
-    supabase.from("saves").select("*", { count: "exact", head: true }).eq("user_id", user.id),
-  ])
+  // Not awaited: FeedClient streams the strip in under Suspense, so the feed never waits on it.
+  const challengePromise = loadChallenge(supabase, user.id)
 
-  const signalCount = (artistCount ?? 0) + (feedbackCount ?? 0) + (saveCount ?? 0)
+  // Assemble cards (tracks-cache fallback, colour lift, playable filter,
+  // interleave — see lib/cards/feed-cards).
+  const cards = await loadFeedCards(supabase, validRecs)
 
   return (
-    <>
-      <FeedClient
-        recommendations={cards}
-        musicPlatform={musicPlatform}
-        signalCount={signalCount}
-        initialLayout={guessFeedLayout(await headers())}
-      />
-      <ExplorePrewarm />
-    </>
+    <FeedClient
+      recommendations={cards}
+      musicPlatform={musicPlatform}
+      initialAdventurous={!!user.adventurous}
+      initialLayout={guessFeedLayout(await headers())}
+      challengePromise={challengePromise}
+    />
   )
+}
+
+/** Best-effort: the challenge is a secondary surface, so any failure resolves null (no strip) instead of rejecting. */
+async function loadChallenge(supabase: ReturnType<typeof createServiceClient>, userId: string): Promise<ChallengePayload | null> {
+  try {
+    const c = await ensureCurrentChallenge(supabase, userId)
+    if (!c?.template) return null
+    return { description: c.template.description, progress: c.progress, target: c.target, completed: !!c.completedAt }
+  } catch (err) {
+    console.error("[feed-page] loadChallenge failed", err instanceof Error ? err.message : err)
+    return null
+  }
 }

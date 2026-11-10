@@ -8,6 +8,7 @@ import { artworkAt, artworkFor, letterFor } from "@/lib/feed/artwork"
 import { readableTextOn, resolveArtistColor } from "@/lib/color-utils"
 import type { FeedTriage } from "@/lib/hooks/use-feed-triage"
 import type { CardArtist } from "@/lib/cards/card-artist"
+import { WanderNote, WanderSwitch, wanderButton } from "@/components/feed/wander-switch"
 
 // Pieces shared by the desktop, tablet and phone feeds, kept out of feed-desktop.tsx so the
 // tablet and phone layout chunks don't carry the desktop layout.
@@ -41,8 +42,15 @@ export function Art({ a, src, size, className, alt = "", eager = false, priority
   )
 }
 
+/** Wander farther (users.adventurous): one value for every switch in a layout, owned by FeedClient. */
+export interface Wander {
+  on: boolean
+  /** Saves the setting only; the next Load more uses it. */
+  toggle: () => void
+}
+
 /** Focus pane when nothing is left to decide (PRD "End of queue"). */
-export function EndState({ triage, onLoadMore, generating }: { triage: FeedTriage; onLoadMore: () => void; generating: boolean }) {
+export function EndState({ triage, onLoadMore, generating, wander }: { triage: FeedTriage; onLoadMore: () => void; generating: boolean; wander: Wander }) {
   const { counts, total, tuning, visible, signals } = triage
   const liked = visible.filter((a) => signals.get(a.id) === "thumbs_up").slice(0, 4)
   const lean = tuning.more.slice(0, 2)
@@ -59,26 +67,34 @@ export function EndState({ triage, onLoadMore, generating }: { triage: FeedTriag
         {lean.length > 0 && <> Tomorrow&rsquo;s batch leans toward <strong>{lean.join(" and ")}</strong>.</>}
       </p>
       <div className="ev-end-actions">
-        <LoadMore onLoadMore={onLoadMore} generating={generating} primary />
+        <LoadMore onLoadMore={onLoadMore} generating={generating} wander={wander} primary />
         <Link className="ev-btn ev-btn-ghost" href="/saved">Review saved</Link>
       </div>
+      <WanderNote on={wander.on} />
     </div>
   )
 }
 
 /**
- * "Load more artists": the end state's primary button, and always available at the end of the queue / Up next list.
- * While generating it is aria-disabled (not disabled), so keyboard focus stays on it; clicks are ignored.
+ * "Load more artists" with the Wander farther switch beside it: the end state's primary button, and always
+ * available at the end of the queue / Up next list (the queue header uses a shorter `label`). Rainbow while
+ * Wander farther is on. While generating it is aria-disabled (not disabled), so keyboard focus stays on it;
+ * clicks are ignored.
  */
-export function LoadMore({ onLoadMore, generating, primary = false }: { onLoadMore: () => void; generating: boolean; primary?: boolean }) {
+export function LoadMore({ onLoadMore, generating, wander, primary = false, label = "Load more artists" }: {
+  onLoadMore: () => void; generating: boolean; wander: Wander; primary?: boolean; label?: string
+}) {
   return (
-    <button
-      type="button"
-      className={`ev-btn ${primary ? "ev-btn-primary" : "ev-btn-ghost"}`}
-      onClick={generating ? undefined : onLoadMore}
-      aria-disabled={generating || undefined}
-    >
-      {generating ? "Generating…" : "Load more artists"}
-    </button>
+    <>
+      <button
+        type="button"
+        className={`ev-btn ${primary ? "ev-btn-primary" : "ev-btn-ghost"}${wanderButton(wander.on)}`}
+        onClick={generating ? undefined : onLoadMore}
+        aria-disabled={generating || undefined}
+      >
+        {generating ? "Generating…" : label}
+      </button>
+      <WanderSwitch on={wander.on} onToggle={wander.toggle} />
+    </>
   )
 }

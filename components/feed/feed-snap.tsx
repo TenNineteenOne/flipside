@@ -1,10 +1,10 @@
 "use client"
 
 import "./feed.css"
-import { useCallback, useEffect, useRef, useState } from "react"
-import { Heart, ThumbsDown, X } from "lucide-react"
-import { ColdStartBanner } from "@/components/feed/cold-start-banner"
-import { EndState } from "@/components/feed/feed-parts"
+import { useCallback, useEffect, useRef } from "react"
+import { Heart, Plus, ThumbsDown, X } from "lucide-react"
+import { EndState, type Wander } from "@/components/feed/feed-parts"
+import { WanderSwitch, wanderButton } from "@/components/feed/wander-switch"
 import { SnapCard } from "@/components/feed/snap-card"
 import { MiniPlayer, useSuppressFloatingPlayer } from "@/components/player/mini-player"
 import { ShellSlot } from "@/components/shell/shell-context"
@@ -28,16 +28,18 @@ const END = "__end"
  */
 interface FeedSnapProps {
   triage: FeedTriage
-  /** Cold-start hint input (shown as a dismissible line until the listener has a few signals). */
-  signalCount: number
   /** "Load more artists" on the end page, and its in-flight state. */
   onLoadMore: () => void
   generating: boolean
+  /** Wander farther: the top-bar switch and the one beside Load more on the end page. */
+  wander: Wander
+  /** The weekly challenge strip (FeedClient's Suspense slot), shown under the header. */
+  challenge?: React.ReactNode
   /** Called once this layout is mounted (FeedClient enables the keyboard shortcuts then). */
   onShown?: (layout: "phone" | "tablet" | "desktop") => void
 }
 
-export function FeedSnap({ triage, signalCount, onLoadMore, generating, onShown }: FeedSnapProps) {
+export function FeedSnap({ triage, onLoadMore, generating, wander, challenge, onShown }: FeedSnapProps) {
   useEffect(() => onShown?.("phone"), [onShown])
   const { ids, selectedId } = triage
   const ended = triage.remaining === 0
@@ -127,7 +129,7 @@ export function FeedSnap({ triage, signalCount, onLoadMore, generating, onShown 
     }
     root.addEventListener("scrollend", done)
     timer = window.setTimeout(done, smooth ? SCROLL_GUARD_MS : 100)
-    // Both offsets are from .ev-snap (the fixed frame), so the cold line above the scroller cancels out.
+    // Both offsets are from .ev-snap (the fixed frame), so the challenge line above the scroller cancels out.
     root.scrollTo({ top: el.offsetTop - root.offsetTop, behavior: smooth ? "smooth" : "auto" })
     return () => {
       root.removeEventListener("scrollend", done)
@@ -137,8 +139,8 @@ export function FeedSnap({ triage, signalCount, onLoadMore, generating, onShown 
 
   return (
     <div className="ev-feed ev-snap">
-      <TopBarProgress triage={triage} />
-      <ColdLine signalCount={signalCount} />
+      <TopBarProgress triage={triage} wander={wander} onLoadMore={onLoadMore} generating={generating} />
+      {challenge}
 
       <main className="ev-m-snap" ref={scrollerRef} aria-label="Artists">
         {ids.map((id, i) => {
@@ -151,7 +153,7 @@ export function FeedSnap({ triage, signalCount, onLoadMore, generating, onShown 
         })}
         {ended && (
           <section className="ev-m-page" data-id={END} aria-label="End of today's artists">
-            <EndState triage={triage} onLoadMore={onLoadMore} generating={generating} />
+            <EndState triage={triage} onLoadMore={onLoadMore} generating={generating} wander={wander} />
           </section>
         )}
       </main>
@@ -164,11 +166,32 @@ export function FeedSnap({ triage, signalCount, onLoadMore, generating, onShown 
 
 /* ---- pieces shared by the phone (Snap) and tablet feeds ---- */
 
-/** "N of M left" in the shell top bar and the segment strip as its second row. */
-export function TopBarProgress({ triage }: { triage: FeedTriage }) {
+/**
+ * Wander farther + Load more + "N of M left" in the shell top bar, and the segment strip as its
+ * second row. Load more is an icon button on phones ("Load more" text from 600px wide); rainbow
+ * while Wander farther is on; aria-disabled (focus stays) while generating, like LoadMore.
+ */
+export function TopBarProgress({ triage, wander, onLoadMore, generating }: {
+  triage: FeedTriage; wander: Wander; onLoadMore: () => void; generating: boolean
+}) {
   return (
     <>
-      <ShellSlot name="top"><SnapCount triage={triage} /></ShellSlot>
+      <ShellSlot name="top">
+        <span className="ev-feed ev-m-topbar">
+          <WanderSwitch on={wander.on} onToggle={wander.toggle} compact />
+          <button
+            type="button"
+            className={`ev-btn ev-btn-ghost ev-m-more${wanderButton(wander.on)}`}
+            onClick={generating ? undefined : onLoadMore}
+            aria-disabled={generating || undefined}
+            aria-label={generating ? "Generating…" : "Load more artists"}
+          >
+            <Plus size={18} strokeWidth={2} aria-hidden />
+            <span className="ev-m-more-text" aria-hidden>{generating ? "Generating…" : "Load more"}</span>
+          </button>
+          <SnapCount triage={triage} />
+        </span>
+      </ShellSlot>
       <ShellSlot name="topSub">
         <ol className="ev-feed ev-m-strip" aria-hidden>
           {triage.ids.map((id) => (
@@ -178,12 +201,6 @@ export function TopBarProgress({ triage }: { triage: FeedTriage }) {
       </ShellSlot>
     </>
   )
-}
-
-/** The cold-start hint as one dismissible line (hidden for the rest of the visit once dismissed). */
-export function ColdLine({ signalCount }: { signalCount: number }) {
-  const [hidden, setHidden] = useState(false)
-  return hidden ? null : <ColdStartBanner signalCount={signalCount} onDismiss={() => setHidden(true)} />
 }
 
 /**
@@ -232,7 +249,7 @@ export function TriageBar({ triage }: { triage: FeedTriage }) {
 export function SnapCount({ triage }: { triage: Pick<FeedTriage, "remaining" | "total"> }) {
   return (
     <span className="ev-feed ev-m-count">
-      <strong>{triage.remaining}</strong> of {triage.total} left
+      <strong>{triage.remaining}</strong><span className="ev-m-count-of"> of {triage.total}</span> left
     </span>
   )
 }

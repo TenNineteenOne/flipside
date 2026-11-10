@@ -1,6 +1,6 @@
 ---
 title: External APIs
-updated: 2026-10-24
+updated: 2026-11-10
 related: [[music-providers]], [[spotify-dependency]], [[generation-engine]], [[api-routes]]
 ---
 
@@ -17,8 +17,8 @@ adapter, `lib/lastfm` (`lastfm.*`): key, timeouts, the `runLastfm` gate (12 conc
 
 | Endpoint | Used for | Adapter op → callers |
 |---|---|---|
-| `artist.getSimilar` | **similar artists** (the discovery graph) | `similarArtists` → `engine.ts`, `explore-engine.ts` (wildcards) |
-| `tag.gettopartists` | top artists per genre tag (seeds, bleed, rails) | `tagTopArtists` → `engine.ts`, `explore-engine.ts` |
+| `artist.getSimilar` | **similar artists** (the discovery graph) | `similarArtists` → `engine.ts` |
+| `tag.gettopartists` | top artists per genre tag (seeds, bleed, far pool) | `tagTopArtists` → `engine.ts`, `far-picks.ts` |
 | `artist.getInfo` | doorway name resolve + **genres / listener-count→popularity** | `artistInfo` → `artist-identity/lastfm-lookup.ts`, `history/id-resolver.ts` |
 | `artist.search` | onboarding typeahead | `searchArtists` → `app/api/onboarding/search` |
 | `user.getTopArtists`, `user.getRecentTracks` | listening history (opt-in) | `userArtistNames` → `history/lastfm-syncer.ts` |

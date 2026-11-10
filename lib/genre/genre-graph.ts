@@ -123,8 +123,8 @@ export function createGenreGraph(nodes: GenreNode[]) {
   }
 
   /**
-   * Enumerate all anchors in the tree. Used by the Explore "Totally outside"
-   * rail to enumerate user-untouched anchors.
+   * Enumerate all anchors in the tree. Used by the Feed's far pool
+   * (far-picks.ts) to find user-untouched anchors.
    */
   function listAnchors(): Array<{ id: string; label: string; lastfmTag: string }> {
     return nodes.map((n) => ({ id: n.id, label: n.label, lastfmTag: n.lastfmTag }))

@@ -2,8 +2,8 @@
  * In-memory Supabase fake for the recommendation-pipeline integration tests.
  *
  * NOT a general-purpose Supabase mock — it implements exactly the chainable
- * query surface the two orchestrators (`buildRecommendations`,
- * `buildExploreRails`) and their helpers exercise:
+ * query surface the orchestrator (`buildRecommendations`) and its helpers
+ * exercise:
  *
  *   .from(table)
  *     .select(cols)[.eq/.is/.not/.gt/.gte/.in/.or/.order/.limit/.range][.maybeSingle/.single]

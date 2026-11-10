@@ -5,8 +5,8 @@ import { useEffect, useRef, type CSSProperties } from "react"
 import { Bookmark, Heart, Pause, Play, Share2, ThumbsDown, X } from "lucide-react"
 import { PlatformIcon } from "@/components/platform-icon"
 import { MiniPlayer } from "@/components/player/mini-player"
-import { Art, artistVar, EndState, LoadMore } from "@/components/feed/feed-parts"
-import { ColdStartBanner } from "@/components/feed/cold-start-banner"
+import { Art, artistVar, EndState, LoadMore, type Wander } from "@/components/feed/feed-parts"
+import { WanderNote } from "@/components/feed/wander-switch"
 import { QueueColumns } from "@/components/feed/feed-skeleton"
 import { Kbd } from "@/components/feed/feed-shortcuts"
 import { ShellSlot } from "@/components/shell/shell-context"
@@ -31,16 +31,18 @@ const rowKey = (a: CardArtist) => a.id
  */
 interface FeedDesktopProps {
   triage: FeedTriage
-  /** Cold-start banner input (shown until the listener has a few signals). */
-  signalCount: number
   /** "Load more artists" (FeedClient's generate-more flow) and its in-flight state. */
   onLoadMore: () => void
   generating: boolean
+  /** Wander farther: the switches beside each Load more. */
+  wander: Wander
+  /** The weekly challenge strip (FeedClient's Suspense slot), shown in the header's Load more row. */
+  challenge?: React.ReactNode
   /** Called once this layout is mounted (FeedClient enables the keyboard shortcuts then). */
   onShown?: (layout: "phone" | "tablet" | "desktop") => void
 }
 
-export function FeedDesktop({ triage, signalCount, onLoadMore, generating, onShown }: FeedDesktopProps) {
+export function FeedDesktop({ triage, onLoadMore, generating, wander, challenge, onShown }: FeedDesktopProps) {
   useEffect(() => onShown?.("desktop"), [onShown])
   const { visible, selected, selectedId, signals, remaining, total, tuning } = triage
   // Passed/dismissed rows fade and slide out (feed.css, .ev-row[data-leaving]); the list then closes up.
@@ -90,9 +92,12 @@ export function FeedDesktop({ triage, signalCount, onLoadMore, generating, onSho
               ))}
             </ol>
           </div>
+          <div className="ev-wander-bar">
+            <div className="ev-wander-chal">{challenge}</div>
+            <div className="ev-wander-ctl"><LoadMore onLoadMore={onLoadMore} generating={generating} wander={wander} label="Load more" primary /></div>
+            <WanderNote on={wander.on} />
+          </div>
         </header>
-
-        <div className="ev-coldstart"><ColdStartBanner signalCount={signalCount} /></div>
 
         {/* no labels floating above an emptied queue */}
         {rows.shown.length > 0 && <QueueColumns />}
@@ -131,7 +136,7 @@ export function FeedDesktop({ triage, signalCount, onLoadMore, generating, onSho
                     <span className="ev-row-name-t">{a.name}</span>
                     {playing && <span className="ev-eq" aria-label="Playing"><i /><i /><i /></span>}
                   </span>
-                  <span className="ev-row-why">{whyText(a.why)}</span>
+                  <span className="ev-row-why" data-far={whyParts(a.why)?.far}>{whyText(a.why)}</span>
                 </div>
                 <span className="ev-row-genre" title={a.genres[0]}>{a.genres[0] && <><span className="sr-only">Genre: </span>{a.genres[0]}</>}</span>
                 <span className="ev-row-pop">
@@ -152,7 +157,7 @@ export function FeedDesktop({ triage, signalCount, onLoadMore, generating, onSho
           })}
         </ul>
         {visible.length > 0 && remaining === 0 && <p className="ev-queue-foot">Queue clear. These are the ones you kept.</p>}
-        <div className="ev-queue-more"><LoadMore onLoadMore={onLoadMore} generating={generating} /></div>
+        <div className="ev-queue-more"><LoadMore onLoadMore={onLoadMore} generating={generating} wander={wander} /></div>
       </main>
 
       <section className="ev-focus" aria-live="polite" aria-label="Selected artist">
@@ -160,7 +165,7 @@ export function FeedDesktop({ triage, signalCount, onLoadMore, generating, onSho
           {selected ? (
             <FocusCard key={selected.id} a={selected} triage={triage} />
           ) : (
-            <EndState triage={triage} onLoadMore={onLoadMore} generating={generating} />
+            <EndState triage={triage} onLoadMore={onLoadMore} generating={generating} wander={wander} />
           )}
         </div>
         <MiniPlayer docked />
@@ -198,7 +203,7 @@ function FocusCard({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
           <h2 className="ev-card-name">{a.name}</h2>
           {a.genres.length > 0 && <p className="ev-card-genres">{a.genres.join(" · ")}</p>}
           {why && (
-            <p className="ev-card-why">
+            <p className="ev-card-why" data-far={why.far}>
               {why.lead}
               {why.names.length > 0
                 ? why.names.map((n, i) => <span key={n}>{listSeparator(i, why.names.length)}<strong>{n}</strong></span>)

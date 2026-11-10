@@ -6,9 +6,8 @@
  * rather than rendering the hook via renderHook. Every behavior in the spec is
  * covered through the helpers:
  *
- *   classifyFeedbackOp     — covers skip path, delete path, post path
+ *   classifyFeedbackOp     — covers delete path, post path
  *   buildFeedbackDeleteUrl — covers URL encoding for DELETE
- *   buildFeedbackPostBody  — covers POST body with/without railKey
  *   DEFAULT_FEEDBACK_MESSAGES — covers default error message strings
  *
  * Network behavior (fetch + toast rollback) is covered via fetch mock + toast
@@ -19,7 +18,6 @@ import { describe, it, expect, vi, afterEach } from "vitest"
 import {
   classifyFeedbackOp,
   buildFeedbackDeleteUrl,
-  buildFeedbackPostBody,
   DEFAULT_FEEDBACK_MESSAGES,
 } from "@/lib/client/artist-signals"
 
@@ -35,21 +33,10 @@ afterEach(() => {
 // ─── classifyFeedbackOp ───────────────────────────────────────────────────────
 
 describe("classifyFeedbackOp", () => {
-  it("returns 'local' for a signal in localOnlySignals", () => {
-    expect(classifyFeedbackOp("skip", undefined, ["skip"])).toBe("local")
-    expect(classifyFeedbackOp("skip", "thumbs_up", ["skip"])).toBe("local")
-    expect(classifyFeedbackOp("skip", "thumbs_down", ["skip"])).toBe("local")
-  })
-
-  it("returns 'post' for 'skip' when localOnlySignals is empty (feed default)", () => {
+  it("returns 'post' for 'skip' (skip is POSTed to record the dismissal)", () => {
     expect(classifyFeedbackOp("skip", undefined)).toBe("post")
-    expect(classifyFeedbackOp("skip", undefined, [])).toBe("post")
   })
 
-  it("supports custom local-only signals", () => {
-    expect(classifyFeedbackOp("custom", undefined, ["custom"])).toBe("local")
-    expect(classifyFeedbackOp("other", undefined, ["custom"])).toBe("post")
-  })
 
   it("returns 'delete' when signal is 'thumbs_up' and current is 'thumbs_up' (undo)", () => {
     expect(classifyFeedbackOp("thumbs_up", "thumbs_up")).toBe("delete")
@@ -84,35 +71,6 @@ describe("buildFeedbackDeleteUrl", () => {
   })
 })
 
-// ─── buildFeedbackPostBody ────────────────────────────────────────────────────
-
-describe("buildFeedbackPostBody", () => {
-  // Test 1: POST path — correct method/body including railKey when provided
-  it("includes railKey in the body when provided", () => {
-    const body = buildFeedbackPostBody("artist1", "thumbs_up", "adjacent")
-    expect(body).toEqual({
-      artistId: "artist1",
-      signal: "thumbs_up",
-      railKey: "adjacent",
-    })
-  })
-
-  // Test 2: POST path — railKey omitted from body when not provided
-  it("omits railKey from the body when not provided", () => {
-    const body = buildFeedbackPostBody("artist1", "thumbs_up", undefined)
-    expect(body).toEqual({
-      artistId: "artist1",
-      signal: "thumbs_up",
-    })
-    expect("railKey" in body).toBe(false)
-  })
-
-  it("includes thumbs_down signal correctly", () => {
-    const body = buildFeedbackPostBody("artist2", "thumbs_down", undefined)
-    expect(body.signal).toBe("thumbs_down")
-  })
-})
-
 // ─── DEFAULT_FEEDBACK_MESSAGES ────────────────────────────────────────────────
 
 // Test 8: default error messages used when not provided
@@ -131,13 +89,12 @@ describe("DEFAULT_FEEDBACK_MESSAGES", () => {
 // We exercise the logic through the helpers + fetch mock rather than React.
 
 describe("POST path — network success", () => {
-  // Test 1: setSignal(id, "thumbs_up") with no prior signal → fetch called with
-  //         correct method/body, including railKey when provided.
-  it("calls fetch POST with correct body when railKey is provided", async () => {
+  // setSignal(id, "thumbs_up") with no prior signal → fetch called with the right method/body.
+  it("calls fetch POST with correct body", async () => {
     const mockFetch = vi.fn().mockResolvedValue({ ok: true })
     vi.stubGlobal("fetch", mockFetch)
 
-    const body = buildFeedbackPostBody("artist1", "thumbs_up", "adjacent")
+    const body = { artistId: "artist1", signal: "thumbs_up" }
     const res = await fetch("/api/feedback", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -152,27 +109,9 @@ describe("POST path — network success", () => {
     expect(JSON.parse(init.body as string)).toEqual({
       artistId: "artist1",
       signal: "thumbs_up",
-      railKey: "adjacent",
     })
   })
 
-  // Test 2: railKey omitted from body when not provided in opts
-  it("calls fetch POST without railKey when railKey is not provided", async () => {
-    const mockFetch = vi.fn().mockResolvedValue({ ok: true })
-    vi.stubGlobal("fetch", mockFetch)
-
-    const body = buildFeedbackPostBody("artist1", "thumbs_up", undefined)
-    await fetch("/api/feedback", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    })
-
-    const [, init] = mockFetch.mock.calls[0] as [string, RequestInit]
-    const parsed = JSON.parse(init.body as string)
-    expect("railKey" in parsed).toBe(false)
-  })
-  // Tap-time railKey capture (#175 Y3) is covered in lib/client/artist-signals.test.ts.
 })
 
 // Test 3: DELETE path — setSignal(id, "thumbs_up") when current is "thumbs_up"
@@ -193,20 +132,6 @@ describe("DELETE path", () => {
   })
 })
 
-// Test 4: local-only signals — no fetch call
-describe("local-only signal path", () => {
-  it("classifies signals in localOnlySignals as local-only (no fetch needed)", () => {
-    // The hook short-circuits before fetch when op === "local"
-    expect(classifyFeedbackOp("skip", undefined, ["skip"])).toBe("local")
-    expect(classifyFeedbackOp("skip", "thumbs_up", ["skip"])).toBe("local")
-  })
-
-  it("default: skip is NOT local-only (matches feed's behavior — POSTs to server)", () => {
-    // Feed does not pass localOnlySignals, so skip is POSTed to record dismissals
-    expect(classifyFeedbackOp("skip", undefined)).toBe("post")
-  })
-})
-
 // Test 5: POST failure → rollback + toast.error with saveFailed message
 describe("POST failure path", () => {
   it("resolves to a failed-fetch scenario that would trigger saveFailed toast", async () => {
@@ -220,7 +145,7 @@ describe("POST failure path", () => {
       const res = await fetch("/api/feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildFeedbackPostBody("artist1", "thumbs_up", undefined)),
+        body: JSON.stringify({ artistId: "artist1", signal: "thumbs_up" }),
       })
       if (!res.ok) throw new Error("Server error")
     } catch {

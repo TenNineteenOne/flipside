@@ -1,10 +1,9 @@
 /**
  * Process-wide concurrency gate for live iTunes network calls.
  *
- * iTunes is hit from three directions simultaneously: the blocking-set preview
- * confirmation (one call per card in the initial feed), the four Explore rails
- * (each fires per-artist track lookups in parallel), and the per-artist tracks
- * endpoint used in the detail view. Without a shared gate these can fire 20-50
+ * iTunes is hit from two directions simultaneously: the blocking-set preview
+ * confirmation (one call per card in the initial feed, plus the background
+ * tiers) and the per-artist tracks endpoint used in the detail view. Without a shared gate these can fire 20-50
  * simultaneous requests, which causes iTunes to slow-lane or throttle the burst.
  *
  * Cap reduced from 12 → 5 (issue #142) to reduce the chance of an IP-level

@@ -1,13 +1,13 @@
 ---
 title: Genre System
 updated: 2026-11-10
-related: [[generation-engine]], [[explore-engine]], [[settings-and-discovery]], [[infra-and-ops]]
+related: [[generation-engine]], [[settings-and-discovery]], [[infra-and-ops]]
 ---
 
 # Genre System
 
-flipside's genre taxonomy drives seeds, adjacency bleed, the cluster cap, and the Explore
-leftfield rail. Tree in `data/genres.json`; logic in `lib/genre/`.
+flipside's genre taxonomy drives seeds, adjacency bleed, the cluster cap, and the Wander
+farther far pool. Tree in `data/genres.json`; logic in `lib/genre/`.
 
 ## The tree (4 levels)
 
@@ -50,9 +50,10 @@ against the full tree.
   anchor; `medium` = 25 nearest in **other** anchors. Coord-less tags fall back to
   cluster/anchor siblings.
 - Also: `genreToAnchor`, `listAnchors`, `leafTagsInAnchor`, `allLeavesWithAnchor`
-  (the leftfield-rail source — see [[explore-engine]]).
+  (the far pool's leftfield source — `lib/recommendation/far-picks.ts`).
 
-Used by `augmentWithAdjacent` (Feed bleed), `outsideRail`/`leftfieldRail` (Explore), and
+Used by `augmentWithAdjacent` (Feed bleed), the far pool's outside-anchor and leftfield
+pickers (`far-picks.ts`), and
 `primaryGenreOf` for the cluster cap (see [[generation-engine]]).
 
 ## Build & maintenance scripts (`scripts/`)

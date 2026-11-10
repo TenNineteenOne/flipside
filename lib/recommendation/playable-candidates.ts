@@ -1,6 +1,6 @@
 /**
  * PlayableCandidates — the one name → confirmed-playable-artist pipeline
- * shared by the Feed and Explore engines (#175 D2).
+ * used by the Feed engine (#175 D2).
  *
  *   resolve(names)  doorway resolve (ArtistIdentity: name-cache → lookup →
  *                   mint) → the caller's `keep` gate (exclusions etc.) →
@@ -9,12 +9,9 @@
  *   confirm(items)  confirm-to-target (iTunes-first, Spotify fallback); every
  *                   live outcome is collected.
  *   flush()         persist the collected outcomes to artist_tracks_cache.
- *   playable(...)   Explore's one-shot: resolve → confirm → flush, awaited.
  *
- * Scoring, tiering, picking and provenance stay in the engines: the Feed runs
- * resolve → score/pick → confirm in tiers → flush in `finish()`; Explore
- * calls `playable` per rail and MUST have flushed before rail hydration (the
- * #162 read-after-write).
+ * Scoring, tiering, picking and provenance stay in the engine: the Feed runs
+ * resolve → score/pick → confirm in tiers → flush in `finish()`.
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js"
@@ -36,7 +33,7 @@ export interface PlayablePorts {
 }
 
 /**
- * The live ports, shared by Feed and Explore: Last.fm getInfo as the doorway
+ * The live ports: Last.fm getInfo as the doorway
  * lookup + enrichment, iTunes-first previews (free, no auth, near-universal 30s
  * clips), Spotify top-tracks as the fallback — keyed on the SPOTIFY id, never
  * the uuid identity; no id (Last.fm-only artist) or no token → no-op to [].
@@ -110,18 +107,6 @@ export class PlayableCandidates {
     return this.collector.flush()
   }
 
-  /**
-   * Explore's pipeline: resolve → confirm up to `target` → flush (awaited, so
-   * a following hydration read sees the rows). Confirmed artists (topTracks
-   * baked) keyed by INPUT name.
-   */
-  async playable(names: string[], target: number, keep?: (artist: Artist) => boolean): Promise<Map<string, Artist>> {
-    const { artists } = await this.resolve(names, { keep })
-    const items = [...artists].map(([name, artist]) => ({ name, artist }))
-    const { kept } = await this.confirm(items, target)
-    await this.flush()
-    return new Map(kept.map((k) => [k.name, k.artist]))
-  }
 
   private confirmOne(artist: Artist): Promise<Track[]> {
     return confirmPlayableTracks(

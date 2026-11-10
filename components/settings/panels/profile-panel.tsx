@@ -2,7 +2,7 @@
 
 import { IdenticonAvatar } from "@/components/ui/identicon-avatar"
 import { hexToRgba } from "@/lib/color-utils"
-import { ACCENT, MINT } from "@/lib/settings/obscurity"
+import { ACCENT, MINT } from "@/lib/settings/colors"
 
 interface ProfilePanelProps {
   userSeed: string

@@ -14,22 +14,12 @@ export function useFeedGeneration(): FeedGeneration & { generating: boolean } {
   const [controller] = useState(() =>
     createFeedGeneration({
       toast,
-      storage: typeof window === "undefined" ? null : safeLocalStorage(),
       onGeneratingChange: setGenerating,
     }),
   )
   return {
     generating,
     requestMore: controller.requestMore,
-    rebuild: controller.rebuild,
     release: controller.release,
-  }
-}
-
-function safeLocalStorage(): Storage | null {
-  try {
-    return window.localStorage
-  } catch {
-    return null
   }
 }

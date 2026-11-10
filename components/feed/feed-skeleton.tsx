@@ -9,8 +9,7 @@ const SEGS = Array.from({ length: 20 }, (_, i) => i)
  * 900px and wider and at least 540px tall: the desktop queue + focus pane (same grid and
  * `shell-fill` opt-out). 640–899px and at least 680px tall: the tablet card, triage bar and
  * Up next list. Otherwise (below 640px, or short): one Snap page and the triage bar. Each uses the real view's frame, so
- * nothing shifts when the feed arrives. The cold-start hint depends on data, so
- * no space is reserved for it.
+ * nothing shifts when the feed arrives.
  */
 export function FeedSkeleton() {
   return (

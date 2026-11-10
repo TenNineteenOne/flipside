@@ -1,7 +1,7 @@
 ---
 title: API Routes
-updated: 2026-10-24
-related: [[generation-engine]], [[explore-engine]], [[music-providers]], [[auth-and-session]], [[data-model]]
+updated: 2026-11-10
+related: [[generation-engine]], [[music-providers]], [[auth-and-session]], [[data-model]]
 ---
 
 # API Routes
@@ -35,21 +35,21 @@ before its 401) and the GETs owned elsewhere (`/api/history`, `/api/recommendati
 |---|---|---|---|
 | `/api/recommendations` | GET | read ≤40 unseen/unexpired `recommendation_cache`, underground re-filter, return 20 | cache only |
 | `/api/recommendations/generate` | POST | `buildRecommendations`; refuses (429) if unexpired unseen ≥60 unless `?replace=true` (checked before the cooldown claim); 30s cooldown; schedules `finish()` (secondary + preview flush) + color via `after()` | [[generation-engine]], Spotify, iTunes |
-| `/api/explore/generate` | POST | `buildExploreRails`; `?force=true` → background regen, returns `{regenerating}`; both force and a non-force cold-cache build claim the 90s `last_explore_generated_at` cooldown (non-force cooling → `{success,regenerating}`, no build) | [[explore-engine]] |
-| `/api/explore/preload` | GET | background warm from Feed (`hydrate:true`) | [[explore-engine]] |
-| `/api/explore/rails` | GET | read-only snapshot + `generatedAt` for poll-swap | [[explore-engine]] |
 | `/api/artists/[id]/tracks` | GET | lazy tracks for a card; cache→iTunes; name/ID cross-check guards cache poisoning | **iTunes only** |
 
 ## Feedback, saves, history
 
 Which caches each taste change invalidates is decided in one place: `lib/taste-change.ts`
-(`onTasteChanged` / `invalidationFor`). A `skip` is not a taste change.
+(`onTasteChanged` / `invalidationFor`). Today only a settings change to `selectedGenres`
+wipes anything (the user's unseen Feed rows); `fameLevel`, `adventurous`, thumbs, saves, undismiss and seed
+changes reach the next batch through the engine's normal reads. A `skip` is not a taste change.
+The `/api/explore/*` routes were removed with the Explore page (2026-11-10, #205).
 
 | Route | Method | Does |
 |---|---|---|
-| `/api/feedback` | POST | thumbs-up first ensures this week's `user_challenges` row (`ensureCurrentChallenge`) so the RPC can credit it; `rpc_record_feedback`; thumbs → `invalidateExploreCache` (narrow for explore, full for feed) |
-| `/api/feedback/[artistId]` | DELETE | `rpc_delete_feedback` (undo thumbs) + full explore invalidate, 204 |
-| `/api/dismiss/[artistId]` | DELETE | `rpc_clear_dismiss` + full explore invalidate, 204 |
+| `/api/feedback` | POST | thumbs-up first ensures this week's `user_challenges` row (`ensureCurrentChallenge`) so the RPC can credit it; `rpc_record_feedback`. A `railKey` from an old Explore client is ignored |
+| `/api/feedback/[artistId]` | DELETE | `rpc_delete_feedback` (undo thumbs), 204 |
+| `/api/dismiss/[artistId]` | DELETE | `rpc_clear_dismiss`, 204 |
 | `/api/saves` | POST/DELETE | upsert/delete `saves`; response keeps `playlistId: null` (the Spotify-playlist branch was removed in #175) |
 | `/api/history` | GET | paginated seen recs + feedback/saves join |
 | `/api/history/accumulate` | POST | 15-min cooldown; sync Last.fm or stats.fm history into `listened_artists` |
@@ -62,8 +62,8 @@ Which caches each taste change invalidates is decided in one place: `lib/taste-c
 | `/api/onboarding/resolve` | POST | resolves a Last.fm-sourced onboarding suggestion to the internal artist uuid: `artists`-table exact-name doorway lookup first, MusicBrainz mbid url-rels fallback → mint under MB's canonical name (client name must match it at ≥0.8 similarity after folding diacritics, else 404; the check is skipped when exactly one name has Latin letters, e.g. "BTS" vs "방탄소년단"); 404 when unresolvable; 30/min per-user in-memory rate limit |
 | `/api/onboarding/seeds` | POST | upsert `seed_artists` (3–200 per request; existing + new ≤ 200 total, same check as settings) |
 | `/api/onboarding/check` | GET | `{needsOnboarding}` |
-| `/api/settings` | PATCH | validate + encrypt usernames + update `users`; genre/mode change → explore + unseen-feed wipe; `popularityCurve` → explore only; `playThreshold` → unseen-feed wipe only |
-| `/api/settings/seed-artists` | GET/POST/DELETE | manage seeds + invalidate explore |
+| `/api/settings` | PATCH | validate + encrypt usernames + update `users`; `selectedGenres` change → unseen-feed wipe; `fameLevel` / `adventurous` → nothing (next batch only) |
+| `/api/settings/seed-artists` | GET/POST/DELETE | manage seeds |
 | `/api/account` | DELETE | delete user (cascade) + sign out |
 
 ## Misc
