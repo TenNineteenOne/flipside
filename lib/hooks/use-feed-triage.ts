@@ -10,7 +10,7 @@ import { whyText } from "@/lib/feed/card-copy"
 import { counts, firstUndecided, reconcileSelection, remaining, step, visibleQueue, type Signal } from "@/lib/feed/triage-queue"
 import { tuning } from "@/lib/feed/tuning"
 import { shouldHandOver } from "@/lib/feed/hand-over"
-import { isDoubleActivation } from "@/lib/feed/double-activation"
+import { activationStamp, isDoubleActivation } from "@/lib/feed/double-activation"
 import { isCurrentTrack as isCurrent, nowPlayingArtistId } from "@/lib/feed/now-playing"
 import { getArtistLink, getShareableArtistLink, type MusicPlatform } from "@/lib/music-links"
 import { resolveArtistColor } from "@/lib/color-utils"
@@ -196,8 +196,8 @@ export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatfor
       if (!a) return null
       const now = performance.now()
       if (isDoubleActivation(lastAdvance.current, artistId, opts.advance, now)) return null
-      if (opts.advance) lastAdvance.current = { artistId, at: now }
       const plan = decide({ ids, signals, selectedId, playingArtistId }, { artistId, name: a.name, signal, ...opts })
+      if (opts.advance) lastAdvance.current = activationStamp(lastAdvance.current, artistId, selectedId, plan.selectId, now)
       const sent = plan.send.kind === "set" ? setSignal(artistId, plan.send.signal) : null
       setSelectedId(plan.selectId)
       if (plan.audio.kind === "play") {
