@@ -45,6 +45,7 @@ function urlProblem(value: unknown, allowed: (host: string) => boolean): string 
   try {
     const u = new URL(value)
     if (u.protocol !== "https:") return `not https: ${value}`
+    if (u.port || u.username || u.password) return "has a port or credentials"
     return allowed(u.hostname) ? null : `disallowed host: ${u.hostname}`
   } catch {
     return `not a URL: ${value}`
@@ -59,7 +60,7 @@ function artistProblems(a: unknown, at: string): string[] {
   const out: string[] = []
   for (const k of ["id", "name", "color"] as const) if (typeof a[k] !== "string" || !a[k]) out.push(`${at}: missing ${k}`)
   if (!isStrList(a.genres) || (a.genres as string[]).length === 0) out.push(`${at}: missing genres`)
-  if (typeof a.popularity !== "number") out.push(`${at}: missing popularity`)
+  if (!Number.isFinite(a.popularity)) out.push(`${at}: missing popularity`)
   const img = urlProblem(a.imageUrl, IMAGE_HOST)
   if (img) out.push(`${at}: imageUrl ${img}`)
   if (!isObj(a.why) || !isStrList(a.why.sourceArtists) || !isStrList(a.why.genres)) out.push(`${at}: missing why`)
@@ -69,7 +70,7 @@ function artistProblems(a: unknown, at: string): string[] {
     const tat = `${at} track ${i}`
     if (!isObj(t)) return out.push(`${tat}: not an object`)
     for (const k of ["id", "name", "albumName"] as const) if (typeof t[k] !== "string" || !t[k]) out.push(`${tat}: missing ${k}`)
-    if (typeof t.durationMs !== "number" || t.durationMs <= 0) out.push(`${tat}: missing durationMs`)
+    if (!Number.isFinite(t.durationMs) || (t.durationMs as number) <= 0) out.push(`${tat}: missing durationMs`)
     const audio = urlProblem(t.previewUrl, AUDIO_HOST)
     if (audio) out.push(`${tat}: previewUrl ${audio}`)
   })
