@@ -572,3 +572,15 @@ body:has(.ev-snap .ev-m-mini) [data-sonner-toaster] {
   body:has(.ev-tablet) [data-sonner-toaster] { --width: calc(100vw - 24px - 304px) !important; }
   body:has(.ev-tablet) [data-sonner-toast].ev-toast { width: 100%; max-width: none; }
 }
+
+/* Forced colours (Windows High Contrast): these parts are background-only, so they get system
+   colours. Strip: current = Highlight, liked = CanvasText, passed / dismissed = GrayText, undecided = outline. */
+@media (forced-colors: active) {
+  .ev-feed .ev-seg { forced-color-adjust: none; background: Canvas; border: 1px solid CanvasText; }
+  .ev-feed .ev-seg[data-v="liked"] { background: CanvasText; }
+  .ev-feed .ev-seg[data-v="passed"], .ev-feed .ev-seg[data-v="dismissed"] { background: GrayText; border-color: GrayText; }
+  .ev-feed .ev-seg[data-sel] { background: Highlight; border-color: Highlight; }
+  .ev-feed .ev-row[data-sel], .ev-feed .ev-m-thumb[aria-current="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
+  .ev-feed .ev-meter, .ev-feed .ev-cold-track { border: 1px solid CanvasText; }
+  .ev-feed .ev-meter > span, .ev-feed .ev-cold-track > span { forced-color-adjust: none; background: CanvasText; }
+}
