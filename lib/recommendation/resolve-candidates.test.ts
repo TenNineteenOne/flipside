@@ -417,4 +417,37 @@ describe("resolveArtistsByName", () => {
     expect(r.resolved.has("A")).toBe(false)
     expect(writes.size).toBe(0) // never persisted a Spotify-id identity
   })
+
+  describe("polite delay", () => {
+    // One worker, three misses, every search succeeds. `live` names bump the counter.
+    async function delays(liveNames: string[] | null): Promise<number[]> {
+      let live = 0
+      const waits: number[] = []
+      const search = async (name: string): Promise<Artist[] | RateLimited> => {
+        if (liveNames?.includes(name)) live++
+        return [artist(`id-${name}`, name)]
+      }
+      await resolveArtistsByName(["A", "B", "C"], {
+        ...makeDeps({ search }),
+        concurrency: 1,
+        delayMs: 125,
+        sleep: async (ms) => { waits.push(ms) },
+        ...(liveNames ? { liveCalls: () => live } : {}),
+      })
+      return waits
+    }
+
+    it("delays between names when no live-call counter is wired (old behavior)", async () => {
+      expect(await delays(null)).toEqual([125, 125])
+    })
+
+    it("skips the delay after a name served from cache", async () => {
+      expect(await delays([])).toEqual([])
+    })
+
+    it("keeps the delay after a live call", async () => {
+      // A live → delay before B; B cached → no delay before C.
+      expect(await delays(["A"])).toEqual([125])
+    })
+  })
 })
