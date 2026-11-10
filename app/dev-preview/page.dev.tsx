@@ -7,6 +7,7 @@ const PAGES = [
   { href: "/dev-preview/feed-loading", label: "Feed loading", note: "The feed route's loading skeleton" },
   { href: "/dev-preview/explore-card", label: "Explore card", note: "Explore's artist card: expanded, liked + saved, no image, no tracks, passed, dismissed (buttons toggle locally)" },
   { href: "/dev-preview/feed-empty", label: "Empty feed", note: "No recommendations yet: the loader (generate stays pending) and Explore pre-warm" },
+  { href: "/dev-preview/genre-picker", label: "Genre picker", note: "Onboarding's genre picker (search, browse, related chips, 50 cap) with the saved value shown below" },
 ]
 
 export default function DevPreviewIndex() {

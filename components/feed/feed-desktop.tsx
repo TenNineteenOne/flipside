@@ -1,43 +1,26 @@
 "use client"
 
 import "./feed.css"
-import { useEffect, type CSSProperties } from "react"
-import Link from "next/link"
-import Image from "next/image"
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion"
+import { useEffect } from "react"
 import { Bookmark, Heart, Pause, Play, Share2, ThumbsDown, X } from "lucide-react"
 import { PlatformIcon } from "@/components/platform-icon"
 import { MiniPlayer } from "@/components/player/mini-player"
+import { Art, artistVar, EndState, LoadMore } from "@/components/feed/feed-parts"
 import { ColdStartBanner } from "@/components/feed/cold-start-banner"
 import { Kbd } from "@/components/feed/feed-shortcuts"
 import { ShellSlot } from "@/components/shell/shell-context"
 import { useAudio } from "@/lib/audio-context"
-import { artworkFor, letterFor } from "@/lib/feed/artwork"
+import { artworkFor } from "@/lib/feed/artwork"
 import { formatDuration, listSeparator, popularityLabel, whyParts, whyText } from "@/lib/feed/card-copy"
 import { PLATFORM_META } from "@/lib/music-links"
-import { readableTextOn, resolveArtistColor } from "@/lib/color-utils"
 import { useArtistTracks } from "@/lib/hooks/use-artist-tracks"
+import { useLeaving } from "@/lib/hooks/use-leaving"
+import { useReducedMotion } from "@/lib/hooks/use-reduced-motion"
 import type { FeedTriage } from "@/lib/hooks/use-feed-triage"
 import type { CardArtist } from "@/lib/cards/card-artist"
 
 const VERDICT: Record<string, string> = { thumbs_up: "liked", thumbs_down: "passed", skip: "dismissed" }
-const EASE = [0.16, 1, 0.3, 1] as const
-/** Passed/dismissed rows fade and slide out (opacity + transform only); the list then closes up. */
-const ROW_EXIT = { opacity: 0, x: -32, transition: { duration: 0.2, ease: EASE } }
-
-/** Per-artist colour as `--a`; feed.css derives `--a-dark` / `--a-light` from it. */
-export const artistVar = (a: CardArtist) => ({ "--a": resolveArtistColor(a.artistColor, a.name) }) as CSSProperties
-
-/** Artwork, or a colour panel with the first letter when there is none (never a broken image). */
-export function Art({ a, src, size, className, alt = "", eager = false }: {
-  a: CardArtist; src: string | null; size: number; className: string; alt?: string; eager?: boolean
-}) {
-  if (!src) {
-    const bg = resolveArtistColor(a.artistColor, a.name)
-    return <span className={`${className} ev-letter`} style={{ background: bg, color: readableTextOn(bg) }} aria-hidden>{letterFor(a.name)}</span>
-  }
-  return <Image className={className} src={src} alt={alt} width={size} height={size} loading={eager ? "eager" : "lazy"} />
-}
+const rowKey = (a: CardArtist) => a.id
 
 /**
  * Desktop feed (≥900px): queue column + focus pane, filling the shell's main
@@ -55,7 +38,8 @@ interface FeedDesktopProps {
 
 export function FeedDesktop({ triage, signalCount, onLoadMore, generating }: FeedDesktopProps) {
   const { visible, selected, selectedId, signals, remaining, total, tuning } = triage
-  const reduced = useReducedMotion()
+  // Passed/dismissed rows fade and slide out (feed.css, .ev-row[data-leaving]); the list then closes up.
+  const rows = useLeaving(visible, rowKey, !useReducedMotion())
   return (
     <div className="ev-feed ev-app shell-fill">
       {tuning.more.length + tuning.less.length > 0 && (
@@ -96,20 +80,21 @@ export function FeedDesktop({ triage, signalCount, onLoadMore, generating }: Fee
         <div className="ev-coldstart"><ColdStartBanner signalCount={signalCount} /></div>
 
         <ul className="ev-rows" aria-label="Artist queue">
-          <AnimatePresence initial={false}>
-          {visible.map((a, i) => {
+          {rows.shown.map(({ item: a, leaving }, i) => {
             const sel = a.id === selectedId
             const liked = signals.get(a.id) === "thumbs_up"
             const playing = triage.isPlaying(a)
             return (
-              <motion.li
+              <li
                 key={a.id}
-                id={`ev-row-${a.id}`}
+                id={leaving ? undefined : `ev-row-${a.id}`}
                 className="ev-row"
-                data-sel={sel || undefined}
+                data-sel={(sel && !leaving) || undefined}
                 data-liked={liked || undefined}
+                data-leaving={leaving || undefined}
+                inert={leaving}
                 style={artistVar(a)}
-                exit={reduced ? undefined : ROW_EXIT}
+                onAnimationEnd={leaving ? (e) => { if (e.target === e.currentTarget) rows.done(a.id) } : undefined}
               >
                 <button type="button" className="ev-row-select" onClick={() => triage.select(a.id)} aria-label={`Select ${a.name}`} aria-current={sel || undefined} />
                 <button
@@ -143,10 +128,9 @@ export function FeedDesktop({ triage, signalCount, onLoadMore, generating }: Fee
                     <span className="ev-saved-tag"><Bookmark size={13} fill="currentColor" strokeWidth={0} aria-hidden />Saved</span>
                   ) : null}
                 </span>
-              </motion.li>
+              </li>
             )
           })}
-          </AnimatePresence>
         </ul>
         {visible.length > 0 && remaining === 0 && <p className="ev-queue-foot">Queue clear. These are the ones you kept.</p>}
         <div className="ev-queue-more"><LoadMore onLoadMore={onLoadMore} generating={generating} /></div>
@@ -189,7 +173,7 @@ function FocusCard({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
   return (
     <article className="ev-card" style={artistVar(a)}>
       <div className="ev-card-hero">
-        <Art a={a} src={art} size={600} className="ev-card-art" alt={`${tracks[0]?.albumName || a.name} cover art`} eager />
+        <Art a={a} src={art} size={600} className="ev-card-art" alt={`${tracks[0]?.albumName || a.name} cover art`} eager priority />
         <div className="ev-card-id">
           <h2 className="ev-card-name">{a.name}</h2>
           {a.genres.length > 0 && <p className="ev-card-genres">{a.genres.join(" · ")}</p>}
@@ -273,39 +257,5 @@ function FocusCard({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
         </section>
       )}
     </article>
-  )
-}
-
-/** Focus pane when nothing is left to decide (PRD "End of queue"). */
-export function EndState({ triage, onLoadMore, generating }: { triage: FeedTriage; onLoadMore: () => void; generating: boolean }) {
-  const { counts, total, tuning, visible, signals } = triage
-  const liked = visible.filter((a) => signals.get(a.id) === "thumbs_up").slice(0, 4)
-  const lean = tuning.more.slice(0, 2)
-  return (
-    <div className="ev-end">
-      {liked.length > 0 && (
-        <div className="ev-end-art" aria-hidden>
-          {liked.map((a) => <Art key={a.id} a={a} src={artworkFor(a)} size={96} className="ev-end-img" />)}
-        </div>
-      )}
-      <h2 className="ev-end-title">You&rsquo;ve heard all {total}.</h2>
-      <p className="ev-end-body">
-        {counts.liked} liked, {counts.passed} less like this, {counts.dismissed} dismissed.
-        {lean.length > 0 && <> Tomorrow&rsquo;s batch leans toward <strong>{lean.join(" and ")}</strong>.</>}
-      </p>
-      <div className="ev-end-actions">
-        <LoadMore onLoadMore={onLoadMore} generating={generating} primary />
-        <Link className="ev-btn ev-btn-ghost" href="/saved">Review saved</Link>
-      </div>
-    </div>
-  )
-}
-
-/** "Load more artists": the end state's primary button, and always available at the end of the queue / Up next list. */
-export function LoadMore({ onLoadMore, generating, primary = false }: { onLoadMore: () => void; generating: boolean; primary?: boolean }) {
-  return (
-    <button type="button" className={`ev-btn ${primary ? "ev-btn-primary" : "ev-btn-ghost"}`} onClick={onLoadMore} disabled={generating}>
-      {generating ? "Generating…" : "Load more artists"}
-    </button>
   )
 }

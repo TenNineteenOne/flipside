@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react"
 import { motion, useMotionValue, useReducedMotion, useTransform, type PanInfo } from "framer-motion"
 import { Bookmark, Heart, Pause, Play, Share2, ThumbsDown, X } from "lucide-react"
 import { PlatformIcon } from "@/components/platform-icon"
-import { Art, artistVar } from "@/components/feed/feed-desktop"
+import { Art, artistVar } from "@/components/feed/feed-parts"
 import { useAudio } from "@/lib/audio-context"
 import { artworkFor } from "@/lib/feed/artwork"
 import { listSeparator, whyParts } from "@/lib/feed/card-copy"
@@ -103,7 +103,7 @@ export function SnapCard({ a, triage, eager = false, enter = false }: {
       aria-label={`${a.name}. Swipe right for more like this, left for less.`}
     >
       <div className="ev-m-art">
-        <Art a={a} src={art} size={600} className="ev-m-img" alt={`${tracks[0]?.albumName || a.name} cover art`} eager={eager} />
+        <Art a={a} src={art} size={600} className="ev-m-img" alt={`${tracks[0]?.albumName || a.name} cover art`} eager={eager} priority={eager} />
         <motion.div className="ev-m-verdict ev-m-verdict-more" style={{ opacity: sw.more }} aria-hidden>
           <span><Heart size={18} fill="currentColor" strokeWidth={0} />More like this</span>
         </motion.div>

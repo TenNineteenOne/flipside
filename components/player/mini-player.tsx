@@ -1,12 +1,11 @@
 "use client"
 
-import { useEffect, useSyncExternalStore, type CSSProperties } from "react"
-import { AnimatePresence, MotionConfig, motion } from "framer-motion"
+import { useEffect, useState, useSyncExternalStore, type CSSProperties } from "react"
 import Image from "next/image"
 import { Pause, Play, X } from "lucide-react"
 import { useAudio } from "@/lib/audio-context"
 import { readableTextOn, sanitizeHex } from "@/lib/color-utils"
-import { letterFor } from "@/lib/feed/artwork"
+import { artworkAt, letterFor } from "@/lib/feed/artwork"
 
 // How many mounted components currently hide the floating pill: the docked
 // player (the desktop feed's focus pane has its own player) and the phone feed
@@ -53,7 +52,7 @@ function DockedPlayer() {
   return (
     <div className="ev-player" style={artistColor ? ({ "--a": artistColor } as CSSProperties) : undefined}>
       {art ? (
-        <Image src={art} alt="" width={40} height={40} />
+        <Image src={artworkAt(art, 40)} alt="" width={40} height={40} />
       ) : (
         <span className="ev-player-blank ev-letter" style={{ background: sanitizeHex(artistColor), color: readableTextOn(sanitizeHex(artistColor)) }} aria-hidden>
           {letterFor(artistName)}
@@ -72,22 +71,30 @@ function DockedPlayer() {
 }
 
 function FloatingPlayer() {
-  const { currentTrack, artistName, artistColor, isPlaying, progress, pause, resume, stop } = useAudio()
+  const audio = useAudio()
+  const { pause, resume, stop } = audio
   const suppressed = useSyncExternalStore(subscribeSuppressed, () => suppressors > 0, () => false)
+  const open = !!audio.currentTrack && !suppressed
+
+  // The pill slides up from below the screen and leaves the same way, fading (globals.css,
+  // .mini-player-pill). It stays mounted until its exit animation ends, showing what it showed
+  // when it was closed (stop() clears the track), and comes back if reopened meanwhile.
+  const [present, setPresent] = useState(open)
+  if (open && !present) setPresent(true)
+  const live = { currentTrack: audio.currentTrack, artistName: audio.artistName, artistColor: audio.artistColor, isPlaying: audio.isPlaying, progress: audio.progress }
+  const [held, setHeld] = useState(live)
+  if (open && (Object.keys(live) as (keyof typeof live)[]).some((k) => live[k] !== held[k])) setHeld(live)
+  const { currentTrack, artistName, artistColor, isPlaying, progress } = open ? live : held
 
   const dynamicColor = artistColor && /^#[0-9a-fA-F]{6}$/.test(artistColor) ? artistColor : "#8b5cf6"
 
   return (
-    // Reduced motion: the pill appears and leaves without the spring.
-    <MotionConfig reducedMotion="user">
-    <AnimatePresence>
-      {currentTrack && !suppressed && (
-        <motion.div
-           key="mini-player"
-           initial={{ y: "150%", opacity: 1, x: "-50%" }}
-           animate={{ y: -24, opacity: 1, x: "-50%" }} // Floating off bottom
-           exit={{ y: "150%", opacity: 0, x: "-50%" }}
-           transition={{ type: "spring", damping: 30, stiffness: 300 }}
+    <>
+      {present && currentTrack && (
+        <div
+           data-state={open ? "open" : "closed"}
+           onAnimationEnd={(e) => { if (!open && e.target === e.currentTarget) setPresent(false) }}
+           inert={!open}
            className="mini-player-pill fixed bottom-0 left-1/2 z-50 w-[92%] max-w-[480px] overflow-hidden"
            style={{
              background: "var(--rail)",
@@ -109,7 +116,7 @@ function FloatingPlayer() {
             <div className="shrink-0 relative">
               {currentTrack.albumImageUrl ? (
                 <Image
-                  src={currentTrack.albumImageUrl}
+                  src={artworkAt(currentTrack.albumImageUrl, 48)}
                   alt={currentTrack.albumName}
                   width={48}
                   height={48}
@@ -167,9 +174,8 @@ function FloatingPlayer() {
               </button>
             </div>
           </div>
-        </motion.div>
+        </div>
       )}
-    </AnimatePresence>
-    </MotionConfig>
+    </>
   )
 }

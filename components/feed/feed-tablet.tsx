@@ -3,7 +3,7 @@
 import "./feed.css"
 import { useEffect, useRef } from "react"
 import { Heart, X } from "lucide-react"
-import { Art, artistVar, EndState, LoadMore } from "@/components/feed/feed-desktop"
+import { Art, artistVar, EndState, LoadMore } from "@/components/feed/feed-parts"
 import { ColdLine, PlayerBar, TopBarProgress, TriageBar } from "@/components/feed/feed-snap"
 import { SnapCard } from "@/components/feed/snap-card"
 import { artworkFor } from "@/lib/feed/artwork"
@@ -54,7 +54,7 @@ export function FeedTablet({ triage, signalCount, onLoadMore, generating }: Feed
           <div className="ev-m-deck">
             {next && (
               <div className="ev-m-ghost" style={artistVar(next)} aria-hidden>
-                <Art a={next} src={artworkFor(next)} size={600} className="ev-m-ghost-img" />
+                <Art a={next} src={artworkFor(next)} size={600} className="ev-m-ghost-img" eager />
               </div>
             )}
             <SnapCard key={selected.id} a={selected} triage={triage} eager enter />

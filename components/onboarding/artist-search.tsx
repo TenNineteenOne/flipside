@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import Image from "next/image"
 import { Search, X } from "lucide-react"
+import { artworkAt } from "@/lib/feed/artwork"
 
 /** /api/onboarding/search ignores shorter queries; don't search or say "No artists found". */
 const MIN_QUERY = 2
@@ -242,7 +243,7 @@ export function ArtistSearch({ selected, onAdd, onRemove, cap, minForHint = 3 }:
                 }}
               >
                 {artist.imageUrl ? (
-                  <Image src={artist.imageUrl} alt={artist.name} width={32} height={32} unoptimized style={{ borderRadius: 6, objectFit: "cover", flexShrink: 0 }} />
+                  <Image src={artworkAt(artist.imageUrl, 32)} alt={artist.name} width={32} height={32} unoptimized style={{ borderRadius: 6, objectFit: "cover", flexShrink: 0 }} />
                 ) : (
                   <div style={{ width: 32, height: 32, borderRadius: 6, background: "rgba(255,255,255,0.06)", flexShrink: 0 }} />
                 )}
