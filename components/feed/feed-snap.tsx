@@ -36,11 +36,13 @@ interface FeedSnapProps {
   generating: boolean
   /** Wander farther: the top-bar switch and the one beside Load more on the end page. */
   wander: Wander
+  /** The weekly challenge strip (FeedClient's Suspense slot), shown under the header. */
+  challenge?: React.ReactNode
   /** Called once this layout is mounted (FeedClient enables the keyboard shortcuts then). */
   onShown?: (layout: "phone" | "tablet" | "desktop") => void
 }
 
-export function FeedSnap({ triage, signalCount, onLoadMore, generating, wander, onShown }: FeedSnapProps) {
+export function FeedSnap({ triage, signalCount, onLoadMore, generating, wander, challenge, onShown }: FeedSnapProps) {
   useEffect(() => onShown?.("phone"), [onShown])
   const { ids, selectedId } = triage
   const ended = triage.remaining === 0
@@ -141,6 +143,7 @@ export function FeedSnap({ triage, signalCount, onLoadMore, generating, wander, 
   return (
     <div className="ev-feed ev-snap">
       <TopBarProgress triage={triage} wander={wander} onLoadMore={onLoadMore} generating={generating} />
+      {challenge}
       <ColdLine signalCount={signalCount} />
 
       <main className="ev-m-snap" ref={scrollerRef} aria-label="Artists">

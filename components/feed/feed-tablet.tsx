@@ -22,6 +22,8 @@ interface FeedTabletProps {
   generating: boolean
   /** Wander farther: the top-bar switch and the ones beside each Load more. */
   wander: Wander
+  /** The weekly challenge strip (FeedClient's Suspense slot), shown under the header. */
+  challenge?: React.ReactNode
   /** Called once this layout is mounted (FeedClient enables the keyboard shortcuts then). */
   onShown?: (layout: "phone" | "tablet" | "desktop") => void
 }
@@ -32,7 +34,7 @@ interface FeedTabletProps {
  * under it, beside a 280px "Up next" list of every loaded artist in feed order.
  * The end state takes the card's place when nothing is left. Presentation only.
  */
-export function FeedTablet({ triage, signalCount, onLoadMore, generating, wander, onShown }: FeedTabletProps) {
+export function FeedTablet({ triage, signalCount, onLoadMore, generating, wander, challenge, onShown }: FeedTabletProps) {
   useEffect(() => onShown?.("tablet"), [onShown])
   const { selected, selectedId, signals } = triage
   const next = selectedId ? triage.byId.get(nextUndecided(triage.ids, signals, selectedId) ?? "") : undefined
@@ -52,6 +54,7 @@ export function FeedTablet({ triage, signalCount, onLoadMore, generating, wander
   return (
     <div className="ev-feed ev-snap ev-tablet">
       <TopBarProgress triage={triage} wander={wander} onLoadMore={onLoadMore} generating={generating} />
+      {challenge && <div className="ev-t-chal">{challenge}</div>}
       <div className="ev-t-cold"><ColdLine signalCount={signalCount} /></div>
 
       <main className="ev-m-stage" aria-label="Selected artist">

@@ -1,11 +1,12 @@
 "use client"
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react"
+import { Suspense, useEffect, useRef, useState, useSyncExternalStore } from "react"
 import dynamic from "next/dynamic"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { FeedShortcuts } from "@/components/feed/feed-shortcuts"
 import { FeedSkeleton } from "@/components/feed/feed-skeleton"
+import { ChallengeSkeleton, ChallengeSlot, type ChallengePayload } from "@/components/feed/challenge-strip"
 import { useShellBadge } from "@/components/shell/shell-context"
 import type { MusicPlatform } from "@/lib/music-links"
 import { useFeedFill } from "@/lib/hooks/use-feed-fill"
@@ -46,6 +47,8 @@ interface FeedClientProps {
   initialAdventurous?: boolean
   /** The server's guess (lib/feed/layout-guess) for the first render; matchMedia takes over after hydration. */
   initialLayout?: FeedLayout
+  /** The weekly challenge, unawaited (the feed paints first; the strip streams in). Resolves null for none or a failed load. */
+  challengePromise?: Promise<ChallengePayload | null>
 }
 
 // Below this many unseen recs on load, quietly top up in the background so the
@@ -79,7 +82,7 @@ const useHydrating = () => useSyncExternalStore(noSubscribe, () => false, () => 
 // Main component
 // ---------------------------------------------------------------------------
 
-export function FeedClient({ recommendations, musicPlatform, signalCount, initialAdventurous = false, initialLayout = "phone" }: FeedClientProps) {
+export function FeedClient({ recommendations, musicPlatform, signalCount, initialAdventurous = false, initialLayout = "phone", challengePromise }: FeedClientProps) {
   // Generate requests (mount top-up + Load more) share one re-entry guard, so
   // a user's own "Load more" can't collide with the background top-up.
   const generation = useFeedGeneration()
@@ -210,6 +213,11 @@ export function FeedClient({ recommendations, musicPlatform, signalCount, initia
     }
   }
 
+  const challenge = challengePromise && (
+    <Suspense fallback={<ChallengeSkeleton />}>
+      <ChallengeSlot challengePromise={challengePromise} />
+    </Suspense>
+  )
   const View = layout === "desktop" ? FeedDesktop : layout === "tablet" ? FeedTablet : FeedSnap
   return (
     <>
@@ -223,7 +231,7 @@ export function FeedClient({ recommendations, musicPlatform, signalCount, initia
           <FeedSkeleton />
         </div>
       )}
-      <View triage={triage} signalCount={signalCount} onLoadMore={handleGenerateMore} generating={isGenerating} wander={wander} onShown={setShown} />
+      <View triage={triage} signalCount={signalCount} onLoadMore={handleGenerateMore} generating={isGenerating} wander={wander} challenge={challenge} onShown={setShown} />
     </>
   )
 }

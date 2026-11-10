@@ -1,5 +1,6 @@
 // Dev-preview only. Production code must never import from lib/dev-preview.
 import type { CardArtist } from "@/lib/cards/card-artist"
+import type { ChallengePayload } from "@/components/feed/challenge-strip"
 import labArtists from "./lab-artists.json" // copied from design-lab:lib/lab/artists.json
 
 /** Fixed fake user seed for the harness identicon (no session). */
@@ -53,4 +54,13 @@ export function realisticArtists(real: boolean, count = 0): CardArtist[] {
     const a = base[i % base.length]
     return i < base.length ? a : { ...a, id: `${a.id}-${i}`, topTracks: a.topTracks.map((t) => ({ ...t, id: `${t.id}-${i}` })) }
   })
+}
+
+/** The weekly challenge strip on /dev-preview/feed (mockup feed-merge.html §6: 2 of 5 done). */
+export const previewChallenge: ChallengePayload = {
+  title: "Five in a week",
+  description: "like 5 artists this week",
+  progress: 2,
+  target: 5,
+  completed: false,
 }

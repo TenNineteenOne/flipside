@@ -9,6 +9,7 @@ import { counts, visibleQueue } from "@/lib/feed/triage-queue"
 import { tuning } from "@/lib/feed/tuning"
 import type { CardArtist } from "@/lib/cards/card-artist"
 import { FeedDesktop } from "./feed-desktop"
+import { ChallengeSlot, type ChallengePayload } from "./challenge-strip"
 
 function artist(id: string, name: string, imageUrl: string | null = `https://is1-ssl.mzstatic.com/${id}.jpg`): CardArtist {
   return {
@@ -24,7 +25,7 @@ function artist(id: string, name: string, imageUrl: string | null = `https://is1
 }
 
 /** The real hook, optionally with every artist already decided (as the signals map would hold). */
-function Desktop({ artists, decided }: { artists: CardArtist[]; decided?: Map<string, string> }) {
+function Desktop({ artists, decided, challenge }: { artists: CardArtist[]; decided?: Map<string, string>; challenge?: React.ReactNode }) {
   const t = useFeedTriage(artists, "spotify")
   const triage: FeedTriage = decided
     ? {
@@ -38,7 +39,7 @@ function Desktop({ artists, decided }: { artists: CardArtist[]; decided?: Map<st
         visible: visibleQueue(t.ids, decided).map((id) => artists.find((a) => a.id === id)!),
       }
     : t
-  return <FeedDesktop triage={triage} signalCount={10} onLoadMore={() => {}} generating={false} wander={{ on: false, toggle: () => {} }} />
+  return <FeedDesktop triage={triage} signalCount={10} onLoadMore={() => {}} generating={false} wander={{ on: false, toggle: () => {} }} challenge={challenge} />
 }
 
 // Text only: drop React's <!-- --> separators between adjacent text nodes.
@@ -146,5 +147,32 @@ describe("Wander farther", () => {
     expect(html).toContain('<p class="ev-card-why" data-far="true">Outside your usual: zouk</p>')
     expect(html).toContain('<span class="ev-row-why" data-far="true">Outside your usual: zouk</span>')
     expect(html).not.toContain("Because you like")
+  })
+})
+
+/** An already-settled promise: React's `use` reads it synchronously, so a server render shows the strip (or nothing). */
+const settled = <T,>(value: T) => Object.assign(Promise.resolve(value), { status: "fulfilled", value })
+const challenge: ChallengePayload = { title: "Five in a week", description: "like 5 artists this week", progress: 2, target: 5, completed: false }
+const renderWith = (c: ChallengePayload | null) =>
+  renderToString(<AudioProvider><Desktop artists={[artist("a", "Yin Yin")]} challenge={<ChallengeSlot challengePromise={settled(c)} />} /></AudioProvider>).replaceAll("<!-- -->", "")
+
+describe("FeedDesktop weekly challenge", () => {
+  it("shows the strip under the queue header, before the queue", () => {
+    const html = renderWith(challenge)
+    const strip = html.slice(html.indexOf('aria-label="Weekly challenge"'))
+    expect(html.indexOf("</header>")).toBeLessThan(html.indexOf('aria-label="Weekly challenge"'))
+    expect(strip).toMatch(/<span class="ev-chal-title">Five in a week<\/span><span class="sr-only">:<\/span><span aria-hidden="true"> · <\/span>like 5 artists this week/)
+    expect(strip).toMatch(/class="ev-chal-n">2\/5</)
+    expect(strip.indexOf("ev-chal")).toBeLessThan(strip.indexOf('aria-label="Artist queue"'))
+  })
+
+  it("marks a completed challenge with a check", () => {
+    const html = renderWith({ ...challenge, progress: 5, completed: true })
+    expect(html).toMatch(/class="ev-chal" data-done="true"/)
+    expect(html).toMatch(/class="ev-chal-n"><svg[^>]*lucide-check[\s\S]*?<\/svg>5\/5</)
+  })
+
+  it("renders nothing when there is no challenge (or it failed to load)", () => {
+    expect(renderWith(null)).not.toContain("ev-chal")
   })
 })

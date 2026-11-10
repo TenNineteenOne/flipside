@@ -8,6 +8,7 @@ import { useFeedTriage } from "@/lib/hooks/use-feed-triage"
 import { counts } from "@/lib/feed/triage-queue"
 import type { CardArtist } from "@/lib/cards/card-artist"
 import { FeedSnap, SnapCount } from "./feed-snap"
+import { ChallengeSlot, type ChallengePayload } from "./challenge-strip"
 
 function artist(id: string, name: string, imageUrl: string | null = `https://is1-ssl.mzstatic.com/${id}.jpg`): CardArtist {
   return {
@@ -81,5 +82,35 @@ describe("FeedSnap server render", () => {
   it("shows the cold-start line (with a dismiss button) until the listener has five signals", () => {
     expect(render(artists, undefined, 2)).toMatch(/class="ev-coldline"[\s\S]*Flipside signal · <span class="ev-cold-n">2 of 5<\/span>[\s\S]*aria-label="Hide signal hint"/)
     expect(render(artists, undefined, 5)).not.toContain("ev-coldline")
+  })
+})
+
+const settled = <T,>(value: T) => Object.assign(Promise.resolve(value), { status: "fulfilled", value })
+const challenge: ChallengePayload = { title: "Five in a week", description: "like 5 artists this week", progress: 2, target: 5, completed: false }
+
+describe("FeedSnap weekly challenge", () => {
+  const renderWith = (c: ChallengePayload | null, signalCount = 0) =>
+    renderToString(
+      <AudioProvider>
+        <Phone challenge={<ChallengeSlot challengePromise={settled(c)} />} signalCount={signalCount} />
+      </AudioProvider>,
+    ).replaceAll("<!-- -->", "")
+  function Phone({ challenge, signalCount }: { challenge: React.ReactNode; signalCount: number }) {
+    const triage = useFeedTriage([artist("a", "Yin Yin")], "spotify")
+    return <FeedSnap triage={triage} signalCount={signalCount} onLoadMore={() => {}} generating={false} wander={{ on: false, toggle: () => {} }} challenge={challenge} />
+  }
+
+  it("shows the strip as one line above the cold-start line and the scroller", () => {
+    const html = renderWith(challenge)
+    const at = html.indexOf('<section aria-label="Weekly challenge" class="ev-chal">')
+    expect(at).toBeGreaterThan(-1)
+    expect(html).toContain('<span class="ev-chal-title">Five in a week</span>')
+    expect(html).toMatch(/class="ev-chal-n">2\/5</)
+    expect(at).toBeLessThan(html.indexOf('class="ev-coldline"'))
+    expect(at).toBeLessThan(html.indexOf('class="ev-m-snap"'))
+  })
+
+  it("renders nothing when there is no challenge", () => {
+    expect(renderWith(null)).not.toContain("ev-chal")
   })
 })

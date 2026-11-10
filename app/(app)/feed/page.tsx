@@ -10,6 +10,8 @@ import { getUnseenRecommendations, type UnseenRecommendation } from "@/lib/recom
 import { isRenderableRow, loadFeedCards } from "@/lib/cards/feed-cards"
 import { guessFeedLayout } from "@/lib/feed/layout-guess"
 import { fameToEngine } from "@/lib/settings/fame"
+import { ensureCurrentChallenge } from "@/lib/challenges/engine"
+import type { ChallengePayload } from "@/components/feed/challenge-strip"
 
 export default async function FeedPage() {
   const session = await safeAuth()
@@ -65,6 +67,9 @@ export default async function FeedPage() {
     return <RecommendationsLoader />
   }
 
+  // Not awaited: FeedClient streams the strip in under Suspense, so the feed never waits on it.
+  const challengePromise = loadChallenge(supabase, user.id)
+
   // Assemble cards (tracks-cache fallback, colour lift, playable filter,
   // interleave — see lib/cards/feed-cards) + signal counts in parallel.
   const [
@@ -88,6 +93,19 @@ export default async function FeedPage() {
       signalCount={signalCount}
       initialAdventurous={!!user.adventurous}
       initialLayout={guessFeedLayout(await headers())}
+      challengePromise={challengePromise}
     />
   )
+}
+
+/** Best-effort: the challenge is a secondary surface, so any failure resolves null (no strip) instead of rejecting. */
+async function loadChallenge(supabase: ReturnType<typeof createServiceClient>, userId: string): Promise<ChallengePayload | null> {
+  try {
+    const c = await ensureCurrentChallenge(supabase, userId)
+    if (!c?.template) return null
+    return { title: c.template.title, description: c.template.description, progress: c.progress, target: c.target, completed: !!c.completedAt }
+  } catch (err) {
+    console.error("[feed-page] loadChallenge failed", err instanceof Error ? err.message : err)
+    return null
+  }
 }

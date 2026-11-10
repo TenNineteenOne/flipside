@@ -39,11 +39,13 @@ interface FeedDesktopProps {
   generating: boolean
   /** Wander farther: the switches beside each Load more. */
   wander: Wander
+  /** The weekly challenge strip (FeedClient's Suspense slot), shown under the header. */
+  challenge?: React.ReactNode
   /** Called once this layout is mounted (FeedClient enables the keyboard shortcuts then). */
   onShown?: (layout: "phone" | "tablet" | "desktop") => void
 }
 
-export function FeedDesktop({ triage, signalCount, onLoadMore, generating, wander, onShown }: FeedDesktopProps) {
+export function FeedDesktop({ triage, signalCount, onLoadMore, generating, wander, challenge, onShown }: FeedDesktopProps) {
   useEffect(() => onShown?.("desktop"), [onShown])
   const { visible, selected, selectedId, signals, remaining, total, tuning } = triage
   // Passed/dismissed rows fade and slide out (feed.css, .ev-row[data-leaving]); the list then closes up.
@@ -99,6 +101,7 @@ export function FeedDesktop({ triage, signalCount, onLoadMore, generating, wande
           </div>
         </header>
 
+        {challenge}
         <div className="ev-coldstart"><ColdStartBanner signalCount={signalCount} /></div>
 
         {/* no labels floating above an emptied queue */}
