@@ -5,10 +5,10 @@ import { createPortal } from "react-dom"
 
 /**
  * Lets a page put its own content into the shell without the shell knowing
- * about it: a count badge on a nav item, a Shortcuts handler, and two slots
- * (the phone top bar, and the rail under the nav).
+ * about it: a count badge on a nav item, a Shortcuts handler, and three slots
+ * (the phone top bar, a second top-bar row under it, and the rail under the nav).
  */
-export type ShellSlotName = "top" | "rail"
+export type ShellSlotName = "top" | "topSub" | "rail"
 
 export interface ShellApi {
   slots: Record<ShellSlotName, HTMLElement | null>
@@ -36,7 +36,7 @@ export function useShellShortcuts(open: (() => void) | undefined) {
   }, [shell, open])
 }
 
-/** Render children into a shell slot: "top" (phone/tablet top bar) or "rail" (desktop rail, under the nav). */
+/** Render children into a shell slot: "top" (phone/tablet top bar), "topSub" (a full-width row under it) or "rail" (desktop rail, under the nav). */
 export function ShellSlot({ name, children }: { name: ShellSlotName; children: ReactNode }) {
   const el = useContext(ShellContext)?.slots[name]
   return el ? createPortal(children, el) : null

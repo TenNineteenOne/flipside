@@ -6,6 +6,7 @@ import { ArtistCard } from "@/components/feed/artist-card"
 import { ColdStartBanner } from "@/components/feed/cold-start-banner"
 import { FeedDesktop } from "@/components/feed/feed-desktop"
 import { FeedShortcuts } from "@/components/feed/feed-shortcuts"
+import { FeedSnap } from "@/components/feed/feed-snap"
 import { useShellBadge } from "@/components/shell/shell-context"
 import { Ambient } from "@/components/visual/ambient"
 import type { MusicPlatform } from "@/lib/music-links"
@@ -43,16 +44,19 @@ const FEED_PALETTE = `
 // feed is unchanged this load; new recs land server-side for next time.
 const TOPUP_THRESHOLD = 8
 
-// ≥900px renders the desktop feed; below, the card list (until the phone and
-// tablet feeds replace it). One tree at a time; the server renders the list.
-const WIDE = "(min-width: 900px)"
-const subscribeWide = (cb: () => void) => {
-  const m = matchMedia(WIDE)
-  m.addEventListener("change", cb)
-  return () => m.removeEventListener("change", cb)
-}
-const isWide = () => matchMedia(WIDE).matches
-const notWide = () => false
+// ≥900px renders the desktop feed, below 640px the Snap feed; between, the card
+// list (until the tablet feed replaces it). One tree at a time; the server renders the list.
+const media = (query: string) => ({
+  subscribe: (cb: () => void) => {
+    const m = matchMedia(query)
+    m.addEventListener("change", cb)
+    return () => m.removeEventListener("change", cb)
+  },
+  matches: () => matchMedia(query).matches,
+})
+const WIDE = media("(min-width: 900px)")
+const PHONE = media("(max-width: 639px)")
+const onServer = () => false
 
 // ---------------------------------------------------------------------------
 // Main component
@@ -141,7 +145,8 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
   useShellBadge("/saved", Math.max(0, savedIds.size - savedAtMount))
   // Feed badge: artists still undecided (hidden at zero).
   useShellBadge("/feed", triage.remaining)
-  const wide = useSyncExternalStore(subscribeWide, isWide, notWide)
+  const wide = useSyncExternalStore(WIDE.subscribe, WIDE.matches, onServer)
+  const phone = useSyncExternalStore(PHONE.subscribe, PHONE.matches, onServer)
 
   async function handleGenerateMore() {
     const r = await generation.requestMore()
@@ -164,6 +169,14 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
       <>
         {shortcuts}
         <FeedDesktop triage={triage} signalCount={signalCount} onLoadMore={handleGenerateMore} generating={isGenerating} />
+      </>
+    )
+  }
+  if (phone) {
+    return (
+      <>
+        {shortcuts}
+        <FeedSnap triage={triage} />
       </>
     )
   }

@@ -212,6 +212,10 @@ export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatfor
     [ids, signals, selectedId],
   )
 
+  /** Snap: the artist scrolled into view becomes the selection, decided or not. */
+  // Playback hand-over to that artist is issue #192.
+  const becomeCurrent = useCallback((id: string) => setSelectedId(id), [])
+
   const visible = useMemo(
     () => visibleQueue(ids, signals).map((id) => byId.get(id)!),
     [ids, signals, byId],
@@ -222,6 +226,8 @@ export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatfor
   return {
     /** Every loaded artist id, in feed order (the progress strip). */
     ids,
+    /** Every loaded artist by id. */
+    byId,
     signals,
     setSignal,
     savedIds,
@@ -229,6 +235,7 @@ export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatfor
     selectedId,
     selected: selectedId ? byId.get(selectedId) ?? null : null,
     select: setSelectedId,
+    becomeCurrent,
     move,
     visible,
     remaining: remaining(ids, signals),
