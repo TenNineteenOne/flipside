@@ -84,7 +84,9 @@ export async function getHistoryPage(
         : "skip"
     return {
       artist_id: rec.artist_id,
-      artist_data: rec.artist_data,
+      // Only the keys HistoryEntry declares: the stored blob (tracks etc.)
+      // would otherwise ride along in the RSC payload and /api/history.
+      artist_data: pickHistoryArtist(rec.artist_data),
       score: rec.score,
       why: rec.why,
       artist_color: liftArtistColor(rec.artist_data),
@@ -95,4 +97,10 @@ export async function getHistoryPage(
   })
 
   return { history, hasMore }
+}
+
+function pickHistoryArtist(data: unknown): HistoryEntry["artist_data"] | null {
+  if (!data || typeof data !== "object") return data as null
+  const { id, name, genres, imageUrl, popularity } = data as HistoryEntry["artist_data"]
+  return { id, name, genres, imageUrl, popularity }
 }
