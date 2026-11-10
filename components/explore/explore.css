@@ -178,6 +178,10 @@
   .ev-explore .ex-head { padding-top: 18px; }
   .ev-explore .ex-title { font-size: 24px; }
   .ev-explore .ex-actions { margin-left: 0; width: 100%; }
+  /* No tinted panel (Adventurous off, and the skeleton): the switch lines up with the header and challenge. */
+  .ev-explore:not([data-adventurous]) .ex-controls { padding-inline: 0; border-inline-width: 0; }
+  /* The hint keeps two lines' room, so the padding change (and the skeleton) don't move the page. */
+  .ev-explore .ex-adv-hint { min-height: 39px; }
   .ev-explore .ex-actions > .ex-btn { flex: 1 1 auto; }
 }
 @media (prefers-reduced-motion: reduce) {
