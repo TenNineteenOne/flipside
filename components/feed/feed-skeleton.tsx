@@ -19,10 +19,12 @@ export function FeedSkeleton() {
           <div className="ev-queue-head">
             <div>
               <h1 className="ev-queue-title">Today&rsquo;s flipside</h1>
-              <span className="fs-skeleton ev-skel-line" style={{ width: 320, marginTop: 8 }} />
+              {/* inside the real subtitle's box, so the header (and the rows under it) keep their height */}
+              <p className="ev-queue-sub"><span className="fs-skeleton ev-skel-line" style={{ display: "inline-block", width: 320, verticalAlign: "middle" }} /></p>
             </div>
             <span className="fs-skeleton" style={{ width: 220, height: 14 }} />
           </div>
+          <QueueColumns />
           <div className="ev-rows">
             {ROWS.map((i) => (
               <div key={i} className="ev-row">
@@ -71,6 +73,22 @@ export function FeedSkeleton() {
         </div>
       </div>
     </>
+  )
+}
+
+/**
+ * The desktop queue's column labels (feed.css .ev-cols: the rows' grid, sticky under the queue
+ * header). Shared by FeedDesktop and the skeleton so the loaded feed doesn't shift. Rows carry
+ * their own visually hidden "Genre:" / "Popularity:" prefixes; the hint is the only extra.
+ */
+export function QueueColumns() {
+  const hint = "0–100. Lower means more obscure."
+  return (
+    <div className="ev-cols">
+      <span>Artist</span>
+      <span className="ev-col-genre">Genre</span>
+      <span className="ev-col-pop" title={hint}>Popularity<span className="sr-only"> ({hint})</span></span>
+    </div>
   )
 }
 
