@@ -86,15 +86,15 @@ export function FeedSkeleton() {
 /**
  * The desktop queue's column labels (feed.css .ev-cols: the rows' grid, sticky under the queue
  * header). Shared by FeedDesktop and the skeleton so the loaded feed doesn't shift. Rows carry
- * their own visually hidden "Genre:" / "Popularity:" prefixes; the hint is the only extra.
+ * their own visually hidden "Genre:" / "Popularity:" prefixes; the scale is visible text and the
+ * hint is visually hidden (no title, so touch and keyboard users get the same as everyone).
  */
 export function QueueColumns() {
-  const hint = "0–100. Lower means more obscure."
   return (
     <div className="ev-cols">
       <span>Artist</span>
       <span className="ev-col-genre">Genre</span>
-      <span className="ev-col-pop" title={hint}>Popularity<span className="sr-only"> ({hint})</span></span>
+      <span className="ev-col-pop">Popularity <span className="ev-col-scale">0–100</span><span className="sr-only">. Lower means more obscure.</span></span>
     </div>
   )
 }

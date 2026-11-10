@@ -118,6 +118,9 @@
   margin-bottom: 4px; background: var(--bg); border-bottom-color: var(--line); font-size: 12px; line-height: 1; color: var(--fg-3);
 }
 .ev-feed .ev-cols > :first-child { grid-column: 2; }
+/* "Popularity 0–100" is wider than its 80px column: it also takes the unlabelled state column. */
+.ev-feed .ev-col-pop { grid-column: span 2; white-space: nowrap; }
+.ev-feed .ev-col-scale { font-family: var(--font-mono); font-size: 11px; }
 .ev-feed .ev-row:hover { background: var(--panel); }
 /* A decided row leaving the queue (feed-desktop.tsx, useLeaving): fades and slides 32px left. */
 .ev-feed .ev-row[data-leaving] { animation: ev-row-out 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards; pointer-events: none; }
@@ -136,6 +139,7 @@
 .ev-feed .ev-row[data-sel] .ev-row-art { box-shadow: 0 0 0 2px var(--a); }
 .ev-feed .ev-row-text { display: flex; flex-direction: column; min-width: 0; pointer-events: none; }
 .ev-feed .ev-row-name { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev-feed .ev-row-name-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .ev-feed .ev-row-why { font-size: 13px; color: var(--fg-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ev-feed .ev-row-genre { font-size: 13px; color: var(--fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
 .ev-feed .ev-row-pop { display: flex; align-items: center; gap: 8px; pointer-events: none; }

@@ -127,13 +127,13 @@ export function FeedDesktop({ triage, signalCount, onLoadMore, generating, onSho
                 </button>
                 <div className="ev-row-text">
                   <span className="ev-row-name">
-                    {a.name}
+                    <span className="ev-row-name-t">{a.name}</span>
                     {playing && <span className="ev-eq" aria-label="Playing"><i /><i /><i /></span>}
                   </span>
                   <span className="ev-row-why">{whyText(a.why)}</span>
                 </div>
-                <span className="ev-row-genre">{a.genres[0] && <><span className="sr-only">Genre: </span>{a.genres[0]}</>}</span>
-                <span className="ev-row-pop" title={`Popularity ${a.popularity}/100`}>
+                <span className="ev-row-genre" title={a.genres[0]}>{a.genres[0] && <><span className="sr-only">Genre: </span>{a.genres[0]}</>}</span>
+                <span className="ev-row-pop">
                   <span className="sr-only">Popularity: </span>
                   <span className="ev-meter" aria-hidden><span style={{ width: `${a.popularity}%` }} /></span>
                   <span className="ev-row-pop-n">{a.popularity}</span>
