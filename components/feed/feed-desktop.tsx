@@ -1,7 +1,7 @@
 "use client"
 
 import "./feed.css"
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, type CSSProperties } from "react"
 import { Bookmark, Heart, Pause, Play, Share2, ThumbsDown, X } from "lucide-react"
 import { PlatformIcon } from "@/components/platform-icon"
 import { MiniPlayer } from "@/components/player/mini-player"
@@ -11,6 +11,7 @@ import { QueueColumns } from "@/components/feed/feed-skeleton"
 import { Kbd } from "@/components/feed/feed-shortcuts"
 import { ShellSlot } from "@/components/shell/shell-context"
 import { useAudio } from "@/lib/audio-context"
+import { chipColors, resolveArtistColor } from "@/lib/color-utils"
 import { artworkFor } from "@/lib/feed/artwork"
 import { formatDuration, listSeparator, popularityLabel, whyParts, whyText } from "@/lib/feed/card-copy"
 import { PLATFORM_META } from "@/lib/music-links"
@@ -184,6 +185,7 @@ function FocusCard({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
   const art = artworkFor({ imageUrl: a.imageUrl, topTracks: tracks })
   const { progress } = useAudio()
   const playable = tracks.filter((t) => t.previewUrl).slice(0, 3)
+  const chips = chipColors(resolveArtistColor(a.artistColor, a.name))
   const saved = triage.savedIds.has(a.id)
   const platform = PLATFORM_META[triage.musicPlatform]
   const judge = (signal: "thumbs_up" | "thumbs_down" | "skip") => triage.judge(a.id, signal, { toggle: true, advance: true })
@@ -259,10 +261,9 @@ function FocusCard({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
               const dur = formatDuration(t.durationMs)
               return (
                 <li key={t.id}>
-                  <button type="button" className="ev-track" data-current={current || undefined} onClick={() => triage.playTrack(a, i)} aria-label={`${on ? "Pause" : "Play"} ${t.name}`}>
+                  <button type="button" className="ev-track" style={{ "--c": chips[i] } as CSSProperties} data-current={current || undefined} onClick={() => triage.playTrack(a, i)} aria-label={`${on ? "Pause" : "Play"} ${t.name}`}>
                     <span className="ev-track-n" aria-hidden>
-                      {on ? <Pause size={13} fill="currentColor" strokeWidth={0} /> : <span className="ev-track-i">{i + 1}</span>}
-                      {!on && <Play className="ev-track-hover" size={13} fill="currentColor" strokeWidth={0} />}
+                      {on ? <Pause size={13} fill="currentColor" strokeWidth={0} /> : <Play size={13} fill="currentColor" strokeWidth={0} />}
                     </span>
                     <span className="ev-track-name">{t.name}<span className="ev-track-album">{t.albumName}</span></span>
                     {dur && <span className="ev-track-dur">{dur}</span>}

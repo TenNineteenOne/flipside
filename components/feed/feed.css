@@ -246,20 +246,24 @@
 /* track list */
 .ev-feed .ev-tracks-title { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; color: var(--fg-3); padding: 0 8px 6px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
 .ev-feed .ev-tracks-title span { font-weight: 400; }
-.ev-feed .ev-track { position: relative; display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; min-height: 48px; padding: 6px 8px; border-radius: 8px; text-align: left; overflow: hidden; }
-.ev-feed .ev-track:hover { background: color-mix(in oklch, var(--raise), transparent 30%); }
-.ev-feed .ev-track[data-current] { background: color-mix(in oklch, var(--raise), transparent 30%); }
-.ev-feed .ev-track-n { position: relative; display: grid; place-items: center; height: 20px; font: 400 12px/1 var(--font-mono); color: var(--fg-3); }
-.ev-feed .ev-track-hover { position: absolute; opacity: 0; color: var(--fg); }
-.ev-feed .ev-track:hover .ev-track-hover { opacity: 1; }
-.ev-feed .ev-track:hover .ev-track-i { opacity: 0; }
-/* Text uses a lighter mix than --a-light so dark artist colours still reach 4.5:1 on the pane. */
-.ev-feed .ev-track[data-current] .ev-track-name, .ev-feed .ev-track[data-current] .ev-track-n { color: color-mix(in oklch, var(--a) 35%, white); }
+/* Same look as the phone card's chips: a tint, a bold edge and a play circle in the track's own colour
+   (`--c`, set inline from chipColors in lib/color-utils.ts). Playing = white ring. */
+.ev-feed .ev-tracks ol { display: flex; flex-direction: column; gap: 6px; }
+.ev-feed .ev-track {
+  --c: oklch(0.7 0.14 230);
+  position: relative; display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 6px 12px 6px 8px; border-radius: 10px; text-align: left; overflow: hidden;
+  background: color-mix(in oklch, var(--c) 14%, transparent); box-shadow: inset 0 0 0 2px var(--c);
+  transition: background-color 120ms var(--ease);
+}
+.ev-feed .ev-track:hover { background: color-mix(in oklch, var(--c) 24%, transparent); }
+.ev-feed .ev-track[data-current] { background: color-mix(in oklch, var(--c) 32%, transparent); box-shadow: inset 0 0 0 2.5px var(--fg), 0 0 18px -4px var(--c); }
+.ev-feed .ev-track-n { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--c); color: #fff; }
+.ev-feed .ev-track[data-current] .ev-track-name { color: var(--fg); }
 .ev-feed .ev-track-name { display: flex; flex-direction: column; min-width: 0; font-size: 14px; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ev-feed .ev-track-album { font-size: 12px; font-weight: 400; color: var(--fg-3); overflow: hidden; text-overflow: ellipsis; }
 .ev-feed .ev-track-dur { font: 400 11px/1 var(--font-mono); color: var(--fg-3); }
 .ev-feed .ev-track-bar { position: absolute; left: 8px; right: 8px; bottom: 0; height: 2px; }
-.ev-feed .ev-track-bar span { display: block; height: 100%; background: var(--a-light); transform-origin: left; transition: transform 250ms linear; }
+.ev-feed .ev-track-bar span { display: block; height: 100%; background: var(--c); transform-origin: left; transition: transform 250ms linear; }
 
 /* docked player (components/player/mini-player.tsx, docked variant) */
 .ev-feed .ev-player { --a-light: color-mix(in oklch, var(--a, var(--violet)) 55%, white); position: relative; display: flex; align-items: center; gap: 12px; padding: 12px 16px 14px; background: var(--rail); border-top: 1px solid var(--line); min-height: 68px; }
@@ -705,7 +709,7 @@ body:has(.ev-snap) [data-sonner-toaster][data-y-position="top"] {
   .ev-feed .ev-row-art-icon { background: rgba(0, 0, 0, 0.55); }
   .ev-feed .ev-seg[data-v="passed"], .ev-feed .ev-seg[data-v="dismissed"] { background: var(--line-strong); }
   .ev-feed button.ev-tri:hover, .ev-feed .ev-m-tri:active, .ev-feed .ev-track:hover, .ev-feed .ev-track[data-current] { background: var(--raise); }
-  .ev-feed .ev-track[data-current] .ev-track-name, .ev-feed .ev-track[data-current] .ev-track-n { color: var(--fg); }
+  .ev-feed .ev-track[data-current] .ev-track-name { color: var(--fg); }
   .ev-feed .ev-btn-primary:hover:not(:disabled, [aria-disabled="true"]) { background: var(--violet-fill); }
   .ev-feed .ev-m-verdict-more { background: rgba(139, 92, 246, 0.42); }
   .ev-feed .ev-m-tri-like { background: var(--raise); }
