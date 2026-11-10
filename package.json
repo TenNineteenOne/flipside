@@ -13,7 +13,8 @@
     "build:subclusters": "npx tsx scripts/build-subclusters.ts",
     "validate:genres": "npx tsx scripts/validate-genre-tree.ts",
     "seed:cache": "npx tsx scripts/seed-artist-cache.ts",
-    "backfill:genres": "npx tsx scripts/backfill-artist-genres.ts"
+    "backfill:genres": "npx tsx scripts/backfill-artist-genres.ts",
+    "build:landing-sample": "node scripts/build-landing-sample.mjs"
   },
   "dependencies": {
     "@dicebear/collection": "^9.4.2",

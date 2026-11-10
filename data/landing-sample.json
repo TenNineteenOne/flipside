@@ -1,0 +1,432 @@
+{
+  "artists": [
+    {
+      "id": "glassbeams",
+      "name": "Glass Beams",
+      "genres": [
+        "psych rock",
+        "indian fusion"
+      ],
+      "popularity": 46,
+      "imageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music126/v4/be/b0/87/beb087ba-6ed2-0010-3eef-904a03921281/5054429192247.png/600x600bb.jpg",
+      "color": "#d88a24",
+      "why": {
+        "sourceArtists": [
+          "Khruangbin"
+        ],
+        "genres": [
+          "psych rock"
+        ]
+      },
+      "tracks": [
+        {
+          "id": "1727145711",
+          "name": "Mahal",
+          "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/68/36/9b/68369be9-9ab7-8950-c7a3-7cc3f33fb58c/mzaf_18330093126090432080.plus.aac.p.m4a",
+          "durationMs": 201339,
+          "albumName": "Mahal - EP"
+        },
+        {
+          "id": "6791600945",
+          "name": "Mirage",
+          "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/2a/07/5e/2a075e7e-2377-243a-0f84-a857b4d70041/mzaf_4917179050652129891.plus.aac.p.m4a",
+          "durationMs": 290448,
+          "albumName": "Mirage - Single"
+        },
+        {
+          "id": "1727145712",
+          "name": "Orb",
+          "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/f4/4f/79/f44f799d-7747-552b-ae8d-8ec9e38dbad4/mzaf_4083126572485882313.plus.aac.p.m4a",
+          "durationMs": 294000,
+          "albumName": "Mahal - EP"
+        }
+      ]
+    },
+    {
+      "id": "yinyin",
+      "name": "YĪN YĪN",
+      "genres": [
+        "psychedelic funk",
+        "thai funk"
+      ],
+      "popularity": 34,
+      "imageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/1b/a7/cf/1ba7cf21-fb72-c79f-82c4-47e581913cc9/3663729106094_cover.jpg/600x600bb.jpg",
+      "color": "#da2a2c",
+      "why": {
+        "sourceArtists": [
+          "Khruangbin",
+          "Altın Gün"
+        ],
+        "genres": [
+          "psychedelic funk"
+        ]
+      },
+      "tracks": [
+        {
+          "id": "1487604134",
+          "name": "One Inch Punch",
+          "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/67/24/19/672419bb-c83a-74e5-1d36-d29c50aab94b/mzaf_14143481475395389506.plus.aac.p.m4a",
+          "durationMs": 308301,
+          "albumName": "The Rabbit That Hunts Tigers"
+        },
+        {
+          "id": "1487604143",
+          "name": "Suì Yè",
+          "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/c2/55/ce/c255ceda-cc7b-3ce3-6a2e-8e9bc25ed651/mzaf_5130064185353681484.plus.aac.p.m4a",
+          "durationMs": 233231,
+          "albumName": "The Rabbit That Hunts Tigers"
+        },
+        {
+          "id": "1487604154",
+          "name": "Dis kô Dis kô",
+          "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/5f/ac/88/5fac8844-7629-d41e-2e40-43072bbbd9d7/mzaf_11207671394391016813.plus.aac.p.m4a",
+          "durationMs": 260110,
+          "albumName": "The Rabbit That Hunts Tigers"
+        }
+      ]
+    },
+    {
+      "id": "altıngun",
+      "name": "Altın Gün",
+      "genres": [
+        "anatolian rock",
+        "psych folk"
+      ],
+      "popularity": 48,
+      "imageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/33/c6/9c/33c69c01-751d-6e79-3a79-f326875d78b0/7640159732259_cover.jpg/600x600bb.jpg",
+      "color": "#ec6339",
+      "why": {
+        "sourceArtists": [
+          "Khruangbin"
+        ],
+        "genres": [
+          "anatolian rock"
+        ]
+      },
+      "tracks": [
+        {
+          "id": "1355691877",
+          "name": "Goca Dünya",
+          "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/73/62/a9/7362a93e-af71-bf80-eff1-1ced2266851a/mzaf_15156711726185480482.plus.aac.p.m4a",
+          "durationMs": 240093,
+          "albumName": "On"
+        },
+        {
+          "id": "1851994465",
+          "name": "Neredesin Sen",
+          "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/2b/34/8e/2b348e13-e4c5-c9aa-5619-08c4c082b503/mzaf_16124063976040955589.plus.aac.p.m4a",
+          "durationMs": 269739,
+          "albumName": "Garip"
+        },
+        {
+          "id": "1456045843",
+          "name": "Süpürgesi Yoncadan",
+          "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/3c/92/90/3c929073-0635-d887-a2db-9e9381647540/mzaf_3737789389871703529.plus.aac.p.m4a",
+          "durationMs": 329029,
+          "albumName": "Gece"
+        }
+      ]
+    },
+    {
+      "id": "mdoumoctar",
+      "name": "Mdou Moctar",
+      "genres": [
+        "tuareg rock",
+        "desert blues"
+      ],
+      "popularity": 44,
+      "imageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music116/v4/68/67/2b/68672bd6-d91c-8e17-b9c2-7cbf8fa7442f/191401161459.png/600x600bb.jpg",
+      "color": "#ae4f2c",
+      "why": {
+        "sourceArtists": [
+          "Tinariwen",
+          "Jimi Hendrix"
+        ],
+        "genres": [
+          "tuareg rock"
+        ]
+      },
+      "tracks": [
+        {
+          "id": "1586464406",
+          "name": "Tala Tannam",
+          "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/9d/73/d0/9d73d0f2-77b0-7d45-64a7-a531c4a30a9e/mzaf_9138346429758714103.plus.aac.p.m4a",
+          "durationMs": 338109,
+          "albumName": "Afrique Victime"
+        },
+        {
+          "id": "1708385545",
+          "name": "Tarhatazed",
+          "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview116/v4/34/30/03/3430033e-1bc9-c59a-7bed-c184dba3da78/mzaf_2621161918597237635.plus.aac.p.m4a",
+          "durationMs": 447083,
+          "albumName": "Ilana (The Creator)"
+        },
+        {
+          "id": "1729580079",
+          "name": "Imouhar",
+          "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/2a/4d/cd/2a4dcd43-30fc-6f52-be49-342ea3702e57/mzaf_4004588017862033388.plus.aac.p.m4a",
+          "durationMs": 307103,
+          "albumName": "Funeral for Justice"
+        }
+      ]
+    },
+    {
+      "id": "nalasinephro",
+      "name": "Nala Sinephro",
+      "genres": [
+        "ambient jazz",
+        "spiritual jazz"
+      ],
+      "popularity": 41,
+      "imageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/98/b8/46/98b84638-476a-ea68-151f-e844017594de/5056614798067.png/600x600bb.jpg",
+      "color": "#5176ad",
+      "why": {
+        "sourceArtists": [
+          "Floating Points",
+          "Alice Coltrane"
+        ],
+        "genres": [
+          "ambient jazz"
+        ]
+      },
+      "tracks": [
+        {
+          "id": "1752836263",
+          "name": "Continuum 3",
+          "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/4e/d5/4c/4ed54c5c-492a-3180-cd65-82ad99a9958f/mzaf_11350399455829876699.plus.aac.p.m4a",
+          "durationMs": 247539,
+          "albumName": "Endlessness"
+        },
+        {
+          "id": "1752836260",
+          "name": "Continuum 1",
+          "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/a2/9e/55/a29e553c-2704-bd91-5977-292893b6f352/mzaf_6726400361091270005.plus.aac.p.m4a",
+          "durationMs": 433750,
+          "albumName": "Endlessness"
+        },
+        {
+          "id": "1576882003",
+          "name": "Space 3",
+          "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/08/55/e4/0855e480-96c3-2d51-ce03-5e9c3013bb56/mzaf_11680292416108977437.plus.aac.p.m4a",
+          "durationMs": 75000,
+          "albumName": "Space 1.8"
+        }
+      ]
+    },
+    {
+      "id": "kokoroko",
+      "name": "Kokoroko",
+      "genres": [
+        "afrobeat",
+        "london jazz"
+      ],
+      "popularity": 47,
+      "imageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music114/v4/c1/e6/af/c1e6aff2-d170-5a9b-3b63-b6cb6686a803/5060180323301.jpg/600x600bb.jpg",
+      "color": "#e86253",
+      "why": {
+        "sourceArtists": [
+          "Ezra Collective",
+          "Fela Kuti"
+        ],
+        "genres": [
+          "afrobeat"
+        ]
+      },
+      "tracks": [
+        {
+          "id": "1561771400",
+          "name": "Abusey Junction",
+          "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/8f/0d/75/8f0d7519-8892-5849-83c9-7261cb8a9ea3/mzaf_8878046729423962042.plus.aac.p.m4a",
+          "durationMs": 429093,
+          "albumName": "We Out Here"
+        },
+        {
+          "id": "1561234531",
+          "name": "Ti-de",
+          "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/da/17/47/da174736-4a65-d462-2e47-5ecf087268d6/mzaf_17449684809166786950.plus.aac.p.m4a",
+          "durationMs": 372387,
+          "albumName": "KOKOROKO - EP"
+        },
+        {
+          "id": "1614650135",
+          "name": "Age Of Ascent",
+          "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/3b/92/7d/3b927da4-deac-2b25-7bec-d79c26076b2d/mzaf_12159286384762768021.plus.aac.p.m4a",
+          "durationMs": 298533,
+          "albumName": "Could We Be More"
+        }
+      ]
+    }
+  ],
+  "queue": [
+    {
+      "id": "kikagakumoyo",
+      "name": "Kikagaku Moyo",
+      "genres": [
+        "japanese psych",
+        "krautrock"
+      ],
+      "popularity": 44,
+      "imageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music69/v4/52/44/d3/5244d304-c892-3ae1-519d-a0dcf29ecdf0/730490463657.jpg/600x600bb.jpg",
+      "color": "#7f7f7f",
+      "why": {
+        "sourceArtists": [
+          "Can",
+          "King Gizzard"
+        ],
+        "genres": [
+          "japanese psych"
+        ]
+      },
+      "tracks": [
+        {
+          "id": "1096949618",
+          "name": "Melted Crystal",
+          "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/a9/52/e2/a952e203-cbe6-0457-9409-9347a6bfcbfc/mzaf_18217310256655004657.plus.aac.p.m4a",
+          "durationMs": 331000,
+          "albumName": "House in the Tall Grass"
+        },
+        {
+          "id": "1422830227",
+          "name": "Dripping Sun",
+          "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/75/ae/7f/75ae7fb0-b208-66f5-64bd-ccd022b343d4/mzaf_17602843438567360526.plus.aac.p.m4a",
+          "durationMs": 470092,
+          "albumName": "Masana Temples"
+        },
+        {
+          "id": "1096949608",
+          "name": "Green Sugar",
+          "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/c4/88/1b/c4881b85-db82-5327-3eb6-c39421023c1d/mzaf_2366805219804632980.plus.aac.p.m4a",
+          "durationMs": 474000,
+          "albumName": "House in the Tall Grass"
+        }
+      ]
+    },
+    {
+      "id": "aroojaftab",
+      "name": "Arooj Aftab",
+      "genres": [
+        "neo-sufi",
+        "chamber folk"
+      ],
+      "popularity": 43,
+      "imageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music116/v4/e7/ed/f0/e7edf00e-3cee-d8d1-d6ee-d4f11fc11831/21UM1IM51529.rgb.jpg/600x600bb.jpg",
+      "color": "#9f5f67",
+      "why": {
+        "sourceArtists": [
+          "Nick Drake"
+        ],
+        "genres": [
+          "neo-sufi"
+        ]
+      },
+      "tracks": [
+        {
+          "id": "1598994872",
+          "name": "Mohabbat",
+          "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/c1/33/7b/c1337bff-cb06-7be0-3649-5d09e3018502/mzaf_9803867309802798238.plus.aac.p.m4a",
+          "durationMs": 462500,
+          "albumName": "Vulture Prince"
+        },
+        {
+          "id": "1739688287",
+          "name": "Whiskey",
+          "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/88/9b/0a/889b0a62-9ad9-6de0-3f2e-37a9f7c09457/mzaf_17564202817648839826.plus.aac.p.m4a",
+          "durationMs": 307008,
+          "albumName": "Night Reign"
+        },
+        {
+          "id": "1739688188",
+          "name": "Raat Ki Rani",
+          "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/53/12/f9/5312f941-78f3-9b2a-e78b-413dbb57cf0e/mzaf_10436674848292760863.plus.aac.p.m4a",
+          "durationMs": 313312,
+          "albumName": "Night Reign"
+        }
+      ]
+    },
+    {
+      "id": "kokoroko",
+      "name": "Kokoroko",
+      "genres": [
+        "afrobeat",
+        "london jazz"
+      ],
+      "popularity": 47,
+      "imageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music114/v4/c1/e6/af/c1e6aff2-d170-5a9b-3b63-b6cb6686a803/5060180323301.jpg/600x600bb.jpg",
+      "color": "#e86253",
+      "why": {
+        "sourceArtists": [
+          "Ezra Collective",
+          "Fela Kuti"
+        ],
+        "genres": [
+          "afrobeat"
+        ]
+      },
+      "tracks": [
+        {
+          "id": "1561771400",
+          "name": "Abusey Junction",
+          "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/8f/0d/75/8f0d7519-8892-5849-83c9-7261cb8a9ea3/mzaf_8878046729423962042.plus.aac.p.m4a",
+          "durationMs": 429093,
+          "albumName": "We Out Here"
+        },
+        {
+          "id": "1561234531",
+          "name": "Ti-de",
+          "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/da/17/47/da174736-4a65-d462-2e47-5ecf087268d6/mzaf_17449684809166786950.plus.aac.p.m4a",
+          "durationMs": 372387,
+          "albumName": "KOKOROKO - EP"
+        },
+        {
+          "id": "1614650135",
+          "name": "Age Of Ascent",
+          "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/3b/92/7d/3b927da4-deac-2b25-7bec-d79c26076b2d/mzaf_12159286384762768021.plus.aac.p.m4a",
+          "durationMs": 298533,
+          "albumName": "Could We Be More"
+        }
+      ]
+    },
+    {
+      "id": "fievelisglauque",
+      "name": "Fievel Is Glauque",
+      "genres": [
+        "jazz pop",
+        "art pop"
+      ],
+      "popularity": 30,
+      "imageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/99/87/50/99875062-2437-24ec-f04d-b3bb27affc30/195938722091.png/600x600bb.jpg",
+      "color": "#ca4645",
+      "why": {
+        "sourceArtists": [
+          "Stereolab"
+        ],
+        "genres": [
+          "jazz pop"
+        ]
+      },
+      "tracks": [
+        {
+          "id": "1702711717",
+          "name": "Decoy",
+          "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview116/v4/a7/4e/6b/a74e6b7d-a6a6-6821-acd6-2de3475e42ca/mzaf_1723784502542906008.plus.aac.p.m4a",
+          "durationMs": 122693,
+          "albumName": "God’s Trashmen Sent to Right the Mess"
+        },
+        {
+          "id": "1759049130",
+          "name": "As Above So Below",
+          "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/7f/93/fc/7f93fc7f-4213-befd-51c9-142d8c36df2c/mzaf_17744500007415516508.plus.aac.p.m4a",
+          "durationMs": 226340,
+          "albumName": "Rong Weicknes"
+        },
+        {
+          "id": "1702711716",
+          "name": "Bring Me to Silence",
+          "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview126/v4/e4/36/a4/e436a4bc-9bc9-3854-0903-7c35f7250c6a/mzaf_15246014824112414990.plus.aac.p.m4a",
+          "durationMs": 109413,
+          "albumName": "God’s Trashmen Sent to Right the Mess"
+        }
+      ]
+    }
+  ]
+}
