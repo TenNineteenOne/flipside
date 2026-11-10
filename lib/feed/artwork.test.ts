@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest"
-import { artworkFor, letterFor } from "./artwork"
+import { afterEach, vi } from "vitest"
+import { artworkFor, letterFor, NO_LETTER } from "./artwork"
 
 const track = (albumImageUrl: string | null) => ({ albumImageUrl })
 
@@ -27,6 +28,8 @@ describe("artworkFor", () => {
 })
 
 describe("letterFor", () => {
+  afterEach(() => vi.unstubAllGlobals())
+
   it("upper-cases the first letter, ignoring leading space", () => {
     expect(letterFor("  zola jesus")).toBe("Z")
   })
@@ -34,9 +37,29 @@ describe("letterFor", () => {
     expect(letterFor("ñu")).toBe("Ñ")
     expect(letterFor("निकिता")).toBe("नि")
     expect(letterFor("坂本龍一")).toBe("坂")
-    expect(letterFor("👩‍🎤 band")).toBe("👩‍🎤")
   })
-  it("is empty for a blank name", () => {
-    expect(letterFor("   ")).toBe("")
+  it("skips leading characters that are not a letter or number", () => {
+    expect(letterFor("\u200Bzola")).toBe("Z")
+    expect(letterFor("“Weird Al”")).toBe("W")
+    expect(letterFor("...and you will know us")).toBe("A")
+    expect(letterFor("👩‍🎤 band")).toBe("B")
+    expect(letterFor("!!!")).toBe("!")
+    expect(letterFor("2pac")).toBe("2")
+  })
+  it("falls back to the first visible grapheme, then a neutral symbol", () => {
+    expect(letterFor("👩‍🎤")).toBe("👩‍🎤")
+    expect(letterFor("   ")).toBe(NO_LETTER)
+    expect(letterFor("\u200B\u200B")).toBe(NO_LETTER)
+  })
+  it("keeps one grapheme and ignores the browser locale when upper-casing", () => {
+    expect(letterFor("ßtreet")).toBe("ß")
+    expect(letterFor("ﬁve")).toBe("ﬁ")
+    expect(letterFor("istanbul")).toBe("I")
+  })
+  it("works without Intl.Segmenter (Firefox before 125)", () => {
+    vi.stubGlobal("Intl", { ...Intl, Segmenter: undefined })
+    expect(letterFor("  zola")).toBe("Z")
+    expect(letterFor("坂本")).toBe("坂")
+    expect(letterFor("   ")).toBe(NO_LETTER)
   })
 })

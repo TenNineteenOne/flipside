@@ -10,8 +10,26 @@ export function artworkFor(artist: {
   return artist.imageUrl || artist.topTracks[0]?.albumImageUrl || null
 }
 
-/** The letter on the no-artwork panel: the name's first grapheme, upper-cased ("" for a blank name). */
+/** Shown on the no-artwork panel when the name has nothing visible. */
+export const NO_LETTER = "♪"
+
+/**
+ * The letter on the no-artwork panel: the name's first letter or number
+ * (skipping quotes, punctuation, emoji and invisible characters), else its
+ * first visible grapheme, else NO_LETTER. Upper-cased with the locale-free
+ * `toUpperCase` (a Turkish-locale browser would otherwise render "İ" and break
+ * hydration), and kept as is when upper-casing would make it longer ("ß" → "SS").
+ */
 export function letterFor(name: string): string {
-  const first = new Intl.Segmenter().segment(name.trim())[Symbol.iterator]().next().value
-  return first ? first.segment.toLocaleUpperCase() : ""
+  // Intl.Segmenter is missing before Firefox 125: fall back to code points.
+  const graphemes =
+    typeof Intl.Segmenter === "function"
+      ? Array.from(new Intl.Segmenter().segment(name), (s) => s.segment)
+      : Array.from(name)
+  const first =
+    graphemes.find((g) => /^[\p{L}\p{N}]/u.test(g)) ??
+    graphemes.find((g) => /[^\s\p{Cc}\p{Cf}]/u.test(g))
+  if (!first) return NO_LETTER
+  const upper = first.toUpperCase()
+  return upper.length === first.length ? upper : first
 }
