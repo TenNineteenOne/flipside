@@ -198,7 +198,8 @@ triage buttons, track chips, Play preview, the landing's primary buttons) a 1px 
   (visually hidden "Genre:" / "Popularity: … out of 100"), Liked / Saved tag; a passed or dismissed row fades and slides out via
   `useLeaving`, `lib/hooks/use-leaving.ts`, and a CSS keyframe) and focus pane (artwork via `artworkFor` or a
   letter panel, why, popularity, Play preview, the three triage buttons, Save / Open in
-  {platform} / Share, up to three preview tracks, docked player; the end-of-queue state with
+  {platform} / Share, up to three preview tracks (styled like the Snap track chips: each in its own
+  `chipColors` colour with a play circle), docked player; the end-of-queue state with
   counts and "Load more artists" when nothing is selected; `LoadMore` is `aria-disabled` with clicks
   ignored while generating, never `disabled`, so keyboard focus stays on it), the cold-start banner at the top of
   the queue, and the rail "Tuning" block
