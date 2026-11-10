@@ -1,6 +1,6 @@
 ---
 title: Pages, Components & Client Data Flow
-updated: 2026-11-09
+updated: 2026-11-10
 related: [[api-routes]], [[generation-engine]], [[explore-engine]], [[settings-and-discovery]]
 ---
 
@@ -69,17 +69,30 @@ server component that queries Supabase, then hands data to a `"use client"` shel
   via `<ShellSlot name="rail">`. No decision logic. `FeedClient` sets the Saved badge
   (`useShellBadge`) to saves made since the feed opened.
 - **`FeedSnap`** (`components/feed/feed-snap.tsx`) — phones below 640px: a fixed column between
-  the shell top bar and tab bar (the page body does not scroll) holding a vertical scroller with
-  mandatory snapping, one full-height page per loaded artist (decided ones included, feed order),
-  and a three-button triage bar acting on the selected artist. "N of M left" goes in
-  `<ShellSlot name="top">`, the segment strip in `<ShellSlot name="topSub">` (a second top-bar
-  row). An `IntersectionObserver` (scroller root, threshold 0.6) calls the hook's
-  `becomeCurrent(id)`; any other selection change (decision advance, J/K, undo) scrolls that page
-  into view, with observer callbacks for other pages ignored until `scrollend` (timeout fallback).
+  the shell top bar and tab bar (the page body does not scroll): the cold-start hint as one
+  dismissible line (`ColdStartBanner` with `onDismiss`; same threshold and copy), a vertical
+  scroller with mandatory snapping, one full-height page per loaded artist (decided ones included,
+  feed order) plus a final end page (`EndState`, "Load more artists") once nothing is undecided, a
+  small player bar (the docked `MiniPlayer`) only while the loaded track is not the artist on
+  screen, and the three-button triage bar (kept in layout but hidden and `inert` with no artist
+  selected, so pages never resize). "N of M left" goes in `<ShellSlot name="top">`, the segment
+  strip in `<ShellSlot name="topSub">`. An `IntersectionObserver` (scroller root, threshold 0.6)
+  calls the hook's `becomeCurrent(id | null)` (null = end page), which also hands playback over
+  (`shouldHandOver`, `lib/feed/hand-over.ts`: only while another artist's track is playing); any
+  other selection change (decision advance, J/K, undo, an append after the end) scrolls that page
+  into view, ignoring observer callbacks for other pages until `scrollend` (timeout fallback).
   Each page renders **`SnapCard`** (`components/feed/snap-card.tsx`, shared with the tablet
   layout): artwork sized `min(100cqw - 52px, 100cqh - 236px, 460px)` on an artist-colour mat,
   64px play button with a 30-second ring, name, genres + save / open / share, why, up to three
   track chips; artists without tracks fetch them (`useArtistTracks`) only while selected.
+  Swipe (framer-motion `drag="x"`, direction lock, `touch-action: pan-y`): past 96px, or a flick
+  past 40px over 500px/s (`swipeDirection`, `lib/feed/swipe.ts`), right = `thumbs_up`, left =
+  `thumbs_down` via `judge(…, { toggle: false, advance: true })`; the card springs back to rest in
+  place (`dragSnapToOrigin`) while the scroller moves on, and ignores drags until at rest. Violet /
+  dark labels fade in from 24 to 96px. Decided cards show a "Liked" badge, or dimmed artwork with a
+  "Less like this" / "Dismissed" badge. Reduced motion: no rotation or spring, instant scroll.
+  The floating pill is hidden while the feed is mounted (`useSuppressFloatingPlayer`); the undo
+  toast is lifted above the triage bar (and the player bar when shown).
 - **`FeedShortcuts`** (`components/feed/feed-shortcuts.tsx`) — mounted by `FeedClient` at every
   width: one window `keydown` listener mapped by the pure `feedAction` (`lib/feed/feed-keymap.ts`)
   onto the triage hook, and the "?" sheet (native `<dialog>`, also opened by the rail's Shortcuts
@@ -87,8 +100,9 @@ server component that queries Supabase, then hands data to a `"use client"` shel
   `FeedClient` also sets the Feed badge to the number of undecided artists.
 - **`MiniPlayer`** (`components/player/mini-player.tsx`) — floating pill by default;
   `<MiniPlayer docked />` is the in-page player at the bottom of the desktop focus pane. While a
-  docked one is mounted (a module-level count read with `useSyncExternalStore`) the floating pill
-  renders nothing, so no route or width checks are needed.
+  docked one or the phone feed is mounted (`useSuppressFloatingPlayer`, a module-level count read
+  with `useSyncExternalStore`) the floating pill renders nothing, so no route or width checks are
+  needed.
 - **`TrackStrip`** — 1–3 playable tracks (expandable); play button → `onPlay`. No network.
 - **`MiniPlayer`** (`components/player/`) — persistent floating pill from `useAudio`
   context; play/pause/stop + progress.
@@ -107,7 +121,7 @@ server component that queries Supabase, then hands data to a `"use client"` shel
 | Hook | State | API |
 |---|---|---|
 | `useFeedFill` | seen ids, counts | polls `GET /api/recommendations` (2.5s, assembled `CardArtist[]`) → append playable; stops at target / 3 idle / 60s (after one final poll, retried once after 1.5s if the fetch throws) |
-| `useArtistTracks` | tracks | `GET /api/artists/:id/tracks?name=` (only if no baked tracks) |
+| `useArtistTracks` | tracks | `GET /api/artists/:id/tracks?name=` (only if no baked tracks); `isFetching` is derived (true from the first render until the request settles) |
 | `useArtistColor` | — | `useMemo`: sanitized hex or deterministic name-hash fallback |
 | `useArtistFeedback` | `Map<id,signal>` | POST/DELETE `/api/feedback`, DELETE `/api/dismiss`; Explore `skip` is local-only. Controller `lib/client/artist-signals.ts`: optimistic at tap time, `railKey` captured at tap time, per-artist serialized, falls back to last confirmed value when the last queued call fails |
 | `useArtistSaves` | `Set<id>` | POST/DELETE `/api/saves`; same artist-signal controller |

@@ -49,10 +49,11 @@ export function extractTracksFromResponse(data: unknown): Track[] | null {
  * Manages local track state for an artist card, fetching from the API when
  * the artist has no pre-fetched tracks.
  *
- * Mirrors the inline effect that previously lived in ArtistCard (lines 144–173).
- * The eslint-disable comment below is intentional: the effect only depends on
- * the three values that gate the fetch — not on isFetching — to avoid
- * re-running the effect after the state update that sets isFetching=true.
+ * `isFetching` is derived, not set from the effect: it is true from the very
+ * first render until the request for this artist settles. (Setting it inside
+ * the effect raced: when the effect ran outside a discrete event, a fast
+ * response could settle before any render saw `true`, so callers could not
+ * tell "not started" from "found nothing".)
  */
 export function useArtistTracks({
   artistId,
@@ -60,33 +61,32 @@ export function useArtistTracks({
   initialTracks,
 }: UseArtistTracksOptions): UseArtistTracksResult {
   const [tracks, setTracks] = useState<Track[]>(initialTracks)
-  const [isFetching, setIsFetching] = useState(false)
+  /** The artist whose request has settled (success, empty or failure). */
+  const [settledFor, setSettledFor] = useState<string | null>(null)
+  const needed = initialTracks.length === 0 && tracks.length === 0
 
   useEffect(() => {
-    if (initialTracks.length === 0 && tracks.length === 0 && !isFetching) {
-      const ctrl = new AbortController()
-      setIsFetching(true)
-      fetch(buildArtistTracksUrl(artistId, artistName), { signal: ctrl.signal })
-        .then((r) => {
-          if (!r.ok) throw new Error("fetch failed")
-          return r.json()
-        })
-        .then((data) => {
-          if (ctrl.signal.aborted) return
-          const extracted = extractTracksFromResponse(data)
-          if (extracted) setTracks(extracted)
-        })
-        .catch((err: unknown) => {
-          if (err instanceof DOMException && err.name === "AbortError") return
-          // Silent — caller shows "No tracks available" fallback.
-        })
-        .finally(() => {
-          if (!ctrl.signal.aborted) setIsFetching(false)
-        })
-      return () => ctrl.abort()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only fetch once when tracks are empty
+    if (!needed) return
+    const ctrl = new AbortController()
+    fetch(buildArtistTracksUrl(artistId, artistName), { signal: ctrl.signal })
+      .then((r) => {
+        if (!r.ok) throw new Error("fetch failed")
+        return r.json()
+      })
+      .then((data) => {
+        if (ctrl.signal.aborted) return
+        const extracted = extractTracksFromResponse(data)
+        if (extracted) setTracks(extracted)
+      })
+      .catch(() => {
+        // Silent: the caller shows its "no tracks" fallback once settled.
+      })
+      .finally(() => {
+        if (!ctrl.signal.aborted) setSettledFor(artistId)
+      })
+    return () => ctrl.abort()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch once per artist while tracks are empty
   }, [initialTracks.length, artistName, artistId])
 
-  return { tracks, isFetching }
+  return { tracks, isFetching: needed && settledFor !== artistId }
 }

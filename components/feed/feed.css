@@ -315,7 +315,7 @@ html:has(.ev-snap), html:has(.ev-snap) body { overflow: hidden; }
   height: calc(100dvh - var(--ev-snap-top) - var(--tab-h) - var(--safe-b));
   display: flex; flex-direction: column; background: var(--bg);
 }
-.ev-feed .ev-m-snap { flex: 1; min-height: 0; overflow-y: auto; scroll-snap-type: y mandatory; overscroll-behavior: contain; scrollbar-width: none; }
+.ev-feed .ev-m-snap { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; scroll-snap-type: y mandatory; overscroll-behavior: contain; scrollbar-width: none; }
 .ev-feed .ev-m-snap::-webkit-scrollbar { display: none; }
 .ev-feed .ev-m-page {
   height: 100%; scroll-snap-align: start; scroll-snap-stop: always; container-type: size;
@@ -331,7 +331,9 @@ html:has(.ev-snap), html:has(.ev-snap) body { overflow: hidden; }
   position: relative; display: flex; flex-direction: column; gap: 8px; padding: 10px 10px 12px; border-radius: 20px;
   background: color-mix(in oklch, var(--a-dark) 42%, var(--panel)); border: 1px solid color-mix(in oklch, var(--a) 24%, var(--line));
   box-shadow: 0 24px 50px -24px rgba(0, 0, 0, 0.8);
+  cursor: grab; user-select: none; -webkit-user-select: none;
 }
+.ev-feed .ev-m-card:active { cursor: grabbing; }
 /* Artwork is sized against BOTH the container's width and height so the whole card always fits;
    when height-limited the square sits on a mat of the artist colour instead of being cropped. */
 .ev-feed .ev-m-art {
@@ -340,6 +342,21 @@ html:has(.ev-snap), html:has(.ev-snap) body { overflow: hidden; }
 }
 .ev-feed .ev-m-img { width: auto; max-width: 100%; height: 100%; aspect-ratio: 1; margin: 0 auto; object-fit: cover; pointer-events: none; }
 .ev-feed .ev-m-img.ev-letter { font-size: 50cqh; }
+/* swipe overlays: opacity follows the drag offset (transparent at rest) */
+.ev-feed .ev-m-verdict { position: absolute; inset: 0; display: flex; align-items: flex-start; padding: 14px; pointer-events: none; }
+.ev-feed .ev-m-verdict span { display: inline-flex; align-items: center; gap: 7px; height: 38px; padding: 0 14px; border-radius: 10px; font-size: 16px; font-weight: 650; }
+.ev-feed .ev-m-verdict-more { background: color-mix(in oklch, var(--violet) 42%, transparent); }
+.ev-feed .ev-m-verdict-more span { background: var(--violet); color: #fff; }
+.ev-feed .ev-m-verdict-less { justify-content: flex-end; background: rgba(12, 10, 16, 0.6); }
+.ev-feed .ev-m-verdict-less span { background: var(--fg); color: oklch(0.18 0.01 293); }
+/* decided cards stay in the scroll: liked badge; passed / dismissed artwork dimmed with a badge */
+.ev-feed .ev-m-liked, .ev-feed .ev-m-judged {
+  position: absolute; left: 12px; bottom: 12px; display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px;
+  border-radius: 8px; font-size: 13px; font-weight: 600;
+}
+.ev-feed .ev-m-liked { background: var(--violet); color: #fff; }
+.ev-feed .ev-m-judged { gap: 6px; background: var(--fg); color: oklch(0.18 0.01 293); }
+.ev-feed .ev-m-card[data-v="passed"] .ev-m-img, .ev-feed .ev-m-card[data-v="dismissed"] .ev-m-img { opacity: 0.4; filter: grayscale(0.7); }
 .ev-feed .ev-m-play {
   position: absolute; right: 12px; bottom: 12px; display: grid; place-items: center; width: 64px; height: 64px; border-radius: 50%;
   background: var(--fg); color: oklch(0.16 0.01 293); box-shadow: 0 10px 28px -8px rgba(0, 0, 0, 0.6);
@@ -385,11 +402,37 @@ html:has(.ev-snap), html:has(.ev-snap) body { overflow: hidden; }
 .ev-feed .ev-m-tri:active { transform: scale(0.96); background: color-mix(in oklch, var(--raise), white 8%); }
 .ev-feed .ev-m-tri-like { color: var(--violet-ink); background: color-mix(in oklch, var(--violet) 14%, var(--raise)); }
 .ev-feed .ev-m-tri-like[aria-pressed="true"] { background: var(--violet); color: #fff; }
+.ev-feed .ev-m-triage[data-hidden] { visibility: hidden; }
 
-/* Overlays outside .ev-feed sit above the triage bar + tab bar (56px) while the Snap feed is up.
-   The mini player's "only when another artist is playing" rule and toast polish are #192. */
-body:has(.ev-snap) .mini-player-pill { bottom: calc(56px + 80px + env(safe-area-inset-bottom, 0px)) !important; }
+/* end of queue: the final snap page */
+.ev-feed .ev-m-page > .ev-end { padding: 24px 20px; width: min(100%, 480px); }
+.ev-feed .ev-m-page .ev-end-img { width: 72px; height: 72px; }
+
+/* cold-start hint: one dismissible line above the scroller */
+.ev-feed .ev-coldline {
+  position: relative; flex-shrink: 0; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 4px 2px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.ev-feed .ev-coldline-label { flex-shrink: 0; font-size: 10.5px; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: 0.18em; }
+.ev-feed .ev-coldline-sub { flex: 1; min-width: 0; font-size: 12px; color: var(--fg-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev-feed .ev-coldline-x { display: grid; place-items: center; width: 44px; height: 44px; flex-shrink: 0; border-radius: 10px; color: var(--fg-3); }
+.ev-feed .ev-coldline-x:hover { color: var(--fg); }
+.ev-feed .ev-coldline-track { position: absolute; left: 16px; right: 16px; bottom: 6px; height: 2px; border-radius: 999px; background: rgba(255, 255, 255, 0.06); overflow: hidden; }
+
+/* Small player bar (the docked player) between the scroller and the triage bar, as in the prototype. */
+.ev-feed .ev-m-mini { flex-shrink: 0; margin: 6px 16px 0; }
+.ev-feed .ev-m-mini .ev-player { min-height: 52px; padding: 6px 6px 8px 8px; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--raise); gap: 10px; }
+.ev-feed .ev-m-mini .ev-player img, .ev-feed .ev-m-mini .ev-player-blank { width: 36px; height: 36px; }
+.ev-feed .ev-m-mini .ev-player-btn { width: 40px; height: 40px; }
+.ev-feed .ev-m-mini .ev-player-bar { top: auto; bottom: 0; left: 12px; right: 12px; }
+
+/* The toast (outside .ev-feed) sits above the triage bar (80px, kept in layout even when hidden) + tab bar (56px),
+   and above the player bar while it shows. */
 body:has(.ev-snap) [data-sonner-toaster] {
   --offset-bottom: calc(56px + 80px + env(safe-area-inset-bottom, 0px) + 6px) !important;
   --mobile-offset-bottom: calc(56px + 80px + env(safe-area-inset-bottom, 0px) + 6px) !important;
+}
+body:has(.ev-snap .ev-m-mini) [data-sonner-toaster] {
+  --offset-bottom: calc(56px + 80px + env(safe-area-inset-bottom, 0px) + 66px) !important;
+  --mobile-offset-bottom: calc(56px + 80px + env(safe-area-inset-bottom, 0px) + 66px) !important;
 }

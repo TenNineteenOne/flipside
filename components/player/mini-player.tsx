@@ -8,31 +8,37 @@ import { useAudio } from "@/lib/audio-context"
 import { readableTextOn, sanitizeHex } from "@/lib/color-utils"
 import { letterFor } from "@/lib/feed/artwork"
 
-// How many docked players are mounted. While one is (the desktop feed's focus
-// pane), the floating pill stays hidden: the page has its own player. No route
-// or width checks: the docked one only exists where the desktop feed renders.
-let dockedCount = 0
-const dockListeners = new Set<() => void>()
-const subscribeDocked = (l: () => void) => {
-  dockListeners.add(l)
-  return () => { dockListeners.delete(l) }
-}
-const setDocked = (delta: number) => {
-  dockedCount += delta
-  dockListeners.forEach((l) => l())
+// How many mounted components currently hide the floating pill: the docked
+// player (the desktop feed's focus pane has its own player) and the phone feed
+// (which shows its own small player bar). No route or width checks:
+// suppressors only exist where those views render.
+let suppressors = 0
+const suppressListeners = new Set<() => void>()
+const subscribeSuppressed = (l: () => void) => {
+  suppressListeners.add(l)
+  return () => { suppressListeners.delete(l) }
 }
 
-/** `docked`: the in-page player at the bottom of the desktop feed's focus pane. Default: the floating pill. */
+/** Hide the floating pill while mounted. */
+export function useSuppressFloatingPlayer() {
+  useEffect(() => {
+    suppressors += 1
+    suppressListeners.forEach((l) => l())
+    return () => {
+      suppressors -= 1
+      suppressListeners.forEach((l) => l())
+    }
+  }, [])
+}
+
+/** `docked`: an in-page player (the desktop focus pane; the phone feed's bar). Default: the floating pill. */
 export function MiniPlayer({ docked = false }: { docked?: boolean }) {
   return docked ? <DockedPlayer /> : <FloatingPlayer />
 }
 
 function DockedPlayer() {
   const { currentTrack, artistName, artistImageUrl, artistColor, isPlaying, progress, pause, resume } = useAudio()
-  useEffect(() => {
-    setDocked(1)
-    return () => setDocked(-1)
-  }, [])
+  useSuppressFloatingPlayer()
 
   if (!currentTrack) {
     return (
@@ -65,13 +71,13 @@ function DockedPlayer() {
 
 function FloatingPlayer() {
   const { currentTrack, artistName, artistColor, isPlaying, progress, pause, resume, stop } = useAudio()
-  const docked = useSyncExternalStore(subscribeDocked, () => dockedCount > 0, () => false)
+  const suppressed = useSyncExternalStore(subscribeSuppressed, () => suppressors > 0, () => false)
 
   const dynamicColor = artistColor && /^#[0-9a-fA-F]{6}$/.test(artistColor) ? artistColor : "#8b5cf6"
 
   return (
     <AnimatePresence>
-      {currentTrack && !docked && (
+      {currentTrack && !suppressed && (
         <motion.div
            key="mini-player"
            initial={{ y: "150%", opacity: 0, x: "-50%" }}

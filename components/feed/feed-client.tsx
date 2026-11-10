@@ -176,7 +176,7 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
     return (
       <>
         {shortcuts}
-        <FeedSnap triage={triage} />
+        <FeedSnap triage={triage} signalCount={signalCount} onLoadMore={handleGenerateMore} generating={isGenerating} />
       </>
     )
   }
