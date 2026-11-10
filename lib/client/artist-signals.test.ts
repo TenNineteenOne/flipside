@@ -164,6 +164,100 @@ describe("feedback: confirmed ops (History undo/unblock)", () => {
   })
 })
 
+describe("feedback: restore (feed undo)", () => {
+  /** Resolve every call (in order, as each is sent) and return them as "METHOD url [signal]". */
+  async function drain(calls: ReturnType<typeof controlledFetch>["calls"], ok = true) {
+    for (let i = 0; i < 10; i++) {
+      await flush()
+      calls.forEach((c) => c.resolve(ok))
+    }
+    return calls.map((c) => `${c.init?.method} ${c.url}${c.init?.body ? ` ${body(c.init).signal}` : ""}`)
+  }
+
+  it.each([
+    ["thumbs_up", undefined, ["DELETE /api/feedback/a"]],
+    ["thumbs_down", undefined, ["DELETE /api/feedback/a"]],
+    ["skip", undefined, ["DELETE /api/dismiss/a"]],
+    ["thumbs_down", "thumbs_up", ["POST /api/feedback thumbs_up"]],
+    ["thumbs_up", "thumbs_down", ["POST /api/feedback thumbs_down"]],
+    ["skip", "thumbs_up", ["DELETE /api/dismiss/a", "POST /api/feedback thumbs_up"]],
+    ["skip", "thumbs_down", ["DELETE /api/dismiss/a", "POST /api/feedback thumbs_down"]],
+    ["thumbs_up", "skip", ["DELETE /api/feedback/a"]],
+    [undefined, "thumbs_up", ["POST /api/feedback thumbs_up"]],
+    [undefined, "skip", ["POST /api/feedback skip"]],
+    ["thumbs_down", "thumbs_down", []],
+    [undefined, undefined, []],
+  ] as const)("%s → %s sends %j and shows the previous verdict at once", async (current, previous, expected) => {
+    const { c, calls, sig } = feedback()
+    c.store.replace(() => (current ? new Map([["a", current]]) : new Map()))
+    const p = c.restore("a", previous)
+    expect(sig()).toBe(previous)
+    expect(await drain(calls)).toEqual(expected)
+    expect(await p).toBe(true)
+    expect(sig()).toBe(previous)
+  })
+
+  it("X, Z, L with slow responses: ends liked; POST, DELETE, POST in order", async () => {
+    const { c, calls, sig } = feedback()
+    c.setSignal("a", "thumbs_down")
+    c.restore("a", undefined)
+    expect(sig()).toBeUndefined()
+    const last = c.setSignal("a", "thumbs_up")
+    expect(sig()).toBe("thumbs_up")
+    expect(await drain(calls)).toEqual(["POST /api/feedback thumbs_down", "DELETE /api/feedback/a", "POST /api/feedback thumbs_up"])
+    await last
+    expect(sig()).toBe("thumbs_up")
+  })
+
+  it("a failed undo rolls back to the confirmed verdict and toasts", async () => {
+    const { c, calls, sig, toast } = feedback()
+    c.store.replace(() => new Map([["a", "thumbs_down"]]))
+    const p = c.restore("a", undefined)
+    expect(sig()).toBeUndefined()
+    await drain(calls, false)
+    expect(await p).toBe(false)
+    expect(sig()).toBe("thumbs_down")
+    expect(toast.error).toHaveBeenCalledWith("Couldn't undo — try again")
+  })
+
+  it("skip → thumbs: once the DELETE succeeded, a failed POST still counts as undone (no rollback, no toast)", async () => {
+    const { c, calls, sig, toast } = feedback()
+    c.store.replace(() => new Map([["a", "skip"]]))
+    const p = c.restore("a", "thumbs_up")
+    await flush()
+    calls[0].resolve(true) // DELETE /api/dismiss/a
+    await flush()
+    calls[1].resolve(false) // POST thumbs_up (only re-stamps seen_at)
+    expect(await p).toBe(true)
+    expect(sig()).toBe("thumbs_up")
+    expect(toast.error).not.toHaveBeenCalled()
+  })
+
+  it("skip → thumbs: a failed DELETE rolls back to skip and toasts", async () => {
+    const { c, calls, sig, toast } = feedback()
+    c.store.replace(() => new Map([["a", "skip"]]))
+    const p = c.restore("a", "thumbs_up")
+    await flush()
+    calls[0].resolve(false)
+    expect(await p).toBe(false)
+    expect(sig()).toBe("skip")
+    expect(calls).toHaveLength(1)
+    expect(toast.error).toHaveBeenCalledWith("Couldn't undo — try again")
+  })
+
+  it("undo after a failed (rolled back) decision sends nothing", async () => {
+    const { c, calls, sig } = feedback()
+    const t = c.setSignal("a", "thumbs_up")
+    await flush()
+    calls[0].resolve(false)
+    await t
+    expect(sig()).toBeUndefined()
+    expect(await c.restore("a", undefined)).toBe(true)
+    await flush()
+    expect(calls).toHaveLength(1)
+  })
+})
+
 describe("saves", () => {
   function saves(initial: string[] = []) {
     const f = controlledFetch()

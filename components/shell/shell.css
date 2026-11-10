@@ -1,0 +1,264 @@
+/* Signed-in app shell: rail (≥900px wide and ≥540px tall), top bar + tab bar otherwise.
+   Values copied from the Evolved prototype (design-lab: app/lab/evolved/evolved.css). */
+
+.shell {
+  --rail-w: 232px;
+  --top-h: 56px;
+  --tab-h: 56px;
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  min-height: 100dvh;
+  width: 100%;
+}
+.shell a { color: inherit; text-decoration: none; }
+.shell-rail :focus-visible,
+.shell-top :focus-visible,
+.shell-menu :focus-visible,
+.shell-tabs :focus-visible {
+  outline: 2px solid var(--violet-ink);
+  outline-offset: 2px;
+}
+
+/* ---------- main area ---------- */
+.shell-main {
+  width: 100%;
+  padding: 0 32px 64px calc(var(--rail-w) + 32px);
+  display: flex;
+  justify-content: center;
+}
+/* Where the rail shows (900px wide, 540px tall), a page containing .shell-fill (the desktop feed and its loading
+   skeleton) fills the whole area right of the rail at viewport height: no padding,
+   no 520px column, no page scroll. */
+@media (width >= 900px) and (height >= 540px) {
+  .shell-main:has(.shell-fill) { height: 100dvh; padding: 0 0 0 var(--rail-w); }
+  .shell-main:has(.shell-fill) > .app-col { max-width: none; min-width: 0; }
+}
+
+/* ---------- rail (desktop) ---------- */
+.shell-rail {
+  position: fixed;
+  z-index: 40;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--rail-w);
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  padding: 20px 14px 16px;
+  background: var(--rail);
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+}
+.shell-rail-brand { padding: 6px 10px; align-self: flex-start; border-radius: 6px; }
+.shell-nav { display: flex; flex-direction: column; gap: 2px; }
+.shell-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 38px;
+  padding: 0 10px;
+  border-radius: 8px;
+  color: var(--fg-2);
+  font-weight: 500;
+  font-size: 15px;
+  transition: background-color 120ms var(--ease), color 120ms var(--ease);
+}
+.shell-nav-item:hover { background: var(--panel); color: var(--fg); }
+.shell-nav-item[aria-current="page"] { background: var(--raise); color: var(--fg); }
+.shell-nav-item[aria-current="page"] svg { color: var(--violet-ink); }
+.shell-nav-count { margin-left: auto; font: 500 11px/1 var(--font-mono); color: var(--fg-3); }
+.shell-rail-slot { min-width: 0; }
+.shell-rail-slot:empty { display: none; }
+.shell-rail-foot { margin-top: auto; display: flex; flex-direction: column; gap: 6px; }
+.shell-rail-keys {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 38px;
+  padding: 0 10px;
+  border-radius: 8px;
+  color: var(--fg-2);
+  font-size: 14px;
+}
+.shell-rail-keys:hover { background: var(--panel); color: var(--fg); }
+.shell-kbd {
+  margin-left: auto;
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.6em;
+  height: 1.6em;
+  padding: 0 0.4em;
+  font: 500 10px/1 var(--font-mono);
+  color: var(--fg-3);
+  border: 1px solid var(--line-strong);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--bg);
+}
+.shell-user { display: flex; align-items: center; gap: 10px; padding: 8px 10px; }
+
+/* Adventurous mode: a 2px four-colour line on the rail's inner edge. */
+.shell.adventurous .shell-rail { border-right-color: transparent; }
+.shell.adventurous .shell-rail::after {
+  content: "";
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--rail-w) - 2px);
+  width: 2px;
+  background: linear-gradient(180deg, #f5b047, #ec6fb5, #7dd9c6, #a8c7fa);
+  pointer-events: none;
+}
+
+/* 900–1099px: icons only (only applies while the rail shows). */
+@media (width < 1100px) {
+  .shell { --rail-w: 64px; }
+  .shell-rail { padding: 18px 10px; align-items: center; }
+  .shell-rail-brand { padding: 6px; align-self: center; }
+  .shell-rail-brand .fs-wordmark { font-size: 0; }
+  .shell-rail-brand .fs-wordmark-dot { width: 14px; height: 14px; margin: 0; }
+  .shell-nav-label, .shell-nav-count, .shell-rail-slot, .shell-rail-keys .shell-kbd { display: none; }
+  .shell-nav-item, .shell-rail-keys { justify-content: center; width: 44px; height: 44px; padding: 0; }
+  .shell-user { padding: 8px 0; justify-content: center; }
+}
+
+/* ---------- top bar, avatar menu, tab bar (below 900px wide or 540px tall) ---------- */
+.shell-top, .shell-tabs { display: none; }
+/* Above the top bar, the tab bar and the fixed feed layers (all z-index 40 or below). */
+.shell-menu {
+  position: fixed;
+  z-index: 60;
+  inset: calc(var(--top-h) + var(--safe-t) - 2px) 12px auto auto;
+  margin: 0;
+  width: 240px;
+  padding: 6px;
+  border-radius: 14px;
+  border: 1px solid var(--line-strong);
+  background: var(--panel);
+  color: var(--fg);
+  box-shadow: 0 24px 60px -16px rgba(0, 0, 0, 0.7);
+}
+/* The menu belongs to the top bar's avatar; if the window widens while it is open, it goes with the bar. */
+@media (width >= 900px) and (height >= 540px) { .shell-menu { display: none; } }
+.shell-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 10px;
+  border-radius: 9px;
+  font-size: 15px;
+  color: var(--fg-2);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.shell-menu-item:hover { background: var(--raise); color: var(--fg); }
+.shell-menu-item[aria-current="page"] { color: var(--fg); }
+.shell-menu-item[aria-current="page"] svg { color: var(--violet-ink); }
+
+/* Also short wide windows (phones in landscape at 900px and wider): the feed is the phone Snap
+   layout there, which needs the top bar (count, strip) and the tab bar, and a rail would only
+   take width from a view that is short of height. */
+@media (width < 900px), (height < 540px) {
+  .shell-rail { display: none; }
+  .shell-main {
+    padding: calc(var(--top-h) + var(--safe-t)) 16px calc(var(--tab-h) + var(--safe-b) + 24px);
+  }
+
+  .shell-top {
+    position: fixed;
+    z-index: 40;
+    top: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    flex-direction: column;
+    padding-top: var(--safe-t);
+    background: var(--bg);
+    border-bottom: 1px solid var(--line);
+  }
+  .shell-top-row { display: flex; align-items: center; gap: 12px; height: var(--top-h); padding: 0 12px 0 16px; }
+  /* A page's second row (ShellSlot "topSub"); the bar grows by its height. */
+  .shell-top-sub { padding: 0 12px 0 16px; }
+  .shell-top-sub:empty { display: none; }
+  .shell-top-brand { position: relative; border-radius: 6px; }
+  /* 44px touch target around the 26px wordmark, same look */
+  .shell-top-brand::after { content: ""; position: absolute; inset: -9px -4px; }
+  .shell-top-slot { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: flex-end; }
+  .shell-avatar {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    margin-left: auto;
+    border-radius: 50%;
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+  }
+  .shell.adventurous .shell-top { border-bottom-color: transparent; }
+  .shell.adventurous .shell-top::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 2px;
+    background: linear-gradient(90deg, #f5b047, #ec6fb5, #7dd9c6, #a8c7fa);
+    pointer-events: none;
+  }
+
+  .shell-tabs {
+    position: fixed;
+    z-index: 40;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    height: calc(var(--tab-h) + var(--safe-b));
+    padding-bottom: var(--safe-b);
+    background: var(--rail);
+    border-top: 1px solid var(--line);
+  }
+  .shell-tab {
+    position: relative;
+    flex: 1;
+    min-width: 44px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--fg-3);
+  }
+  .shell-tabs .shell-tab:focus-visible { outline-offset: -2px; }
+  .shell-tab[aria-current="page"] { color: var(--fg); }
+  .shell-tab[aria-current="page"] svg { color: var(--violet-ink); }
+  .shell-tab-dot {
+    position: absolute;
+    top: 4px;
+    left: calc(50% + 6px);
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 8px;
+    background: var(--violet-fill);
+    color: #fff;
+    font: 600 10px/16px var(--font-sans);
+    text-align: center;
+  }
+
+  /* Existing overlays (outside .shell, so literal values) sit above the tab bar instead of on it. */
+  body:has(.shell) .mini-player-pill { bottom: calc(56px + env(safe-area-inset-bottom, 0px)); }
+  body:has(.shell) [data-sonner-toaster] {
+    --offset-bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 16px) !important;
+    --mobile-offset-bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 16px) !important;
+  }
+}

@@ -4,6 +4,7 @@ import { useState, useMemo, useRef, useSyncExternalStore } from "react"
 import Image from "next/image"
 import { ThumbsUp, ThumbsDown, SkipForward, Bookmark, Undo2 } from "lucide-react"
 import { hexToRgba, resolveArtistColor } from "@/lib/color-utils"
+import { artworkAt } from "@/lib/feed/artwork"
 import { useArtistFeedback } from "@/lib/hooks/use-artist-feedback"
 
 interface HistoryEntry {
@@ -303,7 +304,7 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
                       >
                         {entry.artist_data.imageUrl ? (
                           <Image
-                            src={entry.artist_data.imageUrl}
+                            src={artworkAt(entry.artist_data.imageUrl, 36)}
                             alt={entry.artist_data.name}
                             width={36}
                             height={36}

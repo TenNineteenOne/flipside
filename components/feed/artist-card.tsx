@@ -3,7 +3,7 @@
 import { memo, useCallback } from "react"
 import Image from "next/image"
 import { motion } from "framer-motion"
-import { SkipForward, Bookmark, Check, Share2 } from "lucide-react"
+import { Bookmark, Check, Heart, Share2, ThumbsDown, X } from "lucide-react"
 import { toast } from "sonner"
 import { TrackStrip } from "@/components/feed/track-strip"
 import { PlatformIcon } from "@/components/platform-icon"
@@ -68,7 +68,7 @@ const heroNameWrapStyle: React.CSSProperties = {
 }
 
 const cardBodyStyle: React.CSSProperties = {
-  padding: "18px 20px 20px",
+  padding: "16px 20px 20px",
 }
 
 const noTracksPlaceholderStyle: React.CSSProperties = {
@@ -76,20 +76,33 @@ const noTracksPlaceholderStyle: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  borderRadius: 12,
-  background: "rgba(255,255,255,0.025)",
-  border: "1px solid var(--border)",
+  borderRadius: 10,
+  border: "1px solid var(--line)",
+  fontSize: 13,
+  color: "var(--fg-3)",
 }
 
-const reasonPillStyle: React.CSSProperties = {
-  marginTop: 18,
-  padding: "14px 16px",
-  background: "rgba(255,255,255,0.025)",
-  borderRadius: 12,
+const reasonStyle: React.CSSProperties = {
+  marginTop: 14,
+  fontSize: 15,
+  color: "var(--fg-2)",
+  lineHeight: 1.45,
+}
+
+/** Evolved secondary / triage button (the desktop feed's .ev-tri look). */
+const quietBtnStyle: React.CSSProperties = {
+  flex: 1,
+  minWidth: 0,
+  height: 44,
+  padding: "0 10px",
+  gap: 7,
+  borderRadius: 9,
+  border: "1px solid transparent",
+  background: "var(--raise)",
+  color: "var(--fg-2)",
   fontSize: 14,
-  textAlign: "center",
-  color: "var(--text-secondary)",
-  lineHeight: 1.4,
+  fontWeight: 550,
+  whiteSpace: "nowrap",
 }
 
 // ---------------------------------------------------------------------------
@@ -163,44 +176,32 @@ function ArtistCardImpl({
   // to thumbs_down / skip. Thumbs_up and saves keep the card expanded.
   // ------------------------------------------------------------------
   if (isCollapsed) {
-    const labelMap: Record<string, { text: string; color: string; border: string }> = {
-      thumbs_down: { text: "Passed",    color: "var(--dislike)",    border: "rgba(255,75,75,0.35)" },
-      skip:        { text: "Dismissed", color: "var(--text-muted)", border: "var(--border)" },
-    }
-    const signal = labelMap[dismissSignal ?? "skip"] ?? labelMap.skip
+    const passed = dismissSignal === "thumbs_down"
 
     return (
       <motion.div
         layout
-        initial={{ height: "auto", opacity: 1 }}
-        animate={{ height: 56, opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={{ type: "spring", stiffness: 400, damping: 40 }}
         style={{
-          padding: "14px 18px",
-          background: "rgba(15,15,15,0.6)",
-          border: `1px solid ${signal.border}`,
-          borderRadius: 16,
+          height: 56,
+          padding: "0 18px",
+          background: "var(--panel)",
+          border: "1px solid var(--line)",
+          borderRadius: 12,
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
+          gap: 12,
           overflow: "hidden",
         }}
       >
-        <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-secondary)" }}>
+        <span style={{ fontSize: 15, fontWeight: 600, color: "var(--fg-2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
           {artist.name}
         </span>
-        <span
-          className="mono"
-          style={{
-            fontSize: 11,
-            fontWeight: 600,
-            color: signal.color,
-            textTransform: "uppercase",
-            letterSpacing: "0.1em",
-          }}
-        >
-          {signal.text}
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0, fontSize: 13, fontWeight: 600, color: "var(--fg-3)" }}>
+          {passed ? <ThumbsDown size={14} aria-hidden /> : <X size={14} aria-hidden />}
+          {passed ? "Passed" : "Dismissed"}
         </span>
       </motion.div>
     )
@@ -208,30 +209,22 @@ function ArtistCardImpl({
 
   // ------------------------------------------------------------------
   // Expanded hero card (also rendered after thumbs_up — card stays visible so
-  // the user can keep playing tracks. The 'liked' affordance is a subtle green
-  // outline + glow + the + More like this button swapping to ✓ Liked.)
+  // the user can keep playing tracks. The 'liked' affordance is a violet
+  // outline + the More like this button turning solid violet "Liked".)
   // ------------------------------------------------------------------
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ height: "auto", opacity: 1, y: 0 }}
+      initial={{ y: 20 }}
+      animate={{ y: 0 }}
       transition={{ type: "spring", stiffness: 400, damping: 40 }}
-      className="fadein"
       style={{
         width: "100%",
-        borderRadius: "var(--radius-xl)",
+        borderRadius: 16,
         overflow: "hidden",
-        background: "rgba(15,15,15,0.65)",
-        backdropFilter: "blur(30px)",
-        WebkitBackdropFilter: "blur(30px)",
-        border: isLiked
-          ? "2px solid rgba(34,197,94,0.55)"
-          : "1px solid rgba(255,255,255,0.08)",
-        boxShadow: isLiked
-          ? "0 0 0 4px rgba(34,197,94,0.12), 0 30px 80px rgba(0,0,0,0.55)"
-          : "0 30px 80px rgba(0,0,0,0.55)",
-        transition: "border-color 0.25s ease, box-shadow 0.25s ease",
+        background: "var(--panel)",
+        border: `1px solid ${isLiked ? "var(--violet)" : "var(--line)"}`,
+        boxShadow: "0 12px 30px rgba(0,0,0,0.35)",
       }}
     >
       {/* Hero image */}
@@ -253,19 +246,18 @@ function ArtistCardImpl({
             style={{
               width: "100%",
               height: "100%",
-              background: `linear-gradient(135deg, ${hexToRgba(artistColor, 0.4)}, ${hexToRgba(artistColor, 0.15)} 60%, #0a0a0a)`,
+              background: `linear-gradient(135deg, ${hexToRgba(artistColor, 0.4)}, ${hexToRgba(artistColor, 0.15)} 60%, var(--panel))`,
             }}
           />
         )}
 
-        {/* Color tint overlay */}
+        {/* Colour tint: a plain gradient (no blend mode) */}
         {artist.imageUrl && (
           <div
             style={{
               position: "absolute",
               inset: 0,
               background: `linear-gradient(135deg, ${hexToRgba(artistColor, 0.18)}, transparent 60%)`,
-              mixBlendMode: "color",
             }}
           />
         )}
@@ -275,29 +267,21 @@ function ArtistCardImpl({
 
         {/* Name + genre */}
         <div style={heroNameWrapStyle}>
-          <div
-            className="display"
+          <h3
             style={{
-              fontSize: "clamp(40px, 9vw, 56px)",
-              lineHeight: 0.92,
+              margin: 0,
+              fontSize: "clamp(32px, 7vw, 40px)",
+              fontWeight: 600,
+              lineHeight: 1.05,
+              letterSpacing: "-0.03em",
               color: "#fff",
-              textShadow: "0 4px 30px rgba(0,0,0,0.5)",
+              textShadow: "0 2px 16px rgba(0,0,0,0.5)",
             }}
           >
             {artist.name}
-          </div>
+          </h3>
           {(artist.genres?.length ?? 0) > 0 && artist.genres?.[0] && (
-            <div
-              className="mono"
-              style={{
-                fontSize: 10.5,
-                fontWeight: 600,
-                letterSpacing: "0.2em",
-                textTransform: "uppercase",
-                color: artistColor,
-                marginTop: 10,
-              }}
-            >
+            <div style={{ marginTop: 6, fontSize: 14, color: "rgba(255,255,255,0.82)" }}>
               {artist.genres[0]} · popularity {artist.popularity}
             </div>
           )}
@@ -317,20 +301,18 @@ function ArtistCardImpl({
           </div>
         ) : (
           <div style={noTracksPlaceholderStyle}>
-            <span className="mono" style={{ fontSize: 11, color: "var(--text-muted)" }}>
-              {isFetchingTracks ? "Loading tracks…" : "No tracks available"}
-            </span>
+            {isFetchingTracks ? "Loading tracks…" : "No tracks available"}
           </div>
         )}
 
         {reasonText && (
-          <div style={reasonPillStyle}>
+          <p style={reasonStyle}>
             {reasonText}
-          </div>
+          </p>
         )}
 
         {/* Actions */}
-        <div className="col gap-12" style={{ marginTop: 16 }}>
+        <div className="col" style={{ gap: 10, marginTop: 16 }}>
           {/* Open in <preferred platform> + Share */}
           <div style={{ display: "flex", gap: 8 }}>
             <a
@@ -345,10 +327,13 @@ function ArtistCardImpl({
               onClick={(e) => e.stopPropagation()}
               style={{
                 flex: 1,
+                height: 44,
+                borderRadius: 10,
                 background: PLATFORM_META[musicPlatform].brandColor,
                 color: PLATFORM_META[musicPlatform].brandFg,
                 borderColor: "transparent",
-                fontWeight: 700,
+                fontSize: 15,
+                fontWeight: 600,
               }}
             >
               <PlatformIcon platform={musicPlatform} size={16} />
@@ -358,7 +343,8 @@ function ArtistCardImpl({
               className="btn"
               onClick={handleShare}
               title="Copy artist link"
-              style={{ padding: "0 14px" }}
+              aria-label={`Copy link to ${artist.name}`}
+              style={{ ...quietBtnStyle, flex: "none", width: 44, padding: 0 }}
             >
               <Share2 size={15} />
             </button>
@@ -366,13 +352,13 @@ function ArtistCardImpl({
 
           {/* Bookmark */}
           <button
-            className="btn btn-block btn-lg"
+            className="btn btn-block"
             onClick={handleSave}
+            aria-pressed={isSaved}
             style={{
-              background: isSaved ? "rgba(255,255,255,0.04)" : hexToRgba(artistColor, 0.15),
-              borderColor: isSaved ? "var(--border)" : hexToRgba(artistColor, 0.35),
-              color: isSaved ? "var(--text-muted)" : "var(--text-primary)",
-              fontWeight: 600,
+              ...quietBtnStyle,
+              flex: "none",
+              color: isSaved ? "var(--violet-ink)" : "var(--fg)",
             }}
           >
             {isSaved ? (
@@ -386,58 +372,27 @@ function ArtistCardImpl({
             )}
           </button>
 
-          {/* Feedback strip — NO EMOJI */}
-          <div style={{ display: "flex", gap: 10 }}>
-            <button
-              onClick={() => onFeedback("thumbs_down")}
-              className="btn"
-              style={{
-                flex: 1,
-                minWidth: 0,
-                fontSize: 13,
-                whiteSpace: "nowrap",
-                color: "#ff7b7b",
-                background: "rgba(255,75,75,0.05)",
-                borderColor: "rgba(255,75,75,0.18)",
-              }}
-            >
-              <span className="mono" style={{ fontSize: 13, fontWeight: 700 }}>
-                —
-              </span>{" "}
-              Less like this
+          {/* Feedback strip: the desktop feed's triage control */}
+          <div className="fs-card-triage">
+            <button onClick={() => onFeedback("thumbs_down")} className="btn" style={quietBtnStyle}>
+              <ThumbsDown size={16} strokeWidth={1.75} aria-hidden /> Less like this
             </button>
-            <button
-              onClick={() => onFeedback("skip")}
-              className="btn"
-              style={{ flex: 1, minWidth: 0, fontSize: 13, whiteSpace: "nowrap" }}
-            >
-              <SkipForward size={15} /> Dismiss
+            <button onClick={() => onFeedback("skip")} className="btn" style={{ ...quietBtnStyle, flex: 0.8 }}>
+              <X size={16} strokeWidth={1.75} aria-hidden /> Dismiss
             </button>
             <button
               onClick={() => onFeedback("thumbs_up")}
               aria-pressed={isLiked}
               className="btn"
               style={{
+                ...quietBtnStyle,
                 flex: 1.2,
-                minWidth: 0,
-                fontSize: 13,
-                whiteSpace: "nowrap",
-                color: "var(--like)",
-                background: isLiked ? "rgba(34,197,94,0.22)" : "rgba(34,197,94,0.07)",
-                borderColor: isLiked ? "rgba(34,197,94,0.55)" : "rgba(34,197,94,0.22)",
-                fontWeight: isLiked ? 700 : undefined,
+                background: isLiked ? "var(--violet-fill)" : "var(--raise)",
+                color: isLiked ? "#fff" : "var(--violet-ink)",
               }}
             >
-              {isLiked ? (
-                <>
-                  <Check size={15} strokeWidth={2.5} /> Liked
-                </>
-              ) : (
-                <>
-                  <span className="mono" style={{ fontSize: 13, fontWeight: 700 }}>+</span>{" "}
-                  More like this
-                </>
-              )}
+              <Heart size={16} strokeWidth={1.75} fill={isLiked ? "currentColor" : "none"} aria-hidden />
+              {isLiked ? "Liked" : "More like this"}
             </button>
           </div>
         </div>

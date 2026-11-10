@@ -176,6 +176,30 @@ export interface ArtistFeedback {
    */
   dismiss(artistId: string): Promise<boolean>
   /**
+   * The feed's Undo: put the artist back to `previous` (a signal, or undefined
+   * = undecided). Optimistic and serialized like `setSignal`, so a later tap
+   * wins over an in-flight undo; a failure with nothing queued after it falls
+   * back to the last confirmed value and toasts undoFailed.
+   *
+   * What each endpoint changes (migration 0036 rpc_*_v2):
+   *   POST thumbs_up/down — upserts the feedback row, sets seen_at
+   *   POST skip           — sets skip_at + seen_at; leaves any feedback row alone
+   *   DELETE feedback     — soft-deletes the feedback row; seen_at stays
+   *   DELETE dismiss      — clears skip_at + seen_at
+   * So, from the visible value to `previous`:
+   *   thumbs → undecided        DELETE feedback
+   *   skip   → undecided        DELETE dismiss
+   *   skip   → thumbs           DELETE dismiss, then POST thumbs (the row was
+   *                             never removed; the POST only restores seen_at,
+   *                             so it is best-effort: once the DELETE succeeded
+   *                             the undo has succeeded, and a failed POST is
+   *                             swallowed, so client and server agree on the
+   *                             verdict)
+   *   thumbs → skip             DELETE feedback (skip_at is still set)
+   *   anything else             POST previous; same value: no request
+   */
+  restore(artistId: string, previous: string | undefined): Promise<boolean>
+  /**
    * Rail the user is on. Captured when tapped: a POST queued behind an
    * earlier in-flight call still names the rail the artist was on.
    */
@@ -197,6 +221,18 @@ export function createArtistFeedback({
     const res = await fetchImpl(url, { method: "DELETE" })
     if (!res.ok && res.status !== 204) throw new Error("Server error")
   }
+  async function post(artistId: string, signal: string, rail: string | undefined) {
+    const res = await fetchImpl("/api/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(buildFeedbackPostBody(artistId, signal, rail)),
+    })
+    if (!res.ok) throw new Error("Server error")
+  }
+  async function undismiss(artistId: string) {
+    const res = await fetchImpl(`/api/dismiss/${artistId}`, { method: "DELETE" })
+    if (!res.ok) throw new Error("Server error")
+  }
 
   return {
     store,
@@ -210,15 +246,27 @@ export function createArtistFeedback({
         if (!ok) toast.error(undoFailed)
         return ok
       }
-      const ok = await store.optimistic(artistId, signal, async () => {
-        const res = await fetchImpl("/api/feedback", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(buildFeedbackPostBody(artistId, signal, rail)),
-        })
-        if (!res.ok) throw new Error("Server error")
-      })
+      const ok = await store.optimistic(artistId, signal, () => post(artistId, signal, rail))
       if (!ok) toast.error(saveFailed)
+      return ok
+    },
+
+    async restore(artistId, previous) {
+      const current = store.get(artistId)
+      if (current === previous) return true
+      const rail = railKey
+      const steps: Array<() => Promise<void>> =
+        previous === undefined
+          ? [current === "skip" ? () => undismiss(artistId) : () => del(buildFeedbackDeleteUrl(artistId))]
+          : current === "skip"
+            ? [() => undismiss(artistId), () => post(artistId, previous, rail).catch(() => {})]
+            : previous === "skip" && current !== undefined
+              ? [() => del(buildFeedbackDeleteUrl(artistId))]
+              : [() => post(artistId, previous, rail)]
+      const ok = await store.optimistic(artistId, previous, async () => {
+        for (const s of steps) await s()
+      })
+      if (!ok) toast.error(undoFailed)
       return ok
     },
 
@@ -229,10 +277,7 @@ export function createArtistFeedback({
     },
 
     async dismiss(artistId) {
-      const ok = await store.confirmedOp(artistId, undefined, async () => {
-        const res = await fetchImpl(`/api/dismiss/${artistId}`, { method: "DELETE" })
-        if (!res.ok) throw new Error("Server error")
-      })
+      const ok = await store.confirmedOp(artistId, undefined, () => undismiss(artistId))
       if (!ok) toast.error(undoFailed)
       return ok
     },

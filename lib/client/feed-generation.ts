@@ -7,8 +7,9 @@ import { EXPLORE_REGEN_AT_KEY } from "@/lib/client/rail-session"
  * React adapter.
  *
  * Every caller reads the same `GenerateResult` and decides explicitly what
- * each `kind` means for it (e.g. splash treats a 429 as "a run is already
- * going, navigate"; the feed top-up is silent).
+ * each `kind` means for it (e.g. the feed's top-up is silent, "Load more"
+ * reports it; Settings' rebuild counts Explore's 429 as already refreshing;
+ * onboarding fires `postGenerate` and ignores the result).
  */
 
 export const GENERATE_URL = "/api/recommendations/generate"

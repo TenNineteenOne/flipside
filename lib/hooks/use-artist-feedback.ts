@@ -33,6 +33,8 @@ export interface UseArtistFeedbackResult {
   setSignal: ArtistFeedback["setSignal"]
   removeSignal: ArtistFeedback["removeSignal"]
   dismiss: ArtistFeedback["dismiss"]
+  /** Put an artist back to an earlier verdict (the feed's Undo). Optimistic. */
+  restore: ArtistFeedback["restore"]
   /**
    * Bulk local replacement — used by Explore after a shuffle or adventurous
    * apply so stale thumbs_up outlines don't carry over. No network.
@@ -54,6 +56,7 @@ export function useArtistFeedback(opts?: UseArtistFeedbackOptions): UseArtistFee
       setSignal: c.setSignal,
       removeSignal: c.removeSignal,
       dismiss: c.dismiss,
+      restore: c.restore,
       setRailKey: c.setRailKey,
       setSignals: (u: Parameters<UseArtistFeedbackResult["setSignals"]>[0]) =>
         c.store.replace(typeof u === "function" ? u : () => u),
@@ -68,5 +71,5 @@ export function useArtistFeedback(opts?: UseArtistFeedbackOptions): UseArtistFee
   }, [api, railKey])
 
   const signals = useSyncExternalStore(api.store.subscribe, api.store.snapshot, api.store.snapshot)
-  return { signals, setSignal: api.setSignal, removeSignal: api.removeSignal, dismiss: api.dismiss, setSignals: api.setSignals }
+  return { signals, setSignal: api.setSignal, removeSignal: api.removeSignal, dismiss: api.dismiss, restore: api.restore, setSignals: api.setSignals }
 }

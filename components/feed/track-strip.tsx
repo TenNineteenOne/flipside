@@ -4,6 +4,7 @@ import { memo, useState } from "react"
 import Image from "next/image"
 import { Play } from "lucide-react"
 import { hexToRgba } from "@/lib/color-utils"
+import { artworkAt } from "@/lib/feed/artwork"
 import type { Track } from "@/lib/music-provider/types"
 
 // ---------------------------------------------------------------------------
@@ -31,8 +32,8 @@ export const TrackStrip = memo(function TrackStrip({
 
   if (tracks.length === 0) return null
 
-  // Option 11 CSS classes for hover states
-  const baseTintFlow = `linear-gradient(90deg, ${hexToRgba(artistColor, 0.25)} 0%, rgba(15,15,15,0.7) 100%)`
+  // Artist-colour tint fading into the card's --panel surface
+  const baseTintFlow = `linear-gradient(90deg, ${hexToRgba(artistColor, 0.22)} 0%, var(--panel) 100%)`
 
   const handlePlayClick = (e: React.MouseEvent, track: Track) => {
     e.stopPropagation()
@@ -54,16 +55,16 @@ export const TrackStrip = memo(function TrackStrip({
             <div
               key={track.id}
               onClick={(e) => handlePlayClick(e, track)}
-              className="rounded-r-2xl p-3 flex items-center gap-4 cursor-pointer transition-transform hover:translate-x-1"
+              className="rounded-xl p-3 flex items-center gap-4 cursor-pointer transition-transform hover:translate-x-1"
               style={{
                 background: baseTintFlow,
-                borderLeft: `3px solid ${artistColor}`
+                border: "1px solid var(--line-strong)"
               }}
             >
               <div className="relative w-12 h-12 shrink-0">
                 {track.albumImageUrl ? (
                   <Image
-                    src={track.albumImageUrl}
+                    src={artworkAt(track.albumImageUrl, 48)}
                     alt={track.albumName}
                     width={48}
                     height={48}
@@ -71,15 +72,15 @@ export const TrackStrip = memo(function TrackStrip({
                     unoptimized
                   />
                 ) : (
-                  <div className="w-full h-full bg-black/40 rounded-lg" />
+                  <div className="w-full h-full rounded-lg" style={{ background: "var(--raise)" }} />
                 )}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-[16px] font-bold text-white truncate drop-shadow-sm">
+                <div className="text-[15px] font-semibold text-[var(--fg)] truncate">
                   {track.name}
                 </div>
                 {/* Secondary artist mapping (safeguard missing values) */}
-                <div className="text-[13px] text-white/50 mt-0.5 truncate mix-blend-plus-lighter font-medium">
+                <div className="text-[13px] text-[var(--fg-3)] mt-0.5 truncate">
                   {track.albumName}
                 </div>
               </div>
@@ -102,16 +103,16 @@ export const TrackStrip = memo(function TrackStrip({
           <div
             key={track.id}
             onClick={(e) => handlePlayClick(e, track)}
-            className="rounded-r-2xl p-2.5 flex items-center gap-4 cursor-pointer transition-transform hover:translate-x-1"
+            className="rounded-xl p-2.5 flex items-center gap-4 cursor-pointer transition-transform hover:translate-x-1"
             style={{
               background: baseTintFlow,
-              borderLeft: `3px solid ${artistColor}`
+              border: "1px solid var(--line)"
             }}
           >
             <div className="relative w-10 h-10 shrink-0">
                {track.albumImageUrl ? (
                  <Image
-                   src={track.albumImageUrl}
+                   src={artworkAt(track.albumImageUrl, 40)}
                    alt={track.albumName}
                    width={40}
                    height={40}
@@ -119,11 +120,11 @@ export const TrackStrip = memo(function TrackStrip({
                    unoptimized
                  />
                ) : (
-                 <div className="w-full h-full bg-black/40 rounded-lg opacity-80" />
+                 <div className="w-full h-full rounded-lg opacity-80" style={{ background: "var(--raise)" }} />
                )}
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-[15px] font-semibold text-gray-200 truncate pr-2">
+              <div className="text-[14px] font-medium text-[var(--fg-2)] truncate pr-2">
                 {track.name}
               </div>
             </div>
@@ -142,26 +143,25 @@ export const TrackStrip = memo(function TrackStrip({
 
       {/* Overflow tracking "+ X tracks" expanding button */}
       {remainingCount > 0 && !compact && (
-        <div
-          className="rounded-r-2xl p-2.5 flex items-center gap-4 cursor-pointer transition-transform hover:translate-x-1"
+        <button
+          type="button"
+          className="rounded-xl p-2.5 flex items-center gap-4 cursor-pointer text-left transition-transform hover:translate-x-1"
           style={{
             background: baseTintFlow,
-            borderLeft: `3px solid ${artistColor}`
+            border: "1px solid var(--line)"
           }}
-          onClick={(e) => { 
+          onClick={(e) => {
             e.stopPropagation()
             setIsExpanded(true)
           }}
         >
-          <div className="w-10 h-10 bg-black/30 rounded-lg flex items-center justify-center border border-white/5 opacity-80 text-gray-400 font-semibold text-xs">
+          <span className="w-10 h-10 rounded-lg flex items-center justify-center font-mono text-xs text-[var(--fg-2)]" style={{ background: "var(--raise)" }}>
             +{remainingCount}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-[14px] font-medium text-gray-400 italic hover:text-gray-200 transition-colors">
-              View all tracks
-            </div>
-          </div>
-        </div>
+          </span>
+          <span className="flex-1 min-w-0 text-[14px] font-medium text-[var(--fg-2)] hover:text-[var(--fg)]">
+            View all tracks
+          </span>
+        </button>
       )}
     </div>
   )

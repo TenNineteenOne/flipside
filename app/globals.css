@@ -1,6 +1,4 @@
 @import "tailwindcss";
-@import "tw-animate-css";
-@import "shadcn/tailwind.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -9,7 +7,6 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
-  --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -50,21 +47,39 @@
 
 /* Flipside — dark mode only, purple accent */
 :root {
-  /* Design tokens */
-  --bg-base:        #080808;
-  --bg-card:        #0f0f0f;
-  --bg-elevated:    #141414;
-  --border:         rgba(255,255,255,0.08);
-  --text-primary:   #eeeeee;
-  --text-secondary: #888888;
-  --text-muted:     #5a5a5a;
-  --text-faint:     #3a3a3a;
+  /* Evolved design tokens */
+  --bg:          oklch(0.155 0.007 293);   /* page */
+  --rail:        oklch(0.135 0.007 293);   /* nav rail, bars */
+  --panel:       oklch(0.185 0.008 293);   /* cards, panes */
+  --raise:       oklch(0.225 0.01 293);    /* hover, raised controls */
+  --line:        oklch(0.27 0.01 293);
+  --line-strong: oklch(0.36 0.012 293);
+  --fg:          oklch(0.965 0.004 293);   /* primary text */
+  --fg-2:        oklch(0.82 0.008 293);    /* secondary text */
+  --fg-3:        oklch(0.68 0.01 293);     /* tertiary text; do not go dimmer for body copy */
+  --violet:      #8b5cf6;                  /* the one brand accent */
+  --violet-hi:   oklch(0.66 0.2 293);
+  --violet-ink:  oklch(0.8 0.12 293);      /* violet text on dark, focus rings */
+  --violet-wash: color-mix(in oklch, #8b5cf6 16%, transparent);
+  /* Fill behind white text: --violet with white is 4.2:1, this is 4.7:1 (WCAG AA 4.5). */
+  --violet-fill: color-mix(in oklch, var(--violet) 94%, black);
+  --ease:        cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Legacy names, re-pointed at the Evolved tokens */
+  --bg-base:        var(--bg);
+  --bg-card:        var(--panel);
+  --bg-elevated:    var(--raise);
+  --border:         var(--line);
+  --text-primary:   var(--fg);
+  --text-secondary: var(--fg-2);
+  --text-muted:     var(--fg-3);
+  --text-faint:     var(--fg-3);
   --accent:         #8b5cf6;
   --accent-soft:    rgba(139,92,246,0.14);
   --accent-subtle:  rgba(139,92,246,0.12);
   --accent-border:  rgba(139,92,246,0.32);
   --accent-glow:    rgba(139,92,246,0.45);
-  --border-strong:  rgba(255,255,255,0.14);
+  --border-strong:  var(--line-strong);
 
   --spotify: #1db954;
   --like:    #22c55e;
@@ -74,11 +89,12 @@
   --radius-lg: 24px;
   --radius-xl: 32px;
 
-  --font-display-settings: "opsz" 144, "SOFT" 50, "WONK" 1;
+  /* Familjen Grotesk carries display and (former) serif text too */
+  --font-display: var(--font-sans);
+  --font-serif:   var(--font-sans);
 
   --shell-max:    520px;
   --easing:       cubic-bezier(0.2, 0.8, 0.2, 1);
-  --grain-opacity: 0.06;
 
   /* Shadcn/Tailwind structural tokens mapped to design tokens */
   --background: var(--bg-base);
@@ -124,6 +140,16 @@
   --sidebar-ring: var(--accent);
 }
 
+/* Safari before 16.2 has no color-mix(): solid equivalents of the two mixed tokens (sRGB of the
+   mixes; the fill keeps 4.9:1 with white). Container query units need Safari 16.0, so the effective
+   minimum is Safari 16.0, with these flat fallbacks on 16.0-16.1 (docs/wiki/pages-and-components.md). */
+@supports not (color: color-mix(in oklch, red, blue)) {
+  :root {
+    --violet-wash: rgba(139, 92, 246, 0.16);
+    --violet-fill: #8054e3;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -133,6 +159,11 @@
     font-feature-settings: "ss01", "cv11";
     overflow-x: hidden;
   }
+  /* PRD #182: a visible 2px --violet-ink ring on everything focusable (component rules may refine it). */
+  :focus-visible {
+    outline: 2px solid var(--violet-ink);
+    outline-offset: 2px;
+  }
   html {
     @apply font-sans;
     -webkit-font-smoothing: antialiased;
@@ -140,169 +171,42 @@
   }
 }
 
-/* Film grain overlay */
-body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 1000;
-  opacity: var(--grain-opacity, 0.06);
-  mix-blend-mode: overlay;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 1 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
-}
-
-/* ── App shell ─────────────────────────────────────────────────── */
-.app {
-  min-height: 100dvh;
-  position: relative;
-  display: flex;
-  flex-direction: column;
-}
-.app-main {
-  flex: 1;
-  width: 100%;
-  padding: 0 16px 24px;
-  display: flex;
-  justify-content: center;
-}
+/* ── App column (signed-in pages; the shell itself is components/shell/shell.css) ── */
 .app-col {
   width: 100%;
   max-width: var(--shell-max);
 }
-@media (min-width: 900px) {
-  .app-main { padding: 0 32px 64px; }
-}
 
-/* ── Unified app nav (top sticky, mobile + desktop) ────────────── */
-.appnav {
-  position: sticky;
-  top: 0;
-  padding-top: env(safe-area-inset-top);
-  background: rgba(8,8,8,0.85);
-  backdrop-filter: blur(18px) saturate(1.15);
-  -webkit-backdrop-filter: blur(18px) saturate(1.15);
-  border-bottom: 1px solid var(--border);
-  z-index: 50;
+/* ── Wordmark (components/shell/wordmark.tsx) ──────────────────── */
+.fs-wordmark {
+  display: inline-flex;
+  align-items: baseline;
+  font-weight: 650;
+  letter-spacing: -0.035em;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--fg);
 }
-.appnav-inner {
-  height: 64px;
-  display: flex;
-  align-items: stretch;
-  padding: 0 12px;
-  gap: 8px;
-}
-.appnav-brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 0 0 auto;
-  font-family: var(--font-display);
-  font-variation-settings: var(--font-display-settings);
-  font-weight: 800;
-  font-size: 19px;
-  letter-spacing: -0.02em;
-  color: var(--text-primary);
-}
-.appnav-brand .dot {
-  width: 8px;
-  height: 8px;
+.fs-wordmark-dot {
+  width: 0.28em;
+  height: 0.28em;
+  margin-left: 0.06em;
   border-radius: 50%;
-  background: var(--accent);
-  display: inline-block;
-  box-shadow: 0 0 12px var(--accent-glow);
-  flex-shrink: 0;
-}
-.appnav .appnav-brand .wordmark { display: none; }
-.appnav-avatar {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-}
-.appnav-tabs {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: stretch;
-}
-.appnav-tabs a {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  text-decoration: none;
-  color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  position: relative;
-  padding: 6px 4px;
-  border-radius: 12px;
-  background: transparent;
-  transition: color .2s var(--easing), background .2s var(--easing);
-}
-.appnav-tabs a.active {
-  color: var(--text-primary);
-  background: rgba(255,255,255,0.06);
-  background: color-mix(in srgb, var(--tab-color, var(--accent)) 14%, transparent);
-}
-.appnav-tabs a svg { width: 22px; height: 22px; }
-@media (max-width: 359px) {
-  .appnav-tabs a { font-size: 9.5px; gap: 2px; padding: 4px 2px; }
-  .appnav-tabs a svg { width: 20px; height: 20px; }
-}
-@media (min-width: 900px) {
-  .appnav-inner {
-    max-width: 1280px;
-    margin: 0 auto;
-    padding: 0 32px;
-    gap: 24px;
-  }
-  .appnav .appnav-brand .wordmark { display: inline; }
-  .appnav-tabs {
-    flex: 0 1 auto;
-    margin: 0 auto;
-    justify-content: center;
-    gap: 12px;
-  }
-  .appnav-tabs a {
-    flex: 0 0 auto;
-    min-width: 110px;
-    font-size: 12px;
-    padding: 6px 12px;
-  }
-}
-
-/* Adventurous mode: replace border-bottom with a 2px rainbow strip,
-   plus the existing brighter-glass treatment. */
-.appnav.adventurous {
-  border-bottom: none;
-  backdrop-filter: blur(18px) saturate(1.5) brightness(1.08);
-  -webkit-backdrop-filter: blur(18px) saturate(1.5) brightness(1.08);
-}
-.appnav.adventurous::after {
-  content: "";
-  position: absolute;
-  left: 0; right: 0;
-  bottom: 0;
-  height: 2px;
-  background: linear-gradient(90deg, #f5b047, #ec6fb5, #7dd9c6, #a8c7fa);
-  pointer-events: none;
+  background: var(--violet);
 }
 
 /* ── Page head ─────────────────────────────────────────────────── */
 .page-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  gap: 4px 16px;
+  min-width: 0;
   padding: 18px 0 8px;
 }
 .page-head h1 {
   font-family: var(--font-display);
-  font-variation-settings: var(--font-display-settings);
   font-size: 28px;
   font-weight: 800;
   letter-spacing: -0.025em;
@@ -315,17 +219,15 @@ body::after {
   text-transform: uppercase;
   letter-spacing: 0.12em;
   white-space: nowrap;
-  flex-shrink: 0;
-  margin-left: 16px;
+  min-width: 0;
 }
+/* The tagline inside .sub reads as a sentence: normal case and tracking, and it may wrap. */
 .page-head .sub .serif {
-  font-family: var(--font-serif), 'Instrument Serif', serif;
-  font-style: italic;
   text-transform: none;
   letter-spacing: 0;
   white-space: normal;
 }
-@media (min-width: 900px) {
+@media (width >= 900px) {
   .page-head h1 { font-size: 38px; }
 }
 
@@ -344,7 +246,7 @@ body::after {
   font-weight: 600;
   font-size: 14px;
   letter-spacing: -0.005em;
-  transition: all .18s var(--easing);
+  transition: background-color .18s var(--easing), border-color .18s var(--easing), color .18s var(--easing), filter .18s var(--easing);
   cursor: pointer;
 }
 .btn:hover { background: rgba(255,255,255,0.08); border-color: var(--border-strong); }
@@ -355,14 +257,6 @@ body::after {
   font-weight: 700;
 }
 .btn-primary:hover { filter: brightness(1.1); background: var(--accent); }
-.btn-spotify {
-  background: var(--spotify);
-  color: #0a0a0a;
-  border-color: transparent;
-  font-weight: 700;
-}
-.btn-spotify:hover { background: var(--spotify); filter: brightness(1.08); }
-.btn-ghost { background: transparent; border-color: transparent; }
 .btn-block { width: 100%; }
 .btn-lg { height: 56px; font-size: 15px; border-radius: 16px; }
 .btn-sm { height: 36px; font-size: 12px; padding: 0 14px; border-radius: 10px; }
@@ -376,7 +270,7 @@ body::after {
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 0 18px;
-  transition: all .18s var(--easing);
+  transition: background-color .18s var(--easing), border-color .18s var(--easing), box-shadow .18s var(--easing);
 }
 .field:focus-within {
   border-color: var(--accent-border);
@@ -403,14 +297,6 @@ body::after {
   padding: 20px;
 }
 
-@supports ((backdrop-filter: blur(30px)) or (-webkit-backdrop-filter: blur(30px))) {
-  .fs-card {
-    background: rgba(15, 15, 15, 0.65);
-    backdrop-filter: blur(30px) saturate(1.1);
-    -webkit-backdrop-filter: blur(30px) saturate(1.1);
-  }
-}
-
 /* ── Chips ─────────────────────────────────────────────────────── */
 .chip {
   display: inline-flex;
@@ -424,7 +310,7 @@ body::after {
   font-size: 12.5px;
   font-weight: 500;
   color: var(--text-secondary);
-  transition: all .15s var(--easing);
+  transition: background-color .15s var(--easing), border-color .15s var(--easing), color .15s var(--easing);
   white-space: nowrap;
   cursor: pointer;
 }
@@ -445,6 +331,13 @@ body::after {
   background: rgba(255,255,255,0.1);
 }
 
+/* Explore card triage row (components/feed/artist-card.tsx): icons drop out when narrow, as in the feed. */
+.fs-card-triage { display: flex; gap: 6px; container-type: inline-size; }
+@container (width < 361px) {
+  .fs-card-triage .btn { font-size: 13px !important; padding: 0 6px !important; }
+  .fs-card-triage svg { display: none; }
+}
+
 /* ── Typography utilities ──────────────────────────────────────── */
 .eyebrow {
   font-family: var(--font-mono);
@@ -458,14 +351,11 @@ body::after {
   font-family: var(--font-display);
   font-weight: 500;
   letter-spacing: -0.035em;
-  font-variation-settings: var(--font-display-settings);
   font-feature-settings: "ss01";
 }
-.display-bold { font-weight: 700; }
-.serif { font-family: var(--font-serif), 'Instrument Serif', serif; font-style: italic; }
+.serif { font-family: var(--font-serif); font-style: normal; }
 .mono { font-family: var(--font-mono); }
 .muted { color: var(--text-secondary); }
-.faint { color: var(--text-muted); }
 
 /* ── Layout utilities ──────────────────────────────────────────── */
 .row { display: flex; align-items: center; gap: 8px; }
@@ -476,15 +366,6 @@ body::after {
 .divider { height: 1px; background: var(--border); width: 100%; }
 
 /* ── Animations ────────────────────────────────────────────────── */
-@keyframes fadein {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.fadein { animation: fadein .35s var(--easing) both; }
-@keyframes pulse-ring {
-  0%, 100% { box-shadow: 0 0 0 0 var(--accent-soft); }
-  50%       { box-shadow: 0 0 0 6px transparent; }
-}
 
 /* ── Navigation progress bar ──────────────────────────────────── */
 @keyframes navprog-trickle {
@@ -536,28 +417,21 @@ body::after {
   animation: fs-shimmer 1.6s linear infinite;
   border-radius: 8px;
 }
-
-/* Splash gradient aura */
-.aura {
-  position: fixed;
-  pointer-events: none;
-  z-index: -1;
-  inset: 0;
-}
-.aura::before {
-  content: "";
-  position: absolute;
-  top: 10%;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 800px;
-  height: 800px;
-  background: radial-gradient(circle, var(--accent-glow) 0%, transparent 60%);
-  opacity: 0.5;
-  filter: blur(40px);
-}
+@media (prefers-reduced-motion: reduce) { .fs-skeleton { animation: none; } }
 
 /* ── Scrollbar ─────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 999px; }
 ::-webkit-scrollbar-track { background: transparent; }
+/* ── Floating mini player (components/player/mini-player.tsx) ─── */
+/* Rests 24px above its bottom offset; slides in from 150% of its height below and leaves the
+   same way while fading. Reduced motion: it appears in place and only fades out. */
+.mini-player-pill { transform: translate(-50%, -24px); animation: mini-player-in 0.35s cubic-bezier(0.3, 0.7, 0.4, 1) both; }
+.mini-player-pill[data-state="closed"] { animation: mini-player-out 0.3s cubic-bezier(0.3, 0.7, 0.4, 1) both; }
+@keyframes mini-player-in { from { transform: translate(-50%, 150%); } }
+@keyframes mini-player-out { to { transform: translate(-50%, 150%); opacity: 0; } }
+@keyframes mini-player-fade { to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .mini-player-pill { animation: none; }
+  .mini-player-pill[data-state="closed"] { animation: mini-player-fade 0.3s ease both; }
+}

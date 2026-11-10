@@ -11,6 +11,7 @@ import { PlatformPicker } from "@/components/settings/platform-picker"
 import { DEFAULT_MUSIC_PLATFORM, type MusicPlatform } from "@/lib/music-links"
 import { postGenerate } from "@/lib/client/feed-generation"
 import { MAX_SELECTED_GENRES, patchSettings, SettingsSaveError, type SettingsPatch, LASTFM_USERNAME_RE, STATSFM_USERNAME_RE } from "@/lib/settings/patch-settings"
+import { Wordmark } from "@/components/shell/wordmark"
 
 const ARTIST_CAP = 200
 const GENRE_CAP = MAX_SELECTED_GENRES
@@ -151,30 +152,12 @@ export default function OnboardingPage() {
         padding: "40px 16px 80px",
       }}
     >
-      {/* Ambient aura */}
-      <div
-        aria-hidden
-        style={{
-          position: "fixed",
-          top: "25%",
-          left: "50%",
-          transform: "translate(-50%, -50%)",
-          width: 600,
-          height: 600,
-          borderRadius: "50%",
-          background: "radial-gradient(circle, rgba(139,92,246,0.15) 0%, transparent 70%)",
-          pointerEvents: "none",
-          zIndex: 0,
-        }}
-      />
-
       <div style={{ position: "relative", zIndex: 1, width: "100%", maxWidth: 480 }}>
 
         {/* Header */}
         <div style={{ marginBottom: 32, textAlign: "center" }}>
-          <div className="appnav-brand" style={{ justifyContent: "center", marginBottom: 12 }}>
-            <span className="dot" />
-            <span className="wordmark">flipside</span>
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
+            <Wordmark />
           </div>
           <div className="serif" style={{ fontSize: 26, lineHeight: 1.25, marginBottom: 8 }}>
             How should we seed your feed?

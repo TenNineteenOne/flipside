@@ -1,0 +1,908 @@
+[
+  {
+    "id": "yinyin",
+    "name": "YĪN YĪN",
+    "genres": [
+      "psychedelic funk",
+      "thai funk"
+    ],
+    "imageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/1b/a7/cf/1ba7cf21-fb72-c79f-82c4-47e581913cc9/3663729106094_cover.jpg/600x600bb.jpg",
+    "popularity": 34,
+    "color": "#da2a2c",
+    "colorDark": "#86181b",
+    "colorLight": "#e4807f",
+    "why": {
+      "sourceArtists": [
+        "Khruangbin",
+        "Altın Gün"
+      ],
+      "genres": [
+        "psychedelic funk"
+      ]
+    },
+    "tracks": [
+      {
+        "id": "1487604134",
+        "name": "One Inch Punch",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/67/24/19/672419bb-c83a-74e5-1d36-d29c50aab94b/mzaf_14143481475395389506.plus.aac.p.m4a",
+        "durationMs": 308301,
+        "albumName": "The Rabbit That Hunts Tigers",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/1b/a7/cf/1ba7cf21-fb72-c79f-82c4-47e581913cc9/3663729106094_cover.jpg/600x600bb.jpg"
+      },
+      {
+        "id": "1487604143",
+        "name": "Suì Yè",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/c2/55/ce/c255ceda-cc7b-3ce3-6a2e-8e9bc25ed651/mzaf_5130064185353681484.plus.aac.p.m4a",
+        "durationMs": 233231,
+        "albumName": "The Rabbit That Hunts Tigers",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/1b/a7/cf/1ba7cf21-fb72-c79f-82c4-47e581913cc9/3663729106094_cover.jpg/600x600bb.jpg"
+      },
+      {
+        "id": "1487604154",
+        "name": "Dis kô Dis kô",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/5f/ac/88/5fac8844-7629-d41e-2e40-43072bbbd9d7/mzaf_11207671394391016813.plus.aac.p.m4a",
+        "durationMs": 260110,
+        "albumName": "The Rabbit That Hunts Tigers",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/1b/a7/cf/1ba7cf21-fb72-c79f-82c4-47e581913cc9/3663729106094_cover.jpg/600x600bb.jpg"
+      }
+    ]
+  },
+  {
+    "id": "altıngun",
+    "name": "Altın Gün",
+    "genres": [
+      "anatolian rock",
+      "psych folk"
+    ],
+    "imageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/33/c6/9c/33c69c01-751d-6e79-3a79-f326875d78b0/7640159732259_cover.jpg/600x600bb.jpg",
+    "popularity": 48,
+    "color": "#ec6339",
+    "colorDark": "#7c411c",
+    "colorLight": "#f4b08a",
+    "why": {
+      "sourceArtists": [
+        "Khruangbin"
+      ],
+      "genres": [
+        "anatolian rock"
+      ]
+    },
+    "tracks": [
+      {
+        "id": "1355691877",
+        "name": "Goca Dünya",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/73/62/a9/7362a93e-af71-bf80-eff1-1ced2266851a/mzaf_15156711726185480482.plus.aac.p.m4a",
+        "durationMs": 240093,
+        "albumName": "On",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/33/c6/9c/33c69c01-751d-6e79-3a79-f326875d78b0/7640159732259_cover.jpg/600x600bb.jpg"
+      },
+      {
+        "id": "1851994465",
+        "name": "Neredesin Sen",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/2b/34/8e/2b348e13-e4c5-c9aa-5619-08c4c082b503/mzaf_16124063976040955589.plus.aac.p.m4a",
+        "durationMs": 269739,
+        "albumName": "Garip",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/98/ab/4e/98ab4e21-28c8-c2ba-b505-8e3d1470530d/00880882684754_Cover.jpg/600x600bb.jpg"
+      },
+      {
+        "id": "1456045843",
+        "name": "Süpürgesi Yoncadan",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/3c/92/90/3c929073-0635-d887-a2db-9e9381647540/mzaf_3737789389871703529.plus.aac.p.m4a",
+        "durationMs": 329029,
+        "albumName": "Gece",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music114/v4/1d/8f/4b/1d8f4b26-53bb-3007-d6ac-15e45abacb13/393.jpg/600x600bb.jpg"
+      }
+    ]
+  },
+  {
+    "id": "hermanosgutierrez",
+    "name": "Hermanos Gutiérrez",
+    "genres": [
+      "instrumental",
+      "latin western"
+    ],
+    "imageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/73/44/d2/7344d214-ff32-73fd-06af-eddf991ed7d8/26CRGIM54925.rgb.jpg/600x600bb.jpg",
+    "popularity": 55,
+    "color": "#ef591c",
+    "colorDark": "#544414",
+    "colorLight": "#e7a244",
+    "why": {
+      "sourceArtists": [
+        "Khruangbin",
+        "Ry Cooder"
+      ],
+      "genres": [
+        "instrumental"
+      ]
+    },
+    "tracks": [
+      {
+        "id": "6768765530",
+        "name": "Los Ojos Del Cóndor",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/90/49/63/90496342-162f-d922-e907-e769a5f916ab/mzaf_8615515196379909839.plus.aac.p.m4a",
+        "durationMs": 212980,
+        "albumName": "Los Ojos Del Cóndor",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/73/44/d2/7344d214-ff32-73fd-06af-eddf991ed7d8/26CRGIM54925.rgb.jpg/600x600bb.jpg"
+      },
+      {
+        "id": "1728320482",
+        "name": "Low Sun",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/fd/de/4d/fdde4dc0-4ab4-df9c-4945-99c88f7735f2/mzaf_422574496538671179.plus.aac.p.m4a",
+        "durationMs": 188396,
+        "albumName": "Sonido Cósmico",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music112/v4/e7/e1/7d/e7e17dbb-75a8-3eb1-d085-5acbdefbc768/23CRGIM40967.rgb.jpg/600x600bb.jpg"
+      },
+      {
+        "id": "1822903875",
+        "name": "Elegantly Wasted (feat. Leon Bridges)",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/76/ee/01/76ee01ee-15d7-2a5e-b625-3e931f154ff6/mzaf_9337409027491179720.plus.aac.p.m4a",
+        "durationMs": 213063,
+        "albumName": "Elegantly Wasted (feat. Leon Bridges) - Single",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/8a/56/fd/8a56fdb8-70ae-0a14-6bb4-4d8d519d8cf4/25CRGIM50060.rgb.jpg/600x600bb.jpg"
+      }
+    ]
+  },
+  {
+    "id": "mdoumoctar",
+    "name": "Mdou Moctar",
+    "genres": [
+      "tuareg rock",
+      "desert blues"
+    ],
+    "imageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music116/v4/68/67/2b/68672bd6-d91c-8e17-b9c2-7cbf8fa7442f/191401161459.png/600x600bb.jpg",
+    "popularity": 44,
+    "color": "#ae4f2c",
+    "colorDark": "#3c4c24",
+    "colorLight": "#cc9a56",
+    "why": {
+      "sourceArtists": [
+        "Tinariwen",
+        "Jimi Hendrix"
+      ],
+      "genres": [
+        "tuareg rock"
+      ]
+    },
+    "tracks": [
+      {
+        "id": "1586464406",
+        "name": "Tala Tannam",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/9d/73/d0/9d73d0f2-77b0-7d45-64a7-a531c4a30a9e/mzaf_9138346429758714103.plus.aac.p.m4a",
+        "durationMs": 338109,
+        "albumName": "Afrique Victime",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music116/v4/68/67/2b/68672bd6-d91c-8e17-b9c2-7cbf8fa7442f/191401161459.png/600x600bb.jpg"
+      },
+      {
+        "id": "1708385545",
+        "name": "Tarhatazed",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview116/v4/34/30/03/3430033e-1bc9-c59a-7bed-c184dba3da78/mzaf_2621161918597237635.plus.aac.p.m4a",
+        "durationMs": 447083,
+        "albumName": "Ilana (The Creator)",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music126/v4/2c/c8/98/2cc89814-3c16-162f-a98a-b206e109fe16/191401204378.png/600x600bb.jpg"
+      },
+      {
+        "id": "1729580079",
+        "name": "Imouhar",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/2a/4d/cd/2a4dcd43-30fc-6f52-be49-342ea3702e57/mzaf_4004588017862033388.plus.aac.p.m4a",
+        "durationMs": 307103,
+        "albumName": "Funeral for Justice",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music116/v4/1b/83/14/1b8314cd-b452-d492-bd5a-9593565170f7/191401203173.png/600x600bb.jpg"
+      }
+    ]
+  },
+  {
+    "id": "glassbeams",
+    "name": "Glass Beams",
+    "genres": [
+      "psych rock",
+      "indian fusion"
+    ],
+    "imageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music126/v4/be/b0/87/beb087ba-6ed2-0010-3eef-904a03921281/5054429192247.png/600x600bb.jpg",
+    "popularity": 46,
+    "color": "#d88a24",
+    "colorDark": "#845414",
+    "colorLight": "#e1c47b",
+    "why": {
+      "sourceArtists": [
+        "Khruangbin"
+      ],
+      "genres": [
+        "psych rock"
+      ]
+    },
+    "tracks": [
+      {
+        "id": "1727145711",
+        "name": "Mahal",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/68/36/9b/68369be9-9ab7-8950-c7a3-7cc3f33fb58c/mzaf_18330093126090432080.plus.aac.p.m4a",
+        "durationMs": 201339,
+        "albumName": "Mahal - EP",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music126/v4/be/b0/87/beb087ba-6ed2-0010-3eef-904a03921281/5054429192247.png/600x600bb.jpg"
+      },
+      {
+        "id": "6791600945",
+        "name": "Mirage",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/2a/07/5e/2a075e7e-2377-243a-0f84-a857b4d70041/mzaf_4917179050652129891.plus.aac.p.m4a",
+        "durationMs": 290448,
+        "albumName": "Mirage - Single",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/31/a1/0f/31a10fba-163c-0854-c50a-00aa7c8d3e65/5050580822634_cover.jpg/600x600bb.jpg"
+      },
+      {
+        "id": "1727145712",
+        "name": "Orb",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/f4/4f/79/f44f799d-7747-552b-ae8d-8ec9e38dbad4/mzaf_4083126572485882313.plus.aac.p.m4a",
+        "durationMs": 294000,
+        "albumName": "Mahal - EP",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music126/v4/be/b0/87/beb087ba-6ed2-0010-3eef-904a03921281/5054429192247.png/600x600bb.jpg"
+      }
+    ]
+  },
+  {
+    "id": "surprisechef",
+    "name": "Surprise Chef",
+    "genres": [
+      "cinematic soul",
+      "jazz funk"
+    ],
+    "imageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/80/b1/a7/80b1a781-e001-6ab3-f684-70eadb8c3cb2/26CRGIM55338.rgb.jpg/600x600bb.jpg",
+    "popularity": 38,
+    "color": "#7f7f7f",
+    "colorDark": "#424242",
+    "colorLight": "#bcbcbc",
+    "why": {
+      "sourceArtists": [
+        "BADBADNOTGOOD"
+      ],
+      "genres": [
+        "cinematic soul"
+      ]
+    },
+    "tracks": [
+      {
+        "id": "6789769629",
+        "name": "Frog Technique",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/c9/fb/d5/c9fbd546-b4ed-e2b3-0daa-fd7aea8ccc93/mzaf_16583987131596995457.plus.aac.p.m4a",
+        "durationMs": 243499,
+        "albumName": "Frogs In A Pond",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/80/b1/a7/80b1a781-e001-6ab3-f684-70eadb8c3cb2/26CRGIM55338.rgb.jpg/600x600bb.jpg"
+      },
+      {
+        "id": "6789769759",
+        "name": "Leg Day",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/bc/29/b2/bc29b240-d2e5-c2c1-d145-1b0bba380a11/mzaf_15950393436060730426.plus.aac.p.m4a",
+        "durationMs": 295684,
+        "albumName": "Frogs In A Pond",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/80/b1/a7/80b1a781-e001-6ab3-f684-70eadb8c3cb2/26CRGIM55338.rgb.jpg/600x600bb.jpg"
+      },
+      {
+        "id": "6789769628",
+        "name": "Outside Voice",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/b1/c0/1c/b1c01c9d-cd78-275d-662a-7a4414334036/mzaf_16957849535994822889.plus.aac.p.m4a",
+        "durationMs": 256632,
+        "albumName": "Frogs In A Pond",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/80/b1/a7/80b1a781-e001-6ab3-f684-70eadb8c3cb2/26CRGIM55338.rgb.jpg/600x600bb.jpg"
+      }
+    ]
+  },
+  {
+    "id": "nalasinephro",
+    "name": "Nala Sinephro",
+    "genres": [
+      "ambient jazz",
+      "spiritual jazz"
+    ],
+    "imageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/98/b8/46/98b84638-476a-ea68-151f-e844017594de/5056614798067.png/600x600bb.jpg",
+    "popularity": 41,
+    "color": "#5176ad",
+    "colorDark": "#24344c",
+    "colorLight": "#f4eae1",
+    "why": {
+      "sourceArtists": [
+        "Floating Points",
+        "Alice Coltrane"
+      ],
+      "genres": [
+        "ambient jazz"
+      ]
+    },
+    "tracks": [
+      {
+        "id": "1752836263",
+        "name": "Continuum 3",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/4e/d5/4c/4ed54c5c-492a-3180-cd65-82ad99a9958f/mzaf_11350399455829876699.plus.aac.p.m4a",
+        "durationMs": 247539,
+        "albumName": "Endlessness",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/98/b8/46/98b84638-476a-ea68-151f-e844017594de/5056614798067.png/600x600bb.jpg"
+      },
+      {
+        "id": "1752836260",
+        "name": "Continuum 1",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/a2/9e/55/a29e553c-2704-bd91-5977-292893b6f352/mzaf_6726400361091270005.plus.aac.p.m4a",
+        "durationMs": 433750,
+        "albumName": "Endlessness",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/98/b8/46/98b84638-476a-ea68-151f-e844017594de/5056614798067.png/600x600bb.jpg"
+      },
+      {
+        "id": "1576882003",
+        "name": "Space 3",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/08/55/e4/0855e480-96c3-2d51-ce03-5e9c3013bb56/mzaf_11680292416108977437.plus.aac.p.m4a",
+        "durationMs": 75000,
+        "albumName": "Space 1.8",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/e4/57/42/e45742d5-0ac5-a3a5-9840-a54b8648d182/0801061032432.png/600x600bb.jpg"
+      }
+    ]
+  },
+  {
+    "id": "aroojaftab",
+    "name": "Arooj Aftab",
+    "genres": [
+      "neo-sufi",
+      "chamber folk"
+    ],
+    "imageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music116/v4/e7/ed/f0/e7edf00e-3cee-d8d1-d6ee-d4f11fc11831/21UM1IM51529.rgb.jpg/600x600bb.jpg",
+    "popularity": 43,
+    "color": "#9f5f67",
+    "colorDark": "#523135",
+    "colorLight": "#cdacb0",
+    "why": {
+      "sourceArtists": [
+        "Nick Drake"
+      ],
+      "genres": [
+        "neo-sufi"
+      ]
+    },
+    "tracks": [
+      {
+        "id": "1598994872",
+        "name": "Mohabbat",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/c1/33/7b/c1337bff-cb06-7be0-3649-5d09e3018502/mzaf_9803867309802798238.plus.aac.p.m4a",
+        "durationMs": 462500,
+        "albumName": "Vulture Prince",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music116/v4/e7/ed/f0/e7edf00e-3cee-d8d1-d6ee-d4f11fc11831/21UM1IM51529.rgb.jpg/600x600bb.jpg"
+      },
+      {
+        "id": "1739688287",
+        "name": "Whiskey",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/88/9b/0a/889b0a62-9ad9-6de0-3f2e-37a9f7c09457/mzaf_17564202817648839826.plus.aac.p.m4a",
+        "durationMs": 307008,
+        "albumName": "Night Reign",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/54/3c/0b/543c0b89-91d5-88c8-2da7-a39c45b4439f/24UMGIM26384.rgb.jpg/600x600bb.jpg"
+      },
+      {
+        "id": "1739688188",
+        "name": "Raat Ki Rani",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/53/12/f9/5312f941-78f3-9b2a-e78b-413dbb57cf0e/mzaf_10436674848292760863.plus.aac.p.m4a",
+        "durationMs": 313312,
+        "albumName": "Night Reign",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/54/3c/0b/543c0b89-91d5-88c8-2da7-a39c45b4439f/24UMGIM26384.rgb.jpg/600x600bb.jpg"
+      }
+    ]
+  },
+  {
+    "id": "losbitchos",
+    "name": "Los Bitchos",
+    "genres": [
+      "cumbia",
+      "instrumental surf"
+    ],
+    "imageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music126/v4/81/f2/f4/81f2f4e6-6dbe-423a-ea2e-d9adab534ecc/4250506841751_cover.jpg/600x600bb.jpg",
+    "popularity": 36,
+    "color": "#d77f34",
+    "colorDark": "#7e3530",
+    "colorLight": "#e2917b",
+    "why": {
+      "sourceArtists": [
+        "Khruangbin",
+        "La Luz"
+      ],
+      "genres": [
+        "cumbia"
+      ]
+    },
+    "tracks": [
+      {
+        "id": "1721039529",
+        "name": "Pista (Fresh Start)",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview116/v4/a7/9e/e4/a79ee4ed-fe13-775f-a430-96e084dad7a4/mzaf_14757301372769659638.plus.aac.p.m4a",
+        "durationMs": 202133,
+        "albumName": "Let the Festivities Begin!",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music126/v4/81/f2/f4/81f2f4e6-6dbe-423a-ea2e-d9adab534ecc/4250506841751_cover.jpg/600x600bb.jpg"
+      },
+      {
+        "id": "1721039518",
+        "name": "The Link Is About to Die",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview116/v4/cc/c8/b0/ccc8b05a-1eb1-03e5-5141-14c45d0ca2a3/mzaf_15665883038710896879.plus.aac.p.m4a",
+        "durationMs": 228360,
+        "albumName": "Let the Festivities Begin!",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music126/v4/81/f2/f4/81f2f4e6-6dbe-423a-ea2e-d9adab534ecc/4250506841751_cover.jpg/600x600bb.jpg"
+      },
+      {
+        "id": "1721039908",
+        "name": "Las Panteras",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview116/v4/09/8b/f4/098bf4ce-75ea-f39e-d4fe-795b99c16d5c/mzaf_12996429387301191316.plus.aac.p.m4a",
+        "durationMs": 232947,
+        "albumName": "Let the Festivities Begin!",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music126/v4/81/f2/f4/81f2f4e6-6dbe-423a-ea2e-d9adab534ecc/4250506841751_cover.jpg/600x600bb.jpg"
+      }
+    ]
+  },
+  {
+    "id": "mildlife",
+    "name": "Mildlife",
+    "genres": [
+      "jazz fusion",
+      "space disco"
+    ],
+    "imageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/c9/0a/b1/c90ab19c-3c6f-430d-781a-d024ea613b7b/5063268054814.png/600x600bb.jpg",
+    "popularity": 37,
+    "color": "#fca42c",
+    "colorDark": "#744414",
+    "colorLight": "#f4b454",
+    "why": {
+      "sourceArtists": [
+        "Tame Impala",
+        "Parcels"
+      ],
+      "genres": [
+        "jazz fusion"
+      ]
+    },
+    "tracks": [
+      {
+        "id": "6800415207",
+        "name": "The Magnificent Moon",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/23/8e/47/238e47af-d9ee-730c-77b2-88578a28a7ff/mzaf_13984138959142014193.plus.aac.p.m4a",
+        "durationMs": 532067,
+        "albumName": "Phase",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/c9/0a/b1/c90ab19c-3c6f-430d-781a-d024ea613b7b/5063268054814.png/600x600bb.jpg"
+      },
+      {
+        "id": "1513400193",
+        "name": "Automatic",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/40/73/88/407388ae-3109-4651-d146-7e72c90f4f36/mzaf_13084028231804984785.plus.aac.p.m4a",
+        "durationMs": 521153,
+        "albumName": "Automatic",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music124/v4/55/81/95/5581954b-6fe2-730c-bd66-843f299dd6b2/5400863032517_cover.jpg/600x600bb.jpg"
+      },
+      {
+        "id": "1713533722",
+        "name": "Yourself",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/af/0b/a1/af0ba182-3df8-838c-8e55-f207075610ef/mzaf_17043924615932680670.plus.aac.p.m4a",
+        "durationMs": 382887,
+        "albumName": "Chorus",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music116/v4/1c/15/5d/1c155d66-5a65-028e-bb13-be3a1b174368/5400863143107_cover.jpg/600x600bb.jpg"
+      }
+    ]
+  },
+  {
+    "id": "ichikoaoba",
+    "name": "Ichiko Aoba",
+    "genres": [
+      "japanese folk",
+      "ambient folk"
+    ],
+    "imageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music126/v4/fa/fa/0d/fafa0dd1-dda3-0b1d-077e-8ed879031092/143997.jpg/600x600bb.jpg",
+    "popularity": 52,
+    "color": "#6d8f91",
+    "colorDark": "#394a4b",
+    "colorLight": "#b3c5c5",
+    "why": {
+      "sourceArtists": [
+        "Joanna Newsom"
+      ],
+      "genres": [
+        "japanese folk"
+      ]
+    },
+    "tracks": [
+      {
+        "id": "1714304939",
+        "name": "Parfum D'étoiles",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/da/61/78/da6178b3-b8fe-720a-5c2b-e173d0c6c679/mzaf_7477253947554564876.plus.aac.p.m4a",
+        "durationMs": 172736,
+        "albumName": "Windswept Adan",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music126/v4/fa/fa/0d/fafa0dd1-dda3-0b1d-077e-8ed879031092/143997.jpg/600x600bb.jpg"
+      },
+      {
+        "id": "1714304127",
+        "name": "Asleep Among Endives",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/9b/67/9e/9b679eb5-da87-8b21-b2cc-dd13eeda7b20/mzaf_17904828386344266547.plus.aac.p.m4a",
+        "durationMs": 306271,
+        "albumName": "Asleep Among Endives - Single",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music116/v4/c1/2d/31/c12d316a-07a8-2b2e-8ae5-6559c8621ddc/143998.jpg/600x600bb.jpg"
+      },
+      {
+        "id": "1714305048",
+        "name": "Dawn in the Adan",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/68/78/ff/6878ff2b-6a15-5ec9-d229-46374ad0c1ee/mzaf_11304609466991474371.plus.aac.p.m4a",
+        "durationMs": 285504,
+        "albumName": "Windswept Adan",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music126/v4/fa/fa/0d/fafa0dd1-dda3-0b1d-077e-8ed879031092/143997.jpg/600x600bb.jpg"
+      }
+    ]
+  },
+  {
+    "id": "sofiakourtesis",
+    "name": "Sofia Kourtesis",
+    "genres": [
+      "deep house",
+      "peruvian electronic"
+    ],
+    "imageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music126/v4/cf/e6/fe/cfe6fe60-b734-0bd4-df98-172eb633ba15/5054429173710.png/600x600bb.jpg",
+    "popularity": 45,
+    "color": "#df281d",
+    "colorDark": "#791a1f",
+    "colorLight": "#e66852",
+    "why": {
+      "sourceArtists": [
+        "Four Tet",
+        "Caribou"
+      ],
+      "genres": [
+        "deep house"
+      ]
+    },
+    "tracks": [
+      {
+        "id": "1695712924",
+        "name": "Si Te Portas Bonito",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/33/3e/05/333e05e5-1d6a-827f-fa83-d4a04c9a42c6/mzaf_6212850193741707798.plus.aac.p.m4a",
+        "durationMs": 301851,
+        "albumName": "Madres",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music126/v4/cf/e6/fe/cfe6fe60-b734-0bd4-df98-172eb633ba15/5054429173710.png/600x600bb.jpg"
+      },
+      {
+        "id": "1695712923",
+        "name": "Madres",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/bc/f0/c1/bcf0c15b-8dae-c0b1-f6fe-b24c94cd13cc/mzaf_13538293667994450536.plus.aac.p.m4a",
+        "durationMs": 236129,
+        "albumName": "Madres",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music126/v4/cf/e6/fe/cfe6fe60-b734-0bd4-df98-172eb633ba15/5054429173710.png/600x600bb.jpg"
+      },
+      {
+        "id": "1695712926",
+        "name": "How Music Makes You Feel Better",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/5c/d9/57/5cd957e8-2083-d7e1-a5ac-67163dcd5b6e/mzaf_2982325682138073836.plus.aac.p.m4a",
+        "durationMs": 283074,
+        "albumName": "Madres",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music126/v4/cf/e6/fe/cfe6fe60-b734-0bd4-df98-172eb633ba15/5054429173710.png/600x600bb.jpg"
+      }
+    ]
+  },
+  {
+    "id": "kokoroko",
+    "name": "Kokoroko",
+    "genres": [
+      "afrobeat",
+      "london jazz"
+    ],
+    "imageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music114/v4/c1/e6/af/c1e6aff2-d170-5a9b-3b63-b6cb6686a803/5060180323301.jpg/600x600bb.jpg",
+    "popularity": 47,
+    "color": "#e86253",
+    "colorDark": "#072e58",
+    "colorLight": "#dbc8aa",
+    "why": {
+      "sourceArtists": [
+        "Ezra Collective",
+        "Fela Kuti"
+      ],
+      "genres": [
+        "afrobeat"
+      ]
+    },
+    "tracks": [
+      {
+        "id": "1561771400",
+        "name": "Abusey Junction",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/8f/0d/75/8f0d7519-8892-5849-83c9-7261cb8a9ea3/mzaf_8878046729423962042.plus.aac.p.m4a",
+        "durationMs": 429093,
+        "albumName": "We Out Here",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music114/v4/c1/e6/af/c1e6aff2-d170-5a9b-3b63-b6cb6686a803/5060180323301.jpg/600x600bb.jpg"
+      },
+      {
+        "id": "1561234531",
+        "name": "Ti-de",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/da/17/47/da174736-4a65-d462-2e47-5ecf087268d6/mzaf_17449684809166786950.plus.aac.p.m4a",
+        "durationMs": 372387,
+        "albumName": "KOKOROKO - EP",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music124/v4/ed/76/24/ed7624b8-4079-8881-47f1-c72b03ede03e/5060180323844.jpg/600x600bb.jpg"
+      },
+      {
+        "id": "1614650135",
+        "name": "Age Of Ascent",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/3b/92/7d/3b927da4-deac-2b25-7bec-d79c26076b2d/mzaf_12159286384762768021.plus.aac.p.m4a",
+        "durationMs": 298533,
+        "albumName": "Could We Be More",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music116/v4/1c/10/12/1c101284-5781-406d-f456-5855551c036d/5060180325343.jpg/600x600bb.jpg"
+      }
+    ]
+  },
+  {
+    "id": "sessa",
+    "name": "Sessa",
+    "genres": [
+      "mpb",
+      "tropicalia"
+    ],
+    "imageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/82/f7/f5/82f7f55f-27ba-9fcf-19c3-209049d24b6b/184923136968_cover.jpg/600x600bb.jpg",
+    "popularity": 35,
+    "color": "#ea9b32",
+    "colorDark": "#044c80",
+    "colorLight": "#f8dc6f",
+    "why": {
+      "sourceArtists": [
+        "Caetano Veloso",
+        "Devendra Banhart"
+      ],
+      "genres": [
+        "mpb"
+      ]
+    },
+    "tracks": [
+      {
+        "id": "1831374400",
+        "name": "Vale a Pena",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/4a/f0/22/4af02227-b4f1-8004-587f-98219dbe8589/mzaf_6200999116080226284.plus.aac.p.m4a",
+        "durationMs": 247440,
+        "albumName": "Pequena Vertigem de Amor",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/82/f7/f5/82f7f55f-27ba-9fcf-19c3-209049d24b6b/184923136968_cover.jpg/600x600bb.jpg"
+      },
+      {
+        "id": "1775801766",
+        "name": "Gostar do Mundo",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/3c/8b/1d/3c8b1d92-a408-2295-81fd-f374c82c5be0/mzaf_1259077228400034343.plus.aac.p.m4a",
+        "durationMs": 141290,
+        "albumName": "Estrela Acesa",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/b2/60/f3/b260f333-a321-4ddf-b6ca-a2fee5194537/184923131369_cover.jpg/600x600bb.jpg"
+      },
+      {
+        "id": "1831374247",
+        "name": "Dodói",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/5e/1f/51/5e1f510d-02bb-65e0-1678-87d9ee024cfe/mzaf_10418311110148994580.plus.aac.p.m4a",
+        "durationMs": 178771,
+        "albumName": "Pequena Vertigem de Amor",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/82/f7/f5/82f7f55f-27ba-9fcf-19c3-209049d24b6b/184923136968_cover.jpg/600x600bb.jpg"
+      }
+    ]
+  },
+  {
+    "id": "kikagakumoyo",
+    "name": "Kikagaku Moyo",
+    "genres": [
+      "japanese psych",
+      "krautrock"
+    ],
+    "imageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music69/v4/52/44/d3/5244d304-c892-3ae1-519d-a0dcf29ecdf0/730490463657.jpg/600x600bb.jpg",
+    "popularity": 44,
+    "color": "#7f7f7f",
+    "colorDark": "#424242",
+    "colorLight": "#bcbcbc",
+    "why": {
+      "sourceArtists": [
+        "Can",
+        "King Gizzard"
+      ],
+      "genres": [
+        "japanese psych"
+      ]
+    },
+    "tracks": [
+      {
+        "id": "1096949618",
+        "name": "Melted Crystal",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/a9/52/e2/a952e203-cbe6-0457-9409-9347a6bfcbfc/mzaf_18217310256655004657.plus.aac.p.m4a",
+        "durationMs": 331000,
+        "albumName": "House in the Tall Grass",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music69/v4/52/44/d3/5244d304-c892-3ae1-519d-a0dcf29ecdf0/730490463657.jpg/600x600bb.jpg"
+      },
+      {
+        "id": "1422830227",
+        "name": "Dripping Sun",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/75/ae/7f/75ae7fb0-b208-66f5-64bd-ccd022b343d4/mzaf_17602843438567360526.plus.aac.p.m4a",
+        "durationMs": 470092,
+        "albumName": "Masana Temples",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/45/fd/4c/45fd4c9d-5626-c1e0-17b8-516fe473a5fd/606825444144_cover.jpg/600x600bb.jpg"
+      },
+      {
+        "id": "1096949608",
+        "name": "Green Sugar",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/c4/88/1b/c4881b85-db82-5327-3eb6-c39421023c1d/mzaf_2366805219804632980.plus.aac.p.m4a",
+        "durationMs": 474000,
+        "albumName": "House in the Tall Grass",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music69/v4/52/44/d3/5244d304-c892-3ae1-519d-a0dcf29ecdf0/730490463657.jpg/600x600bb.jpg"
+      }
+    ]
+  },
+  {
+    "id": "yussefdayes",
+    "name": "Yussef Dayes",
+    "genres": [
+      "uk jazz",
+      "broken beat"
+    ],
+    "imageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music113/v4/be/6c/f8/be6cf8a0-8cfa-3ee6-9444-4d47abd33ec1/5054526181625_1.jpg/600x600bb.jpg",
+    "popularity": 54,
+    "color": "#fa4104",
+    "colorDark": "#046c3c",
+    "colorLight": "#fac94e",
+    "why": {
+      "sourceArtists": [
+        "Tom Misch",
+        "Kamaal Williams"
+      ],
+      "genres": [
+        "uk jazz"
+      ]
+    },
+    "tracks": [
+      {
+        "id": "1487538372",
+        "name": "For My Ladies (feat. Rocco Palladino & Charlie Stacey)",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/95/e2/8f/95e28fab-4c3d-7d1b-265b-b294f9f33361/mzaf_5674953030113435668.plus.aac.p.m4a",
+        "durationMs": 341346,
+        "albumName": "Duality (feat. Rocco Palladino & Charlie Stacey) - Single",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music113/v4/be/6c/f8/be6cf8a0-8cfa-3ee6-9444-4d47abd33ec1/5054526181625_1.jpg/600x600bb.jpg"
+      },
+      {
+        "id": "1683439020",
+        "name": "Rust (feat. Tom Misch)",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/e2/dd/a8/e2dda847-2e86-d8d4-b650-a46415aa3141/mzaf_12823094446522383721.plus.aac.p.m4a",
+        "durationMs": 238787,
+        "albumName": "Black Classical Music",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music126/v4/d4/21/b3/d421b356-6a90-dbad-de33-cfe591eb32e6/075597903331.jpg/600x600bb.jpg"
+      },
+      {
+        "id": "1440734299",
+        "name": "Love Is the Message (feat. Alfa Mist, Mansur Brown & Rocco Palladino) [Live at Abbey Road Studios]",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/03/01/5e/03015e6a-9401-4391-8b7c-82bde8e324de/mzaf_549211556736898675.plus.aac.p.m4a",
+        "durationMs": 646827,
+        "albumName": "Love Is the Message (feat. Alfa Mist, Mansur Brown & Rocco Palladino) [Live at Abbey Road Studios] - EP",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music124/v4/6d/d7/3b/6dd73b41-991a-f6d5-3c13-c43c6c007c9f/5054526640054_1.jpg/600x600bb.jpg"
+      }
+    ]
+  },
+  {
+    "id": "crumb",
+    "name": "Crumb",
+    "genres": [
+      "psych pop",
+      "dream pop"
+    ],
+    "imageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/a0/b1/28/a0b128b5-4340-4f10-da1a-4d32f434557e/cover.jpg/600x600bb.jpg",
+    "popularity": 53,
+    "color": "#338acb",
+    "colorDark": "#1a4769",
+    "colorLight": "#b4d4ec",
+    "why": {
+      "sourceArtists": [
+        "Men I Trust",
+        "Tame Impala"
+      ],
+      "genres": [
+        "psych pop"
+      ]
+    },
+    "tracks": [
+      {
+        "id": "1465126178",
+        "name": "Locket",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/29/b2/3e/29b23e56-6e23-1f8e-a8de-04afaff79a5e/mzaf_3973219434235866304.plus.aac.p.m4a",
+        "durationMs": 318379,
+        "albumName": "Locket - EP",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/a0/b1/28/a0b128b5-4340-4f10-da1a-4d32f434557e/cover.jpg/600x600bb.jpg"
+      },
+      {
+        "id": "1456789839",
+        "name": "Ghostride",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/3c/b7/c4/3cb7c440-cf5e-3a43-b0ee-9724bf0c82b0/mzaf_18205388479178605930.plus.aac.p.m4a",
+        "durationMs": 126120,
+        "albumName": "Jinx",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music114/v4/83/13/f1/8313f143-ba0e-ee4c-eb85-5c259b1ec5e3/656605343648.jpg/600x600bb.jpg"
+      },
+      {
+        "id": "1456789843",
+        "name": "Part III",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/94/8f/bc/948fbcab-557c-479d-c21e-9962662060ce/mzaf_5565568376933325983.plus.aac.p.m4a",
+        "durationMs": 222920,
+        "albumName": "Jinx",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music114/v4/83/13/f1/8313f143-ba0e-ee4c-eb85-5c259b1ec5e3/656605343648.jpg/600x600bb.jpg"
+      }
+    ]
+  },
+  {
+    "id": "pachyman",
+    "name": "Pachyman",
+    "genres": [
+      "dub",
+      "reggae"
+    ],
+    "imageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music116/v4/0d/86/8f/0d868f90-cd35-4fca-d48f-22deae3dfceb/786.jpg/600x600bb.jpg",
+    "popularity": 31,
+    "color": "#948c34",
+    "colorDark": "#561e0f",
+    "colorLight": "#ccb38f",
+    "why": {
+      "sourceArtists": [
+        "King Tubby",
+        "Khruangbin"
+      ],
+      "genres": [
+        "dub"
+      ]
+    },
+    "tracks": [
+      {
+        "id": "1565171777",
+        "name": "Destroy the Empire",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/00/15/47/00154778-793c-3d9d-2661-8e475b671e99/mzaf_125521028141323979.plus.aac.p.m4a",
+        "durationMs": 204791,
+        "albumName": "The Return of…",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music116/v4/0d/86/8f/0d868f90-cd35-4fca-d48f-22deae3dfceb/786.jpg/600x600bb.jpg"
+      },
+      {
+        "id": "1793846481",
+        "name": "In Love",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/ff/bd/9b/ffbd9b95-1c4f-eebb-b48d-66da51dfbec3/mzaf_17297061014383484222.plus.aac.p.m4a",
+        "durationMs": 170244,
+        "albumName": "Another Place",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/e9/46/ff/e946fff1-9537-9857-7747-0d411c555055/00880882660154_Cover.jpg/600x600bb.jpg"
+      },
+      {
+        "id": "1565172353",
+        "name": "El Benson",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/c5/ba/d3/c5bad31f-fdbc-3e32-888a-d820cd68b1c7/mzaf_12450987368443029475.plus.aac.p.m4a",
+        "durationMs": 269293,
+        "albumName": "The Return of…",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music116/v4/0d/86/8f/0d868f90-cd35-4fca-d48f-22deae3dfceb/786.jpg/600x600bb.jpg"
+      }
+    ]
+  },
+  {
+    "id": "fievelisglauque",
+    "name": "Fievel Is Glauque",
+    "genres": [
+      "jazz pop",
+      "art pop"
+    ],
+    "imageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/99/87/50/99875062-2437-24ec-f04d-b3bb27affc30/195938722091.png/600x600bb.jpg",
+    "popularity": 30,
+    "color": "#ca4645",
+    "colorDark": "#671d1d",
+    "colorLight": "#fcf4f4",
+    "why": {
+      "sourceArtists": [
+        "Stereolab"
+      ],
+      "genres": [
+        "jazz pop"
+      ]
+    },
+    "tracks": [
+      {
+        "id": "1702711717",
+        "name": "Decoy",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview116/v4/a7/4e/6b/a74e6b7d-a6a6-6821-acd6-2de3475e42ca/mzaf_1723784502542906008.plus.aac.p.m4a",
+        "durationMs": 122693,
+        "albumName": "God’s Trashmen Sent to Right the Mess",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/99/87/50/99875062-2437-24ec-f04d-b3bb27affc30/195938722091.png/600x600bb.jpg"
+      },
+      {
+        "id": "1759049130",
+        "name": "As Above So Below",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/7f/93/fc/7f93fc7f-4213-befd-51c9-142d8c36df2c/mzaf_17744500007415516508.plus.aac.p.m4a",
+        "durationMs": 226340,
+        "albumName": "Rong Weicknes",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/c2/8b/c8/c28bc826-e431-7164-4128-7f7941f7d5f1/198588560969.jpg/600x600bb.jpg"
+      },
+      {
+        "id": "1702711716",
+        "name": "Bring Me to Silence",
+        "previewUrl": "https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview126/v4/e4/36/a4/e436a4bc-9bc9-3854-0903-7c35f7250c6a/mzaf_15246014824112414990.plus.aac.p.m4a",
+        "durationMs": 109413,
+        "albumName": "God’s Trashmen Sent to Right the Mess",
+        "albumImageUrl": "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/99/87/50/99875062-2437-24ec-f04d-b3bb27affc30/195938722091.png/600x600bb.jpg"
+      }
+    ]
+  }
+]

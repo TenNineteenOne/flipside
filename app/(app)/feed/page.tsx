@@ -1,3 +1,4 @@
+import { headers } from "next/headers"
 import { redirect } from "next/navigation"
 import { safeAuth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
@@ -8,6 +9,7 @@ import { RecommendationsLoader } from "@/components/feed/recommendations-loader"
 import { DEFAULT_MUSIC_PLATFORM, isMusicPlatform, type MusicPlatform } from "@/lib/music-links"
 import { getUnseenRecommendations, type UnseenRecommendation } from "@/lib/recommendation/feed-query"
 import { isRenderableRow, loadFeedCards } from "@/lib/cards/feed-cards"
+import { guessFeedLayout } from "@/lib/feed/layout-guess"
 
 export default async function FeedPage() {
   const session = await safeAuth()
@@ -86,7 +88,12 @@ export default async function FeedPage() {
 
   return (
     <>
-      <FeedClient recommendations={cards} musicPlatform={musicPlatform} signalCount={signalCount} />
+      <FeedClient
+        recommendations={cards}
+        musicPlatform={musicPlatform}
+        signalCount={signalCount}
+        initialLayout={guessFeedLayout(await headers())}
+      />
       <ExplorePrewarm />
     </>
   )

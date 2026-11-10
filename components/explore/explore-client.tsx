@@ -7,7 +7,6 @@ import { ChallengeCard } from "@/components/explore/challenge-card"
 import { ExploreArtistRow } from "@/components/explore/explore-artist-row"
 import type { RailKey, RailPayload } from "@/lib/cards/explore-rail-payloads"
 import type { MusicPlatform } from "@/lib/music-links"
-import { Ambient } from "@/components/visual/ambient"
 import { useArtistFeedback } from "@/lib/hooks/use-artist-feedback"
 import { useArtistSaves } from "@/lib/hooks/use-artist-saves"
 import { useRailSession } from "@/lib/hooks/use-rail-session"
@@ -141,37 +140,8 @@ export function ExploreClient({
     [orderedRails],
   )
 
-  const activeAccentRgb = activeRail ? RAIL_META[activeRail.railKey].rgb : "139, 92, 246"
-
-  // OFF — rail color dominant, rainbow whisper. Two large rail-color anchors
-  // drive the page mood; two small warm hints (amber + magenta) keep it from
-  // feeling monochromatic.
-  const palette = useMemo(
-    () => `
-    radial-gradient(75% 60% at 18% 14%, rgba(${activeAccentRgb}, 0.40) 0%, transparent 70%),
-    radial-gradient(55% 48% at 84% 26%, rgba(${activeAccentRgb}, 0.30) 0%, transparent 72%),
-    radial-gradient(40% 32% at 50% 92%, rgba(255,138,46,0.14) 0%, transparent 75%),
-    radial-gradient(38% 30% at 10% 86%, rgba(236,111,181,0.14) 0%, transparent 72%)
-  `,
-    [activeAccentRgb],
-  )
-
-  // ON — rainbow sunset takes the lead, rail color is one of many voices.
-  // The warm amber/hot-pink/coral glow dominates; rail tints the bottom.
-  const adventurousPalette = useMemo(
-    () => `
-    radial-gradient(65% 50% at 18% 10%, rgba(255,138,46,0.40) 0%, transparent 72%),
-    radial-gradient(58% 48% at 85% 26%, rgba(255,74,130,0.36) 0%, transparent 72%),
-    radial-gradient(60% 48% at 50% 92%, rgba(${activeAccentRgb}, 0.32) 0%, transparent 75%),
-    radial-gradient(50% 40% at 10% 86%, rgba(255,184,92,0.28) 0%, transparent 72%)
-  `,
-    [activeAccentRgb],
-  )
-
   return (
     <div>
-      <Ambient palette={palette} adventurousPalette={adventurousPalette} adventurous={adventurous} />
-
       <div className="page-head">
         <h1>Explore</h1>
         <span className="sub">
@@ -198,9 +168,7 @@ export function ExploreClient({
             : "1px solid rgba(255,255,255,0.08)",
           background: adventurous
             ? "linear-gradient(135deg, rgba(245,176,71,0.22) 0%, rgba(236,111,181,0.18) 40%, rgba(125,217,198,0.14) 75%, rgba(168,199,250,0.12) 100%)"
-            : "rgba(15,15,15,0.55)",
-          backdropFilter: "blur(18px)",
-          WebkitBackdropFilter: "blur(18px)",
+            : "var(--panel)",
           color: "var(--text-primary)",
           cursor: isTogglingAdv ? "default" : "pointer",
           opacity: isTogglingAdv ? 0.75 : 1,
@@ -314,8 +282,6 @@ export function ExploreClient({
             borderRadius: 18,
             border: "1px solid rgba(245,176,71,0.45)",
             background: "linear-gradient(135deg, rgba(245,176,71,0.28) 0%, rgba(236,111,181,0.24) 45%, rgba(125,217,198,0.18) 80%, rgba(168,199,250,0.16) 100%)",
-            backdropFilter: "blur(18px)",
-            WebkitBackdropFilter: "blur(18px)",
             color: "#fff",
             cursor: isApplyingAdv ? "default" : "pointer",
             opacity: isApplyingAdv ? 0.75 : 1,
@@ -420,7 +386,7 @@ export function ExploreClient({
             textAlign: "center",
             border: "1px dashed var(--border)",
             borderRadius: 12,
-            background: "rgba(15,15,15,0.45)",
+            background: "var(--panel)",
           }}
         >
           {isRegenerating ? (

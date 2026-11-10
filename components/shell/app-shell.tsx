@@ -1,0 +1,237 @@
+"use client"
+
+import "./shell.css"
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
+import Link from "next/link"
+import { usePathname } from "next/navigation"
+import { signOut } from "next-auth/react"
+import { BarChart3, Bookmark, Clock, Compass, Keyboard, LogOut, Music2, Settings } from "lucide-react"
+import { IdenticonAvatar } from "@/components/ui/identicon-avatar"
+import { NavLinkStatus } from "@/components/nav/navigation-progress"
+import { useAdventurousMode } from "@/lib/hooks/use-adventurous-mode"
+import { ShellContext, type ShellApi } from "./shell-context"
+import { Wordmark } from "./wordmark"
+
+export const NAV = [
+  { href: "/feed", label: "Feed", icon: Music2 },
+  { href: "/explore", label: "Explore", icon: Compass },
+  { href: "/history", label: "History", icon: Clock },
+  { href: "/saved", label: "Saved", icon: Bookmark },
+  { href: "/stats", label: "Stats", icon: BarChart3 },
+  { href: "/settings", label: "Settings", icon: Settings },
+] as const
+
+/** Where shell.css shows the rail instead of the top bar and tab bar. */
+const RAIL_QUERY = "(width >= 900px) and (height >= 540px)"
+
+/** The phone/tablet tab bar: everything but Settings, which lives in the avatar menu. */
+const TABS = NAV.filter((n) => n.href !== "/settings")
+
+export const isCurrent = (pathname: string, href: string) =>
+  pathname === href || pathname.startsWith(href + "/")
+
+interface AppShellProps {
+  userSeed: string
+  initialAdventurous: boolean
+  /** Dev preview only: strip this prefix before matching the current section (/dev-preview/feed → Feed). */
+  pathPrefix?: string
+  children: ReactNode
+}
+
+/**
+ * Signed-in app shell. ≥900px wide and ≥540px tall: a fixed navigation rail. Otherwise a slim
+ * top bar (wordmark + avatar menu) and a bottom tab bar. Which one shows is
+ * pure CSS, so the server render is the same at every width.
+ */
+export function AppShell({ userSeed, initialAdventurous, pathPrefix, children }: AppShellProps) {
+  const rawPath = usePathname()
+  const pathname = pathPrefix && rawPath.startsWith(pathPrefix) ? rawPath.slice(pathPrefix.length) : rawPath
+  const { adventurous } = useAdventurousMode(initialAdventurous)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const avatarRef = useRef<HTMLButtonElement>(null)
+  // The avatar menu is open for the path it was opened on, so a route change closes it.
+  const [menuPath, setMenuPath] = useState<string | null>(null)
+  const menuOpen = menuPath === rawPath
+
+  const [badges, setBadges] = useState<Record<string, number | undefined>>({})
+  const [shortcuts, setShortcutsState] = useState<(() => void) | undefined>(undefined)
+  const [topSlot, setTopSlot] = useState<HTMLElement | null>(null)
+  const [topSubSlot, setTopSubSlot] = useState<HTMLElement | null>(null)
+  const [railSlot, setRailSlot] = useState<HTMLElement | null>(null)
+
+  const setBadge = useCallback(
+    (href: string, count: number | undefined) =>
+      setBadges((prev) => (prev[href] === count ? prev : { ...prev, [href]: count })),
+    [],
+  )
+  // Wrapped: a bare function passed to setState would be called as an updater.
+  const setShortcuts = useCallback((open: (() => void) | undefined) => setShortcutsState(() => open), [])
+
+  const api = useMemo<ShellApi>(
+    () => ({ slots: { top: topSlot, topSub: topSubSlot, rail: railSlot }, setBadge, setShortcuts }),
+    [topSlot, topSubSlot, railSlot, setBadge, setShortcuts],
+  )
+
+  const closeMenu = useCallback((refocus = false) => {
+    setMenuPath(null)
+    if (refocus) avatarRef.current?.focus()
+  }, [])
+
+  // State-driven menu (no Popover API: Safari before 17 lacks it). Open: focus the first item;
+  // Escape closes and returns focus to the button; a pointer down outside closes.
+  useEffect(() => {
+    if (!menuOpen) return
+    menuRef.current?.querySelector<HTMLElement>("[role=menuitem]")?.focus()
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as Node
+      if (!menuRef.current?.contains(t) && !avatarRef.current?.contains(t)) closeMenu()
+    }
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") { e.preventDefault(); closeMenu(true) }
+    }
+    // The menu belongs to the top bar, which CSS hides where the rail shows: close it there, so it
+    // neither swallows the next Escape nor comes back when the window narrows again.
+    const rail = matchMedia(RAIL_QUERY)
+    const onRail = () => { if (rail.matches) closeMenu() }
+    document.addEventListener("pointerdown", onDown)
+    document.addEventListener("keydown", onKey)
+    rail.addEventListener("change", onRail)
+    return () => {
+      document.removeEventListener("pointerdown", onDown)
+      document.removeEventListener("keydown", onKey)
+      rail.removeEventListener("change", onRail)
+    }
+  }, [menuOpen, closeMenu])
+
+  // Arrow keys move between the items (menu-button pattern).
+  const onMenuKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return
+    e.preventDefault()
+    const items = [...e.currentTarget.querySelectorAll<HTMLElement>("[role=menuitem]")]
+    const i = items.indexOf(document.activeElement as HTMLElement)
+    items[(i + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length]?.focus()
+  }
+
+  return (
+    <ShellContext.Provider value={api}>
+      <div className={`shell${adventurous ? " adventurous" : ""}`}>
+        <div className="shell-rail">
+          <Link href="/feed" className="shell-rail-brand" aria-label="flipside, go to Feed" title="flipside">
+            <Wordmark />
+          </Link>
+          <nav className="shell-nav" aria-label="Main">
+            {NAV.map(({ href, label, icon: Icon }) => {
+              const count = badges[href]
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  prefetch={href === "/explore" ? true : undefined}
+                  className="shell-nav-item"
+                  aria-current={isCurrent(pathname, href) ? "page" : undefined}
+                  aria-label={count ? `${label}, ${count}` : label}
+                  title={label}
+                >
+                  <Icon size={18} strokeWidth={1.75} aria-hidden />
+                  <span className="shell-nav-label">{label}</span>
+                  {!!count && <span className="shell-nav-count" aria-hidden>{count}</span>}
+                  <NavLinkStatus />
+                </Link>
+              )
+            })}
+          </nav>
+          <div className="shell-rail-slot" ref={setRailSlot} />
+          <div className="shell-rail-foot">
+            {shortcuts && (
+              <button type="button" className="shell-rail-keys" onClick={shortcuts} title="Shortcuts" aria-label="Keyboard shortcuts">
+                <Keyboard size={16} strokeWidth={1.75} aria-hidden />
+                <span className="shell-nav-label">Shortcuts</span>
+                <kbd className="shell-kbd">?</kbd>
+              </button>
+            )}
+            <span className="shell-user">
+              <IdenticonAvatar seed={userSeed} size={26} />
+            </span>
+          </div>
+        </div>
+
+        <header className="shell-top">
+          <div className="shell-top-row">
+            <Link href="/feed" className="shell-top-brand" aria-label="flipside, go to Feed">
+              <Wordmark />
+            </Link>
+            <div className="shell-top-slot" ref={setTopSlot} />
+            <button
+              ref={avatarRef}
+              type="button"
+              className="shell-avatar"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              aria-controls={menuOpen ? "shell-menu" : undefined}
+              aria-label="Account and settings"
+              onClick={() => (menuOpen ? closeMenu() : setMenuPath(rawPath))}
+            >
+              <IdenticonAvatar seed={userSeed} size={30} />
+            </button>
+          </div>
+          {/* Optional second row (empty → hidden): the phone feed's progress strip. */}
+          <div className="shell-top-sub" ref={setTopSubSlot} />
+        </header>
+        {menuOpen && (
+        <div
+          id="shell-menu"
+          ref={menuRef}
+          role="menu"
+          aria-label="Account"
+          className="shell-menu"
+          onKeyDown={onMenuKey}
+          // Tabbing out of the menu closes it (menu-button pattern).
+          onBlur={(e) => {
+            const next = e.relatedTarget as HTMLElement | null
+            if (next && !e.currentTarget.contains(next) && next !== avatarRef.current) closeMenu()
+          }}
+        >
+          <Link
+            href="/settings"
+            role="menuitem"
+            className="shell-menu-item"
+            aria-current={isCurrent(pathname, "/settings") ? "page" : undefined}
+            onClick={() => closeMenu()}
+          >
+            <Settings size={18} strokeWidth={1.75} aria-hidden />
+            Settings
+            <NavLinkStatus />
+          </Link>
+          <button type="button" role="menuitem" className="shell-menu-item" onClick={() => { closeMenu(); void signOut({ callbackUrl: "/" }) }}>
+            <LogOut size={18} strokeWidth={1.75} aria-hidden />
+            Sign out
+          </button>
+        </div>
+        )}
+
+        <main className="shell-main">{children}</main>
+
+        <nav className="shell-tabs" aria-label="Main">
+          {TABS.map(({ href, label, icon: Icon }) => {
+            const count = badges[href]
+            return (
+              <Link
+                key={href}
+                href={href}
+                prefetch={href === "/explore" ? true : undefined}
+                className="shell-tab"
+                aria-current={isCurrent(pathname, href) ? "page" : undefined}
+                aria-label={count ? `${label}, ${count}` : undefined}
+              >
+                <Icon size={22} strokeWidth={1.75} aria-hidden />
+                <span>{label}</span>
+                {!!count && <span className="shell-tab-dot" aria-hidden>{count}</span>}
+                <NavLinkStatus />
+              </Link>
+            )
+          })}
+        </nav>
+      </div>
+    </ShellContext.Provider>
+  )
+}

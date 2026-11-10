@@ -1,51 +1,81 @@
 "use client"
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useRef, useState, useSyncExternalStore } from "react"
+import dynamic from "next/dynamic"
 import { useRouter } from "next/navigation"
-import { ArtistCard } from "@/components/feed/artist-card"
-import { ColdStartBanner } from "@/components/feed/cold-start-banner"
-import { Ambient } from "@/components/visual/ambient"
+import { FeedShortcuts } from "@/components/feed/feed-shortcuts"
+import { FeedSkeleton } from "@/components/feed/feed-skeleton"
+import { useShellBadge } from "@/components/shell/shell-context"
 import type { MusicPlatform } from "@/lib/music-links"
-import { useArtistFeedback } from "@/lib/hooks/use-artist-feedback"
-import { useArtistSaves } from "@/lib/hooks/use-artist-saves"
 import { useFeedFill } from "@/lib/hooks/use-feed-fill"
 import { useFeedGeneration } from "@/lib/hooks/use-feed-generation"
+import { useFeedTriage } from "@/lib/hooks/use-feed-triage"
 import type { CardArtist } from "@/lib/cards/card-artist"
 import type { GenerateResult } from "@/lib/client/feed-generation"
+import type { FeedLayout } from "@/lib/feed/layout-guess"
+
+// Each layout is its own chunk, so a device downloads only the one it shows (the Snap
+// layout also brings the swipe code). The layout the server rendered has its chunk
+// preloaded by the page; switching to another (a wrong guess, a resize) shows the
+// skeleton while that chunk loads. Once the first layout is up, the other two are
+// fetched when the browser is idle (FeedClient), so a later switch needs no network.
+// A chunk that still fails to load (offline, or gone after a new deploy) is tried again
+// every few seconds while the skeleton stays, instead of the feed turning into the error page.
+const RETRY_MS = 4000
+function retry<T>(load: () => Promise<T>): Promise<T> {
+  return load().catch(() => new Promise<T>((resolve) => setTimeout(() => resolve(retry(load)), RETRY_MS)))
+}
+// The loaders are kept for preloading. The import() must stay inside each dynamic() call: Next
+// compiles it there as the layout's own chunk (and preloads it when server-rendered); a plain
+// import() elsewhere would fetch a separate copy.
+const loaders: (() => Promise<unknown>)[] = []
+const keep = <T,>(load: () => Promise<T>) => (loaders.push(load), load)
+const FeedDesktop = dynamic(keep(() => retry(() => import("@/components/feed/feed-desktop")).then((m) => m.FeedDesktop)), { loading: FeedSkeleton })
+const FeedTablet = dynamic(keep(() => retry(() => import("@/components/feed/feed-tablet")).then((m) => m.FeedTablet)), { loading: FeedSkeleton })
+const FeedSnap = dynamic(keep(() => retry(() => import("@/components/feed/feed-snap")).then((m) => m.FeedSnap)), { loading: FeedSkeleton })
+/** Load every layout chunk now (the one on screen costs nothing), so a later layout switch needs no network. */
+const preloadLayouts = () => loaders.forEach((load) => void load())
 
 interface FeedClientProps {
   recommendations: CardArtist[]
   musicPlatform: MusicPlatform
   signalCount: number
+  /** The server's guess (lib/feed/layout-guess) for the first render; matchMedia takes over after hydration. */
+  initialLayout?: FeedLayout
 }
-
-// ---------------------------------------------------------------------------
-// Feed sequence builder
-// ---------------------------------------------------------------------------
-
-type FeedItem = { kind: "card"; rec: CardArtist; key: string }
-
-function buildSequence(recs: CardArtist[]): FeedItem[] {
-  return recs.map((rec) => ({ kind: "card", rec, key: `c-${rec.id}` }))
-}
-
-// Module-scope: zero prop/state deps, so identity stays stable across renders.
-const FEED_PALETTE = `
-    radial-gradient(50% 40% at 18% 20%, rgba(139, 92, 246, 0.22) 0%, transparent 70%),
-    radial-gradient(55% 45% at 82% 30%, rgba(236, 111, 181, 0.18) 0%, transparent 70%),
-    radial-gradient(70% 55% at 50% 90%, rgba(125, 217, 198, 0.14) 0%, transparent 70%)
-  `
 
 // Below this many unseen recs on load, quietly top up in the background so the
-// next visit hits the warm redirect path (hasFreshRecs stays true). The visible
-// feed is unchanged this load; new recs land server-side for next time.
+// next visit opens on a full queue. The visible feed is unchanged this load;
+// new recs land server-side for next time.
 const TOPUP_THRESHOLD = 8
+
+// One layout at a time (PRD "Breakpoints"): desktop at 900px and wider when at least
+// 540px tall; tablet at 640–899px when at least 680px tall; otherwise the Snap feed,
+// which adapts to short and landscape viewports (phones in landscape, even 900px+ wide
+// ones, and browser zoom). The server (and hydration) renders the layout guessed from
+// the request headers (`initialLayout`: Snap for phones, else desktop). feed.css hides
+// the guessed tree wherever it is not the viewport's layout and shows that layout's
+// skeleton instead until the client switches, so a wrong guess never flashes the wrong layout.
+// The shell (shell.css) shows its rail under the same desktop condition.
+// Keep these in step with feed.css and components/feed/feed-skeleton.tsx.
+type Layout = FeedLayout
+const QUERIES = ["(width >= 900px) and (height >= 540px)", "(width >= 640px) and (height >= 680px)"]
+const subscribeLayout = (cb: () => void) => {
+  const ms = QUERIES.map((q) => matchMedia(q))
+  ms.forEach((m) => m.addEventListener("change", cb))
+  return () => ms.forEach((m) => m.removeEventListener("change", cb))
+}
+const currentLayout = (): Layout =>
+  matchMedia(QUERIES[0]).matches ? "desktop" : matchMedia(QUERIES[1]).matches ? "tablet" : "phone"
+/** true for the server render and hydration, false once the client has taken over. */
+const noSubscribe = () => () => {}
+const useHydrating = () => useSyncExternalStore(noSubscribe, () => false, () => true)
 
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
-export function FeedClient({ recommendations, musicPlatform, signalCount }: FeedClientProps) {
+export function FeedClient({ recommendations, musicPlatform, signalCount, initialLayout = "phone" }: FeedClientProps) {
   // Generate requests (mount top-up + Load more) share one re-entry guard, so
   // a user's own "Load more" can't collide with the background top-up.
   const generation = useFeedGeneration()
@@ -116,19 +146,40 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
     }
   }, [releaseGeneration])
 
-  const sequence = useMemo(() => buildSequence(recs), [recs])
+  // Selection, verdicts (feedback signals), saves and playback, shared by all
+  // layouts (so resizing keeps them). Serialization and rollback live in the feedback/saves hooks.
+  const triage = useFeedTriage(recs, musicPlatform)
+  const { savedIds } = triage
 
-  // Feedback signals (thumbs_up / thumbs_down / skip) per artist.
-  // Serialization and rollback are handled inside the hook.
-  const { signals: dismissedSignals, setSignal } = useArtistFeedback({
-    errorMessages: {
-      undoFailed: "Couldn't undo — try again",
-      saveFailed: "Couldn't save feedback — try again",
-    },
-  })
-
-  // Saved-artist IDs. Serialization and rollback are handled inside the hook.
-  const { savedIds, toggleSave } = useArtistSaves()
+  // Saved badge in the rail / tab bar: artists saved since the feed opened.
+  const [savedAtMount] = useState(savedIds.size)
+  useShellBadge("/saved", Math.max(0, savedIds.size - savedAtMount))
+  // Feed badge: artists still undecided (hidden at zero).
+  useShellBadge("/feed", triage.remaining)
+  // The server snapshot is used for SSR and for hydration, so both render `initialLayout`.
+  const layout = useSyncExternalStore(subscribeLayout, currentLayout, () => initialLayout)
+  const hydrating = useHydrating()
+  // The layout whose tree is mounted and showing (set by the layout itself); until it is the
+  // current one (a layout's chunk still loading) the keyboard shortcuts stay inert.
+  const [shown, setShown] = useState<Layout | null>(null)
+  const mounted = shown !== null
+  // After the page's load event (artwork, fonts) and then when the browser is idle.
+  useEffect(() => {
+    if (!mounted) return
+    let idle = 0
+    let timer = 0
+    const schedule = () => {
+      if (typeof requestIdleCallback === "function") idle = requestIdleCallback(preloadLayouts, { timeout: 5000 })
+      else timer = window.setTimeout(preloadLayouts, 2000) // Safari before 18 has no requestIdleCallback
+    }
+    if (document.readyState === "complete") schedule()
+    else window.addEventListener("load", schedule, { once: true })
+    return () => {
+      window.removeEventListener("load", schedule)
+      if (idle) cancelIdleCallback(idle)
+      clearTimeout(timer)
+    }
+  }, [mounted])
 
   async function handleGenerateMore() {
     const r = await generation.requestMore()
@@ -145,85 +196,20 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
     }
   }
 
+  const View = layout === "desktop" ? FeedDesktop : layout === "tablet" ? FeedTablet : FeedSnap
   return (
-    <div style={{ position: "relative" }}>
-      <Ambient palette={FEED_PALETTE} />
-
-      {/* Page header */}
-      <div className="page-head">
-        <h1>Today&apos;s feed</h1>
-        <span className="sub">{recs.length} artists</span>
-      </div>
-
-      {/* Feed sequence */}
-      <div className="col" style={{ gap: 24, marginTop: 8 }}>
-        <ColdStartBanner signalCount={signalCount} />
-        {sequence.map((item, index) => {
-          const { rec } = item
-          const id = rec.id
-          return (
-            <FeedCardRow
-              key={item.key}
-              rec={rec}
-              musicPlatform={musicPlatform}
-              isSaved={savedIds.has(id)}
-              dismissSignal={dismissedSignals.get(id) ?? null}
-              onSaveAction={toggleSave}
-              onFeedbackAction={setSignal}
-              priority={index === 0}
-            />
-          )
-        })}
-
-        {/* Load more */}
-        <div style={{ display: "flex", justifyContent: "center", padding: "24px 0 8px" }}>
-          <button className="btn" onClick={handleGenerateMore} disabled={isGenerating}>
-            {isGenerating ? (
-              <span className="mono" style={{ fontSize: 12 }}>Generating…</span>
-            ) : (
-              "Load more artists"
-            )}
-          </button>
+    <>
+      <FeedShortcuts triage={triage} enabled={shown === layout} />
+      {/* Server render and hydration: where CSS hides the guessed tree (the guess doesn't match the
+          viewport), the skeleton for the viewport shows in its place (feed.css, .ev-guess-skel).
+          The client's first render replaces it with the right layout or that layout's loading
+          skeleton, which draws the same frame. */}
+      {hydrating && (
+        <div className="ev-guess-skel" data-guess={initialLayout}>
+          <FeedSkeleton />
         </div>
-      </div>
-    </div>
+      )}
+      <View triage={triage} signalCount={signalCount} onLoadMore={handleGenerateMore} generating={isGenerating} onShown={setShown} />
+    </>
   )
 }
-
-// Per-row wrapper that binds the stable parent actions to this row's artistId.
-// Memoized so a parent re-render (e.g. on save of a different card) doesn't
-// re-render this row unless its own props actually changed.
-interface FeedCardRowProps {
-  rec: CardArtist
-  musicPlatform: MusicPlatform
-  isSaved: boolean
-  dismissSignal: string | null
-  onSaveAction: (artistId: string) => unknown
-  onFeedbackAction: (artistId: string, signal: string) => unknown
-  priority?: boolean
-}
-
-const FeedCardRow = memo(function FeedCardRow({
-  rec,
-  musicPlatform,
-  isSaved,
-  dismissSignal,
-  onSaveAction,
-  onFeedbackAction,
-  priority = false,
-}: FeedCardRowProps) {
-  const id = rec.id
-  const onSave = useCallback(() => { void onSaveAction(id) }, [id, onSaveAction])
-  const onFeedback = useCallback((signal: string) => { void onFeedbackAction(id, signal) }, [id, onFeedbackAction])
-  return (
-    <ArtistCard
-      artist={rec}
-      musicPlatform={musicPlatform}
-      isSaved={isSaved}
-      dismissSignal={dismissSignal}
-      onSave={onSave}
-      onFeedback={onFeedback}
-      priority={priority}
-    />
-  )
-})

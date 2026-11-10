@@ -19,9 +19,7 @@ export function ProfilePanel({ userSeed }: ProfilePanelProps) {
           gap: 14,
           padding: "16px 18px",
           borderRadius: "var(--radius-lg)",
-          background: `linear-gradient(135deg, ${hexToRgba(ACCENT, 0.10)} 0%, rgba(15,15,15,0.65) 60%)`,
-          backdropFilter: "blur(30px) saturate(1.1)",
-          WebkitBackdropFilter: "blur(30px) saturate(1.1)",
+          background: `linear-gradient(135deg, ${hexToRgba(ACCENT, 0.10)} 0%, var(--panel) 60%)`,
           border: `1px solid ${hexToRgba(ACCENT, 0.22)}`,
         }}
       >
