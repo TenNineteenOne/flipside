@@ -65,13 +65,13 @@ export function FeedDesktop({ triage, signalCount, onLoadMore, generating }: Fee
             {tuning.more.length > 0 && (
               <div className="ev-tune-group">
                 <span className="ev-tune-label">Leaning toward</span>
-                <ul className="ev-chips">{tuning.more.map((g) => <li key={g} className="ev-chip ev-chip-more">{g}</li>)}</ul>
+                <ul className="ev-chips">{tuning.more.map((g) => <li key={g} className="ev-chip ev-chip-more" title={g}>{g}</li>)}</ul>
               </div>
             )}
             {tuning.less.length > 0 && (
               <div className="ev-tune-group">
                 <span className="ev-tune-label">Leaning away</span>
-                <ul className="ev-chips">{tuning.less.map((g) => <li key={g} className="ev-chip">{g}</li>)}</ul>
+                <ul className="ev-chips">{tuning.less.map((g) => <li key={g} className="ev-chip" title={g}>{g}</li>)}</ul>
               </div>
             )}
           </section>

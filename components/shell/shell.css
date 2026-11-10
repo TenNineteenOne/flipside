@@ -68,6 +68,7 @@
 .shell-nav-item[aria-current="page"] { background: var(--raise); color: var(--fg); }
 .shell-nav-item[aria-current="page"] svg { color: var(--violet-ink); }
 .shell-nav-count { margin-left: auto; font: 500 11px/1 var(--font-mono); color: var(--fg-3); }
+.shell-rail-slot { min-width: 0; }
 .shell-rail-slot:empty { display: none; }
 .shell-rail-foot { margin-top: auto; display: flex; flex-direction: column; gap: 6px; }
 .shell-rail-keys {

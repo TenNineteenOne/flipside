@@ -21,6 +21,12 @@
 .ev-feed ul, .ev-feed ol { margin: 0; padding: 0; list-style: none; }
 .ev-feed button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
 .ev-feed img { display: block; }
+/* Long names (one 40-letter word, three long source artists, six long genres) wrap instead of
+   widening a pane; single-line ones keep their ellipsis. */
+.ev-feed .ev-card-name, .ev-feed .ev-card-genres, .ev-feed .ev-card-why, .ev-feed .ev-m-name, .ev-feed .ev-m-why,
+.ev-feed .ev-row-name, .ev-feed .ev-m-thumb-text, .ev-feed .ev-end-title, .ev-feed .ev-end-body, .ev-feed .ev-player-text,
+.ev-feed .ev-cold-sub, [data-sonner-toast].ev-toast { overflow-wrap: anywhere; }
+.ev-feed .ev-card-hero, .ev-feed .ev-card-id, .ev-feed .ev-tuning, .ev-feed .ev-tune-group { min-width: 0; }
 .ev-feed :focus-visible { outline: 2px solid var(--violet-ink); outline-offset: 2px; border-radius: 6px; }
 
 .ev-feed .ev-btn {
@@ -227,7 +233,8 @@
 .ev-feed .ev-tune-group { display: flex; flex-direction: column; gap: 6px; padding: 0 10px 4px; }
 .ev-feed .ev-tune-label { font: 500 11px/1.4 var(--font-mono); color: var(--fg-3); }
 .ev-feed .ev-chips { display: flex; flex-wrap: wrap; gap: 4px; }
-.ev-feed .ev-chip { display: inline-flex; align-items: center; height: 24px; padding: 0 9px; border-radius: 6px; font-size: 13px; color: var(--fg-2); background: var(--raise); white-space: nowrap; }
+/* A long genre is cut with an ellipsis (full name in the title) rather than widening the rail. */
+.ev-feed .ev-chip { display: block; max-width: 100%; height: 24px; line-height: 24px; padding: 0 9px; border-radius: 6px; font-size: 13px; color: var(--fg-2); background: var(--raise); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ev-feed .ev-chip-more { color: var(--violet-ink); background: var(--violet-wash); }
 
 /* cold-start banner (existing component) at the top of the queue column */
@@ -299,6 +306,7 @@ body:has(.ev-skel-m) .shell-top-slot:empty::before { content: ""; width: 76px; h
 [data-sonner-toast].ev-toast .ev-toast-undo {
   display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 10px; border: 0; border-radius: 8px;
   background: none; font: inherit; font-weight: 600; color: oklch(0.42 0.17 293); cursor: pointer;
+  flex-shrink: 0; white-space: nowrap; overflow-wrap: normal;
 }
 [data-sonner-toast].ev-toast .ev-kbd {
   display: inline-grid; place-items: center; min-width: 1.6em; height: 1.6em; padding: 0 0.4em;
