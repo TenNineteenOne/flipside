@@ -36,3 +36,21 @@ const mapped: CardArtist[] = labArtists.map((a, i) => ({
 export const previewArtists: CardArtist[] = mapped.map((a, i) =>
   i === 1 ? { ...a, topTracks: [...a.topTracks.slice(0, 2), mapped[0].topTracks[0]] } : a,
 )
+
+/** Rough shapes seen in real data: popularity 0, hyphenated or long odd genres, a long name. */
+const REAL_ROWS: Partial<CardArtist>[] = [
+  { popularity: 0, genres: ["alternative-metal", "nu-metal"] },
+  { popularity: 0, genres: ["acro jazz laboratories"] },
+  { popularity: 2, genres: ["deep progressive house and experimental electronica"] },
+  { name: "The Extraordinarily Long-Named Collective of Midnight Players", popularity: 0, genres: [] },
+]
+
+/** The fixtures, optionally with real-data shapes swapped into rows 1, 3, 5, 7 and repeated up to `count` artists (fresh ids). */
+export function realisticArtists(real: boolean, count = 0): CardArtist[] {
+  const base = real ? previewArtists.map((a, i) => (i % 2 === 1 && REAL_ROWS[(i - 1) / 2] ? { ...a, ...REAL_ROWS[(i - 1) / 2] } : a)) : previewArtists
+  if (count <= base.length) return base
+  return Array.from({ length: count }, (_, i) => {
+    const a = base[i % base.length]
+    return i < base.length ? a : { ...a, id: `${a.id}-${i}`, topTracks: a.topTracks.map((t) => ({ ...t, id: `${t.id}-${i}` })) }
+  })
+}

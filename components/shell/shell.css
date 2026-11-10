@@ -33,6 +33,11 @@
   .shell-main:has(.shell-fill) { height: 100dvh; padding: 0 0 0 var(--rail-w); }
   .shell-main:has(.shell-fill) > .app-col { max-width: none; min-width: 0; }
 }
+/* At 900px and wider, a page containing .shell-wide (Explore, Stats and their loading skeletons) drops the 520px column and sets its own
+   max-width; unlike .shell-fill it keeps the shell's padding and normal page scrolling. */
+@media (width >= 900px) {
+  .shell-main:has(.shell-wide) > .app-col { max-width: none; min-width: 0; }
+}
 
 /* ---------- rail (desktop) ---------- */
 .shell-rail {
@@ -107,7 +112,7 @@
   bottom: 0;
   left: calc(var(--rail-w) - 2px);
   width: 2px;
-  background: linear-gradient(180deg, #f5b047, #ec6fb5, #7dd9c6, #a8c7fa);
+  background: var(--violet);
   pointer-events: none;
 }
 
@@ -209,7 +214,7 @@
     right: 0;
     bottom: -1px;
     height: 2px;
-    background: linear-gradient(90deg, #f5b047, #ec6fb5, #7dd9c6, #a8c7fa);
+    background: var(--violet);
     pointer-events: none;
   }
 

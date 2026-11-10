@@ -1,42 +1,46 @@
+import "@/components/stats/stats.css"
+
+/** Same boxes as StatsClient (components/stats/stats.css) so nothing moves when the page arrives. */
 export default function StatsLoading() {
   return (
-    <div>
-      <div className="page-head">
-        <h1>Stats</h1>
-        <span className="sub" aria-hidden>
-          <span
-            className="fs-skeleton"
-            style={{ display: "inline-block", width: 96, height: 14 }}
-          />
-        </span>
-      </div>
+    <div className="st shell-wide" aria-busy="true">
+      <header className="st-head">
+        <h1 className="st-title">Stats</h1>
+        <p className="st-sub">Your discovery journey</p>
+      </header>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
-          gap: 12,
-          marginTop: 12,
-          marginBottom: 20,
-        }}
-      >
-        {Array.from({ length: 4 }).map((_, i) => (
-          <div
-            key={i}
-            className="fs-skeleton"
-            style={{ width: "100%", height: 92, borderRadius: 14 }}
-          />
-        ))}
-      </div>
-
-      <div className="col" style={{ gap: 14 }}>
-        {Array.from({ length: 3 }).map((_, i) => (
-          <div
-            key={i}
-            className="fs-skeleton"
-            style={{ width: "100%", height: 220, borderRadius: 18 }}
-          />
-        ))}
+      <div className="st-body" aria-hidden>
+        <div className="st-col">
+          <dl className="st-counts">
+            {["Discovered", "Saved", "Liked", "Passed"].map((label) => (
+              <div key={label}>
+                <dt>{label}</dt>
+                <dd className="st-n"><span className="fs-skeleton st-skel st-skel-line st-skel-num">&nbsp;</span></dd>
+              </div>
+            ))}
+          </dl>
+          <section>
+            <div className="st-sec-head">
+              <h2 className="st-h2">Top genres</h2>
+            </div>
+            <ol className="st-genres">
+              {[70, 55, 62, 40, 48].map((w, i) => (
+                <li key={i} className="st-genre">
+                  <span className="st-genre-rank st-n">{i + 1}</span>
+                  <span className="st-genre-name"><span className="fs-skeleton st-skel st-skel-line" style={{ width: `${w}%` }}>&nbsp;</span></span>
+                  <span className="st-genre-count st-n">&nbsp;</span>
+                  <span className="st-bar" />
+                </li>
+              ))}
+            </ol>
+          </section>
+        </div>
+        <section className="st-panel">
+          <div className="st-sec-head">
+            <h2 className="st-h2">Your taste profile</h2>
+          </div>
+          <div className="fs-skeleton st-skel st-skel-chart" />
+        </section>
       </div>
     </div>
   )

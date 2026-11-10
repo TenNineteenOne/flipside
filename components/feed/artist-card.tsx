@@ -1,14 +1,17 @@
 "use client"
 
-import { memo, useCallback } from "react"
+import "./artist-card.css"
+import { memo, useCallback, type CSSProperties } from "react"
 import Image from "next/image"
 import { motion } from "framer-motion"
-import { Bookmark, Check, Heart, Share2, ThumbsDown, X } from "lucide-react"
+import { Bookmark, Heart, Share2, ThumbsDown, X } from "lucide-react"
 import { toast } from "sonner"
 import { TrackStrip } from "@/components/feed/track-strip"
 import { PlatformIcon } from "@/components/platform-icon"
 import { useAudio } from "@/lib/audio-context"
-import { hexToRgba } from "@/lib/color-utils"
+import { readableTextOn } from "@/lib/color-utils"
+import { artworkFor, letterFor } from "@/lib/feed/artwork"
+import { listSeparator, popularityLabel, whyParts } from "@/lib/feed/card-copy"
 import { useArtistTracks } from "@/lib/hooks/use-artist-tracks"
 import { useArtistColor } from "@/lib/hooks/use-artist-color"
 import type { Track } from "@/lib/music-provider/types"
@@ -34,9 +37,9 @@ export interface ArtistCardProps {
    * Last signal received for this artist. Drives both the collapsed dismiss
    * state and the in-place "Liked" affordance:
    *   - null           → expanded card, default buttons
-   *   - "thumbs_up"    → expanded card, green outline + "Liked" button (keep playing)
-   *   - "thumbs_down"  → collapsed 56px bar, red-tinted "Passed"
-   *   - "skip"         → collapsed 56px bar, neutral "Dismissed"
+   *   - "thumbs_up"    → expanded card, violet outline + "Liked" button (keep playing)
+   *   - "thumbs_down"  → collapsed 56px bar, "Passed"
+   *   - "skip"         → collapsed 56px bar, "Dismissed"
    */
   dismissSignal?: string | null
   /** When true, hero image is preloaded (set on the LCP card only). */
@@ -44,69 +47,7 @@ export interface ArtistCardProps {
 }
 
 // ---------------------------------------------------------------------------
-// Module-scope static styles — hoisted out of the render path. Each object
-// here has zero prop/state references; dynamic styles stay inline below.
-// ---------------------------------------------------------------------------
-
-const heroWrapStyle: React.CSSProperties = {
-  position: "relative",
-  height: 340,
-  overflow: "hidden",
-}
-
-const heroScrimStyle: React.CSSProperties = {
-  position: "absolute",
-  inset: 0,
-  background: "linear-gradient(to top, #000 0%, transparent 65%)",
-}
-
-const heroNameWrapStyle: React.CSSProperties = {
-  position: "absolute",
-  left: 24,
-  right: 24,
-  bottom: 20,
-}
-
-const cardBodyStyle: React.CSSProperties = {
-  padding: "16px 20px 20px",
-}
-
-const noTracksPlaceholderStyle: React.CSSProperties = {
-  height: 64,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  borderRadius: 10,
-  border: "1px solid var(--line)",
-  fontSize: 13,
-  color: "var(--fg-3)",
-}
-
-const reasonStyle: React.CSSProperties = {
-  marginTop: 14,
-  fontSize: 15,
-  color: "var(--fg-2)",
-  lineHeight: 1.45,
-}
-
-/** Evolved secondary / triage button (the desktop feed's .ev-tri look). */
-const quietBtnStyle: React.CSSProperties = {
-  flex: 1,
-  minWidth: 0,
-  height: 44,
-  padding: "0 10px",
-  gap: 7,
-  borderRadius: 9,
-  border: "1px solid transparent",
-  background: "var(--raise)",
-  color: "var(--fg-2)",
-  fontSize: 14,
-  fontWeight: 550,
-  whiteSpace: "nowrap",
-}
-
-// ---------------------------------------------------------------------------
-// Component
+// Component (styles: artist-card.css, every rule scoped under .ex-card)
 // ---------------------------------------------------------------------------
 
 // Collapse the card for thumbs_down / skip, but NOT thumbs_up — we keep the
@@ -115,6 +56,8 @@ const quietBtnStyle: React.CSSProperties = {
 function signalCollapses(signal: string | null | undefined): boolean {
   return signal != null && signal !== "thumbs_up"
 }
+
+const spring = { type: "spring", stiffness: 400, damping: 40 } as const
 
 function ArtistCardImpl({
   artist,
@@ -127,8 +70,9 @@ function ArtistCardImpl({
 }: ArtistCardProps) {
   const isLiked = dismissSignal === "thumbs_up"
   const isCollapsed = signalCollapses(dismissSignal)
-  const { why } = artist
   const artistColor = useArtistColor(artist.artistColor, artist.name)
+  // The only inline style: the artist's colour, which the stylesheet derives its shades from.
+  const tint = { "--a": artistColor } as CSSProperties
 
   const { play } = useAudio()
 
@@ -162,44 +106,17 @@ function ArtistCardImpl({
     navigator.clipboard.writeText(url).then(() => toast.success("Link copied!")).catch(() => toast.error("Couldn't copy link"))
   }
 
-  const reasonText =
-    why.sourceArtists.length > 0
-      ? why.genres.length > 0
-        ? `Similar to ${why.sourceArtists.join(" & ")} · genre · ${why.genres[0]}`
-        : `Similar to ${why.sourceArtists.join(" & ")}`
-      : why.genres.length > 0
-        ? `Because you like ${why.genres.join(", ")}`
-        : null
-
   // ------------------------------------------------------------------
-  // Collapsed (slim bar) state — no emoji, colour-coded labels. Only applies
-  // to thumbs_down / skip. Thumbs_up and saves keep the card expanded.
+  // Collapsed (slim bar) state. Only applies to thumbs_down / skip.
+  // Thumbs_up and saves keep the card expanded.
   // ------------------------------------------------------------------
   if (isCollapsed) {
     const passed = dismissSignal === "thumbs_down"
 
     return (
-      <motion.div
-        layout
-        exit={{ opacity: 0 }}
-        transition={{ type: "spring", stiffness: 400, damping: 40 }}
-        style={{
-          height: 56,
-          padding: "0 18px",
-          background: "var(--panel)",
-          border: "1px solid var(--line)",
-          borderRadius: 12,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-          overflow: "hidden",
-        }}
-      >
-        <span style={{ fontSize: 15, fontWeight: 600, color: "var(--fg-2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-          {artist.name}
-        </span>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0, fontSize: 13, fontWeight: 600, color: "var(--fg-3)" }}>
+      <motion.div layout exit={{ opacity: 0 }} transition={spring} className="ex-card ex-card-bar" style={tint}>
+        <span className="ex-card-bar-name">{artist.name}</span>
+        <span className="ex-card-bar-state">
           {passed ? <ThumbsDown size={14} aria-hidden /> : <X size={14} aria-hidden />}
           {passed ? "Passed" : "Dismissed"}
         </span>
@@ -207,114 +124,94 @@ function ArtistCardImpl({
     )
   }
 
+  const art = artworkFor(artist)
+  const why = whyParts(artist.why)
+  const platform = PLATFORM_META[musicPlatform]
+  const genres = (artist.genres ?? []).slice(0, 2).join(" · ")
+
   // ------------------------------------------------------------------
-  // Expanded hero card (also rendered after thumbs_up — card stays visible so
-  // the user can keep playing tracks. The 'liked' affordance is a violet
-  // outline + the More like this button turning solid violet "Liked".)
+  // Expanded card (also after thumbs_up — the card stays so the user can keep
+  // playing tracks; liked = violet outline + the More button turning "Liked").
   // ------------------------------------------------------------------
   return (
     <motion.div
       layout
       initial={{ y: 20 }}
       animate={{ y: 0 }}
-      transition={{ type: "spring", stiffness: 400, damping: 40 }}
-      style={{
-        width: "100%",
-        borderRadius: 16,
-        overflow: "hidden",
-        background: "var(--panel)",
-        border: `1px solid ${isLiked ? "var(--violet)" : "var(--line)"}`,
-        boxShadow: "0 12px 30px rgba(0,0,0,0.35)",
-      }}
+      transition={spring}
+      className="ex-card"
+      data-liked={isLiked || undefined}
+      style={tint}
     >
-      {/* Hero image */}
-      <div style={heroWrapStyle}>
-        {artist.imageUrl ? (
+      <div className="ex-card-art">
+        {art ? (
           <Image
-            src={artist.imageUrl}
+            src={art}
             alt={artist.name}
             fill
-            sizes="(min-width: 900px) 680px, 100vw"
+            sizes="(min-width: 1100px) 400px, (min-width: 900px) 440px, 100vw"
             priority={priority}
-            style={{
-              objectFit: "cover",
-              filter: "saturate(0.85) contrast(1.05)",
-            }}
+            className="ex-card-img"
           />
         ) : (
-          <div
-            style={{
-              width: "100%",
-              height: "100%",
-              background: `linear-gradient(135deg, ${hexToRgba(artistColor, 0.4)}, ${hexToRgba(artistColor, 0.15)} 60%, var(--panel))`,
-            }}
-          />
+          <span className="ex-card-letter" style={{ color: readableTextOn(artistColor) }} aria-hidden>
+            {letterFor(artist.name)}
+          </span>
         )}
-
-        {/* Colour tint: a plain gradient (no blend mode) */}
-        {artist.imageUrl && (
-          <div
-            style={{
-              position: "absolute",
-              inset: 0,
-              background: `linear-gradient(135deg, ${hexToRgba(artistColor, 0.18)}, transparent 60%)`,
-            }}
-          />
-        )}
-
-        {/* Dark gradient scrim */}
-        <div style={heroScrimStyle} />
-
-        {/* Name + genre */}
-        <div style={heroNameWrapStyle}>
-          <h3
-            style={{
-              margin: 0,
-              fontSize: "clamp(32px, 7vw, 40px)",
-              fontWeight: 600,
-              lineHeight: 1.05,
-              letterSpacing: "-0.03em",
-              color: "#fff",
-              textShadow: "0 2px 16px rgba(0,0,0,0.5)",
-            }}
-          >
-            {artist.name}
-          </h3>
-          {(artist.genres?.length ?? 0) > 0 && artist.genres?.[0] && (
-            <div style={{ marginTop: 6, fontSize: 14, color: "rgba(255,255,255,0.82)" }}>
-              {artist.genres[0]} · popularity {artist.popularity}
-            </div>
-          )}
-        </div>
       </div>
 
-      {/* Body */}
-      <div style={cardBodyStyle}>
-        {/* Track strip */}
+      <div className="ex-card-body">
+        <div>
+          <h3 className="ex-card-name">{artist.name}</h3>
+          {genres && <p className="ex-card-genres">{genres}</p>}
+          <p className="ex-card-pop">
+            <span className="ex-meter" aria-hidden>
+              <span style={{ "--p": Math.min(100, Math.max(0, artist.popularity)) / 100 } as CSSProperties} />
+            </span>
+            {popularityLabel(artist.popularity)} · popularity {artist.popularity}
+          </p>
+          {why && (
+            <p className="ex-card-why">
+              {why.lead}
+              {why.names.length > 0
+                ? why.names.map((n, i) => (
+                    <span key={n}>
+                      {listSeparator(i, why.names.length)}
+                      <strong>{n}</strong>
+                    </span>
+                  ))
+                : why.genres.join(", ")}
+            </p>
+          )}
+        </div>
+
         {localTracks.length > 0 ? (
           <div onClick={(e) => e.stopPropagation()}>
-            <TrackStrip
-              tracks={localTracks}
-              artistColor={artistColor}
-              onPlay={handlePlay}
-            />
+            <TrackStrip tracks={localTracks} artistColor={artistColor} onPlay={handlePlay} />
           </div>
         ) : (
-          <div style={noTracksPlaceholderStyle}>
-            {isFetchingTracks ? "Loading tracks…" : "No tracks available"}
+          <p className="ex-card-note">{isFetchingTracks ? "Loading tracks…" : "No tracks available"}</p>
+        )}
+
+        <div className="ex-card-actions">
+          <div className="ex-triage">
+            <button type="button" onClick={() => onFeedback("thumbs_down")} className="ex-tri">
+              <ThumbsDown size={16} strokeWidth={1.75} aria-hidden /> Less like this
+            </button>
+            <button type="button" onClick={() => onFeedback("skip")} className="ex-tri">
+              <X size={16} strokeWidth={1.75} aria-hidden /> Dismiss
+            </button>
+            <button type="button" onClick={() => onFeedback("thumbs_up")} aria-pressed={isLiked} className="ex-tri ex-tri-like">
+              <Heart size={16} strokeWidth={1.75} fill={isLiked ? "currentColor" : "none"} aria-hidden />
+              {isLiked ? "Liked" : "More like this"}
+            </button>
           </div>
-        )}
 
-        {reasonText && (
-          <p style={reasonStyle}>
-            {reasonText}
-          </p>
-        )}
-
-        {/* Actions */}
-        <div className="col" style={{ gap: 10, marginTop: 16 }}>
-          {/* Open in <preferred platform> + Share */}
-          <div style={{ display: "flex", gap: 8 }}>
+          <div className="ex-secondary">
+            <button type="button" className="ex-sec" onClick={handleSave} aria-pressed={isSaved}>
+              <Bookmark size={16} strokeWidth={1.75} fill={isSaved ? "currentColor" : "none"} aria-hidden />
+              <span className="ex-sec-label">{isSaved ? "Bookmarked" : "Bookmark"}</span>
+            </button>
             <a
               href={getArtistLink(musicPlatform, {
                 artistId: artist.id,
@@ -323,76 +220,21 @@ function ArtistCardImpl({
               })}
               target="_blank"
               rel="noopener noreferrer"
-              className="btn"
+              className="ex-sec"
+              aria-label={`Open in ${platform.label}`}
               onClick={(e) => e.stopPropagation()}
-              style={{
-                flex: 1,
-                height: 44,
-                borderRadius: 10,
-                background: PLATFORM_META[musicPlatform].brandColor,
-                color: PLATFORM_META[musicPlatform].brandFg,
-                borderColor: "transparent",
-                fontSize: 15,
-                fontWeight: 600,
-              }}
             >
               <PlatformIcon platform={musicPlatform} size={16} />
-              Open in {PLATFORM_META[musicPlatform].label}
+              <span className="ex-sec-label">{platform.label}</span>
             </a>
             <button
-              className="btn"
+              type="button"
+              className="ex-sec"
               onClick={handleShare}
               title="Copy artist link"
-              aria-label={`Copy link to ${artist.name}`}
-              style={{ ...quietBtnStyle, flex: "none", width: 44, padding: 0 }}
+              aria-label={`Share: copy link to ${artist.name}`}
             >
-              <Share2 size={15} />
-            </button>
-          </div>
-
-          {/* Bookmark */}
-          <button
-            className="btn btn-block"
-            onClick={handleSave}
-            aria-pressed={isSaved}
-            style={{
-              ...quietBtnStyle,
-              flex: "none",
-              color: isSaved ? "var(--violet-ink)" : "var(--fg)",
-            }}
-          >
-            {isSaved ? (
-              <>
-                <Check size={16} strokeWidth={2.5} /> Bookmarked
-              </>
-            ) : (
-              <>
-                <Bookmark size={16} /> Bookmark in Flipside
-              </>
-            )}
-          </button>
-
-          {/* Feedback strip: the desktop feed's triage control */}
-          <div className="fs-card-triage">
-            <button onClick={() => onFeedback("thumbs_down")} className="btn" style={quietBtnStyle}>
-              <ThumbsDown size={16} strokeWidth={1.75} aria-hidden /> Less like this
-            </button>
-            <button onClick={() => onFeedback("skip")} className="btn" style={{ ...quietBtnStyle, flex: 0.8 }}>
-              <X size={16} strokeWidth={1.75} aria-hidden /> Dismiss
-            </button>
-            <button
-              onClick={() => onFeedback("thumbs_up")}
-              aria-pressed={isLiked}
-              className="btn"
-              style={{
-                ...quietBtnStyle,
-                flex: 1.2,
-                background: isLiked ? "var(--violet-fill)" : "var(--raise)",
-                color: isLiked ? "#fff" : "var(--violet-ink)",
-              }}
-            >
-              <Heart size={16} strokeWidth={1.75} fill={isLiked ? "currentColor" : "none"} aria-hidden />
-              {isLiked ? "Liked" : "More like this"}
+              <Share2 size={16} strokeWidth={1.75} aria-hidden /> <span className="ex-sec-label">Share</span>
             </button>
           </div>
         </div>
@@ -402,6 +244,6 @@ function ArtistCardImpl({
 }
 
 // Memoized so that toggling a save on one card doesn't re-render every
-// sibling in the feed. Props are all primitives plus two callbacks that
-// FeedClient stabilizes per-artistId via its FeedCardRow wrapper.
+// sibling in the rail. Props are all primitives plus two callbacks that
+// ExploreArtistRow stabilizes per artist id.
 export const ArtistCard = memo(ArtistCardImpl)

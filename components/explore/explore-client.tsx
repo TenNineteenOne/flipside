@@ -1,9 +1,11 @@
 "use client"
 
-import { Suspense, use, useMemo } from "react"
+import { Suspense, use, useCallback, useMemo } from "react"
 import { RefreshCw, Sparkles, Moon, Mountain, Flame, Dices, type LucideIcon } from "lucide-react"
 import { AnimatePresence } from "framer-motion"
-import { ChallengeCard } from "@/components/explore/challenge-card"
+import "./explore.css"
+import { ChallengeCard, ChallengeSkeleton } from "@/components/explore/challenge-card"
+import { SkeletonCard } from "@/components/explore/skeleton-card"
 import { ExploreArtistRow } from "@/components/explore/explore-artist-row"
 import type { RailKey, RailPayload } from "@/lib/cards/explore-rail-payloads"
 import type { MusicPlatform } from "@/lib/music-links"
@@ -43,12 +45,12 @@ function ChallengeSlot({
   )
 }
 
-// Rail identity — icon + accent color. Module-scope so it isn't rebuilt per render.
-const RAIL_META: Record<RailKey, { icon: LucideIcon; rgb: string }> = {
-  adjacent:  { icon: Moon,     rgb: "129, 140, 248" },  // indigo (After hours)
-  outside:   { icon: Mountain, rgb: "139, 92, 246" },   // violet
-  wildcards: { icon: Flame,    rgb: "245, 176, 71" },   // amber
-  leftfield: { icon: Dices,    rgb: "236, 111, 181" },  // magenta
+// Rail identity icon. Module-scope so it isn't rebuilt per render.
+const RAIL_ICON: Record<RailKey, LucideIcon> = {
+  adjacent: Moon,
+  outside: Mountain,
+  wildcards: Flame,
+  leftfield: Dices,
 }
 
 export interface ExploreClientProps {
@@ -135,337 +137,184 @@ export function ExploreClient({
     },
   })
 
+  // Passed / dismissed artists leave the grid for the compact "Decided" group below it, so the grid
+  // closes up instead of keeping a 56px bar in a card-sized cell.
+  const isDecided = (id: string) => {
+    const s = dismissedSignals.get(id)
+    return s != null && s !== "thumbs_up"
+  }
+  const railArtists = activeRail?.artists ?? []
+  const open = railArtists.filter((a) => !isDecided(a.id))
+  const decided = railArtists.filter((a) => isDecided(a.id))
+
+  // Keyboard focus would be lost with the card that leaves: hand it to the next card (or the
+  // previous one, or the Decided group when the grid empties). Order is read from the grid's DOM.
+  const handleFeedback = useCallback(
+    (artistId: string, signal: string) => {
+      setSignal(artistId, signal)
+      if (signal !== "thumbs_down" && signal !== "skip") return
+      const cells = [...document.querySelectorAll<HTMLElement>(".ex-grid > [data-artist]")]
+      const i = cells.findIndex((c) => c.dataset.artist === artistId)
+      if (i < 0 || !cells[i].contains(document.activeElement)) return
+      const next = (cells[i + 1] ?? cells[i - 1])?.dataset.artist
+      requestAnimationFrame(() => {
+        const cell = next ? document.querySelector(`.ex-grid > [data-artist="${CSS.escape(next)}"]`) : null
+        const target = cell?.querySelector<HTMLElement>("button, a[href]") ?? document.getElementById("ex-decided-title")
+        target?.focus()
+      })
+    },
+    [setSignal],
+  )
+
   const totalDiscoveries = useMemo(
     () => orderedRails.reduce((n, r) => n + r.artists.length, 0),
     [orderedRails],
   )
 
+  const building = orderedRails.length === 0 && isRegenerating
+
   return (
-    <div>
-      <div className="page-head">
-        <h1>Explore</h1>
-        <span className="sub">
-          {totalDiscoveries} discoveries
-          {adventurous ? " · Adventurous on" : ""}
-        </span>
-      </div>
+    <div className="ev-explore shell-wide" data-adventurous={adventurous || undefined}>
+      <header className="ex-head">
+        <div>
+          <h1 className="ex-title">Explore</h1>
+          <p className="ex-lede">Artists further out from your usual, in rails you can shuffle whenever you like.</p>
+        </div>
+        <p className="ex-tally">
+          <strong>{totalDiscoveries}</strong> discoveries
+          {adventurous && <span className="ex-tally-adv"> · Adventurous on</span>}
+        </p>
+      </header>
 
-      <button
-        type="button"
-        onClick={handleAdventurousToggle}
-        disabled={isTogglingAdv}
-        aria-pressed={adventurous}
-        style={{
-          position: "relative",
-          overflow: "hidden",
-          width: "100%",
-          padding: "18px 20px",
-          marginBottom: 16,
-          textAlign: "left",
-          borderRadius: 18,
-          border: adventurous
-            ? "1px solid rgba(245,176,71,0.35)"
-            : "1px solid rgba(255,255,255,0.08)",
-          background: adventurous
-            ? "linear-gradient(135deg, rgba(245,176,71,0.22) 0%, rgba(236,111,181,0.18) 40%, rgba(125,217,198,0.14) 75%, rgba(168,199,250,0.12) 100%)"
-            : "var(--panel)",
-          color: "var(--text-primary)",
-          cursor: isTogglingAdv ? "default" : "pointer",
-          opacity: isTogglingAdv ? 0.75 : 1,
-          transition: "background 0.3s, border-color 0.3s",
-          display: "flex",
-          alignItems: "center",
-          gap: 16,
-        }}
-      >
-        {adventurous && (
-          <div
-            aria-hidden
-            style={{
-              position: "absolute",
-              inset: 0,
-              pointerEvents: "none",
-              background: `
-                radial-gradient(3px 3px at 18% 28%, rgba(255,255,255,0.7), transparent 70%),
-                radial-gradient(2px 2px at 72% 22%, rgba(255,255,255,0.5), transparent 70%),
-                radial-gradient(2px 2px at 42% 78%, rgba(255,255,255,0.55), transparent 70%),
-                radial-gradient(3px 3px at 88% 68%, rgba(255,255,255,0.6), transparent 70%)
-              `,
-            }}
-          />
-        )}
-        <div
-          style={{
-            width: 42,
-            height: 42,
-            borderRadius: 14,
-            background: adventurous
-              ? "rgba(255,255,255,0.14)"
-              : "rgba(139,92,246,0.14)",
-            border: adventurous
-              ? "1px solid rgba(255,255,255,0.2)"
-              : "1px solid rgba(139,92,246,0.3)",
-            display: "grid",
-            placeItems: "center",
-            color: adventurous ? "#fff" : "var(--accent)",
-            flexShrink: 0,
-          }}
-        >
-          <Sparkles size={18} />
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div
-            style={{
-              fontSize: 18,
-              fontWeight: 600,
-              lineHeight: 1.15,
-              color: adventurous ? "#fff" : "var(--text-primary)",
-            }}
-          >
-            {adventurous ? "Adventurous mode — on" : "Adventurous mode"}
-          </div>
-          <div
-            style={{
-              fontSize: 12.5,
-              color: adventurous ? "rgba(255,255,255,0.8)" : "var(--text-muted)",
-              marginTop: 4,
-              lineHeight: 1.4,
-            }}
-          >
-            {adventurous
-              ? "Serendipity up top. Left-field inflated. Expect unfamiliar."
-              : "Bias the mix toward serendipity and left-field picks."}
-          </div>
-        </div>
-        <div
-          aria-hidden
-          style={{
-            width: 40,
-            height: 24,
-            borderRadius: 999,
-            background: adventurous ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.08)",
-            border: "1px solid " + (adventurous ? "rgba(255,255,255,0.6)" : "rgba(255,255,255,0.12)"),
-            position: "relative",
-            flexShrink: 0,
-            transition: "background 0.25s",
-          }}
-        >
-          <div
-            style={{
-              position: "absolute",
-              top: 2,
-              left: adventurous ? 18 : 2,
-              width: 18,
-              height: 18,
-              borderRadius: "50%",
-              background: adventurous ? "#f5b047" : "rgba(255,255,255,0.6)",
-              transition: "left 0.25s, background 0.25s",
-            }}
-          />
-        </div>
-      </button>
-
-      {isAdvDirty && (
+      <div className="ex-controls">
         <button
           type="button"
-          onClick={handleApplyAdventurous}
-          disabled={isApplyingAdv}
-          aria-label="Rebuild Explore rails to apply Adventurous mode change"
-          className="adv-apply-cta"
-          style={{
-            position: "relative",
-            overflow: "hidden",
-            width: "100%",
-            padding: "14px 20px",
-            marginBottom: 16,
-            textAlign: "left",
-            borderRadius: 18,
-            border: "1px solid rgba(245,176,71,0.45)",
-            background: "linear-gradient(135deg, rgba(245,176,71,0.28) 0%, rgba(236,111,181,0.24) 45%, rgba(125,217,198,0.18) 80%, rgba(168,199,250,0.16) 100%)",
-            color: "#fff",
-            cursor: isApplyingAdv ? "default" : "pointer",
-            opacity: isApplyingAdv ? 0.75 : 1,
-            display: "flex",
-            alignItems: "center",
-            gap: 14,
-            animation: isApplyingAdv ? undefined : "adv-apply-pulse 2s ease-in-out infinite",
-            boxShadow: "0 0 28px rgba(245,176,71,0.22)",
-          }}
+          className="ex-adv"
+          onClick={handleAdventurousToggle}
+          disabled={isTogglingAdv}
+          aria-pressed={adventurous}
         >
-          <div
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 12,
-              background: "rgba(255,255,255,0.18)",
-              border: "1px solid rgba(255,255,255,0.24)",
-              display: "grid",
-              placeItems: "center",
-              color: "#fff",
-              flexShrink: 0,
-            }}
-          >
-            <Sparkles size={16} />
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 15, fontWeight: 600, lineHeight: 1.15 }}>
-              {isApplyingAdv ? "Rebuilding\u2026" : `Rebuild rails with Adventurous ${adventurous ? "on" : "off"}`}
-            </div>
-            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", marginTop: 3, lineHeight: 1.4 }}>
-              Apply your Adventurous change to get fresh picks.
-            </div>
-          </div>
-          <RefreshCw size={18} style={{ opacity: 0.9, flexShrink: 0 }} />
+          <span className="ex-switch" aria-hidden>
+            <span />
+          </span>
+          <span className="ex-adv-text">
+            <span className="ex-adv-label">Adventurous mode</span>
+            <span className="ex-adv-hint">
+              {isAdvDirty
+                ? "Apply your Adventurous change to get fresh picks."
+                : adventurous
+                  ? "Serendipity up top. Left-field inflated. Expect unfamiliar."
+                  : "Bias the mix toward serendipity and left-field picks."}
+            </span>
+          </span>
         </button>
-      )}
+        {(isAdvDirty || activeRail) && (
+          <div className="ex-actions">
+            {isAdvDirty && (
+              <button
+                type="button"
+                onClick={handleApplyAdventurous}
+                disabled={isApplyingAdv}
+                aria-label="Rebuild Explore rails to apply Adventurous mode change"
+                className="ex-btn ex-btn-primary"
+              >
+                <RefreshCw size={16} className={isApplyingAdv ? "ex-spin" : undefined} aria-hidden />
+                {isApplyingAdv ? "Rebuilding\u2026" : `Rebuild rails with Adventurous ${adventurous ? "on" : "off"}`}
+              </button>
+            )}
+            {activeRail && (
+              <button
+                type="button"
+                onClick={handleShuffle}
+                disabled={isRegenerating}
+                aria-label={`Shuffle ${activeRail.title}`}
+                className="ex-btn ex-btn-ghost"
+              >
+                <RefreshCw size={16} className={isRegenerating ? "ex-spin" : undefined} aria-hidden />
+                {isRegenerating ? "Shuffling…" : "Shuffle"}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
 
-      <Suspense fallback={null}>
+      <Suspense fallback={<ChallengeSkeleton />}>
         <ChallengeSlot challengePromise={challengePromise} adventurous={adventurous} />
       </Suspense>
 
-      <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 6,
-          marginTop: 16,
-          marginBottom: 14,
-        }}
-      >
-        {orderedRails.map((rail) => {
-          const active = rail.railKey === activeKey
-          const count = rail.artists.length
-          const meta = RAIL_META[rail.railKey]
-          const Icon = meta.icon
-          return (
-            <button
-              key={rail.railKey}
-              type="button"
-              onClick={() => setActiveKey(rail.railKey)}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "8px 14px",
-                fontSize: 13,
-                fontWeight: 600,
-                borderRadius: 999,
-                border: active ? `1px solid rgba(${meta.rgb}, 0.55)` : "1px solid var(--border)",
-                background: active ? `rgba(${meta.rgb}, 0.12)` : "transparent",
-                color: active ? `rgb(${meta.rgb})` : "var(--text-muted)",
-                cursor: "pointer",
-                transition: "background 0.15s, border-color 0.15s, color 0.15s",
-              }}
-            >
-              <Icon size={13} />
-              <span>{rail.title}</span>
-              <span
-                className="mono"
-                style={{
-                  fontSize: 11,
-                  padding: "1px 7px",
-                  borderRadius: 999,
-                  background: active ? `rgba(${meta.rgb}, 0.25)` : "rgba(255,255,255,0.05)",
-                  color: active ? `rgb(${meta.rgb})` : "var(--text-faint)",
-                }}
+      {orderedRails.length > 0 && (
+        <nav className="ex-tabs" aria-label="Explore rails">
+          {orderedRails.map((rail) => {
+            const Icon = RAIL_ICON[rail.railKey]
+            return (
+              <button
+                key={rail.railKey}
+                type="button"
+                className="ex-tab"
+                aria-pressed={rail.railKey === activeKey}
+                aria-label={`${rail.title}, ${rail.artists.length} artists`}
+                onClick={() => setActiveKey(rail.railKey)}
               >
-                {count}
-              </span>
-            </button>
-          )
-        })}
-      </div>
+                <Icon size={15} aria-hidden />
+                <span>{rail.title}</span>
+                <span className="ex-tab-n">{rail.artists.length}</span>
+              </button>
+            )
+          })}
+        </nav>
+      )}
 
       {orderedRails.length === 0 && (
-        <div
-          className="muted"
-          style={{
-            padding: "48px 18px",
-            fontSize: 13,
-            lineHeight: 1.5,
-            textAlign: "center",
-            border: "1px dashed var(--border)",
-            borderRadius: 12,
-            background: "var(--panel)",
-          }}
-        >
+        <div className="ex-empty" role="status">
           {isRegenerating ? (
             <>
-              <div style={{ fontWeight: 600, color: "var(--text-primary)", marginBottom: 6 }}>
-                Building your exploration rails…
-              </div>
-              This takes about a minute. Rails will appear automatically when ready.
+              <p className="ex-empty-title">Building your exploration rails…</p>
+              <p>This takes about a minute. Rails will appear automatically when ready.</p>
+              <span className="ex-empty-bar" aria-hidden>
+                <span />
+              </span>
             </>
           ) : (
             <>
-              <div style={{ fontWeight: 600, color: "var(--text-primary)", marginBottom: 6 }}>
-                Not enough signal yet
-              </div>
-              Save a few artists or mark some thumbs-up in your feed, then shuffle to generate richer rails here.
+              <p className="ex-empty-title">Not enough signal yet</p>
+              <p>Save a few artists or mark some thumbs-up in your feed, then shuffle to generate richer rails here.</p>
             </>
           )}
         </div>
       )}
 
+      {building && (
+        <div className="ex-grid ex-building" aria-hidden>
+          {[0, 1, 2].map((i) => (
+            <SkeletonCard key={i} />
+          ))}
+        </div>
+      )}
+
       {activeRail && (
-        <div>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "flex-end",
-              justifyContent: "space-between",
-              gap: 12,
-              marginBottom: 12,
-            }}
-          >
-            <div>
-              <div className="muted" style={{ fontSize: 13, lineHeight: 1.4 }}>
-                {activeRail.subtitle}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={handleShuffle}
-              disabled={isRegenerating}
-              aria-label={`Shuffle ${activeRail.title}`}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "8px 14px",
-                fontSize: 13,
-                fontWeight: 600,
-                borderRadius: 8,
-                background: "rgba(139,92,246,0.10)",
-                border: "1px solid rgba(139,92,246,0.35)",
-                color: "var(--accent)",
-                cursor: isRegenerating ? "default" : "pointer",
-                opacity: isRegenerating ? 0.7 : 1,
-                whiteSpace: "nowrap",
-              }}
-            >
-              <RefreshCw size={13} className={isRegenerating ? "spin" : undefined} />
-              <span>{isRegenerating ? "Shuffling…" : "Shuffle"}</span>
-            </button>
+        <section aria-labelledby="ex-rail-title">
+          <div className="ex-rail-head">
+            <h2 id="ex-rail-title" className="ex-rail-title">{activeRail.title}</h2>
+            {/* The Adventurous note shares the subtitle's line (reserved in the skeleton, explore.css). */}
+            <p className="ex-rail-sub">
+              {activeRail.subtitle}
+              {adventurous && " "}
+              {adventurous && (
+                <span className="ex-rail-adv">
+                  <Sparkles size={13} aria-hidden /> Adventurous order: furthest-out rails first
+                </span>
+              )}
+            </p>
           </div>
 
           {activeRail.artists.length === 0 ? (
-            <div
-              className="muted"
-              style={{
-                padding: "36px 18px",
-                fontSize: 13,
-                textAlign: "center",
-                border: "1px dashed var(--border)",
-                borderRadius: 12,
-              }}
-            >
-              {activeRail.emptyCaption ?? "Nothing here yet — tap Shuffle."}
+            <div className="ex-empty">
+              <p>{activeRail.emptyCaption ?? "Nothing here yet — tap Shuffle."}</p>
             </div>
           ) : (
-            <div className="col gap-16">
+            <div className="ex-grid">
               <AnimatePresence initial={false}>
-                {activeRail.artists.map((artist) => (
+                {open.map((artist) => (
                   <ExploreArtistRow
                     key={artist.id}
                     artist={artist}
@@ -473,13 +322,34 @@ export function ExploreClient({
                     isSaved={savedIds.has(artist.id)}
                     dismissSignal={dismissedSignals.get(artist.id) ?? null}
                     onSave={toggleSave}
-                    onFeedback={setSignal}
+                    onFeedback={handleFeedback}
                   />
                 ))}
               </AnimatePresence>
             </div>
           )}
-        </div>
+
+          {decided.length > 0 && (
+            <section className="ex-decided" aria-labelledby="ex-decided-title">
+              <h3 id="ex-decided-title" className="ex-decided-title" tabIndex={-1}>Decided in this rail</h3>
+              <div className="ex-decided-list">
+                <AnimatePresence initial={false}>
+                  {decided.map((artist) => (
+                    <ExploreArtistRow
+                      key={artist.id}
+                      artist={artist}
+                      musicPlatform={musicPlatform}
+                      isSaved={savedIds.has(artist.id)}
+                      dismissSignal={dismissedSignals.get(artist.id) ?? null}
+                      onSave={toggleSave}
+                      onFeedback={handleFeedback}
+                    />
+                  ))}
+                </AnimatePresence>
+              </div>
+            </section>
+          )}
+        </section>
       )}
     </div>
   )

@@ -48,10 +48,10 @@ triage buttons, track chips, Play preview, the landing's primary buttons) a 1px 
 | `/sign-in` | — | username-only `signIn("credentials")` (Existing / New mode, `?mode=new` from the landing CTA), then `/api/onboarding/check` → onboarding or feed (`router.replace`); signed-in users are bounced to `/feed` by the proxy |
 | `/onboarding` | — | artist search + genre picker + Last.fm/stats.fm usernames + platform; saves via `patchSettings` (`PATCH /api/settings`) + `POST /api/onboarding/seeds` (a different route from Settings' `/api/settings/seed-artists`); fire-and-forget first generate (`postGenerate`). Genres cap at 50; "Get started" is disabled while 1–2 artists are picked (the seeds route needs ≥3). `/feed` redirects here until onboarding is done |
 | `/feed` | `recommendation_cache` (unseen, scored, ≤20), tracks cache, signal counts; empty → `RecommendationsLoader` + `ExplorePrewarm`; `loading.tsx` (re-exporting `FeedSkeleton`, `components/feed/feed-skeleton.tsx`) is a CSS-only skeleton per layout (desktop panes, tablet card + Up next, one Snap page + triage bar, reserving the top bar's count/strip row), so nothing shifts when the feed arrives | `FeedClient`: the desktop layout renders `FeedDesktop` (queue + focus pane), the tablet layout `FeedTablet`, otherwise `FeedSnap` (layout rule under Look; one tree, picked by a `matchMedia` `useSyncExternalStore`; each layout is a `next/dynamic` chunk with `FeedSkeleton` as its fallback, so a device downloads only its layout. The server and hydration render the layout guessed from the request (`guessFeedLayout`, `lib/feed/layout-guess.ts`: `Sec-CH-UA-Mobile`, else the user agent; Snap for phones, desktop otherwise) passed as `initialLayout` and returned as the server snapshot, so its chunk is preloaded; `feed.css` hides a server-rendered Snap or desktop tree wherever it is not the viewport's layout, and during the server render and hydration `FeedClient` renders `FeedSkeleton` beside it (`.ev-guess-skel`, `data-guess`) whose tree for the guessed layout never shows, so a wrong guess (every tablet in portrait, some Android tablets) shows the viewport's skeleton, never a blank area; after hydration the right layout's `loading` skeleton takes its place in the same frame. Each layout reports itself mounted (`onShown`) and `FeedShortcuts` ignores keys until the layout on screen is mounted. After the first layout has mounted, the load event and an idle callback, the three `dynamic()` loaders are run (kept by reference: a plain `import()` compiles to a separate copy of each chunk), so a later layout switch needs no network; a loader whose import fails (offline, or the chunk gone after a deploy) retries every 4s while the skeleton stays instead of reaching the error boundary. Art, `artistVar`, `EndState` and `LoadMore` live in `feed-parts.tsx`, shared by the three layouts); all read `useFeedTriage`, so resizing keeps selection, verdicts, saves and playback. Renders `CardArtist[]` from `loadFeedCards` (`lib/cards/feed-cards.ts`: tracks-cache fallback, colour lift, drop no-preview cards, `interleave()`); `useFeedFill` poll-append (same assembler via `GET /api/recommendations`), low-queue auto-generate |
-| `/explore` | `buildExploreRails({hydrate, regenerate:false})` (never blocks); challenge streamed via React 19 `use()` | Rails of `ArtistCard`s (the only remaining user of that card). `ExploreClient`: JSX over `useRailSession` (`lib/client/rail-session.ts`: rails, active rail, adventurous ordering, shuffle/apply, poll-swap after shuffle/settings; a regen POST 429 means a build is already running → poll; Shuffle/Apply/cold start write `explore-regen-at` so a later visit resumes the poll; a thrown final GET is retried once after 1.5s) |
+| `/explore` | `buildExploreRails({hydrate, regenerate:false})` (never blocks); challenge streamed via React 19 `use()`; `loading.tsx` draws the same boxes (header, control row, challenge, tabs, rail head, six card skeletons) | Rails of `ArtistCard`s (the only remaining user of that card); layout under `ExploreClient` in Shared components. `ExploreClient`: JSX over `useRailSession` (`lib/client/rail-session.ts`: rails, active rail, adventurous ordering, shuffle/apply, poll-swap after shuffle/settings; a regen POST 429 means a build is already running → poll; Shuffle/Apply/cold start write `explore-regen-at` so a later visit resumes the poll; a thrown final GET is retried once after 1.5s) |
 | `/history` | seen recs + feedback/saves, derived `signal` | `HistoryClient`: filter tabs, time grouping; signal changes + undo/unblock via `useArtistFeedback` (`setSignal` / `removeSignal` / `dismiss`) |
 | `/saved` | `saves` enriched from `recommendation_cache` | `SavedClient`: grid, optimistic unsave, open-in-platform + share |
-| `/stats` | 6 parallel count queries + taste profile | `StatsClient`: stat cards, top genres, SVG popularity scatter |
+| `/stats` | 6 parallel count queries + taste profile; `loading.tsx` draws the same boxes | `StatsClient` (see Shared components): totals, top genres, taste-profile panel (popularity scatter + sortable artist table) |
 | `/settings` | decrypted usernames, source counts, seeds, example artists | `SettingsForm` → 6 panels (Profile, Account, Platform, ConnectedSources, Seeds, Obscurity) |
 
 ## Shared components
@@ -65,7 +65,7 @@ triage buttons, track chips, Play preview, the landing's primary buttons) a 1px 
   to the button), outside pointer down, Tab out, item activation and route change, arrow keys move
   between items) and a five-item bottom tab bar. Which shows is CSS only.
   `aria-current="page"` when the path equals a link or starts with it plus `/`. Adventurous
-  mode (`useAdventurousMode`) draws a 2px gradient on the rail edge / under the top bar.
+  mode (`useAdventurousMode`) draws a solid 2px `--violet` line on the rail edge / under the top bar.
   Pages hook in via `components/shell/shell-context.tsx`: `useShellBadge(href, n)` (nav count),
   `useShellShortcuts(fn)` (shows the rail's Shortcuts button), `<ShellSlot name="top"|"topSub"|"rail">` (topSub: an optional full-width second row under the phone top bar, hidden when empty)
   (portal into the top bar / under the rail nav). The rail shows at ≥900px wide and ≥540px tall,
@@ -73,7 +73,9 @@ triage buttons, track chips, Play preview, the landing's primary buttons) a 1px 
   menu closes itself when the rail appears (`matchMedia` change), so it never swallows a later
   Escape or reappears on narrowing. Page content keeps its 520px `.app-col`,
   unless its root has `.shell-fill` (desktop feed): then `.shell-main:has(.shell-fill)` drops the
-  padding and column and is exactly viewport-high, so the page body never scrolls.
+  padding and column and is exactly viewport-high, so the page body never scrolls. A root with
+  `.shell-wide` (Explore, Stats and their skeletons) leaves the 520px column from 900px and sets its
+  own max-width, but keeps the shell's padding and normal page scrolling.
 
 - **Dev preview** (`app/dev-preview/*`, `lib/dev-preview/fixtures.ts`) — development-only
   harness (404 in production) rendering the real shell and components with fixture artists and
@@ -81,24 +83,71 @@ triage buttons, track chips, Play preview, the landing's primary buttons) a 1px 
   `AppShell` `pathPrefix="/dev-preview"` so `/dev-preview/feed` marks Feed as current.
   The fixtures' 2nd artist has the 1st's first track as its third (a shared collaboration track id).
   `/dev-preview/feed?start=N` starts with N artists and the stub serves the rest in batches of 6
-  per generate (exercises appends and Load more); `/dev-preview/feed-empty` and
+  per generate (exercises appends and Load more); `?real=1` swaps real-data shapes into a few rows
+  (popularity 0, `alternative-metal`, `acro jazz laboratories`, a long name) and `?n=N` repeats the
+  fixtures up to N artists (`realisticArtists` in `fixtures.ts`); `/dev-preview/feed-empty` and
   `/dev-preview/feed-loading` show the empty-feed loader and the loading skeleton;
+  `/dev-preview/explore` is the real `ExploreClient` with fixture rails (`lib/dev-preview/explore-fixtures.ts`,
+  `explore-stub.tsx`): `?adventurous=1`, `?cold=1` (no cached rails: generate + poll),
+  `?challenge=done|none`, `?gen=429|500`, `?platform=apple_music|youtube_music`;
+  `/dev-preview/explore/skeleton` is Explore's `loading.tsx`;
   `/dev-preview/explore-card` renders Explore's `ExploreArtistRow` / `ArtistCard` in every
   state (expanded, liked + saved, no image, no tracks, passed, dismissed; buttons toggle
-  locally); `/dev-preview/shell` shows the shell around filler. Its route files are
+  locally; `?platform=`); `/dev-preview/stats` is the real `StatsClient` (`lib/dev-preview/stats-fixtures.ts`;
+  `?empty=1`, `?stress=1`) and `/dev-preview/stats-loading` its skeleton; `/dev-preview/shell` shows
+  the shell around filler. The index page `/dev-preview` links every page. Its route files are
   `page.dev.tsx` / `layout.dev.tsx`, and `next.config.ts` adds `dev.tsx` to `pageExtensions`
   only outside production, so `next build` never compiles the harness (no route, no fixture
   data in any chunk); the layout's `notFound()` in production is a second guard. `tsconfig.json`
   excludes `.next/dev` because the dev route types (which include the harness) would otherwise
   clash with a production build's route types in `tsc` and in `next build`'s type check.
-- **`ArtistCard`** (`components/feed/artist-card.tsx`) — Explore's card (the feed no longer
-  uses it): `--panel` surface, `--line` border (violet when liked), 16px radius, 340px hero
-  image with a plain artist-colour gradient tint and a dark scrim, name + "genre · popularity",
-  `TrackStrip`, the reason as a `--fg-2` line, then "Open in {platform}" + Share (copy link),
-  Bookmark (`aria-pressed`), and Less like this / Dismiss / More like this in the feed's triage
-  look (icons drop out below a 360px container). States via `dismissSignal`: down/skip collapse
-  to a 56px "Passed" / "Dismissed" bar, up keeps the card with a solid violet "Liked". Hooks:
-  `useAudio`, `useArtistTracks`, `useArtistColor`.
+- **`ArtistCard`** (`components/feed/artist-card.tsx`, styles `artist-card.css`, every rule under
+  `.ex-card`; only `--a` is inline) — Explore's card (the feed no longer uses it), sized for grid
+  columns of 340–600px: a panel fading down from the artist's dark shade, 14px radius, border tinted
+  by `--a` (violet when liked). 3:2 artwork capped at 300px tall (no artwork: an `--a` panel with the
+  first letter); name, up to two genres, popularity meter + its label ("Under the radar · popularity 47"), "Because
+  you like A and B"; `TrackStrip` (or "Loading tracks…" / "No tracks available"); then, pinned to the
+  bottom (`margin-top: auto`), the feed's triage row (Less like this / Dismiss / More like this,
+  `aria-pressed` on More; icons drop out below a 380px body) and a quiet secondary row: Bookmark
+  (`aria-pressed`), the platform link (`aria-label` "Open in {platform}") and Share (copy link). The
+  secondary labels sit in `.ex-sec-label`, shrink with an ellipsis ("YouTube M…"), and below a 280px
+  body (320px phones) are visually hidden so the row is icons only with its accessible names intact.
+  States via `dismissSignal`: down/skip collapse to a 56px one-line bar (name + "Passed" /
+  "Dismissed"), up keeps the card with a solid violet "Liked". Hooks: `useAudio`, `useArtistTracks`,
+  `useArtistColor`.
+- **`ExploreClient`** (`components/explore/explore-client.tsx`, styles `explore.css`, every rule
+  under `.ev-explore`; root `.ev-explore.shell-wide`, max-width 1240px, `data-adventurous` when on) —
+  top to bottom: the feed-style header (title, lede, "N discoveries · Adventurous on"); one control row
+  (the Adventurous switch, `aria-pressed`, with a one-line hint, then a pending "Rebuild rails with
+  Adventurous on/off" and Shuffle); with Adventurous on the row is a `--violet-wash` panel, off it is
+  untinted (below 640px it then loses its inline padding so the switch lines up with the header; the
+  hint reserves two lines there so toggling doesn't move the page); the weekly challenge
+  (`ChallengeCard`, `challenge-card.tsx`: title, a visually hidden ":" and the description so it
+  reads and copies as "Genre hopper: Like…", mono progress, a thin violet bar; `ChallengeSkeleton` is
+  its Suspense fallback); rail tabs (pills with `aria-pressed` and an `aria-label` "After hours, 7
+  artists"; wrapping on desktop, a snapping scroller below 900px); the active rail's title and
+  subtitle line, with "Adventurous order: furthest-out rails first" in `--violet-ink` on the same
+  line when on (below 900px the line reserves two lines, three below 360px, in the skeleton too, so
+  the grid starts at the same place either way); then the card grid
+  (`repeat(auto-fill, minmax(min(340px, 100%), 1fr))`: one column on phones, two from about 900px,
+  three from about 1360px). Grid cells stretch, so cards in a row share a height and their action
+  rows line up. Passed / dismissed artists leave the grid for a "Decided in this rail" group after
+  it (`.ex-decided`: the collapsed bars in a `minmax(260px, 1fr)` grid, a row on desktop, stacked on
+  phones), so the grid closes up; when the card holding keyboard focus leaves, focus moves to the
+  next card's first control (or the previous card, or the group heading, `tabIndex=-1`).
+- **`StatsClient`** (`components/stats/stats-client.tsx`, styles `stats.css` under `.st`; root
+  `.st.shell-wide`) — the feed-style header (plus a sentence linking to the feed on an empty account),
+  then one column on phones, two from 900px (`5fr / 7fr`): totals as a definition list (label left,
+  mono number right), top genres as ranked violet bars, and one "Your taste profile" panel. The panel
+  has a legend (filled violet dot = saved, ring = liked), a figure whose `figcaption` gives the median,
+  and a fluid SVG scatter (`role="img"`, `aria-label` with the count and median; x = popularity 0–100
+  with gridlines and mono ticks, y a stable per-name jitter, each mark with a `<title>`). Under it the
+  artist list is an ARIA table (`role="table"` / `rowgroup` / `row` / `columnheader` / `cell`):
+  column labels Artist, Kind, Popularity, where only Popularity is a button (name "Popularity, sorted
+  lowest first. Activate to sort highest first.", an up/down arrow for the current direction,
+  `aria-sort` on its columnheader); the body rowgroup scrolls (max 360px) and is focusable. Numbers
+  are formatted with one `Intl.NumberFormat("en-US")`, never the browser locale (a German browser
+  would otherwise hydrate "1.234.567" against the server's "1,234,567").
 - **`ColdStartBanner`** (`components/feed/cold-start-banner.tsx`, styles `.ev-cold*` in
   `feed.css`) — "Flipside signal · N of 5" with "Keep exploring — recs get smarter." and a thin
   violet progress bar until the listener has 5 signals. A `--panel` box at the top of the
@@ -131,7 +180,22 @@ triage buttons, track chips, Play preview, the landing's primary buttons) a 1px 
   case-insensitively, liked wins over passed). Tracks fetched on demand by the focus pane are
   registered with `addTracks`.
 - **`FeedDesktop`** (`components/feed/feed-desktop.tsx`, styles `feed.css` under `.ev-feed`) —
-  queue column ("N of M left", strip, rows; a passed or dismissed row fades and slides out via
+  queue column (sticky header: the title and "N artists you've never played…" take the width, and
+  "N of M left" with the segment strip sits in a 260px column beside them when the queue is at least
+  660px wide, otherwise on its own line below, decided by a container query on `.ev-queue`, so the
+  header is 102px or 130px whatever the artist count; strip segments flex between 2px and 9px in one
+  row and the gaps shrink to 0 past ~80 artists (`--n` on the strip); the skeleton has the same
+  structure, so its header height always matches. A `ResizeObserver` writes the header's height to
+  `--ev-head-h` on the queue; the sticky column label row (`QueueColumns`, `feed-skeleton.tsx`, shared
+  with the skeleton: Artist / Genre / "Popularity 0–100", the hint "Lower means more obscure" as
+  visually hidden text only, on the rows' own grid (`--ev-cols`) so labels can't drift; hidden while
+  no rows are visible). Which columns show follows the queue's own width (container queries on
+  `.ev-queue`, not the viewport, since the rail and focus pane also take width): Popularity from a
+  530px queue, Genre from 680px, so the Artist column never shrinks below ~260px to make room for
+  them; labels, row cells and the skeleton's labels hide together. The label row sticks at `top: var(--ev-head-h)`, and the queue's `scroll-padding-top` (header + label
+  row) keeps keyboard focus, undo reselect, J/K and row clicks clear of both. Rows: art (play), name
+  (ellipsis) and reason, genre (`title` holds the full genre), popularity meter and number
+  (visually hidden "Genre:" / "Popularity: … out of 100"), Liked / Saved tag; a passed or dismissed row fades and slides out via
   `useLeaving`, `lib/hooks/use-leaving.ts`, and a CSS keyframe) and focus pane (artwork via `artworkFor` or a
   letter panel, why, popularity, Play preview, the three triage buttons, Save / Open in
   {platform} / Share, up to three preview tracks, docked player; the end-of-queue state with
@@ -219,7 +283,8 @@ triage buttons, track chips, Play preview, the landing's primary buttons) a 1px 
   `ArtistCard` takes it directly. Display colour always goes through
   `resolveArtistColor` (`lib/color-utils.ts`: sanitize; `#8b5cf6` sentinel/null → name hash).
 - **`ExploreArtistRow`** — motion wrapper binding a `CardArtist` to `ArtistCard` (layout
-  animation and entrance by transform only; none under reduced motion).
+  animation and entrance by transform only; none under reduced motion; exit is an opacity fade).
+  Carries `data-artist` (the Explore grid's focus hand-off reads it).
 - **`ArtistSearch`** (`components/onboarding/`) — debounced (350ms), 2-char minimum, `GET /api/onboarding/
   search`; shows a "degraded" notice on Spotify rate-limit fallback.
 - **`PlatformIcon`** — inline SVG per `spotify`/`apple_music`/`youtube_music`.

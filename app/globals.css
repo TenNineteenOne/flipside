@@ -331,13 +331,6 @@
   background: rgba(255,255,255,0.1);
 }
 
-/* Explore card triage row (components/feed/artist-card.tsx): icons drop out when narrow, as in the feed. */
-.fs-card-triage { display: flex; gap: 6px; container-type: inline-size; }
-@container (width < 361px) {
-  .fs-card-triage .btn { font-size: 13px !important; padding: 0 6px !important; }
-  .fs-card-triage svg { display: none; }
-}
-
 /* ── Typography utilities ──────────────────────────────────────── */
 .eyebrow {
   font-family: var(--font-mono);
@@ -401,11 +394,6 @@
   100% { background-position: 200% 0; }
 }
 
-/* ── Adventurous "Apply" CTA pulse (explore-client.tsx) ───────── */
-@keyframes adv-apply-pulse {
-  0%, 100% { box-shadow: 0 0 20px rgba(245,176,71,0.18); }
-  50%      { box-shadow: 0 0 36px rgba(245,176,71,0.36); }
-}
 .fs-skeleton {
   background: linear-gradient(
     90deg,

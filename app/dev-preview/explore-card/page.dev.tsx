@@ -1,11 +1,15 @@
 "use client"
 
-import { useState } from "react"
+import { use, useState } from "react"
 import { AnimatePresence } from "framer-motion"
 import { ExploreArtistRow } from "@/components/explore/explore-artist-row"
 import { previewArtists } from "@/lib/dev-preview/fixtures"
+import { SUPPORTED_PLATFORMS, type MusicPlatform } from "@/lib/music-links"
 
-/** Explore's artist card in each state: expanded, liked + saved, no image, no tracks, passed, dismissed. */
+/**
+ * Explore's artist card in each state: expanded, liked + saved, no image, no tracks, passed, dismissed.
+ * `?platform=apple_music|youtube_music` sets the listener's music platform (default spotify).
+ */
 const START: [number, string | null, boolean][] = [
   [0, null, false],
   [1, "thumbs_up", true],
@@ -15,7 +19,9 @@ const START: [number, string | null, boolean][] = [
   [4, "skip", false],
 ]
 
-export default function ExploreCardPreview() {
+export default function ExploreCardPreview({ searchParams }: { searchParams: Promise<{ platform?: string }> }) {
+  const { platform: p } = use(searchParams)
+  const platform = SUPPORTED_PLATFORMS.includes(p as MusicPlatform) ? (p as MusicPlatform) : "spotify"
   const [signals, setSignals] = useState(() => new Map(START.map(([i, s]) => [previewArtists[i].id, s])))
   const [saved, setSaved] = useState(() => new Set(START.filter(([, , b]) => b).map(([i]) => previewArtists[i].id)))
   // Same toggle rule as Explore (useArtistFeedback): a repeat signal clears it.
@@ -40,7 +46,7 @@ export default function ExploreCardPreview() {
             <ExploreArtistRow
               key={a.id}
               artist={a}
-              musicPlatform="spotify"
+              musicPlatform={platform}
               isSaved={saved.has(a.id)}
               dismissSignal={signals.get(a.id) ?? null}
               onSave={onSave}

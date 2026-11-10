@@ -1,6 +1,7 @@
 import "@/components/feed/feed.css"
 
 const ROWS = Array.from({ length: 10 }, (_, i) => i)
+const SEGS = Array.from({ length: 20 }, (_, i) => i)
 
 /**
  * Feed skeleton (the route's loading.tsx, and FeedClient's fallback while a layout's code
@@ -19,10 +20,18 @@ export function FeedSkeleton() {
           <div className="ev-queue-head">
             <div>
               <h1 className="ev-queue-title">Today&rsquo;s flipside</h1>
-              <span className="fs-skeleton ev-skel-line" style={{ width: 320, marginTop: 8 }} />
+              {/* inside the real subtitle's box, so the header (and the rows under it) keep their height */}
+              <p className="ev-queue-sub"><span className="fs-skeleton ev-skel-line" style={{ display: "inline-block", width: 320, verticalAlign: "middle" }} /></p>
             </div>
-            <span className="fs-skeleton" style={{ width: 220, height: 14 }} />
+            {/* the real progress block's structure, so the header's height matches at every width */}
+            <div className="ev-progress">
+              <span className="ev-progress-text"><span className="fs-skeleton" style={{ display: "inline-block", width: 84, height: 12, verticalAlign: "middle" }} /></span>
+              <ol className="ev-strip" style={{ "--n": SEGS.length } as React.CSSProperties}>
+                {SEGS.map((i) => <li key={i} className="ev-seg" />)}
+              </ol>
+            </div>
           </div>
+          <QueueColumns />
           <div className="ev-rows">
             {ROWS.map((i) => (
               <div key={i} className="ev-row">
@@ -71,6 +80,22 @@ export function FeedSkeleton() {
         </div>
       </div>
     </>
+  )
+}
+
+/**
+ * The desktop queue's column labels (feed.css .ev-cols: the rows' grid, sticky under the queue
+ * header). Shared by FeedDesktop and the skeleton so the loaded feed doesn't shift. Rows carry
+ * their own visually hidden "Genre:" / "Popularity:" prefixes; the scale is visible text and the
+ * hint is visually hidden (no title, so touch and keyboard users get the same as everyone).
+ */
+export function QueueColumns() {
+  return (
+    <div className="ev-cols">
+      <span>Artist</span>
+      <span className="ev-col-genre">Genre</span>
+      <span className="ev-col-pop">Popularity <span className="ev-col-scale">0–100</span><span className="sr-only">. Lower means more obscure.</span></span>
+    </div>
   )
 }
 
