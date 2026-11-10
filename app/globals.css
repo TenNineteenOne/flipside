@@ -219,7 +219,7 @@
   letter-spacing: 0;
   white-space: normal;
 }
-@media (min-width: 900px) {
+@media (width >= 900px) {
   .page-head h1 { font-size: 38px; }
 }
 
@@ -325,7 +325,7 @@
 
 /* Explore card triage row (components/feed/artist-card.tsx): icons drop out when narrow, as in the feed. */
 .fs-card-triage { display: flex; gap: 6px; container-type: inline-size; }
-@container (max-width: 360px) {
+@container (width < 361px) {
   .fs-card-triage .btn { font-size: 13px !important; padding: 0 6px !important; }
   .fs-card-triage svg { display: none; }
 }

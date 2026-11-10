@@ -29,7 +29,7 @@
 /* At 900px and wider, a page containing .shell-fill (the desktop feed and its loading
    skeleton) fills the whole area right of the rail at viewport height: no padding,
    no 520px column, no page scroll. */
-@media (min-width: 900px) {
+@media (width >= 900px) {
   .shell-main:has(.shell-fill) { height: 100dvh; padding: 0 0 0 var(--rail-w); }
   .shell-main:has(.shell-fill) > .app-col { max-width: none; min-width: 0; }
 }
@@ -112,7 +112,7 @@
 }
 
 /* 900–1099px: icons only. */
-@media (max-width: 1099px) {
+@media (width < 1100px) {
   .shell { --rail-w: 64px; }
   .shell-rail { padding: 18px 10px; align-items: center; }
   .shell-rail-brand { padding: 6px; align-self: center; }
@@ -160,7 +160,7 @@
 .shell-menu-item[aria-current="page"] { color: var(--fg); }
 .shell-menu-item[aria-current="page"] svg { color: var(--violet-ink); }
 
-@media (max-width: 899px) {
+@media (width < 900px) {
   .shell-rail { display: none; }
   .shell-main {
     padding: calc(var(--top-h) + var(--safe-t)) 16px calc(var(--tab-h) + var(--safe-b) + 24px);
