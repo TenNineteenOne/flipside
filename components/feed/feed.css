@@ -21,6 +21,12 @@
 .ev-feed ul, .ev-feed ol { margin: 0; padding: 0; list-style: none; }
 .ev-feed button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
 .ev-feed img { display: block; }
+/* Long names (one 40-letter word, three long source artists, six long genres) wrap instead of
+   widening a pane; single-line ones keep their ellipsis. */
+.ev-feed .ev-card-name, .ev-feed .ev-card-genres, .ev-feed .ev-card-why, .ev-feed .ev-m-name, .ev-feed .ev-m-why,
+.ev-feed .ev-row-name, .ev-feed .ev-m-thumb-text, .ev-feed .ev-end-title, .ev-feed .ev-end-body, .ev-feed .ev-player-text,
+.ev-feed .ev-cold-sub, [data-sonner-toast].ev-toast { overflow-wrap: anywhere; }
+.ev-feed .ev-card-hero, .ev-feed .ev-card-id, .ev-feed .ev-tuning, .ev-feed .ev-tune-group { min-width: 0; }
 .ev-feed :focus-visible { outline: 2px solid var(--violet-ink); outline-offset: 2px; border-radius: 6px; }
 
 .ev-feed .ev-btn {
@@ -124,7 +130,9 @@
   background: linear-gradient(to bottom, color-mix(in oklch, var(--a-dark) 42%, var(--panel)) 0, var(--panel) 420px);
 }
 .ev-feed .ev-card-hero { display: flex; flex-direction: column; gap: 18px; }
-.ev-feed .ev-card-art { width: min(100%, 40vh); height: auto; aspect-ratio: 1; object-fit: cover; border-radius: 12px; box-shadow: 0 18px 40px -18px color-mix(in oklch, var(--a-dark) 80%, black); }
+/* Height-aware: on short windows (down to 900x500) the play button and the triage control stay
+   above the fold; 372px is the pane's other content plus the docked player. Below that the pane scrolls. */
+.ev-feed .ev-card-art { width: max(96px, min(100%, 40vh, 100vh - 372px)); height: auto; aspect-ratio: 1; object-fit: cover; border-radius: 12px; box-shadow: 0 18px 40px -18px color-mix(in oklch, var(--a-dark) 80%, black); }
 .ev-feed .ev-card-art.ev-letter { font-size: min(40cqw, 16vh); }
 .ev-feed .ev-card-hero { container-type: inline-size; }
 .ev-feed .ev-card-name { font-size: 32px; line-height: 1.05; letter-spacing: -0.03em; }
@@ -134,7 +142,7 @@
 .ev-feed .ev-card-pop { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 13px; color: var(--fg-3); }
 
 .ev-feed .ev-card-actions { display: flex; flex-direction: column; gap: 10px; container-type: inline-size; }
-@container (max-width: 360px) {
+@container (width < 361px) {
   .ev-feed .ev-tri { padding: 0 6px; gap: 5px; font-size: 13px; }
 }
 .ev-feed .ev-btn-play { width: 100%; min-height: 50px; background: var(--fg); color: oklch(0.16 0.01 293); border-radius: 11px; font-size: 16px; }
@@ -217,6 +225,7 @@
 .ev-feed .ev-player-bar { position: absolute; left: 0; right: 0; top: -1px; height: 2px; }
 .ev-feed .ev-player-bar span { display: block; height: 100%; background: var(--a-light); transform-origin: left; transition: transform 250ms linear; }
 .ev-feed .ev-player-idle { font-size: 13px; color: var(--fg-3); }
+.ev-feed .ev-idle-touch { display: none; }
 
 /* rail tuning block (portalled into the shell rail; the shell hides its slot below 1100px) */
 .ev-feed.ev-tuning { display: flex; flex-direction: column; gap: 8px; }
@@ -224,12 +233,18 @@
 .ev-feed .ev-tune-group { display: flex; flex-direction: column; gap: 6px; padding: 0 10px 4px; }
 .ev-feed .ev-tune-label { font: 500 11px/1.4 var(--font-mono); color: var(--fg-3); }
 .ev-feed .ev-chips { display: flex; flex-wrap: wrap; gap: 4px; }
-.ev-feed .ev-chip { display: inline-flex; align-items: center; height: 24px; padding: 0 9px; border-radius: 6px; font-size: 13px; color: var(--fg-2); background: var(--raise); white-space: nowrap; }
+/* A long genre is cut with an ellipsis (full name in the title) rather than widening the rail. */
+.ev-feed .ev-chip { display: block; max-width: 100%; height: 24px; line-height: 24px; padding: 0 9px; border-radius: 6px; font-size: 13px; color: var(--fg-2); background: var(--raise); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ev-feed .ev-chip-more { color: var(--violet-ink); background: var(--violet-wash); }
 
 /* cold-start banner (existing component) at the top of the queue column */
 .ev-feed .ev-coldstart:not(:empty) { margin: 6px 0 12px; }
 .ev-feed .ev-queue-foot { padding: 20px 12px; color: var(--fg-3); font-size: 14px; }
+/* "Load more artists" at the end of the queue column and the tablet Up next list: always there. */
+.ev-feed .ev-queue-more { padding: 16px 12px 0; }
+.ev-feed .ev-m-rail > li.ev-m-rail-more { padding: 10px 6px 0; }
+.ev-feed .ev-m-rail-more .ev-btn { width: 100%; padding: 0 12px; font-size: 14px; }
+.ev-feed .ev-btn-ghost:disabled { cursor: default; opacity: 0.7; }
 
 /* end of queue */
 .ev-feed .ev-end { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; padding: 48px 28px; animation: ev-feed-in 220ms var(--ease); }
@@ -252,8 +267,8 @@
 .ev-feed .ev-skel-card { background: var(--panel); animation: none; }
 .ev-feed .ev-skel-card > .fs-skeleton { display: block; }
 .ev-feed.ev-skel-wide .ev-row { content-visibility: visible; }
-@media (max-width: 899px) { .ev-skel-wide { display: none !important; } }
-@media (max-width: 639px), (min-width: 900px) { .ev-feed.ev-tablet.ev-skel-tablet { display: none; } }
+@media (width < 900px) { .ev-skel-wide { display: none !important; } }
+@media (width < 640px), (width >= 900px), (height < 680px) { .ev-feed.ev-tablet.ev-skel-tablet { display: none; } }
 .ev-feed.ev-skel-m .ev-m-page, .ev-feed.ev-skel-m .ev-m-rail > li { content-visibility: visible; }
 .ev-feed.ev-skel-m span.fs-skeleton {
   display: block; background-color: transparent;
@@ -264,15 +279,15 @@
 body:has(.ev-skel-m) .shell-top-sub:empty { display: flex; align-items: center; height: 10px; padding-right: 16px; }
 body:has(.ev-skel-m) .shell-top-sub:empty::before { content: ""; flex: 1; height: 4px; border-radius: 2px; background: var(--line); }
 body:has(.ev-skel-m) .shell-top-slot:empty::before { content: ""; width: 76px; height: 14px; border-radius: 7px; background: var(--line); }
-@media (min-width: 640px) and (max-width: 899px) {
+@media (640px <= width < 900px) and (height >= 680px) {
   body:has(.ev-skel-m) .shell-top-sub:empty { align-items: flex-start; height: 14px; }
 }
 
-@media (max-width: 1279px) {
+@media (width < 1280px) {
   .ev-feed .ev-row { grid-template-columns: 48px minmax(0, 1fr) 80px 76px; }
   .ev-feed .ev-row-genre { display: none; }
 }
-@media (max-width: 1099px) {
+@media (width < 1100px) {
   .ev-feed.ev-app { grid-template-columns: minmax(0, 1fr) 380px; }
   .ev-feed .ev-row-pop { display: none; }
   .ev-feed .ev-row { grid-template-columns: 48px minmax(0, 1fr) 76px; }
@@ -291,6 +306,7 @@ body:has(.ev-skel-m) .shell-top-slot:empty::before { content: ""; width: 76px; h
 [data-sonner-toast].ev-toast .ev-toast-undo {
   display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 10px; border: 0; border-radius: 8px;
   background: none; font: inherit; font-weight: 600; color: oklch(0.42 0.17 293); cursor: pointer;
+  flex-shrink: 0; white-space: nowrap; overflow-wrap: normal;
 }
 [data-sonner-toast].ev-toast .ev-kbd {
   display: inline-grid; place-items: center; min-width: 1.6em; height: 1.6em; padding: 0 0.4em;
@@ -298,16 +314,18 @@ body:has(.ev-skel-m) .shell-top-slot:empty::before { content: ""; width: 76px; h
   border: 1px solid oklch(0.8 0.01 293); border-bottom-width: 2px; border-radius: 5px; background: transparent;
 }
 /* Key hints only where there is a keyboard: not on touch, not below 900px (the sheet keeps its keycaps). */
-@media (hover: none), (max-width: 899px) {
+@media (hover: none), (width < 900px) {
   .ev-feed .ev-card .ev-kbd, .ev-feed .ev-hints, .ev-feed .ev-player .ev-kbd, [data-sonner-toast].ev-toast .ev-kbd { display: none; }
+  .ev-feed .ev-idle-keys { display: none; }
+  .ev-feed .ev-idle-touch { display: inline; }
 }
 [data-sonner-toast].ev-toast .ev-toast-undo:hover { background: oklch(0.92 0.02 293); }
 [data-sonner-toast].ev-toast .ev-toast-undo:focus-visible { outline: 2px solid oklch(0.42 0.17 293); outline-offset: 2px; }
 /* Only feed toasts use bottom-left: on desktop it starts at the queue column, clear of the rail. */
-@media (min-width: 900px) {
+@media (width >= 900px) {
   [data-sonner-toaster][data-x-position="left"] { --offset-left: 84px !important; }
 }
-@media (min-width: 1100px) {
+@media (width >= 1100px) {
   [data-sonner-toaster][data-x-position="left"] { --offset-left: 260px !important; }
 }
 
@@ -346,6 +364,9 @@ html:has(.ev-snap), html:has(.ev-snap) body { overflow: hidden; }
   background: color-mix(in oklch, var(--a-dark) 42%, var(--panel)); border: 1px solid color-mix(in oklch, var(--a) 24%, var(--line));
   box-shadow: 0 24px 50px -24px rgba(0, 0, 0, 0.8);
   cursor: grab; user-select: none; -webkit-user-select: none;
+  /* Vertical scrolling and pinch-zoom stay with the browser over the card (it covers most of the
+     screen); !important beats the pan-y framer-motion writes inline for drag="x". */
+  touch-action: pan-y pinch-zoom !important;
 }
 .ev-feed .ev-m-card:active { cursor: grabbing; }
 /* Artwork is sized against BOTH the container's width and height so the whole card always fits;
@@ -406,6 +427,39 @@ html:has(.ev-snap), html:has(.ev-snap) body { overflow: hidden; }
 /* No tracks yet / none: the desktop pane's copy, in the chips' place and height. */
 .ev-feed .ev-m-chips-note { align-items: center; height: 40px; font-size: 13px; color: var(--fg-3); }
 
+/* Short pages (iPhone SE in Safari, the cold line or the player bar showing, phones in landscape).
+   The card adapts to the page's height so nothing is clipped from 220px up: first the artwork
+   shrinks further, then the track chips go, then the why sentence. The play button, the name and
+   the save / open / share row always stay. Wide and short pages (landscape) put the artwork beside
+   the text instead, which fits down to about 90px. */
+.ev-feed .ev-m-page, .ev-feed .ev-m-stage { container-name: ev-page; }
+@container ev-page (width < 560px) and (height < 356px) {
+  .ev-feed .ev-m-art { min-height: 76px; }
+}
+@container ev-page (width < 560px) and (height < 312px) {
+  .ev-feed .ev-m-chips { display: none; }
+  .ev-feed .ev-m-art { height: min(100cqw - 52px, 100cqh - 186px, 460px); }
+}
+@container ev-page (width < 560px) and (height < 262px) {
+  .ev-feed .ev-m-why { display: none; }
+  .ev-feed .ev-m-art { height: min(100cqw - 52px, 100cqh - 145px, 460px); }
+}
+@container ev-page (width >= 560px) and (height < 356px) {
+  .ev-feed .ev-m-page > .ev-m-card { width: min(100%, 680px); flex-direction: row; align-items: center; gap: 14px; }
+  .ev-feed .ev-m-art { flex-shrink: 0; height: max(64px, min(100cqh - 32px, 300px)); min-height: 0; aspect-ratio: 1; }
+  .ev-feed .ev-m-info { flex: 1; }
+}
+@container ev-page (width >= 560px) and (height < 200px) { .ev-feed .ev-m-chips { display: none; } }
+@container ev-page (width >= 560px) and (height < 150px) {
+  .ev-feed .ev-m-why { display: none; }
+  .ev-feed .ev-m-page > .ev-m-card { padding-block: 4px; }
+}
+/* The play button stays whole on a small artwork (this queries the artwork itself). */
+@container (height < 88px) { .ev-feed .ev-m-play { bottom: calc((100cqh - 64px) / 2); right: calc((100cqh - 64px) / 2); } }
+@container (height < 120px) {
+  .ev-feed .ev-m-liked, .ev-feed .ev-m-judged { top: 6px; left: 6px; bottom: auto; height: 24px; padding: 0 7px; font-size: 0; gap: 0; }
+}
+
 /* triage, in the thumb zone above the tab bar (which carries the bottom safe area) */
 .ev-feed .ev-m-triage { flex-shrink: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; height: 80px; padding: 10px 16px; }
 .ev-feed .ev-m-tri {
@@ -440,6 +494,8 @@ html:has(.ev-snap), html:has(.ev-snap) body { overflow: hidden; }
 .ev-feed .ev-coldline-x { display: grid; place-items: center; width: 44px; height: 44px; flex-shrink: 0; border-radius: 10px; color: var(--fg-3); }
 .ev-feed .ev-coldline-x:hover { color: var(--fg); }
 .ev-feed .ev-coldline .ev-cold-track { position: absolute; left: 16px; right: 16px; bottom: 6px; height: 2px; }
+/* Phones in landscape: the line would leave the card too little height, so it waits for a taller view. */
+@media (height < 480px) { .ev-feed.ev-snap:not(.ev-tablet) .ev-coldline { display: none; } }
 
 /* Small player bar (the docked player) between the scroller and the triage bar, as in the prototype. */
 .ev-feed .ev-m-mini { flex-shrink: 0; margin: 6px 16px 0; }
@@ -459,12 +515,13 @@ body:has(.ev-snap .ev-m-mini) [data-sonner-toaster] {
   --mobile-offset-bottom: calc(56px + 80px + env(safe-area-inset-bottom, 0px) + 66px) !important;
 }
 
-/* Server render / hydration is the Snap tree (feed-client.tsx); at 640px and wider it stays
-   hidden until the client switches to the tablet or desktop view, so no phone layout flashes. */
-@media (min-width: 640px) { .ev-feed.ev-snap:not(.ev-tablet) { display: none; } }
+/* Server render / hydration is the Snap tree (feed-client.tsx); where the tablet or desktop view
+   will be used (same conditions as feed-client.tsx) it stays hidden until the client switches,
+   so no phone layout flashes. */
+@media (width >= 900px), (width >= 640px) and (height >= 680px) { .ev-feed.ev-snap:not(.ev-tablet) { display: none; } }
 
-/* ---------- Tablet feed, 640–899px (prototype `card` view, tablet branch) ---------- */
-@media (min-width: 640px) and (max-width: 899px) {
+/* ---------- Tablet feed, 640–899px and at least 680px tall (prototype `card` view, tablet branch) ---------- */
+@media (640px <= width < 900px) and (height >= 680px) {
   .ev-feed.ev-m-strip { height: 14px; padding-bottom: 10px; }
 }
 .ev-feed.ev-tablet {
@@ -522,7 +579,7 @@ body:has(.ev-snap .ev-m-mini) [data-sonner-toaster] {
 .ev-feed .ev-m-thumb[data-v="passed"] .ev-m-thumb-text, .ev-feed .ev-m-thumb[data-v="dismissed"] .ev-m-thumb-text { opacity: 0.45; }
 
 /* Toast on tablets: above the triage bar (88px) + tab bar, clear of the Up next list. */
-@media (min-width: 640px) and (max-width: 899px) {
+@media (640px <= width < 900px) and (height >= 680px) {
   body:has(.ev-tablet) [data-sonner-toaster] {
     --offset-bottom: calc(56px + 88px + env(safe-area-inset-bottom, 0px) + 6px) !important;
     --offset-left: 24px !important;
@@ -530,4 +587,32 @@ body:has(.ev-snap .ev-m-mini) [data-sonner-toaster] {
   body:has(.ev-tablet .ev-m-mini) [data-sonner-toaster] { --offset-bottom: calc(56px + 88px + env(safe-area-inset-bottom, 0px) + 70px) !important; }
   body:has(.ev-tablet) [data-sonner-toaster] { --width: calc(100vw - 24px - 304px) !important; }
   body:has(.ev-tablet) [data-sonner-toast].ev-toast { width: 100%; max-width: none; }
+}
+
+/* Forced colours (Windows High Contrast): these parts are background-only, so they get system
+   colours. Strip: current = Highlight, liked = CanvasText, passed / dismissed = GrayText, undecided = outline. */
+@media (forced-colors: active) {
+  .ev-feed .ev-seg { forced-color-adjust: none; background: Canvas; border: 1px solid CanvasText; }
+  .ev-feed .ev-seg[data-v="liked"] { background: CanvasText; }
+  .ev-feed .ev-seg[data-v="passed"], .ev-feed .ev-seg[data-v="dismissed"] { background: GrayText; border-color: GrayText; }
+  .ev-feed .ev-seg[data-sel] { background: Highlight; border-color: Highlight; }
+  .ev-feed .ev-row[data-sel], .ev-feed .ev-m-thumb[aria-current="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
+  .ev-feed .ev-meter, .ev-feed .ev-cold-track { border: 1px solid CanvasText; }
+  .ev-feed .ev-meter > span, .ev-feed .ev-cold-track > span { forced-color-adjust: none; background: CanvasText; }
+}
+
+/* Safari before 16.2 has no color-mix(): artist shades fall back to the artist colour itself and the
+   mixed backgrounds to flat tokens (see the token fallbacks in app/globals.css). */
+@supports not (color: color-mix(in oklch, red, blue)) {
+  .ev-feed .ev-row, .ev-feed .ev-card, .ev-feed .ev-m-card, .ev-feed .ev-m-ghost, .ev-feed .ev-m-thumb, .ev-feed .ev-player { --a-dark: var(--a); --a-light: var(--a, var(--violet)); }
+  .ev-feed .ev-card { background: var(--panel); }
+  .ev-feed .ev-m-card { background: var(--panel); border-color: var(--line); }
+  .ev-feed .ev-m-ghost { background: var(--panel); }
+  .ev-feed .ev-row-art-icon { background: rgba(0, 0, 0, 0.55); }
+  .ev-feed .ev-seg[data-v="passed"], .ev-feed .ev-seg[data-v="dismissed"] { background: var(--line-strong); }
+  .ev-feed button.ev-tri:hover, .ev-feed .ev-m-tri:active, .ev-feed .ev-track:hover, .ev-feed .ev-track[data-current] { background: var(--raise); }
+  .ev-feed .ev-track[data-current] .ev-track-name, .ev-feed .ev-track[data-current] .ev-track-n { color: var(--fg); }
+  .ev-feed .ev-btn-primary:hover:not(:disabled) { background: var(--violet-fill); }
+  .ev-feed .ev-m-verdict-more { background: rgba(139, 92, 246, 0.42); }
+  .ev-feed .ev-m-tri-like { background: var(--raise); }
 }

@@ -54,6 +54,9 @@ describe("FeedDesktop server render", () => {
     for (const label of ["Less like this", "Dismiss", "More like this"]) expect(html).toContain(label)
     expect(html).toMatch(/<strong>3<\/strong> of 3 left/)
     expect(html).toMatch(/aria-label="Select Yin Yin" aria-current="true"/)
+    // "Load more artists" is always at the end of the queue column, not only in the end state.
+    const queue = html.slice(html.indexOf('class="ev-queue"'), html.indexOf('class="ev-focus"'))
+    expect(queue).toMatch(/class="ev-queue-more"><button type="button" class="ev-btn ev-btn-ghost">Load more artists<\/button>/)
   })
 
   it("an artist with no image and no tracks shows the letter panel, not an image", () => {

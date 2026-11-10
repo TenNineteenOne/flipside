@@ -65,13 +65,13 @@ export function FeedDesktop({ triage, signalCount, onLoadMore, generating }: Fee
             {tuning.more.length > 0 && (
               <div className="ev-tune-group">
                 <span className="ev-tune-label">Leaning toward</span>
-                <ul className="ev-chips">{tuning.more.map((g) => <li key={g} className="ev-chip ev-chip-more">{g}</li>)}</ul>
+                <ul className="ev-chips">{tuning.more.map((g) => <li key={g} className="ev-chip ev-chip-more" title={g}>{g}</li>)}</ul>
               </div>
             )}
             {tuning.less.length > 0 && (
               <div className="ev-tune-group">
                 <span className="ev-tune-label">Leaning away</span>
-                <ul className="ev-chips">{tuning.less.map((g) => <li key={g} className="ev-chip">{g}</li>)}</ul>
+                <ul className="ev-chips">{tuning.less.map((g) => <li key={g} className="ev-chip" title={g}>{g}</li>)}</ul>
               </div>
             )}
           </section>
@@ -149,6 +149,7 @@ export function FeedDesktop({ triage, signalCount, onLoadMore, generating }: Fee
           </AnimatePresence>
         </ul>
         {visible.length > 0 && remaining === 0 && <p className="ev-queue-foot">Queue clear. These are the ones you kept.</p>}
+        <div className="ev-queue-more"><LoadMore onLoadMore={onLoadMore} generating={generating} /></div>
       </main>
 
       <section className="ev-focus" aria-live="polite" aria-label="Selected artist">
@@ -253,6 +254,7 @@ function FocusCard({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
             {playable.map((t, i) => {
               const current = currentTrack?.id === t.id
               const on = current && playing
+              const dur = formatDuration(t.durationMs)
               return (
                 <li key={t.id}>
                   <button type="button" className="ev-track" data-current={current || undefined} onClick={() => triage.playTrack(a, i)} aria-label={`${on ? "Pause" : "Play"} ${t.name}`}>
@@ -261,7 +263,7 @@ function FocusCard({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
                       {!on && <Play className="ev-track-hover" size={13} fill="currentColor" strokeWidth={0} />}
                     </span>
                     <span className="ev-track-name">{t.name}<span className="ev-track-album">{t.albumName}</span></span>
-                    <span className="ev-track-dur">{formatDuration(t.durationMs)}</span>
+                    {dur && <span className="ev-track-dur">{dur}</span>}
                     {current && <span className="ev-track-bar" aria-hidden><span style={{ transform: `scaleX(${progress})` }} /></span>}
                   </button>
                 </li>
@@ -292,11 +294,18 @@ export function EndState({ triage, onLoadMore, generating }: { triage: FeedTriag
         {lean.length > 0 && <> Tomorrow&rsquo;s batch leans toward <strong>{lean.join(" and ")}</strong>.</>}
       </p>
       <div className="ev-end-actions">
-        <button type="button" className="ev-btn ev-btn-primary" onClick={onLoadMore} disabled={generating}>
-          {generating ? "Generating…" : "Load more artists"}
-        </button>
+        <LoadMore onLoadMore={onLoadMore} generating={generating} primary />
         <Link className="ev-btn ev-btn-ghost" href="/saved">Review saved</Link>
       </div>
     </div>
+  )
+}
+
+/** "Load more artists": the end state's primary button, and always available at the end of the queue / Up next list. */
+export function LoadMore({ onLoadMore, generating, primary = false }: { onLoadMore: () => void; generating: boolean; primary?: boolean }) {
+  return (
+    <button type="button" className={`ev-btn ${primary ? "ev-btn-primary" : "ev-btn-ghost"}`} onClick={onLoadMore} disabled={generating}>
+      {generating ? "Generating…" : "Load more artists"}
+    </button>
   )
 }

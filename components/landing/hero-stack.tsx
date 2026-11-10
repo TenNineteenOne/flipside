@@ -115,7 +115,9 @@ export function HeroStack() {
               <button type="button" className="ev-stack-track" onClick={toggle} data-current={owns || undefined}>
                 <span className="ev-stack-track-name">{track.name}</span>
                 <span className="ev-stack-track-dur">
-                  {owns ? formatDuration(audio.progress * PREVIEW_MS) : "0:30"} of {formatDuration(track.durationMs)}
+                  {/* formatDuration returns "" for zero / missing: the elapsed time still reads 0:00, and no total means no "of". */}
+                  {owns ? formatDuration(audio.progress * PREVIEW_MS) || "0:00" : "0:30"}
+                  {formatDuration(track.durationMs) && ` of ${formatDuration(track.durationMs)}`}
                 </span>
               </button>
               <div className="ev-stack-triage">

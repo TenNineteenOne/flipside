@@ -58,13 +58,16 @@ describe("AppShell server render", () => {
     expect(html).not.toContain('aria-current="page"')
   })
 
-  it("avatar menu holds Settings and Sign out; page content renders in main", () => {
+  it("avatar is a closed menu button (no Popover API); page content renders in main", () => {
     const html = render("/settings")
-    const menu = block(html, 'id="shell-menu"', "div")
-    expect(menu).toContain("Settings")
-    expect(menu).toContain("Sign out")
-    expect(menu).toMatch(/<a[^>]*aria-current="page"[^>]*href="\/settings"|<a[^>]*href="\/settings"[^>]*aria-current="page"/)
-    expect(html).toMatch(/<button[^>]*popovertarget="shell-menu"/i)
+    const avatar = html.match(/<button[^>]*class="shell-avatar"[^>]*>/)?.[0] ?? ""
+    expect(avatar).toContain('aria-haspopup="menu"')
+    expect(avatar).toContain('aria-expanded="false"')
+    expect(avatar).toContain('aria-label="Account and settings"')
+    expect(html).not.toMatch(/popover/i)
+    // The menu (Settings, Sign out) is rendered only while open.
+    expect(html).not.toContain('id="shell-menu"')
+    expect(html).not.toContain("Sign out")
     expect(block(html, 'class="shell-main"', "main")).toContain("page body")
   })
 })

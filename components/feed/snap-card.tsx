@@ -1,7 +1,7 @@
 "use client"
 
 import "./feed.css"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { motion, useMotionValue, useReducedMotion, useTransform, type PanInfo } from "framer-motion"
 import { Bookmark, Heart, Pause, Play, Share2, ThumbsDown, X } from "lucide-react"
 import { PlatformIcon } from "@/components/platform-icon"
@@ -21,8 +21,11 @@ const VERDICT: Record<string, "liked" | "passed" | "dismissed"> = { thumbs_up: "
 /**
  * Horizontal swipe on a card that stays where it is (the scroller moves on):
  * a release past the threshold commits at once and the card springs back to
- * rest (dragSnapToOrigin); it ignores new drags until it is back. Reduced
- * motion: no rotation, no spring, the card jumps back.
+ * rest (dragSnapToOrigin); it ignores new drags until it is back. A cancelled
+ * pointer (the browser took the gesture over, a call came in) never commits:
+ * framer-motion ends the drag on pointercancel like on pointerup, so the
+ * cancel is noted first (React's listener runs before framer's window one).
+ * Reduced motion: no rotation, no spring, the card jumps back.
  */
 function useSwipe(onCommit: (dir: 1 | -1) => void) {
   const reduce = !!useReducedMotion()
@@ -31,15 +34,20 @@ function useSwipe(onCommit: (dir: 1 | -1) => void) {
   const more = useTransform(x, [24, SWIPE_THRESHOLD], [0, 1])
   const less = useTransform(x, [-24, -SWIPE_THRESHOLD], [0, 1])
   const [busy, setBusy] = useState(false)
+  const cancelled = useRef(false)
   const onDragEnd = (_: unknown, info: PanInfo) => {
-    const dir = swipeDirection(info.offset.x, info.velocity.x)
+    const dir = cancelled.current ? null : swipeDirection(info.offset.x, info.velocity.x)
+    cancelled.current = false
     if (reduce) x.jump(0)
     else if (dir) setBusy(true)
     if (dir) onCommit(dir)
   }
   return {
     reduce,
-    style: { x, rotate: reduce ? 0 : rotate, touchAction: "pan-y" as const },
+    // touch-action is in feed.css (pan-y pinch-zoom): framer-motion's inline pan-y would block pinch-zoom.
+    style: { x, rotate: reduce ? 0 : rotate },
+    onPointerDown: () => { cancelled.current = false },
+    onCancel: () => { cancelled.current = true },
     drag: busy ? false : ("x" as const),
     dragSnapToOrigin: !reduce,
     onDragEnd,
@@ -89,6 +97,9 @@ export function SnapCard({ a, triage, eager = false, enter = false }: {
       dragSnapToOrigin={sw.dragSnapToOrigin}
       onDragEnd={sw.onDragEnd}
       onDragTransitionEnd={sw.onDragTransitionEnd}
+      onPointerDown={sw.onPointerDown}
+      onPointerCancel={sw.onCancel}
+      onTouchCancel={sw.onCancel}
       aria-label={`${a.name}. Swipe right for more like this, left for less.`}
     >
       <div className="ev-m-art">

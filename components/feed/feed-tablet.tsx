@@ -3,7 +3,7 @@
 import "./feed.css"
 import { useEffect, useRef } from "react"
 import { Heart, X } from "lucide-react"
-import { Art, artistVar, EndState } from "@/components/feed/feed-desktop"
+import { Art, artistVar, EndState, LoadMore } from "@/components/feed/feed-desktop"
 import { ColdLine, PlayerBar, TopBarProgress, TriageBar } from "@/components/feed/feed-snap"
 import { SnapCard } from "@/components/feed/snap-card"
 import { artworkFor } from "@/lib/feed/artwork"
@@ -39,7 +39,9 @@ export function FeedTablet({ triage, signalCount, onLoadMore, generating }: Feed
     const row = selectedId && list?.querySelector<HTMLElement>(`[data-id="${CSS.escape(selectedId)}"]`)
     if (!list || !row) return
     const smooth = !matchMedia("(prefers-reduced-motion: reduce)").matches
-    list.scrollTo({ top: row.offsetTop - list.clientHeight / 2 + row.clientHeight / 2, behavior: smooth ? "smooth" : "auto" })
+    // Row and list offsets are both from the fixed frame (.ev-tablet), so their difference is the row's place in the list.
+    const top = row.offsetTop - list.offsetTop
+    list.scrollTo({ top: top - list.clientHeight / 2 + row.clientHeight / 2, behavior: smooth ? "smooth" : "auto" })
   }, [selectedId])
 
   return (
@@ -90,6 +92,7 @@ export function FeedTablet({ triage, signalCount, onLoadMore, generating }: Feed
               </li>
             )
           })}
+          <li className="ev-m-rail-more"><LoadMore onLoadMore={onLoadMore} generating={generating} /></li>
         </ol>
       </nav>
     </div>

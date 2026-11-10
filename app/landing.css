@@ -199,3 +199,17 @@
   .ev-landing *, .ev-landing *::before, .ev-landing *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
   .ev-landing .ev-caret { animation: none; }
 }
+
+/* Narrowest phones (320px): the sample card's buttons and the step fragments tighten so they never widen the page. */
+@media (width < 360px) {
+  .ev-landing .ev-stack-triage .ev-tri { padding: 0 6px; gap: 5px; font-size: 13px; }
+  .ev-landing .ev-frag { padding: 16px; }
+}
+
+/* Safari before 16.2 has no color-mix(): flat fallbacks (tokens in app/globals.css). */
+@supports not (color: color-mix(in oklch, red, blue)) {
+  .ev-landing .ev-stack-card, .ev-landing .ev-frag-queue li { --a-dark: var(--a); --a-light: var(--a); }
+  .ev-landing .ev-stack-card { background: var(--panel); border-color: var(--line); }
+  .ev-landing .ev-btn-primary:hover { background: var(--violet-fill); }
+  .ev-landing button.ev-tri:hover { background: var(--raise); }
+}

@@ -142,6 +142,16 @@
   --sidebar-ring: var(--accent);
 }
 
+/* Safari before 16.2 has no color-mix(): solid equivalents of the two mixed tokens (sRGB of the
+   mixes; the fill keeps 4.9:1 with white). Container query units need Safari 16.0, so the effective
+   minimum is Safari 16.0, with these flat fallbacks on 16.0-16.1 (docs/wiki/pages-and-components.md). */
+@supports not (color: color-mix(in oklch, red, blue)) {
+  :root {
+    --violet-wash: rgba(139, 92, 246, 0.16);
+    --violet-fill: #8054e3;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -190,8 +200,11 @@
 /* ── Page head ─────────────────────────────────────────────────── */
 .page-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  gap: 4px 16px;
+  min-width: 0;
   padding: 18px 0 8px;
 }
 .page-head h1 {
@@ -208,10 +221,15 @@
   text-transform: uppercase;
   letter-spacing: 0.12em;
   white-space: nowrap;
-  flex-shrink: 0;
-  margin-left: 16px;
+  min-width: 0;
 }
-@media (min-width: 900px) {
+/* The tagline inside .sub reads as a sentence: normal case and tracking, and it may wrap. */
+.page-head .sub .serif {
+  text-transform: none;
+  letter-spacing: 0;
+  white-space: normal;
+}
+@media (width >= 900px) {
   .page-head h1 { font-size: 38px; }
 }
 
@@ -317,7 +335,7 @@
 
 /* Explore card triage row (components/feed/artist-card.tsx): icons drop out when narrow, as in the feed. */
 .fs-card-triage { display: flex; gap: 6px; container-type: inline-size; }
-@container (max-width: 360px) {
+@container (width < 361px) {
   .fs-card-triage .btn { font-size: 13px !important; padding: 0 6px !important; }
   .fs-card-triage svg { display: none; }
 }
