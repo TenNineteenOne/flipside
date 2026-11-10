@@ -67,7 +67,11 @@
 }
 
 /* queue */
-.ev-feed .ev-queue { grid-area: queue; min-height: 0; overflow-y: auto; padding: 0 28px 96px; scrollbar-gutter: stable; }
+.ev-feed .ev-queue {
+  grid-area: queue; min-height: 0; overflow-y: auto; padding: 0 28px 96px; scrollbar-gutter: stable;
+  /* Focus scrolling, undo reselect and scrollIntoView all stop below the sticky header + column row. */
+  scroll-padding-top: calc(var(--ev-head-h, 0px) + var(--ev-cols-h) + 2px);
+}
 .ev-feed .ev-queue-head {
   position: sticky; top: 0; z-index: 10; display: flex; align-items: flex-end; justify-content: space-between; gap: 24px;
   padding: 28px 0 18px; margin-bottom: 6px; background: var(--bg); border-bottom: 1px solid var(--line);
@@ -95,8 +99,6 @@
   position: relative; border-radius: 10px;
   transition: background-color 120ms var(--ease), border-color 120ms var(--ease);
   content-visibility: auto; contain-intrinsic-size: auto 66px;
-  /* J/K's scrollIntoView({ block: "nearest" }) stops below both sticky headers */
-  scroll-margin-top: calc(var(--ev-head-h, 0px) + var(--ev-cols-h) + 2px);
 }
 .ev-feed .ev-cols {
   position: sticky; top: var(--ev-head-h, 0px); z-index: 5; height: var(--ev-cols-h); padding-top: 0; padding-bottom: 0;
