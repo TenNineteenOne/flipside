@@ -177,6 +177,7 @@ export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatfor
         onAutoClose: expire,
         onDismiss: expire,
       })
+      return id
     },
     [undoLast, dismissToast],
   )
@@ -192,17 +193,24 @@ export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatfor
       if (isDoubleActivation(lastAdvance.current, artistId, opts.advance, now)) return null
       if (opts.advance) lastAdvance.current = { artistId, at: now }
       const plan = decide({ ids, signals, selectedId, playingArtistId }, { artistId, name: a.name, signal, ...opts })
-      if (plan.send.kind === "set") void setSignal(artistId, plan.send.signal)
+      const sent = plan.send.kind === "set" ? setSignal(artistId, plan.send.signal) : null
       setSelectedId(plan.selectId)
       if (plan.audio.kind === "play") {
         const next = byId.get(plan.audio.artistId)
         if (next) playArtist(next)
       } else if (plan.audio.kind === "pause") pause()
       setLastPlan(plan)
-      if (plan.message) notify(plan.message, plan.undo)
+      const shown = plan.message ? notify(plan.message, plan.undo) : null
+      // The request failed and the verdict rolled back (useArtistFeedback toasts the error): this
+      // decision's "… Undo" toast would describe something that did not happen, so it goes, with its undo.
+      void sent?.then((ok) => {
+        if (ok || !shown || toastId.current !== shown) return
+        undoRef.current = null
+        dismissToast()
+      })
       return plan
     },
-    [byId, ids, signals, selectedId, playingArtistId, setSignal, playArtist, pause, notify],
+    [byId, ids, signals, selectedId, playingArtistId, setSignal, playArtist, pause, notify, dismissToast],
   )
 
   const save = useCallback(
