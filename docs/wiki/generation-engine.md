@@ -1,6 +1,6 @@
 ---
 title: Generation Engine (Feed)
-updated: 2026-11-09
+updated: 2026-11-10
 related: [[explore-engine]], [[music-providers]], [[external-apis]], [[genre-system]], [[data-model]]
 ---
 
@@ -68,7 +68,7 @@ The Feed ("For You") pipeline. Entry point: `buildRecommendations(input)` in
     Rewrites get `created_at: now` so the nightly 3-day unseen expiry doesn't drop them again
     (#175 F-C). An artist the user only scrolled past (seen > 7 days ago, no feedback, save or
     `skip_at`) **resurfaces** with `seen_at: null` (owner decision D1, #175 F26). The feed
-    query and `hasFreshRecs` also skip any `skip_at` row (defense in depth).
+    query also skips any `skip_at` row (defense in depth).
 14. **Return fast** — the result carries `count`, `pending`, one `finish()` continuation,
     and `metrics`.
 15. **Background** (`finish()` via `after()`) — confirm the rest of the primary pool
@@ -89,7 +89,6 @@ The Feed ("For You") pipeline. Entry point: `buildRecommendations(input)` in
 | `cluster-cap.ts` | 25% per-genre diversity cap (single-list + cross-rail) |
 | `scoring` (in engine) | `k^popularity` tier multiplier + relevance |
 | `window.ts` | weekly-stable seeds: `cacheWindowSeed`, `seededShuffle`, `sampleLikes` |
-| `freshness.ts` | "has ≥5 unseen unexpired recs?"; its only caller (the old landing splash redirect) was removed when the landing went static (#184), so it is currently unused |
 | `gen-timing.ts` (+ `lib/metrics/api-call-counter.ts`) | instrumentation (`[gen-timing]` logs) |
 
 Outside this folder: Last.fm calls go through `lib/lastfm` (one adapter), name → uuid
