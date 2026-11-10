@@ -43,7 +43,9 @@ function DockedPlayer() {
   if (!currentTrack) {
     return (
       <div className="ev-player" data-idle>
-        <span className="ev-player-idle">Nothing playing. Press <kbd className="ev-kbd">Space</kbd> to hear the selected artist.</span>
+        {/* feed.css shows one of the two: the key hint where there is a keyboard, the tap hint on touch. */}
+        <span className="ev-player-idle ev-idle-keys">Nothing playing. Press <kbd className="ev-kbd">Space</kbd> to hear the selected artist.</span>
+        <span className="ev-player-idle ev-idle-touch">Nothing playing. Tap play to hear the selected artist.</span>
       </div>
     )
   }

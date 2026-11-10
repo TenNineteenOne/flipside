@@ -217,6 +217,7 @@
 .ev-feed .ev-player-bar { position: absolute; left: 0; right: 0; top: -1px; height: 2px; }
 .ev-feed .ev-player-bar span { display: block; height: 100%; background: var(--a-light); transform-origin: left; transition: transform 250ms linear; }
 .ev-feed .ev-player-idle { font-size: 13px; color: var(--fg-3); }
+.ev-feed .ev-idle-touch { display: none; }
 
 /* rail tuning block (portalled into the shell rail; the shell hides its slot below 1100px) */
 .ev-feed.ev-tuning { display: flex; flex-direction: column; gap: 8px; }
@@ -305,6 +306,8 @@ body:has(.ev-skel-m) .shell-top-slot:empty::before { content: ""; width: 76px; h
 /* Key hints only where there is a keyboard: not on touch, not below 900px (the sheet keeps its keycaps). */
 @media (hover: none), (max-width: 899px) {
   .ev-feed .ev-card .ev-kbd, .ev-feed .ev-hints, .ev-feed .ev-player .ev-kbd, [data-sonner-toast].ev-toast .ev-kbd { display: none; }
+  .ev-feed .ev-idle-keys { display: none; }
+  .ev-feed .ev-idle-touch { display: inline; }
 }
 [data-sonner-toast].ev-toast .ev-toast-undo:hover { background: oklch(0.92 0.02 293); }
 [data-sonner-toast].ev-toast .ev-toast-undo:focus-visible { outline: 2px solid oklch(0.42 0.17 293); outline-offset: 2px; }
