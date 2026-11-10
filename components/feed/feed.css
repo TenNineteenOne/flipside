@@ -518,10 +518,12 @@ body:has(.ev-snap .ev-m-mini) [data-sonner-toaster] {
   --mobile-offset-bottom: calc(56px + 80px + env(safe-area-inset-bottom, 0px) + 66px) !important;
 }
 
-/* Server render / hydration is the Snap tree (feed-client.tsx); where the tablet or desktop view
-   will be used (same conditions as feed-client.tsx) it stays hidden until the client switches,
-   so no phone layout flashes. */
+/* Server render / hydration is the guessed tree (feed-client.tsx). Where the tablet or desktop view
+   will be used (same conditions as feed-client.tsx) a server-rendered Snap tree stays hidden until
+   the client switches, so no phone layout flashes. */
 @media (width >= 900px), (width >= 640px) and (height >= 680px) { .ev-feed.ev-snap:not(.ev-tablet) { display: none; } }
+/* The desktop tree, server-rendered for a desktop guess (feed-client.tsx), stays hidden below 900px until the client switches. */
+@media (width < 900px) { .ev-feed.ev-app { display: none; } }
 
 /* ---------- Tablet feed, 640–899px and at least 680px tall (prototype `card` view, tablet branch) ---------- */
 @media (640px <= width < 900px) and (height >= 680px) {

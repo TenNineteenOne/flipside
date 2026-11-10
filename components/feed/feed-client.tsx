@@ -12,6 +12,7 @@ import { useFeedGeneration } from "@/lib/hooks/use-feed-generation"
 import { useFeedTriage } from "@/lib/hooks/use-feed-triage"
 import type { CardArtist } from "@/lib/cards/card-artist"
 import type { GenerateResult } from "@/lib/client/feed-generation"
+import type { FeedLayout } from "@/lib/feed/layout-guess"
 
 // Each layout is its own chunk, so a device downloads only the one it shows (the Snap
 // layout also brings the swipe code). The layout the server rendered has its chunk
@@ -25,6 +26,8 @@ interface FeedClientProps {
   recommendations: CardArtist[]
   musicPlatform: MusicPlatform
   signalCount: number
+  /** The server's guess (lib/feed/layout-guess) for the first render; matchMedia takes over after hydration. */
+  initialLayout?: FeedLayout
 }
 
 // Below this many unseen recs on load, quietly top up in the background so the
@@ -35,11 +38,12 @@ const TOPUP_THRESHOLD = 8
 // One layout at a time (PRD "Breakpoints"): ≥900px desktop, 640–899px tablet,
 // below 640px the Snap feed. The tablet layout needs about 660px of height, so
 // shorter viewports below 900px (phones in landscape, browser zoom) get the Snap
-// feed too. The server (and hydration) renders the Snap tree: it is what the
-// slowest clients need, and feed.css hides it under the same two conditions
-// until the client switches, so wider screens never flash a phone layout.
+// feed too. The server (and hydration) renders the layout guessed from the request
+// headers (`initialLayout`: Snap for phones, else desktop). feed.css hides the Snap
+// tree at tablet/desktop sizes and the desktop tree below 900px until the client
+// switches, so a wrong guess never flashes the wrong layout.
 // Keep these in step with feed.css and components/feed/feed-skeleton.tsx.
-type Layout = "phone" | "tablet" | "desktop"
+type Layout = FeedLayout
 const QUERIES = ["(width >= 900px)", "(width >= 640px) and (height >= 680px)"]
 const subscribeLayout = (cb: () => void) => {
   const ms = QUERIES.map((q) => matchMedia(q))
@@ -48,13 +52,12 @@ const subscribeLayout = (cb: () => void) => {
 }
 const currentLayout = (): Layout =>
   matchMedia(QUERIES[0]).matches ? "desktop" : matchMedia(QUERIES[1]).matches ? "tablet" : "phone"
-const serverLayout = (): Layout => "phone"
 
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
-export function FeedClient({ recommendations, musicPlatform, signalCount }: FeedClientProps) {
+export function FeedClient({ recommendations, musicPlatform, signalCount, initialLayout = "phone" }: FeedClientProps) {
   // Generate requests (mount top-up + Load more) share one re-entry guard, so
   // a user's own "Load more" can't collide with the background top-up.
   const generation = useFeedGeneration()
@@ -135,7 +138,8 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
   useShellBadge("/saved", Math.max(0, savedIds.size - savedAtMount))
   // Feed badge: artists still undecided (hidden at zero).
   useShellBadge("/feed", triage.remaining)
-  const layout = useSyncExternalStore(subscribeLayout, currentLayout, serverLayout)
+  // The server snapshot is used for SSR and for hydration, so both render `initialLayout`.
+  const layout = useSyncExternalStore(subscribeLayout, currentLayout, () => initialLayout)
 
   async function handleGenerateMore() {
     const r = await generation.requestMore()
