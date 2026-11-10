@@ -87,11 +87,20 @@ pages sit on the plain `--bg`.
   newly arrived undecided artist once the queue had run out), verdicts read only from `useArtistFeedback`'s `signals`, saves,
   playback per artist, and `judge(id, signal, { toggle, advance })`, which runs the pure
   `decide()` (`lib/feed/decision.ts`) and executes its plan (send, select, play/pause), then
-  shows one sonner toast (stable id, 5s) with an Undo action; `undoLast()` runs the plan's undo
-  (`setSignal` thumbs_up again / `removeSignal` / `dismiss`) and reselects, only while that toast
-  is up. Also `save`, `share` (share sheet, else clipboard), `artistLink`, `playTrack`, and
-  `tuning` (`lib/feed/tuning.ts`). Tracks fetched on demand by the focus pane are registered
-  with `addTracks`.
+  shows one sonner toast (5s, a fresh id each time, the previous one dismissed) with an Undo
+  action. The plan's undo records the verdict the artist had before (undecided, thumbs_up,
+  thumbs_down or skip); `undoLast()` puts it back with `useArtistFeedback`'s `restore`
+  (optimistic, queued behind any in-flight call, so a later decision still wins) and
+  reselects, only while that toast is up. The toast and pending undo are dropped when the feed
+  unmounts. An advancing `judge` on a different artist within 350ms of the previous advancing one
+  is ignored (`isDoubleActivation`, `lib/feed/double-activation.ts`: a double click must not
+  decide an unseen artist; a second decision on the same artist, e.g. un-like, still applies).
+  `nowPlayingArtist` is the artist the hook started the loaded track for (`nowPlayingArtistId`,
+  `lib/feed/now-playing.ts`; collaborations share track ids), else the first artist owning it.
+  Also `save`, `share` (share sheet, else clipboard), `artistLink`, `playTrack` (a track index the
+  artist lacks does nothing), and `tuning` (`lib/feed/tuning.ts`, genres deduped
+  case-insensitively, liked wins over passed). Tracks fetched on demand by the focus pane are
+  registered with `addTracks`.
 - **`FeedDesktop`** (`components/feed/feed-desktop.tsx`, styles `feed.css` under `.ev-feed`) —
   queue column ("N of M left", strip, rows) and focus pane (artwork via `artworkFor` or a
   letter panel, why, popularity, Play preview, the three triage buttons, Save / Open in
@@ -118,7 +127,8 @@ pages sit on the plain `--bg`.
   64px play button with a 30-second ring, name, genres + save / open / share, why, up to three
   track chips; artists without tracks fetch them (`useArtistTracks`) only while selected.
   Swipe (framer-motion `drag="x"`, direction lock, `touch-action: pan-y`): past 96px, or a flick
-  past 40px over 500px/s (`swipeDirection`, `lib/feed/swipe.ts`), right = `thumbs_up`, left =
+  past 40px over 500px/s, unless released with a flick back over 500px/s (`swipeDirection`,
+  `lib/feed/swipe.ts`), right = `thumbs_up`, left =
   `thumbs_down` via `judge(…, { toggle: false, advance: true })`; the card springs back to rest in
   place (`dragSnapToOrigin`) while the scroller moves on, and ignores drags until at rest. Violet /
   dark labels fade in from 24 to 96px. Decided cards show a "Liked" badge, or dimmed artwork with a
@@ -135,7 +145,10 @@ pages sit on the plain `--bg`.
 - **`FeedShortcuts`** (`components/feed/feed-shortcuts.tsx`) — mounted by `FeedClient` at every
   width: one window `keydown` listener mapped by the pure `feedAction` (`lib/feed/feed-keymap.ts`)
   onto the triage hook, and the "?" sheet (native `<dialog>`, also opened by the rail's Shortcuts
-  item via `useShellShortcuts`). Key hints (`Kbd`) are hidden on touch and below 900px.
+  item via `useShellShortcuts`). Held-key auto-repeat only repeats J/K (and arrows); on
+  non-Latin layouts an unbound key falls back to its physical `code` (`KeyX`, `Digit1`…; `?`
+  stays key-based). J/K from a decided selection go to the nearest visible artist in feed
+  order (`step`). Key hints (`Kbd`) are hidden on touch and below 900px.
   `FeedClient` also sets the Feed badge to the number of undecided artists.
 - **`MiniPlayer`** (`components/player/mini-player.tsx`) — floating pill by default (play/pause,
   close, progress; springs in, except under reduced motion);
@@ -164,7 +177,7 @@ pages sit on the plain `--bg`.
 | `useFeedFill` | seen ids, counts | polls `GET /api/recommendations` (2.5s, assembled `CardArtist[]`) → append playable; stops at target / 3 idle / 60s (after one final poll, retried once after 1.5s if the fetch throws) |
 | `useArtistTracks` | tracks | `GET /api/artists/:id/tracks?name=` (only if no baked tracks); `isFetching` is derived (true from the first render until the request settles) |
 | `useArtistColor` | — | `useMemo`: sanitized hex or deterministic name-hash fallback |
-| `useArtistFeedback` | `Map<id,signal>` | POST/DELETE `/api/feedback`, DELETE `/api/dismiss`; Explore `skip` is local-only. Controller `lib/client/artist-signals.ts`: optimistic at tap time, `railKey` captured at tap time, per-artist serialized, falls back to last confirmed value when the last queued call fails |
+| `useArtistFeedback` | `Map<id,signal>` | POST/DELETE `/api/feedback`, DELETE `/api/dismiss`; Explore `skip` is local-only. Controller `lib/client/artist-signals.ts`: optimistic at tap time, `railKey` captured at tap time, per-artist serialized, falls back to last confirmed value when the last queued call fails. `restore(id, previous)` (feed Undo) is optimistic too and picks the request(s) from the visible → previous transition (see the comment in the controller) |
 | `useArtistSaves` | `Set<id>` | POST/DELETE `/api/saves`; same artist-signal controller |
 | `useAdventurousMode` | bool | `localStorage` + cross-tab sync + `patchSettings` |
 | `useFeedGeneration` | generating | the only `POST /api/recommendations/generate` caller with a guard (`lib/client/feed-generation.ts`): `requestMore` (feed top-up / Load more), `rebuild` (Settings: feed + Explore; Explore 429 = already refreshing = success). `release()` (unmount) reports generating=false and silences the abandoned run; the feed skips `router.refresh()` after unmount. Loader/onboarding use its `postGenerate` + `classifyGenerate` |

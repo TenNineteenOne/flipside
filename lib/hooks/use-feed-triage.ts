@@ -30,7 +30,7 @@ export interface JudgeOptions {
  * The feed's triage state (PRD #182, Modules 6): selection, verdicts (read only
  * from the feedback hook's `signals`), playback per artist, and `judge`, which
  * runs the pure decision core and executes its plan. Every feed presentation
- * (desktop, legacy list, later Snap/tablet) reads the same object.
+ * (desktop, tablet and Snap) reads the same object.
  */
 const TOAST_MS = 5000
 
