@@ -1,14 +1,12 @@
 "use client"
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
+import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { useRouter } from "next/navigation"
-import { ArtistCard } from "@/components/feed/artist-card"
-import { ColdStartBanner } from "@/components/feed/cold-start-banner"
 import { FeedDesktop } from "@/components/feed/feed-desktop"
 import { FeedShortcuts } from "@/components/feed/feed-shortcuts"
 import { FeedSnap } from "@/components/feed/feed-snap"
+import { FeedTablet } from "@/components/feed/feed-tablet"
 import { useShellBadge } from "@/components/shell/shell-context"
-import { Ambient } from "@/components/visual/ambient"
 import type { MusicPlatform } from "@/lib/music-links"
 import { useFeedFill } from "@/lib/hooks/use-feed-fill"
 import { useFeedGeneration } from "@/lib/hooks/use-feed-generation"
@@ -22,41 +20,25 @@ interface FeedClientProps {
   signalCount: number
 }
 
-// ---------------------------------------------------------------------------
-// Feed sequence builder
-// ---------------------------------------------------------------------------
-
-type FeedItem = { kind: "card"; rec: CardArtist; key: string }
-
-function buildSequence(recs: CardArtist[]): FeedItem[] {
-  return recs.map((rec) => ({ kind: "card", rec, key: `c-${rec.id}` }))
-}
-
-// Module-scope: zero prop/state deps, so identity stays stable across renders.
-const FEED_PALETTE = `
-    radial-gradient(50% 40% at 18% 20%, rgba(139, 92, 246, 0.22) 0%, transparent 70%),
-    radial-gradient(55% 45% at 82% 30%, rgba(236, 111, 181, 0.18) 0%, transparent 70%),
-    radial-gradient(70% 55% at 50% 90%, rgba(125, 217, 198, 0.14) 0%, transparent 70%)
-  `
-
 // Below this many unseen recs on load, quietly top up in the background so the
 // next visit hits the warm redirect path (hasFreshRecs stays true). The visible
 // feed is unchanged this load; new recs land server-side for next time.
 const TOPUP_THRESHOLD = 8
 
-// ≥900px renders the desktop feed, below 640px the Snap feed; between, the card
-// list (until the tablet feed replaces it). One tree at a time; the server renders the list.
-const media = (query: string) => ({
-  subscribe: (cb: () => void) => {
-    const m = matchMedia(query)
-    m.addEventListener("change", cb)
-    return () => m.removeEventListener("change", cb)
-  },
-  matches: () => matchMedia(query).matches,
-})
-const WIDE = media("(min-width: 900px)")
-const PHONE = media("(max-width: 639px)")
-const onServer = () => false
+// One layout at a time (PRD "Breakpoints"): ≥900px desktop, 640–899px tablet,
+// below 640px the Snap feed. The server (and hydration) renders the Snap tree:
+// it is what the slowest clients need, and feed.css hides it at ≥640px until
+// the client switches, so wider screens never flash a phone layout.
+type Layout = "phone" | "tablet" | "desktop"
+const QUERIES = ["(min-width: 900px)", "(min-width: 640px)"]
+const subscribeLayout = (cb: () => void) => {
+  const ms = QUERIES.map((q) => matchMedia(q))
+  ms.forEach((m) => m.addEventListener("change", cb))
+  return () => ms.forEach((m) => m.removeEventListener("change", cb))
+}
+const currentLayout = (): Layout =>
+  matchMedia(QUERIES[0]).matches ? "desktop" : matchMedia(QUERIES[1]).matches ? "tablet" : "phone"
+const serverLayout = (): Layout => "phone"
 
 // ---------------------------------------------------------------------------
 // Main component
@@ -133,20 +115,17 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
     }
   }, [releaseGeneration])
 
-  const sequence = useMemo(() => buildSequence(recs), [recs])
-
-  // Selection, verdicts (feedback signals), saves and playback, shared by both
-  // layouts. Serialization and rollback live in the feedback/saves hooks.
+  // Selection, verdicts (feedback signals), saves and playback, shared by all
+  // layouts (so resizing keeps them). Serialization and rollback live in the feedback/saves hooks.
   const triage = useFeedTriage(recs, musicPlatform)
-  const { signals: dismissedSignals, setSignal, savedIds, toggleSave } = triage
+  const { savedIds } = triage
 
   // Saved badge in the rail / tab bar: artists saved since the feed opened.
   const [savedAtMount] = useState(savedIds.size)
   useShellBadge("/saved", Math.max(0, savedIds.size - savedAtMount))
   // Feed badge: artists still undecided (hidden at zero).
   useShellBadge("/feed", triage.remaining)
-  const wide = useSyncExternalStore(WIDE.subscribe, WIDE.matches, onServer)
-  const phone = useSyncExternalStore(PHONE.subscribe, PHONE.matches, onServer)
+  const layout = useSyncExternalStore(subscribeLayout, currentLayout, serverLayout)
 
   async function handleGenerateMore() {
     const r = await generation.requestMore()
@@ -163,104 +142,11 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
     }
   }
 
-  const shortcuts = <FeedShortcuts triage={triage} />
-  if (wide) {
-    return (
-      <>
-        {shortcuts}
-        <FeedDesktop triage={triage} signalCount={signalCount} onLoadMore={handleGenerateMore} generating={isGenerating} />
-      </>
-    )
-  }
-  if (phone) {
-    return (
-      <>
-        {shortcuts}
-        <FeedSnap triage={triage} signalCount={signalCount} onLoadMore={handleGenerateMore} generating={isGenerating} />
-      </>
-    )
-  }
-
+  const View = layout === "desktop" ? FeedDesktop : layout === "tablet" ? FeedTablet : FeedSnap
   return (
-    <div style={{ position: "relative" }}>
-      {shortcuts}
-      <Ambient palette={FEED_PALETTE} />
-
-      {/* Page header */}
-      <div className="page-head">
-        <h1>Today&apos;s feed</h1>
-        <span className="sub">{recs.length} artists</span>
-      </div>
-
-      {/* Feed sequence */}
-      <div className="col" style={{ gap: 24, marginTop: 8 }}>
-        <ColdStartBanner signalCount={signalCount} />
-        {sequence.map((item, index) => {
-          const { rec } = item
-          const id = rec.id
-          return (
-            <FeedCardRow
-              key={item.key}
-              rec={rec}
-              musicPlatform={musicPlatform}
-              isSaved={savedIds.has(id)}
-              dismissSignal={dismissedSignals.get(id) ?? null}
-              onSaveAction={toggleSave}
-              onFeedbackAction={setSignal}
-              priority={index === 0}
-            />
-          )
-        })}
-
-        {/* Load more */}
-        <div style={{ display: "flex", justifyContent: "center", padding: "24px 0 8px" }}>
-          <button className="btn" onClick={handleGenerateMore} disabled={isGenerating}>
-            {isGenerating ? (
-              <span className="mono" style={{ fontSize: 12 }}>Generating…</span>
-            ) : (
-              "Load more artists"
-            )}
-          </button>
-        </div>
-      </div>
-    </div>
+    <>
+      <FeedShortcuts triage={triage} />
+      <View triage={triage} signalCount={signalCount} onLoadMore={handleGenerateMore} generating={isGenerating} />
+    </>
   )
 }
-
-// Per-row wrapper that binds the stable parent actions to this row's artistId.
-// Memoized so a parent re-render (e.g. on save of a different card) doesn't
-// re-render this row unless its own props actually changed.
-interface FeedCardRowProps {
-  rec: CardArtist
-  musicPlatform: MusicPlatform
-  isSaved: boolean
-  dismissSignal: string | null
-  onSaveAction: (artistId: string) => unknown
-  onFeedbackAction: (artistId: string, signal: string) => unknown
-  priority?: boolean
-}
-
-const FeedCardRow = memo(function FeedCardRow({
-  rec,
-  musicPlatform,
-  isSaved,
-  dismissSignal,
-  onSaveAction,
-  onFeedbackAction,
-  priority = false,
-}: FeedCardRowProps) {
-  const id = rec.id
-  const onSave = useCallback(() => { void onSaveAction(id) }, [id, onSaveAction])
-  const onFeedback = useCallback((signal: string) => { void onFeedbackAction(id, signal) }, [id, onFeedbackAction])
-  return (
-    <ArtistCard
-      artist={rec}
-      musicPlatform={musicPlatform}
-      isSaved={isSaved}
-      dismissSignal={dismissSignal}
-      onSave={onSave}
-      onFeedback={onFeedback}
-      priority={priority}
-    />
-  )
-})
