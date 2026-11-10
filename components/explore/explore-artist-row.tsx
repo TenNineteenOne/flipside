@@ -1,7 +1,7 @@
 "use client"
 
 import { memo, useCallback } from "react"
-import { motion } from "framer-motion"
+import { MotionConfig, motion } from "framer-motion"
 import { ArtistCard } from "@/components/feed/artist-card"
 import type { CardArtist } from "@/lib/cards/card-artist"
 import type { MusicPlatform } from "@/lib/music-links"
@@ -30,21 +30,24 @@ export const ExploreArtistRow = memo(function ExploreArtistRow({
   )
 
   return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0 }}
-      transition={{ type: "spring", stiffness: 400, damping: 40 }}
-    >
-      <ArtistCard
-        artist={artist}
-        musicPlatform={musicPlatform}
-        onSave={handleSave}
-        onFeedback={handleFeedback}
-        isSaved={isSaved}
-        dismissSignal={dismissSignal}
-      />
-    </motion.div>
+    // Reduced motion: no springs or layout moves (the entrance never starts transparent).
+    <MotionConfig reducedMotion="user">
+      <motion.div
+        layout
+        initial={{ y: 10 }}
+        animate={{ y: 0 }}
+        exit={{ opacity: 0 }}
+        transition={{ type: "spring", stiffness: 400, damping: 40 }}
+      >
+        <ArtistCard
+          artist={artist}
+          musicPlatform={musicPlatform}
+          onSave={handleSave}
+          onFeedback={handleFeedback}
+          isSaved={isSaved}
+          dismissSignal={dismissSignal}
+        />
+      </motion.div>
+    </MotionConfig>
   )
 })

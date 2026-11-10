@@ -308,6 +308,13 @@
   background: rgba(255,255,255,0.1);
 }
 
+/* Explore card triage row (components/feed/artist-card.tsx): icons drop out when narrow, as in the feed. */
+.fs-card-triage { display: flex; gap: 6px; container-type: inline-size; }
+@container (max-width: 360px) {
+  .fs-card-triage .btn { font-size: 13px !important; padding: 0 6px !important; }
+  .fs-card-triage svg { display: none; }
+}
+
 /* ── Typography utilities ──────────────────────────────────────── */
 .eyebrow {
   font-family: var(--font-mono);
@@ -336,11 +343,6 @@
 .divider { height: 1px; background: var(--border); width: 100%; }
 
 /* ── Animations ────────────────────────────────────────────────── */
-@keyframes fadein {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.fadein { animation: fadein .35s var(--easing) both; }
 
 /* ── Navigation progress bar ──────────────────────────────────── */
 @keyframes navprog-trickle {
