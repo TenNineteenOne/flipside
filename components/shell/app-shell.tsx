@@ -1,7 +1,7 @@
 "use client"
 
 import "./shell.css"
-import { useCallback, useMemo, useRef, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { signOut } from "next-auth/react"
@@ -45,6 +45,10 @@ export function AppShell({ userSeed, initialAdventurous, pathPrefix, children }:
   const pathname = pathPrefix && rawPath.startsWith(pathPrefix) ? rawPath.slice(pathPrefix.length) : rawPath
   const { adventurous } = useAdventurousMode(initialAdventurous)
   const menuRef = useRef<HTMLDivElement>(null)
+  const avatarRef = useRef<HTMLButtonElement>(null)
+  // The avatar menu is open for the path it was opened on, so a route change closes it.
+  const [menuPath, setMenuPath] = useState<string | null>(null)
+  const menuOpen = menuPath === rawPath
 
   const [badges, setBadges] = useState<Record<string, number | undefined>>({})
   const [shortcuts, setShortcutsState] = useState<(() => void) | undefined>(undefined)
@@ -65,7 +69,39 @@ export function AppShell({ userSeed, initialAdventurous, pathPrefix, children }:
     [topSlot, topSubSlot, railSlot, setBadge, setShortcuts],
   )
 
-  const closeMenu = () => menuRef.current?.hidePopover()
+  const closeMenu = useCallback((refocus = false) => {
+    setMenuPath(null)
+    if (refocus) avatarRef.current?.focus()
+  }, [])
+
+  // State-driven menu (no Popover API: Safari before 17 lacks it). Open: focus the first item;
+  // Escape closes and returns focus to the button; a pointer down outside closes.
+  useEffect(() => {
+    if (!menuOpen) return
+    menuRef.current?.querySelector<HTMLElement>("[role=menuitem]")?.focus()
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as Node
+      if (!menuRef.current?.contains(t) && !avatarRef.current?.contains(t)) closeMenu()
+    }
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") { e.preventDefault(); closeMenu(true) }
+    }
+    document.addEventListener("pointerdown", onDown)
+    document.addEventListener("keydown", onKey)
+    return () => {
+      document.removeEventListener("pointerdown", onDown)
+      document.removeEventListener("keydown", onKey)
+    }
+  }, [menuOpen, closeMenu])
+
+  // Arrow keys move between the items (menu-button pattern).
+  const onMenuKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return
+    e.preventDefault()
+    const items = [...e.currentTarget.querySelectorAll<HTMLElement>("[role=menuitem]")]
+    const i = items.indexOf(document.activeElement as HTMLElement)
+    items[(i + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length]?.focus()
+  }
 
   return (
     <ShellContext.Provider value={api}>
@@ -117,10 +153,14 @@ export function AppShell({ userSeed, initialAdventurous, pathPrefix, children }:
             </Link>
             <div className="shell-top-slot" ref={setTopSlot} />
             <button
+              ref={avatarRef}
               type="button"
               className="shell-avatar"
-              popoverTarget="shell-menu"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              aria-controls={menuOpen ? "shell-menu" : undefined}
               aria-label="Account and settings"
+              onClick={() => (menuOpen ? closeMenu() : setMenuPath(rawPath))}
             >
               <IdenticonAvatar seed={userSeed} size={30} />
             </button>
@@ -128,32 +168,37 @@ export function AppShell({ userSeed, initialAdventurous, pathPrefix, children }:
           {/* Optional second row (empty → hidden): the phone feed's progress strip. */}
           <div className="shell-top-sub" ref={setTopSubSlot} />
         </header>
+        {menuOpen && (
         <div
           id="shell-menu"
           ref={menuRef}
-          popover="auto"
+          role="menu"
+          aria-label="Account"
           className="shell-menu"
-          // Tabbing out of the menu closes it (menu-button pattern); Escape and outside clicks are native.
+          onKeyDown={onMenuKey}
+          // Tabbing out of the menu closes it (menu-button pattern).
           onBlur={(e) => {
             const next = e.relatedTarget as HTMLElement | null
-            if (next && !e.currentTarget.contains(next) && !next.closest(".shell-avatar")) closeMenu()
+            if (next && !e.currentTarget.contains(next) && next !== avatarRef.current) closeMenu()
           }}
         >
           <Link
             href="/settings"
+            role="menuitem"
             className="shell-menu-item"
             aria-current={isCurrent(pathname, "/settings") ? "page" : undefined}
-            onClick={closeMenu}
+            onClick={() => closeMenu()}
           >
             <Settings size={18} strokeWidth={1.75} aria-hidden />
             Settings
             <NavLinkStatus />
           </Link>
-          <button type="button" className="shell-menu-item" onClick={() => signOut({ callbackUrl: "/" })}>
+          <button type="button" role="menuitem" className="shell-menu-item" onClick={() => { closeMenu(); void signOut({ callbackUrl: "/" }) }}>
             <LogOut size={18} strokeWidth={1.75} aria-hidden />
             Sign out
           </button>
         </div>
+        )}
 
         <main className="shell-main">{children}</main>
 

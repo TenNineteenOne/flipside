@@ -124,8 +124,10 @@
 
 /* ---------- top bar, avatar menu, tab bar (below 900px) ---------- */
 .shell-top, .shell-tabs { display: none; }
+/* Above the top bar, the tab bar and the fixed feed layers (all z-index 40 or below). */
 .shell-menu {
   position: fixed;
+  z-index: 60;
   inset: calc(var(--top-h) + var(--safe-t) - 2px) 12px auto auto;
   margin: 0;
   width: 240px;
@@ -136,6 +138,8 @@
   color: var(--fg);
   box-shadow: 0 24px 60px -16px rgba(0, 0, 0, 0.7);
 }
+/* The menu belongs to the top bar's avatar; if the window widens while it is open, it goes with the bar. */
+@media (width >= 900px) { .shell-menu { display: none; } }
 .shell-menu-item {
   display: flex;
   align-items: center;
