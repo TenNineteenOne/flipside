@@ -103,7 +103,21 @@
 .ev-feed .ev-rows { display: flex; flex-direction: column; gap: 2px; }
 /* One grid for the rows and their column labels (.ev-cols), so a label can't drift off its column.
    --ev-head-h is the sticky queue header's height (set by feed-desktop.tsx). */
-.ev-feed .ev-queue { --ev-cols: 48px minmax(0, 1fr) 150px 80px 76px; --ev-cols-h: 32px; }
+.ev-feed .ev-queue { --ev-cols-h: 32px; }
+/* Columns follow the QUEUE's width (container ev-queue, content box), not the viewport, so the
+   Artist column never drops below ~260px: Popularity from 530px, Genre from 700px. --ev-cols is set
+   on the queue's children (a container can't query itself); labels and cells hide together. */
+.ev-feed .ev-queue > * { --ev-cols: 48px minmax(0, 1fr) 76px; }
+.ev-feed .ev-row-genre, .ev-feed .ev-col-genre, .ev-feed .ev-row-pop, .ev-feed .ev-col-pop { display: none; }
+@container ev-queue (width >= 530px) {
+  .ev-feed .ev-queue > * { --ev-cols: 48px minmax(0, 1fr) 80px 76px; }
+  .ev-feed .ev-row-pop { display: flex; }
+  .ev-feed .ev-col-pop { display: block; }
+}
+@container ev-queue (width >= 700px) {
+  .ev-feed .ev-queue > * { --ev-cols: 48px minmax(0, 1fr) 150px 80px 76px; }
+  .ev-feed .ev-row-genre, .ev-feed .ev-col-genre { display: block; }
+}
 .ev-feed .ev-row, .ev-feed .ev-cols {
   display: grid; align-items: center; gap: 14px; grid-template-columns: var(--ev-cols);
   padding: 8px 12px 8px 8px; border: 1px solid transparent;
@@ -142,7 +156,7 @@
 .ev-feed .ev-row-name-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .ev-feed .ev-row-why { font-size: 13px; color: var(--fg-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ev-feed .ev-row-genre { font-size: 13px; color: var(--fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
-.ev-feed .ev-row-pop { display: flex; align-items: center; gap: 8px; pointer-events: none; }
+.ev-feed .ev-row-pop { align-items: center; gap: 8px; pointer-events: none; }
 .ev-feed .ev-row-pop-n { font: 400 11px/1 var(--font-mono); color: var(--fg-3); }
 .ev-feed .ev-row-state { display: flex; justify-content: flex-end; pointer-events: none; }
 .ev-feed .ev-saved-tag { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; border-radius: 6px; font-size: 12px; font-weight: 600; color: var(--fg-2); background: var(--raise); }
@@ -318,14 +332,8 @@ body:has(.ev-skel-m) .shell-top-slot:empty::before { content: ""; width: 76px; h
   body:has(.ev-skel-m) .shell-top-sub:empty { align-items: flex-start; height: 14px; }
 }
 
-@media (width < 1280px) {
-  .ev-feed .ev-queue { --ev-cols: 48px minmax(0, 1fr) 80px 76px; }
-  .ev-feed .ev-row-genre, .ev-feed .ev-col-genre { display: none; }
-}
 @media (width < 1100px) {
   .ev-feed.ev-app { grid-template-columns: minmax(0, 1fr) 380px; }
-  .ev-feed .ev-row-pop, .ev-feed .ev-col-pop { display: none; }
-  .ev-feed .ev-queue { --ev-cols: 48px minmax(0, 1fr) 76px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .ev-feed *, .ev-feed *::before, .ev-feed *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }

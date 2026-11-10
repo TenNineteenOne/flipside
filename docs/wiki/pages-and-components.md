@@ -188,8 +188,11 @@ triage buttons, track chips, Play preview, the landing's primary buttons) a 1px 
   structure, so its header height always matches. A `ResizeObserver` writes the header's height to
   `--ev-head-h` on the queue; the sticky column label row (`QueueColumns`, `feed-skeleton.tsx`, shared
   with the skeleton: Artist / Genre / "Popularity 0–100", the hint "Lower means more obscure" as
-  visually hidden text only, on the rows' own grid so labels can't drift; hidden while no rows are
-  visible) sticks at `top: var(--ev-head-h)`, and the queue's `scroll-padding-top` (header + label
+  visually hidden text only, on the rows' own grid (`--ev-cols`) so labels can't drift; hidden while
+  no rows are visible). Which columns show follows the queue's own width (container queries on
+  `.ev-queue`, not the viewport, since the rail and focus pane also take width): Popularity from a
+  530px queue, Genre from 700px, so the Artist column never shrinks below ~260px to make room for
+  them; labels, row cells and the skeleton's labels hide together. The label row sticks at `top: var(--ev-head-h)`, and the queue's `scroll-padding-top` (header + label
   row) keeps keyboard focus, undo reselect, J/K and row clicks clear of both. Rows: art (play), name
   (ellipsis) and reason, genre (`title` holds the full genre), popularity meter and number
   (visually hidden "Genre:" / "Popularity: … out of 100"), Liked / Saved tag; a passed or dismissed row fades and slides out via
