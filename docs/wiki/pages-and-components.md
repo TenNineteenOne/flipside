@@ -6,9 +6,25 @@ related: [[api-routes]], [[generation-engine]], [[explore-engine]], [[settings-a
 
 # Pages, Components & Client Data Flow
 
-The UI. Two route groups (see [[architecture-overview]]): `(app)` (authed, persistent
-nav + player) and `(marketing)` (sign-in, onboarding). Every `(app)` page is an async
-server component that queries Supabase, then hands data to a `"use client"` shell.
+The UI. Two route groups (see [[architecture-overview]]): `(app)` (authed, inside the
+`AppShell` with the audio provider and player) and `(marketing)` (sign-in, onboarding), plus
+the static landing page at `/` and the development-only `/dev-preview` harness. Every `(app)`
+page is an async server component that queries Supabase, then hands data to a `"use client"`
+shell.
+
+## Look (the "Evolved" redesign, PRD #182)
+
+Tokens live in `app/globals.css` `:root`: `--bg`, `--rail`, `--panel`, `--raise`, `--line`,
+`--line-strong`, `--fg` / `--fg-2` / `--fg-3`, `--violet` (the one accent), `--violet-ink`
+(violet text, focus rings), `--violet-wash` (chips), `--violet-fill` (the background behind
+white text on violet: `--violet` itself is 4.2:1 with white, this is 4.7:1), `--ease`. The old
+names (`--bg-base`, `--text-primary`, `--accent`, …) and the shadcn mappings are re-pointed at
+them, so untouched pages follow. Two fonts (`next/font`): Familjen Grotesk for all text, Martian
+Mono for key hints, durations and counts. Each artist's colour is `--a` on its card or row, with
+`--a-dark` / `--a-light` derived in CSS. No glow, blur, grain or blend layers. A base
+`:focus-visible` rule draws a 2px `--violet-ink` ring on everything focusable; components may
+refine it. Untouched legacy pages (Explore, History, Saved, Stats, Settings) still use the
+`components/visual/ambient.tsx` radial page backgrounds.
 
 ## Screens (`app/(app)` + `app/(marketing)`)
 
@@ -17,8 +33,8 @@ server component that queries Supabase, then hands data to a `"use client"` shel
 | `/` (landing) | nothing: static, prerendered; never reads session, cookies or headers | `app/page.tsx` + `app/landing.css` (scoped under `.ev-landing`). Hero is `HeroStack` (`components/landing/hero-stack.tsx`) inside its own `AudioProvider`: six sample artists from `data/landing-sample.json` (regenerate with `npm run build:landing-sample`; `validateLandingSample` in `lib/landing/sample.ts` keeps every URL on the CSP's iTunes hosts). Signed-in visitors never see it: the proxy redirects `/` to `/feed` |
 | `/sign-in` | — | username-only `signIn("credentials")` (Existing / New mode, `?mode=new` from the landing CTA), then `/api/onboarding/check` → onboarding or feed (`router.replace`); signed-in users are bounced to `/feed` by the proxy |
 | `/onboarding` | — | artist search + genre picker + Last.fm/stats.fm usernames + platform; saves via `patchSettings` (`PATCH /api/settings`) + `POST /api/onboarding/seeds` (a different route from Settings' `/api/settings/seed-artists`); fire-and-forget first generate (`postGenerate`). Genres cap at 50; "Get started" is disabled while 1–2 artists are picked (the seeds route needs ≥3). `/feed` redirects here until onboarding is done |
-| `/feed` | `recommendation_cache` (unseen, scored, ≤20), tracks cache, signal counts; empty → `RecommendationsLoader` + `ExplorePrewarm` | `FeedClient`: ≥900px renders `FeedDesktop` (queue + focus pane), 640–899px `FeedTablet`, below 640px `FeedSnap` (one tree, picked by a `matchMedia` `useSyncExternalStore`; the server and hydration render `FeedSnap`, which `feed.css` hides at ≥640px until the client switches); all read `useFeedTriage`, so resizing keeps selection, verdicts, saves and playback. Renders `CardArtist[]` from `loadFeedCards` (`lib/cards/feed-cards.ts`: tracks-cache fallback, colour lift, drop no-preview cards, `interleave()`); `useFeedFill` poll-append (same assembler via `GET /api/recommendations`), low-queue auto-generate |
-| `/explore` | `buildExploreRails({hydrate, regenerate:false})` (never blocks); challenge streamed via React 19 `use()` | `ExploreClient`: JSX over `useRailSession` (`lib/client/rail-session.ts`: rails, active rail, adventurous ordering, shuffle/apply, poll-swap after shuffle/settings; a regen POST 429 means a build is already running → poll; Shuffle/Apply/cold start write `explore-regen-at` so a later visit resumes the poll; a thrown final GET is retried once after 1.5s) |
+| `/feed` | `recommendation_cache` (unseen, scored, ≤20), tracks cache, signal counts; empty → `RecommendationsLoader` + `ExplorePrewarm`; `loading.tsx` is a CSS-only skeleton per layout (desktop panes, tablet card + Up next, one Snap page + triage bar, reserving the top bar's count/strip row), so nothing shifts when the feed arrives | `FeedClient`: ≥900px renders `FeedDesktop` (queue + focus pane), 640–899px `FeedTablet`, below 640px `FeedSnap` (one tree, picked by a `matchMedia` `useSyncExternalStore`; the server and hydration render `FeedSnap`, which `feed.css` hides at ≥640px until the client switches); all read `useFeedTriage`, so resizing keeps selection, verdicts, saves and playback. Renders `CardArtist[]` from `loadFeedCards` (`lib/cards/feed-cards.ts`: tracks-cache fallback, colour lift, drop no-preview cards, `interleave()`); `useFeedFill` poll-append (same assembler via `GET /api/recommendations`), low-queue auto-generate |
+| `/explore` | `buildExploreRails({hydrate, regenerate:false})` (never blocks); challenge streamed via React 19 `use()` | Rails of `ArtistCard`s (the only remaining user of that card). `ExploreClient`: JSX over `useRailSession` (`lib/client/rail-session.ts`: rails, active rail, adventurous ordering, shuffle/apply, poll-swap after shuffle/settings; a regen POST 429 means a build is already running → poll; Shuffle/Apply/cold start write `explore-regen-at` so a later visit resumes the poll; a thrown final GET is retried once after 1.5s) |
 | `/history` | seen recs + feedback/saves, derived `signal` | `HistoryClient`: filter tabs, time grouping; signal changes + undo/unblock via `useArtistFeedback` (`setSignal` / `removeSignal` / `dismiss`) |
 | `/saved` | `saves` enriched from `recommendation_cache` | `SavedClient`: grid, optimistic unsave, open-in-platform + share |
 | `/stats` | 6 parallel count queries + taste profile | `StatsClient`: stat cards, top genres, SVG popularity scatter |
@@ -45,11 +61,23 @@ server component that queries Supabase, then hands data to a `"use client"` shel
   `AppShell` `pathPrefix="/dev-preview"` so `/dev-preview/feed` marks Feed as current.
   `/dev-preview/feed?start=N` starts with N artists and the stub serves the rest in batches of 6
   per generate (exercises appends and Load more); `/dev-preview/feed-empty` and
-  `/dev-preview/feed-loading` show the empty-feed loader and the loading skeleton.
-- **`ArtistCard`** (`components/feed/artist-card.tsx`) — the primary card: 340px hero image
-  (tinted by `artist_color`), `TrackStrip`, reason pill, actions. States via `dismissSignal`
-  (collapse on down/skip, green outline on up). Hooks: `useAudio`, `useArtistTracks`,
-  `useArtistColor`. "Open in {platform}" + Share + Bookmark + feedback strip.
+  `/dev-preview/feed-loading` show the empty-feed loader and the loading skeleton;
+  `/dev-preview/explore-card` renders Explore's `ExploreArtistRow` / `ArtistCard` in every
+  state (expanded, liked + saved, no image, no tracks, passed, dismissed; buttons toggle
+  locally); `/dev-preview/shell` shows the shell around filler. The layout calls `notFound()`
+  when `NODE_ENV === "production"`; a production build answers 404 for every harness route.
+- **`ArtistCard`** (`components/feed/artist-card.tsx`) — Explore's card (the feed no longer
+  uses it): `--panel` surface, `--line` border (violet when liked), 16px radius, 340px hero
+  image with a plain artist-colour gradient tint and a dark scrim, name + "genre · popularity",
+  `TrackStrip`, the reason as a `--fg-2` line, then "Open in {platform}" + Share (copy link),
+  Bookmark (`aria-pressed`), and Less like this / Dismiss / More like this in the feed's triage
+  look (icons drop out below a 360px container). States via `dismissSignal`: down/skip collapse
+  to a 56px "Passed" / "Dismissed" bar, up keeps the card with a solid violet "Liked". Hooks:
+  `useAudio`, `useArtistTracks`, `useArtistColor`.
+- **`ColdStartBanner`** (`components/feed/cold-start-banner.tsx`, styles `.ev-cold*` in
+  `feed.css`) — "Flipside signal · N of 5" with "Keep exploring — recs get smarter." and a thin
+  violet progress bar until the listener has 5 signals. A `--panel` box at the top of the
+  desktop queue; with `onDismiss`, one dismissible line under the top bar (phone and tablet).
 - **`useFeedTriage`** (`lib/hooks/use-feed-triage.ts`) — the feed's one triage object: selection
   (initially `firstUndecided`, then `reconcileSelection`: kept across appends, and the first
   newly arrived undecided artist once the queue had run out), verdicts read only from `useArtistFeedback`'s `signals`, saves,
@@ -105,20 +133,21 @@ server component that queries Supabase, then hands data to a `"use client"` shel
   onto the triage hook, and the "?" sheet (native `<dialog>`, also opened by the rail's Shortcuts
   item via `useShellShortcuts`). Key hints (`Kbd`) are hidden on touch and below 900px.
   `FeedClient` also sets the Feed badge to the number of undecided artists.
-- **`MiniPlayer`** (`components/player/mini-player.tsx`) — floating pill by default;
+- **`MiniPlayer`** (`components/player/mini-player.tsx`) — floating pill by default (play/pause,
+  close, progress; springs in, except under reduced motion);
   `<MiniPlayer docked />` is the in-page player at the bottom of the desktop focus pane. While a
   docked one or the phone feed is mounted (`useSuppressFloatingPlayer`, a module-level count read
   with `useSyncExternalStore`) the floating pill renders nothing, so no route or width checks are
   needed.
-- **`TrackStrip`** — 1–3 playable tracks (expandable); play button → `onPlay`. No network.
-- **`MiniPlayer`** (`components/player/`) — persistent floating pill from `useAudio`
-  context; play/pause/stop + progress.
+- **`TrackStrip`** (`components/feed/track-strip.tsx`) — `ArtistCard`'s 1–3 playable tracks
+  (a "View all tracks" button expands the rest); play button → `onPlay`. No network.
 - **`CardArtist`** (`lib/cards/card-artist.ts`) — the one card view model (`ArtistWithTracks`
   + raw `artistColor` + `why {sourceArtists, genres}`). Assembled server-side by
   `lib/cards/feed-cards.ts` (Feed) and `lib/cards/explore-rail-payloads.ts` (Explore);
   `ArtistCard` takes it directly. Display colour always goes through
   `resolveArtistColor` (`lib/color-utils.ts`: sanitize; `#8b5cf6` sentinel/null → name hash).
-- **`ExploreArtistRow`** — motion wrapper binding a `CardArtist` to `ArtistCard`.
+- **`ExploreArtistRow`** — motion wrapper binding a `CardArtist` to `ArtistCard` (layout
+  animation and entrance by transform only; none under reduced motion).
 - **`ArtistSearch`** (`components/onboarding/`) — debounced (350ms), 2-char minimum, `GET /api/onboarding/
   search`; shows a "degraded" notice on Spotify rate-limit fallback.
 - **`PlatformIcon`** — inline SVG per `spotify`/`apple_music`/`youtube_music`.
@@ -127,6 +156,7 @@ server component that queries Supabase, then hands data to a `"use client"` shel
 
 | Hook | State | API |
 |---|---|---|
+| `useFeedTriage` | selection, verdicts (from `useArtistFeedback`), saves, playback, undo toast | the feed's single triage object for desktop, tablet and Snap: `judge`, `undoLast`, `select`, `move`, `becomeCurrent`, `togglePlay`, `playTrack`, `save`, `share`, `artistLink`, `addTracks`; derived `selected`, `visible`, `remaining`, `total`, `counts`, `tuning`, `nowPlayingArtist` (details under Shared components) |
 | `useFeedFill` | seen ids, counts | polls `GET /api/recommendations` (2.5s, assembled `CardArtist[]`) → append playable; stops at target / 3 idle / 60s (after one final poll, retried once after 1.5s if the fetch throws) |
 | `useArtistTracks` | tracks | `GET /api/artists/:id/tracks?name=` (only if no baked tracks); `isFetching` is derived (true from the first render until the request settles) |
 | `useArtistColor` | — | `useMemo`: sanitized hex or deterministic name-hash fallback |

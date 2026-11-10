@@ -95,23 +95,6 @@ export default function SignInPage({
         padding: "24px 16px",
       }}
     >
-      {/* Ambient aura */}
-      <div
-        aria-hidden
-        style={{
-          position: "fixed",
-          top: "30%",
-          left: "50%",
-          transform: "translate(-50%, -50%)",
-          width: 500,
-          height: 500,
-          borderRadius: "50%",
-          background: "radial-gradient(circle, rgba(139,92,246,0.18) 0%, transparent 70%)",
-          pointerEvents: "none",
-          zIndex: 0,
-        }}
-      />
-
       <div
         style={{
           position: "relative",

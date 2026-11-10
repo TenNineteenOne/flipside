@@ -21,8 +21,8 @@ interface FeedClientProps {
 }
 
 // Below this many unseen recs on load, quietly top up in the background so the
-// next visit hits the warm redirect path (hasFreshRecs stays true). The visible
-// feed is unchanged this load; new recs land server-side for next time.
+// next visit opens on a full queue. The visible feed is unchanged this load;
+// new recs land server-side for next time.
 const TOPUP_THRESHOLD = 8
 
 // One layout at a time (PRD "Breakpoints"): ≥900px desktop, 640–899px tablet,

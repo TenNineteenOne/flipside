@@ -48,7 +48,7 @@
 .ev-feed button.ev-tri:hover { color: var(--fg); background: color-mix(in oklch, var(--raise), white 6%); }
 .ev-feed button.ev-tri:active { transform: scale(0.97); }
 .ev-feed .ev-tri-like { color: var(--violet-ink); }
-.ev-feed .ev-tri-like[aria-pressed="true"] { background: var(--violet); color: #fff; }
+.ev-feed .ev-tri-like[aria-pressed="true"] { background: var(--violet-fill); color: #fff; }
 
 /* Two panes filling the shell's main area (the rail is the shell's). */
 .ev-feed.ev-app {
@@ -106,7 +106,7 @@
 .ev-feed .ev-row-pop-n { font: 400 11px/1 var(--font-mono); color: var(--fg-3); }
 .ev-feed .ev-row-state { display: flex; justify-content: flex-end; pointer-events: none; }
 .ev-feed .ev-saved-tag { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; border-radius: 6px; font-size: 12px; font-weight: 600; color: var(--fg-2); background: var(--raise); }
-.ev-feed .ev-liked-tag { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; border-radius: 6px; font-size: 12px; font-weight: 600; color: #fff; background: var(--violet); }
+.ev-feed .ev-liked-tag { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; border-radius: 6px; font-size: 12px; font-weight: 600; color: #fff; background: var(--violet-fill); }
 .ev-feed .ev-row[data-liked] .ev-row-name { color: var(--fg); }
 
 .ev-feed .ev-eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 12px; }
@@ -197,7 +197,8 @@
 .ev-feed .ev-track-hover { position: absolute; opacity: 0; color: var(--fg); }
 .ev-feed .ev-track:hover .ev-track-hover { opacity: 1; }
 .ev-feed .ev-track:hover .ev-track-i { opacity: 0; }
-.ev-feed .ev-track[data-current] .ev-track-name, .ev-feed .ev-track[data-current] .ev-track-n { color: var(--a-light); }
+/* Text uses a lighter mix than --a-light so dark artist colours still reach 4.5:1 on the pane. */
+.ev-feed .ev-track[data-current] .ev-track-name, .ev-feed .ev-track[data-current] .ev-track-n { color: color-mix(in oklch, var(--a) 35%, white); }
 .ev-feed .ev-track-name { display: flex; flex-direction: column; min-width: 0; font-size: 14px; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ev-feed .ev-track-album { font-size: 12px; font-weight: 400; color: var(--fg-3); overflow: hidden; text-overflow: ellipsis; }
 .ev-feed .ev-track-dur { font: 400 11px/1 var(--font-mono); color: var(--fg-3); }
@@ -240,19 +241,32 @@
 .ev-feed .ev-end-body { color: var(--fg-2); max-width: 36ch; }
 .ev-feed .ev-end-body strong { color: var(--fg); font-weight: 600; }
 .ev-feed .ev-end-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
-.ev-feed .ev-btn-primary { background: var(--violet); color: #fff; }
-.ev-feed .ev-btn-primary:hover:not(:disabled) { background: var(--violet-hi); }
+.ev-feed .ev-btn-primary { background: var(--violet-fill); color: #fff; }
+.ev-feed .ev-btn-primary:hover:not(:disabled) { background: color-mix(in oklch, var(--violet) 86%, black); }
 .ev-feed .ev-btn-primary:disabled { cursor: default; opacity: 0.7; }
 .ev-feed .ev-btn-ghost { border: 1px solid var(--line-strong); color: var(--fg); text-decoration: none; }
 .ev-feed .ev-btn-ghost:hover { background: var(--raise); }
 
-/* loading skeleton (app/(app)/feed/loading.tsx): desktop panes ≥900px, card list below */
+/* loading skeleton (app/(app)/feed/loading.tsx): desktop panes ≥900px, tablet 640–899px, Snap below */
 .ev-feed .ev-skel-line { display: block; height: 12px; }
 .ev-feed .ev-skel-card { background: var(--panel); animation: none; }
 .ev-feed .ev-skel-card > .fs-skeleton { display: block; }
 .ev-feed.ev-skel-wide .ev-row { content-visibility: visible; }
 @media (max-width: 899px) { .ev-skel-wide { display: none !important; } }
-@media (min-width: 900px) { .ev-skel-narrow { display: none; } }
+@media (max-width: 639px), (min-width: 900px) { .ev-feed.ev-tablet.ev-skel-tablet { display: none; } }
+.ev-feed.ev-skel-m .ev-m-page, .ev-feed.ev-skel-m .ev-m-rail > li { content-visibility: visible; }
+.ev-feed.ev-skel-m span.fs-skeleton {
+  display: block; background-color: transparent;
+  background-image: linear-gradient(90deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.03) 100%);
+}
+.ev-feed .ev-skel-mcard { background: var(--panel); border-color: var(--line); cursor: default; }
+/* Reserve the top bar's count and strip row (filled by ShellSlot once the feed arrives). */
+body:has(.ev-skel-m) .shell-top-sub:empty { display: flex; align-items: center; height: 10px; padding-right: 16px; }
+body:has(.ev-skel-m) .shell-top-sub:empty::before { content: ""; flex: 1; height: 4px; border-radius: 2px; background: var(--line); }
+body:has(.ev-skel-m) .shell-top-slot:empty::before { content: ""; width: 76px; height: 14px; border-radius: 7px; background: var(--line); }
+@media (min-width: 640px) and (max-width: 899px) {
+  body:has(.ev-skel-m) .shell-top-sub:empty { align-items: flex-start; height: 14px; }
+}
 
 @media (max-width: 1279px) {
   .ev-feed .ev-row { grid-template-columns: 48px minmax(0, 1fr) 80px 76px; }
@@ -346,7 +360,7 @@ html:has(.ev-snap), html:has(.ev-snap) body { overflow: hidden; }
 .ev-feed .ev-m-verdict { position: absolute; inset: 0; display: flex; align-items: flex-start; padding: 14px; pointer-events: none; }
 .ev-feed .ev-m-verdict span { display: inline-flex; align-items: center; gap: 7px; height: 38px; padding: 0 14px; border-radius: 10px; font-size: 16px; font-weight: 650; }
 .ev-feed .ev-m-verdict-more { background: color-mix(in oklch, var(--violet) 42%, transparent); }
-.ev-feed .ev-m-verdict-more span { background: var(--violet); color: #fff; }
+.ev-feed .ev-m-verdict-more span { background: var(--violet-fill); color: #fff; }
 .ev-feed .ev-m-verdict-less { justify-content: flex-end; background: rgba(12, 10, 16, 0.6); }
 .ev-feed .ev-m-verdict-less span { background: var(--fg); color: oklch(0.18 0.01 293); }
 /* decided cards stay in the scroll: liked badge; passed / dismissed artwork dimmed with a badge */
@@ -354,7 +368,7 @@ html:has(.ev-snap), html:has(.ev-snap) body { overflow: hidden; }
   position: absolute; left: 12px; bottom: 12px; display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px;
   border-radius: 8px; font-size: 13px; font-weight: 600;
 }
-.ev-feed .ev-m-liked { background: var(--violet); color: #fff; }
+.ev-feed .ev-m-liked { background: var(--violet-fill); color: #fff; }
 .ev-feed .ev-m-judged { gap: 6px; background: var(--fg); color: oklch(0.18 0.01 293); }
 .ev-feed .ev-m-card[data-v="passed"] .ev-m-img, .ev-feed .ev-m-card[data-v="dismissed"] .ev-m-img { opacity: 0.4; filter: grayscale(0.7); }
 .ev-feed .ev-m-play {
@@ -401,23 +415,31 @@ html:has(.ev-snap), html:has(.ev-snap) body { overflow: hidden; }
 }
 .ev-feed .ev-m-tri:active { transform: scale(0.96); background: color-mix(in oklch, var(--raise), white 8%); }
 .ev-feed .ev-m-tri-like { color: var(--violet-ink); background: color-mix(in oklch, var(--violet) 14%, var(--raise)); }
-.ev-feed .ev-m-tri-like[aria-pressed="true"] { background: var(--violet); color: #fff; }
+.ev-feed .ev-m-tri-like[aria-pressed="true"] { background: var(--violet-fill); color: #fff; }
 .ev-feed .ev-m-triage[data-hidden] { visibility: hidden; }
 
 /* end of queue: the final snap page */
 .ev-feed .ev-m-page > .ev-end { padding: 24px 20px; width: min(100%, 480px); }
 .ev-feed .ev-m-page .ev-end-img { width: 72px; height: 72px; }
 
-/* cold-start hint: one dismissible line above the scroller */
+/* cold-start hint (components/feed/cold-start-banner.tsx): a panel at the top of the desktop queue,
+   one dismissible line above the scroller on phones and tablets. Mono only for the count. */
+.ev-feed .ev-cold { display: flex; flex-direction: column; gap: 10px; padding: 12px 16px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+.ev-feed .ev-cold-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.ev-feed .ev-cold-label { flex-shrink: 0; font-size: 14px; font-weight: 600; color: var(--fg-2); white-space: nowrap; }
+.ev-feed .ev-cold-n { font: 400 12px/1 var(--font-mono); color: var(--fg); font-variant-numeric: tabular-nums; }
+.ev-feed .ev-cold-sub { min-width: 0; font-size: 13px; color: var(--fg-3); text-align: right; }
+.ev-feed .ev-cold-track { height: 3px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.ev-feed .ev-cold-track > span { display: block; height: 100%; background: var(--violet); border-radius: inherit; transform-origin: left; transition: transform 250ms var(--ease); }
 .ev-feed .ev-coldline {
   position: relative; flex-shrink: 0; display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 4px 2px 16px;
   border-bottom: 1px solid var(--line);
 }
-.ev-feed .ev-coldline-label { flex-shrink: 0; font-size: 10.5px; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: 0.18em; }
-.ev-feed .ev-coldline-sub { flex: 1; min-width: 0; font-size: 12px; color: var(--fg-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev-feed .ev-coldline .ev-cold-label { font-size: 13px; }
+.ev-feed .ev-coldline .ev-cold-sub { flex: 1; font-size: 13px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ev-feed .ev-coldline-x { display: grid; place-items: center; width: 44px; height: 44px; flex-shrink: 0; border-radius: 10px; color: var(--fg-3); }
 .ev-feed .ev-coldline-x:hover { color: var(--fg); }
-.ev-feed .ev-coldline-track { position: absolute; left: 16px; right: 16px; bottom: 6px; height: 2px; border-radius: 999px; background: rgba(255, 255, 255, 0.06); overflow: hidden; }
+.ev-feed .ev-coldline .ev-cold-track { position: absolute; left: 16px; right: 16px; bottom: 6px; height: 2px; }
 
 /* Small player bar (the docked player) between the scroller and the triage bar, as in the prototype. */
 .ev-feed .ev-m-mini { flex-shrink: 0; margin: 6px 16px 0; }
@@ -492,7 +514,7 @@ body:has(.ev-snap .ev-m-mini) [data-sonner-toaster] {
 .ev-feed .ev-m-thumb-x { position: absolute; left: 6px; top: 6px; width: 44px; height: 44px; display: grid; place-items: center; color: var(--fg-2); }
 .ev-feed .ev-m-thumb-badge {
   position: absolute; left: 36px; top: 36px; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%;
-  background: var(--violet); color: #fff; box-shadow: 0 0 0 2px var(--bg);
+  background: var(--violet-fill); color: #fff; box-shadow: 0 0 0 2px var(--bg);
 }
 .ev-feed .ev-m-thumb-text { display: flex; flex-direction: column; min-width: 0; font-size: 12px; color: var(--fg-3); }
 .ev-feed .ev-m-thumb-text > * { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

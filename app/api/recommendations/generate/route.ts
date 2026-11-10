@@ -139,8 +139,8 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
   if (!replace) {
     // ── [SECURITY PATCH] Algorithmic Queue Capacity DoS limit ──
     // Restricts bad actors from infinitely looping the background engine, but allows up to 60 unseen artists to queue.
-    // Counts only UNEXPIRED unseen rows — the same set the feed shows (feed-query,
-    // hasFreshRecs); counting expired rows left returning users stuck at an empty
+    // Counts only UNEXPIRED unseen rows — the same set the feed shows
+    // (feed-query); counting expired rows left returning users stuck at an empty
     // feed behind a "queue full" 429. Runs BEFORE the cooldown claim so a
     // queue-full 429 doesn't burn the 30s cooldown.
     const { count, error: countErr } = await supabase

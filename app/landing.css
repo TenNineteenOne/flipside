@@ -32,9 +32,13 @@
   transition: background-color 150ms var(--ease), transform 150ms var(--ease), border-color 150ms var(--ease);
 }
 .ev-landing .ev-btn:active { transform: scale(0.98); }
-.ev-landing .ev-btn-primary { background: var(--violet); color: #fff; }
-.ev-landing .ev-btn-primary:hover { background: var(--violet-hi); }
+.ev-landing .ev-btn-primary { background: var(--violet-fill); color: #fff; }
+.ev-landing .ev-btn-primary:hover { background: color-mix(in oklch, var(--violet) 86%, black); }
 .ev-landing .ev-btn-sm { min-height: 38px; padding: 0 14px; font-size: 14px; }
+/* 44px touch targets without changing the look: the hit area extends past the drawn box. */
+.ev-landing .ev-btn-sm, .ev-landing .ev-site-head > a:first-child { position: relative; }
+.ev-landing .ev-btn-sm::after { content: ""; position: absolute; inset: -3px 0; }
+.ev-landing .ev-site-head > a:first-child::after { content: ""; position: absolute; inset: -9px -4px; }
 .ev-landing .ev-btn-lg { min-height: 52px; padding: 0 22px; font-size: 17px; border-radius: 12px; }
 .ev-landing .ev-link { color: var(--fg-2); font-weight: 500; padding: 8px 4px; }
 .ev-landing .ev-link:hover { color: var(--fg); }
@@ -53,7 +57,7 @@
 .ev-landing button.ev-tri:hover { color: var(--fg); background: color-mix(in oklch, var(--raise), white 6%); }
 .ev-landing button.ev-tri:active { transform: scale(0.97); }
 .ev-landing .ev-tri-like { color: var(--violet-ink); }
-.ev-landing .ev-tri-like[aria-pressed="true"], .ev-landing .ev-tri-like[data-on] { background: var(--violet); color: #fff; }
+.ev-landing .ev-tri-like[aria-pressed="true"], .ev-landing .ev-tri-like[data-on] { background: var(--violet-fill); color: #fff; }
 
 
 /* ======================= LANDING ======================= */
@@ -116,7 +120,7 @@
 .ev-landing .ev-caret { width: 2px; height: 20px; margin-left: 1px; background: var(--violet-ink); animation: ev-blink 1s steps(1) infinite; }
 @keyframes ev-blink { 50% { opacity: 0; } }
 .ev-landing .ev-frag-ok { margin-left: auto; font-size: 12px; color: var(--fg-3); }
-.ev-landing .ev-frag-btn { display: inline-flex; align-items: center; height: 48px; padding: 0 18px; border-radius: 10px; background: var(--violet); color: #fff; font-weight: 600; }
+.ev-landing .ev-frag-btn { display: inline-flex; align-items: center; height: 48px; padding: 0 18px; border-radius: 10px; background: var(--violet-fill); color: #fff; font-weight: 600; }
 .ev-landing .ev-frag-tune { display: flex; flex-direction: column; gap: 16px; max-width: 520px; }
 .ev-landing .ev-frag-tri { display: flex; gap: 6px; }
 .ev-landing .ev-frag-tunerows { display: flex; flex-direction: column; gap: 6px; }

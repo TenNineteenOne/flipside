@@ -9,7 +9,6 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
-  --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -64,6 +63,8 @@
   --violet-hi:   oklch(0.66 0.2 293);
   --violet-ink:  oklch(0.8 0.12 293);      /* violet text on dark, focus rings */
   --violet-wash: color-mix(in oklch, #8b5cf6 16%, transparent);
+  /* Fill behind white text: --violet with white is 4.2:1, this is 4.7:1 (WCAG AA 4.5). */
+  --violet-fill: color-mix(in oklch, var(--violet) 94%, black);
   --ease:        cubic-bezier(0.16, 1, 0.3, 1);
 
   /* Legacy names, re-pointed at the Evolved tokens */
@@ -150,6 +151,11 @@
     font-feature-settings: "ss01", "cv11";
     overflow-x: hidden;
   }
+  /* PRD #182: a visible 2px --violet-ink ring on everything focusable (component rules may refine it). */
+  :focus-visible {
+    outline: 2px solid var(--violet-ink);
+    outline-offset: 2px;
+  }
   html {
     @apply font-sans;
     -webkit-font-smoothing: antialiased;
@@ -205,13 +211,6 @@
   flex-shrink: 0;
   margin-left: 16px;
 }
-.page-head .sub .serif {
-  font-family: var(--font-serif);
-  font-style: normal;
-  text-transform: none;
-  letter-spacing: 0;
-  white-space: normal;
-}
 @media (min-width: 900px) {
   .page-head h1 { font-size: 38px; }
 }
@@ -231,7 +230,7 @@
   font-weight: 600;
   font-size: 14px;
   letter-spacing: -0.005em;
-  transition: all .18s var(--easing);
+  transition: background-color .18s var(--easing), border-color .18s var(--easing), color .18s var(--easing), filter .18s var(--easing);
   cursor: pointer;
 }
 .btn:hover { background: rgba(255,255,255,0.08); border-color: var(--border-strong); }
@@ -242,14 +241,6 @@
   font-weight: 700;
 }
 .btn-primary:hover { filter: brightness(1.1); background: var(--accent); }
-.btn-spotify {
-  background: var(--spotify);
-  color: #0a0a0a;
-  border-color: transparent;
-  font-weight: 700;
-}
-.btn-spotify:hover { background: var(--spotify); filter: brightness(1.08); }
-.btn-ghost { background: transparent; border-color: transparent; }
 .btn-block { width: 100%; }
 .btn-lg { height: 56px; font-size: 15px; border-radius: 16px; }
 .btn-sm { height: 36px; font-size: 12px; padding: 0 14px; border-radius: 10px; }
@@ -263,7 +254,7 @@
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 0 18px;
-  transition: all .18s var(--easing);
+  transition: background-color .18s var(--easing), border-color .18s var(--easing), box-shadow .18s var(--easing);
 }
 .field:focus-within {
   border-color: var(--accent-border);
@@ -303,7 +294,7 @@
   font-size: 12.5px;
   font-weight: 500;
   color: var(--text-secondary);
-  transition: all .15s var(--easing);
+  transition: background-color .15s var(--easing), border-color .15s var(--easing), color .15s var(--easing);
   white-space: nowrap;
   cursor: pointer;
 }
@@ -324,6 +315,13 @@
   background: rgba(255,255,255,0.1);
 }
 
+/* Explore card triage row (components/feed/artist-card.tsx): icons drop out when narrow, as in the feed. */
+.fs-card-triage { display: flex; gap: 6px; container-type: inline-size; }
+@container (max-width: 360px) {
+  .fs-card-triage .btn { font-size: 13px !important; padding: 0 6px !important; }
+  .fs-card-triage svg { display: none; }
+}
+
 /* ── Typography utilities ──────────────────────────────────────── */
 .eyebrow {
   font-family: var(--font-mono);
@@ -339,11 +337,9 @@
   letter-spacing: -0.035em;
   font-feature-settings: "ss01";
 }
-.display-bold { font-weight: 700; }
 .serif { font-family: var(--font-serif); font-style: normal; }
 .mono { font-family: var(--font-mono); }
 .muted { color: var(--text-secondary); }
-.faint { color: var(--text-muted); }
 
 /* ── Layout utilities ──────────────────────────────────────────── */
 .row { display: flex; align-items: center; gap: 8px; }
@@ -354,15 +350,6 @@
 .divider { height: 1px; background: var(--border); width: 100%; }
 
 /* ── Animations ────────────────────────────────────────────────── */
-@keyframes fadein {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.fadein { animation: fadein .35s var(--easing) both; }
-@keyframes pulse-ring {
-  0%, 100% { box-shadow: 0 0 0 0 var(--accent-soft); }
-  50%       { box-shadow: 0 0 0 6px transparent; }
-}
 
 /* ── Navigation progress bar ──────────────────────────────────── */
 @keyframes navprog-trickle {
@@ -414,6 +401,7 @@
   animation: fs-shimmer 1.6s linear infinite;
   border-radius: 8px;
 }
+@media (prefers-reduced-motion: reduce) { .fs-skeleton { animation: none; } }
 
 /* ── Scrollbar ─────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 8px; height: 8px; }

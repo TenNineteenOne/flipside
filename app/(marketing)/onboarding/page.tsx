@@ -152,23 +152,6 @@ export default function OnboardingPage() {
         padding: "40px 16px 80px",
       }}
     >
-      {/* Ambient aura */}
-      <div
-        aria-hidden
-        style={{
-          position: "fixed",
-          top: "25%",
-          left: "50%",
-          transform: "translate(-50%, -50%)",
-          width: 600,
-          height: 600,
-          borderRadius: "50%",
-          background: "radial-gradient(circle, rgba(139,92,246,0.15) 0%, transparent 70%)",
-          pointerEvents: "none",
-          zIndex: 0,
-        }}
-      />
-
       <div style={{ position: "relative", zIndex: 1, width: "100%", maxWidth: 480 }}>
 
         {/* Header */}

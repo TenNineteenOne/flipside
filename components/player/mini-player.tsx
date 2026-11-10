@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useSyncExternalStore, type CSSProperties } from "react"
-import { AnimatePresence, motion } from "framer-motion"
+import { AnimatePresence, MotionConfig, motion } from "framer-motion"
 import Image from "next/image"
 import { Pause, Play, X } from "lucide-react"
 import { useAudio } from "@/lib/audio-context"
@@ -76,11 +76,13 @@ function FloatingPlayer() {
   const dynamicColor = artistColor && /^#[0-9a-fA-F]{6}$/.test(artistColor) ? artistColor : "#8b5cf6"
 
   return (
+    // Reduced motion: the pill appears and leaves without the spring.
+    <MotionConfig reducedMotion="user">
     <AnimatePresence>
       {currentTrack && !suppressed && (
         <motion.div
            key="mini-player"
-           initial={{ y: "150%", opacity: 0, x: "-50%" }}
+           initial={{ y: "150%", opacity: 1, x: "-50%" }}
            animate={{ y: -24, opacity: 1, x: "-50%" }} // Floating off bottom
            exit={{ y: "150%", opacity: 0, x: "-50%" }}
            transition={{ type: "spring", damping: 30, stiffness: 300 }}
@@ -89,14 +91,14 @@ function FloatingPlayer() {
              background: "var(--rail)",
              borderRadius: "24px",
              border: "1px solid rgba(255, 255, 255, 0.15)",
-             boxShadow: `0 20px 40px rgba(0,0,0,0.8), 0 0 40px ${dynamicColor}33`,
+             boxShadow: "0 20px 40px rgba(0,0,0,0.8)",
            }}
         >
           {/* Progress Indicator pinned to TOP of the float card */}
           <div className="h-[3px] w-full bg-white/5 relative top-0">
             <div
               className="h-full absolute left-0"
-              style={{ width: `${(progress * 100).toFixed(1)}%`, background: dynamicColor, boxShadow: `0 0 10px ${dynamicColor}` }}
+              style={{ width: `${(progress * 100).toFixed(1)}%`, background: dynamicColor }}
             />
           </div>
 
@@ -117,8 +119,9 @@ function FloatingPlayer() {
                 />
               ) : (
                 <div
-                  className="size-12 rounded-[10px] bg-black/50"
+                  className="size-12 rounded-[10px]"
                   style={{
+                    background: "var(--raise)",
                     border: `2px solid ${dynamicColor}40`,
                   }}
                 />
@@ -127,7 +130,7 @@ function FloatingPlayer() {
 
             {/* Track info */}
             <div className="min-w-0 flex-1">
-              <p className="truncate leading-tight font-bold text-white text-[15px]">
+              <p className="truncate leading-tight font-bold text-[var(--fg)] text-[15px]">
                 {currentTrack.name}
               </p>
               <p 
@@ -156,7 +159,7 @@ function FloatingPlayer() {
               <button
                 onClick={stop}
                 aria-label="Close player"
-                className="flex size-9 items-center justify-center rounded-full transition-colors hover:bg-white/10 hover:text-white ml-2 text-gray-400"
+                className="flex size-9 items-center justify-center rounded-full transition-colors hover:bg-white/10 hover:text-[var(--fg)] ml-2 text-[var(--fg-3)]"
               >
                 <X className="size-5" />
               </button>
@@ -165,5 +168,6 @@ function FloatingPlayer() {
         </motion.div>
       )}
     </AnimatePresence>
+    </MotionConfig>
   )
 }
