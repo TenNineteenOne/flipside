@@ -17,7 +17,7 @@ export const artistVar = (a: CardArtist) => ({ "--a": resolveArtistColor(a.artis
 
 /**
  * Artwork, or a colour panel with the first letter when there is none (never a broken image).
- * `size` is the display size: Apple artwork is fetched at twice it (artworkAt). `priority`
+ * `size` is the display size: Apple artwork is fetched at 3x it up to 64px, else 2x (artworkAt). `priority`
  * marks the likely LCP image (the selected artist's art) as a high-priority fetch.
  */
 export function Art({ a, src, size, className, alt = "", eager = false, priority = false }: {

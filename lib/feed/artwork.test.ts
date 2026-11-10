@@ -67,11 +67,17 @@ describe("letterFor", () => {
 describe("artworkAt", () => {
   const apple = "https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/33/c6/9c/33c69c01/7640159732259_cover.jpg/600x600bb.jpg"
 
-  it("asks Apple's CDN for twice the display size", () => {
-    expect(artworkAt(apple, 48)).toBe(apple.replace("600x600bb.jpg", "96x96bb.jpg"))
-    expect(artworkAt(apple, 44)).toBe(apple.replace("600x600bb.jpg", "88x88bb.jpg"))
-    expect(artworkAt(apple.replace(".jpg/600x600bb.jpg", ".png/600x600bb.png"), 40)).toMatch(/\.png\/80x80bb\.png$/)
-    expect(artworkAt(apple.replace("is1-ssl", "is4-ssl"), 36)).toMatch(/\/72x72bb\.jpg$/)
+  it("asks Apple's CDN for three times a thumbnail's size (64px or less), so 3x phone screens stay sharp", () => {
+    expect(artworkAt(apple, 48)).toBe(apple.replace("600x600bb.jpg", "144x144bb.jpg"))
+    expect(artworkAt(apple, 44)).toBe(apple.replace("600x600bb.jpg", "132x132bb.jpg"))
+    expect(artworkAt(apple.replace(".jpg/600x600bb.jpg", ".png/600x600bb.png"), 40)).toMatch(/\.png\/120x120bb\.png$/)
+    expect(artworkAt(apple.replace("is1-ssl", "is4-ssl"), 36)).toMatch(/\/108x108bb\.jpg$/)
+    expect(artworkAt(apple, 64)).toBe(apple.replace("600x600bb.jpg", "192x192bb.jpg"))
+  })
+
+  it("asks for twice the size of larger artwork", () => {
+    expect(artworkAt(apple, 65)).toBe(apple.replace("600x600bb.jpg", "130x130bb.jpg"))
+    expect(artworkAt(apple, 96)).toBe(apple.replace("600x600bb.jpg", "192x192bb.jpg"))
   })
 
   it("never upscales past the stored size", () => {
@@ -79,6 +85,7 @@ describe("artworkAt", () => {
     expect(artworkAt(apple, 300)).toBe(apple)
     const small = apple.replace("600x600bb", "100x100bb")
     expect(artworkAt(small, 96)).toBe(small)
+    expect(artworkAt(small, 40)).toBe(small) // 3x = 120 > 100
   })
 
   it("leaves other URLs and shapes alone", () => {

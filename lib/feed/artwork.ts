@@ -39,7 +39,8 @@ const MZSTATIC_SIZE = /\/(\d+)x(\d+)bb\.(jpg|png|webp)$/
 
 /**
  * The artwork URL for an image displayed at `px` CSS pixels: Apple (`*.mzstatic.com`)
- * artwork is requested at twice that (for high-density screens) instead of the
+ * artwork is requested at three times that for thumbnails of 64px or less (sharp on 3x
+ * phone screens, still a few kB) and twice that for larger artwork, instead of the
  * stored 600x600, so a 48px thumbnail fetches a few kB instead of ~100 kB. Never
  * asks for more than the stored size. Anything else (Spotify `i.scdn.co`, an
  * unrecognised shape, null) is returned unchanged.
@@ -55,7 +56,7 @@ export function artworkAt<T extends string | null>(url: T, px: number): T {
   if (!host.endsWith(".mzstatic.com")) return url
   const m = MZSTATIC_SIZE.exec(url)
   if (!m) return url
-  const want = Math.ceil(px * 2)
+  const want = Math.ceil(px * (px <= 64 ? 3 : 2))
   if (want >= Number(m[1]) || want >= Number(m[2])) return url
   return url.replace(MZSTATIC_SIZE, `/${want}x${want}bb.${m[3]}`) as T
 }
