@@ -79,7 +79,8 @@
 }
 .ev-explore .ex-challenge-row { display: flex; align-items: baseline; justify-content: space-between; gap: 4px 16px; flex-wrap: wrap; }
 .ev-explore .ex-challenge-text { min-width: 0; flex: 1 1 260px; font-size: 13px; color: var(--fg-3); overflow-wrap: anywhere; }
-.ev-explore .ex-challenge-title { margin-right: 10px; font-size: 15px; font-weight: 600; color: var(--fg); }
+/* 6px + the word space after the hidden ":" = the old 10px gap */
+.ev-explore .ex-challenge-title { margin-right: 6px; font-size: 15px; font-weight: 600; color: var(--fg); }
 .ev-explore .ex-challenge-n { display: inline-flex; align-items: center; gap: 6px; font: 400 12px/1 var(--font-mono); color: var(--fg); font-variant-numeric: tabular-nums; }
 .ev-explore .ex-challenge[data-done] .ex-challenge-n { color: var(--violet-ink); }
 .ev-explore .ex-challenge-track { height: 3px; border-radius: 999px; background: var(--line); overflow: hidden; }

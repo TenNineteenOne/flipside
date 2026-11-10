@@ -252,6 +252,7 @@ export function ExploreClient({
                 type="button"
                 className="ex-tab"
                 aria-pressed={rail.railKey === activeKey}
+                aria-label={`${rail.title}, ${rail.artists.length} artists`}
                 onClick={() => setActiveKey(rail.railKey)}
               >
                 <Icon size={15} aria-hidden />
