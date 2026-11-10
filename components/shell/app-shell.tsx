@@ -30,6 +30,8 @@ export const isCurrent = (pathname: string, href: string) =>
 interface AppShellProps {
   userSeed: string
   initialAdventurous: boolean
+  /** Dev preview only: strip this prefix before matching the current section (/dev-preview/feed → Feed). */
+  pathPrefix?: string
   children: ReactNode
 }
 
@@ -38,8 +40,9 @@ interface AppShellProps {
  * top bar (wordmark + avatar menu) and a bottom tab bar. Which one shows is
  * pure CSS, so the server render is the same at every width.
  */
-export function AppShell({ userSeed, initialAdventurous, children }: AppShellProps) {
-  const pathname = usePathname()
+export function AppShell({ userSeed, initialAdventurous, pathPrefix, children }: AppShellProps) {
+  const rawPath = usePathname()
+  const pathname = pathPrefix && rawPath.startsWith(pathPrefix) ? rawPath.slice(pathPrefix.length) : rawPath
   const { adventurous } = useAdventurousMode(initialAdventurous)
   const menuRef = useRef<HTMLDivElement>(null)
 

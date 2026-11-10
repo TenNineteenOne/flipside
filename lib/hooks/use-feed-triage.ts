@@ -1,12 +1,13 @@
 "use client"
 
-import { useCallback, useMemo, useRef, useState } from "react"
+import { createElement, Fragment, useCallback, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
+import { Undo2 } from "lucide-react"
 import { useAudio } from "@/lib/audio-context"
 import { artworkFor } from "@/lib/feed/artwork"
 import { decide, type Plan } from "@/lib/feed/decision"
 import { whyText } from "@/lib/feed/card-copy"
-import { counts, firstUndecided, remaining, visibleQueue, type Signal } from "@/lib/feed/triage-queue"
+import { counts, firstUndecided, reconcileSelection, remaining, step, visibleQueue, type Signal } from "@/lib/feed/triage-queue"
 import { tuning } from "@/lib/feed/tuning"
 import { getArtistLink, getShareableArtistLink, type MusicPlatform } from "@/lib/music-links"
 import { resolveArtistColor } from "@/lib/color-utils"
@@ -33,6 +34,15 @@ const TOAST_MS = 5000
 
 type Undo = NonNullable<Plan["undo"]>
 
+// Prototype's Undo: icon, label and the Z key hint (hidden on touch / narrow screens by feed.css).
+const UNDO_LABEL = createElement(
+  Fragment,
+  null,
+  createElement(Undo2, { size: 14, "aria-hidden": true }),
+  "Undo",
+  createElement("kbd", { className: "ev-kbd", "aria-hidden": true }, "Z"),
+)
+
 const linkRef = (a: CardArtist) => ({ artistId: a.id, spotifyId: a.spotifyId ?? null, artistName: a.name })
 
 export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatform) {
@@ -48,7 +58,10 @@ export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatfor
 
   const ids = useMemo(() => artists.map((a) => a.id), [artists])
   const byId = useMemo(() => new Map(artists.map((a) => [a.id, a])), [artists])
-  const [selectedId, setSelectedId] = useState<string | null>(() => firstUndecided(ids, signals))
+  const [chosenId, setSelectedId] = useState<string | null>(() => firstUndecided(ids, signals))
+  // Derived, not synced: appends keep the selection; at the end of the queue (null)
+  // the first newly arrived undecided artist is selected.
+  const selectedId = reconcileSelection(ids, signals, chosenId)
   const [lastPlan, setLastPlan] = useState<Plan | null>(null)
 
   // Tracks fetched on demand (useArtistTracks) for artists that arrived without any.
@@ -127,7 +140,7 @@ export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatfor
         unstyled: true,
         position: "bottom-left",
         classNames: { toast: "ev-toast", title: "ev-toast-text", actionButton: "ev-toast-undo" },
-        action: undo ? { label: "Undo", onClick: undoLast } : undefined,
+        action: undo ? { label: UNDO_LABEL, onClick: undoLast } : undefined,
         onAutoClose: expire,
         onDismiss: expire,
       })
@@ -189,6 +202,16 @@ export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatfor
     [musicPlatform, notify],
   )
 
+  /** Select the neighbour in the visible queue (clamped); returns the new selection. */
+  const move = useCallback(
+    (dir: 1 | -1) => {
+      const id = step(ids, signals, selectedId, dir)
+      if (id) setSelectedId(id)
+      return id
+    },
+    [ids, signals, selectedId],
+  )
+
   const visible = useMemo(
     () => visibleQueue(ids, signals).map((id) => byId.get(id)!),
     [ids, signals, byId],
@@ -206,6 +229,7 @@ export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatfor
     selectedId,
     selected: selectedId ? byId.get(selectedId) ?? null : null,
     select: setSelectedId,
+    move,
     visible,
     remaining: remaining(ids, signals),
     total: ids.length,

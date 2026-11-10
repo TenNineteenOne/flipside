@@ -5,6 +5,8 @@ import { AnimatePresence, motion } from "framer-motion"
 import Image from "next/image"
 import { Pause, Play, X } from "lucide-react"
 import { useAudio } from "@/lib/audio-context"
+import { readableTextOn, sanitizeHex } from "@/lib/color-utils"
+import { letterFor } from "@/lib/feed/artwork"
 
 // How many docked players are mounted. While one is (the desktop feed's focus
 // pane), the floating pill stays hidden: the page has its own player. No route
@@ -42,7 +44,13 @@ function DockedPlayer() {
   const art = artistImageUrl || currentTrack.albumImageUrl
   return (
     <div className="ev-player" style={artistColor ? ({ "--a": artistColor } as CSSProperties) : undefined}>
-      {art ? <Image src={art} alt="" width={40} height={40} /> : <span className="ev-player-blank" aria-hidden />}
+      {art ? (
+        <Image src={art} alt="" width={40} height={40} />
+      ) : (
+        <span className="ev-player-blank ev-letter" style={{ background: sanitizeHex(artistColor), color: readableTextOn(sanitizeHex(artistColor)) }} aria-hidden>
+          {letterFor(artistName)}
+        </span>
+      )}
       <div className="ev-player-text">
         <span className="ev-player-track">{currentTrack.name}</span>
         <span className="ev-player-artist">{artistName}</span>
