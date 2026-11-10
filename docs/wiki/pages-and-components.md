@@ -26,6 +26,19 @@ server component that queries Supabase, then hands data to a `"use client"` shel
 
 ## Shared components
 
+- **`AppShell`** (`components/shell/app-shell.tsx`, styles in `shell.css`) — signed-in chrome,
+  rendered by `app/(app)/layout.tsx`. ≥900px: fixed left rail (Feed, Explore, History, Saved,
+  Stats, Settings; 232px, icons-only 64px at 900–1099px). Below 900px: top bar (wordmark +
+  identicon avatar opening a native popover with Settings and Sign out via
+  `next-auth/react` `signOut`) and a five-item bottom tab bar. Which shows is CSS only.
+  `aria-current="page"` when the path equals a link or starts with it plus `/`. Adventurous
+  mode (`useAdventurousMode`) draws a 2px gradient on the rail edge / under the top bar.
+  Pages hook in via `components/shell/shell-context.tsx`: `useShellBadge(href, n)` (nav count),
+  `useShellShortcuts(fn)` (shows the rail's Shortcuts button), `<ShellSlot name="top"|"rail">`
+  (portal into the top bar / under the rail nav). Page content keeps its 520px `.app-col`.
+- **Dev preview** (`app/dev-preview/*`, `lib/dev-preview/fixtures.ts`) — development-only
+  harness (404 in production) rendering the real shell and components with fixture artists and
+  a stubbed same-origin `/api/*` fetch. Production code never imports it.
 - **`ArtistCard`** (`components/feed/artist-card.tsx`) — the primary card: 340px hero image
   (tinted by `artist_color`), `TrackStrip`, reason pill, actions. States via `dismissSignal`
   (collapse on down/skip, green outline on up). Hooks: `useAudio`, `useArtistTracks`,

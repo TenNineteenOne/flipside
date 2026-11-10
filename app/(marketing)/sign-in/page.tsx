@@ -11,6 +11,7 @@ import {
   USERNAME_RULE,
   type SignInMode,
 } from "@/lib/auth-sign-in"
+import { Wordmark } from "@/components/shell/wordmark"
 
 const MODES: { mode: SignInMode; label: string }[] = [
   { mode: "existing", label: "Existing account" },
@@ -121,12 +122,8 @@ export default function SignInPage({
       >
         {/* Brand */}
         <div style={{ marginBottom: 32, textAlign: "center" }}>
-          <div
-            className="appnav-brand"
-            style={{ justifyContent: "center", marginBottom: 8 }}
-          >
-            <span className="dot" />
-            <span className="wordmark">flipside</span>
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
+            <Wordmark />
           </div>
           <div className="serif" style={{ fontSize: 22, color: "var(--text-primary)", lineHeight: 1.3 }}>
             {isNew ? "Pick a username." : "Welcome back."}

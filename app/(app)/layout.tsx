@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation"
 import { safeAuth } from "@/lib/auth"
 import { getCachedUser } from "@/lib/user-cache"
-import { AppNav } from "@/components/nav/app-nav"
+import { AppShell } from "@/components/shell/app-shell"
 import { AudioProvider } from "@/lib/audio-context"
 import { MiniPlayer } from "@/components/player/mini-player"
 import { NavigationProgressProvider } from "@/components/nav/navigation-progress"
@@ -23,13 +23,10 @@ export default async function AppLayout({
   return (
     <NavigationProgressProvider>
       <AudioProvider>
-        <div className="app">
-          <AppNav userSeed={userSeed} initialAdventurous={initialAdventurous} />
-          <main className="app-main">
-            <div className="app-col">{children}</div>
-          </main>
-          <MiniPlayer />
-        </div>
+        <AppShell userSeed={userSeed} initialAdventurous={initialAdventurous}>
+          <div className="app-col">{children}</div>
+        </AppShell>
+        <MiniPlayer />
       </AudioProvider>
     </NavigationProgressProvider>
   )
