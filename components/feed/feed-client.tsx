@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { ArtistCard } from "@/components/feed/artist-card"
 import { ColdStartBanner } from "@/components/feed/cold-start-banner"
 import { FeedDesktop } from "@/components/feed/feed-desktop"
+import { useShellBadge } from "@/components/shell/shell-context"
 import { Ambient } from "@/components/visual/ambient"
 import type { MusicPlatform } from "@/lib/music-links"
 import { useFeedFill } from "@/lib/hooks/use-feed-fill"
@@ -131,8 +132,12 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
 
   // Selection, verdicts (feedback signals), saves and playback, shared by both
   // layouts. Serialization and rollback live in the feedback/saves hooks.
-  const triage = useFeedTriage(recs)
+  const triage = useFeedTriage(recs, musicPlatform)
   const { signals: dismissedSignals, setSignal, savedIds, toggleSave } = triage
+
+  // Saved badge in the rail / tab bar: artists saved since the feed opened.
+  const [savedAtMount] = useState(savedIds.size)
+  useShellBadge("/saved", Math.max(0, savedIds.size - savedAtMount))
   const wide = useSyncExternalStore(subscribeWide, isWide, notWide)
 
   async function handleGenerateMore() {

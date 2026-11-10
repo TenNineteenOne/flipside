@@ -1,18 +1,69 @@
 "use client"
 
+import { useEffect, useSyncExternalStore, type CSSProperties } from "react"
 import { AnimatePresence, motion } from "framer-motion"
 import Image from "next/image"
 import { Pause, Play, X } from "lucide-react"
 import { useAudio } from "@/lib/audio-context"
 
-export function MiniPlayer() {
+// How many docked players are mounted. While one is (the desktop feed's focus
+// pane), the floating pill stays hidden: the page has its own player. No route
+// or width checks: the docked one only exists where the desktop feed renders.
+let dockedCount = 0
+const dockListeners = new Set<() => void>()
+const subscribeDocked = (l: () => void) => {
+  dockListeners.add(l)
+  return () => { dockListeners.delete(l) }
+}
+const setDocked = (delta: number) => {
+  dockedCount += delta
+  dockListeners.forEach((l) => l())
+}
+
+/** `docked`: the in-page player at the bottom of the desktop feed's focus pane. Default: the floating pill. */
+export function MiniPlayer({ docked = false }: { docked?: boolean }) {
+  return docked ? <DockedPlayer /> : <FloatingPlayer />
+}
+
+function DockedPlayer() {
+  const { currentTrack, artistName, artistImageUrl, artistColor, isPlaying, progress, pause, resume } = useAudio()
+  useEffect(() => {
+    setDocked(1)
+    return () => setDocked(-1)
+  }, [])
+
+  if (!currentTrack) {
+    return (
+      <div className="ev-player" data-idle>
+        <span className="ev-player-idle">Nothing playing. Press <kbd className="ev-kbd">Space</kbd> to hear the selected artist.</span>
+      </div>
+    )
+  }
+  const art = artistImageUrl || currentTrack.albumImageUrl
+  return (
+    <div className="ev-player" style={artistColor ? ({ "--a": artistColor } as CSSProperties) : undefined}>
+      {art ? <Image src={art} alt="" width={40} height={40} /> : <span className="ev-player-blank" aria-hidden />}
+      <div className="ev-player-text">
+        <span className="ev-player-track">{currentTrack.name}</span>
+        <span className="ev-player-artist">{artistName}</span>
+      </div>
+      <button type="button" className="ev-player-btn" onClick={isPlaying ? pause : resume} aria-label={isPlaying ? "Pause" : "Play"}>
+        {isPlaying ? <Pause size={18} fill="currentColor" strokeWidth={0} aria-hidden /> : <Play size={18} fill="currentColor" strokeWidth={0} aria-hidden />}
+      </button>
+      <span className="ev-player-bar" aria-hidden><span style={{ transform: `scaleX(${progress})` }} /></span>
+    </div>
+  )
+}
+
+function FloatingPlayer() {
   const { currentTrack, artistName, artistColor, isPlaying, progress, pause, resume, stop } = useAudio()
+  const docked = useSyncExternalStore(subscribeDocked, () => dockedCount > 0, () => false)
 
   const dynamicColor = artistColor && /^#[0-9a-fA-F]{6}$/.test(artistColor) ? artistColor : "#8b5cf6"
 
   return (
     <AnimatePresence>
-      {currentTrack && (
+      {currentTrack && !docked && (
         <motion.div
            key="mini-player"
            initial={{ y: "150%", opacity: 0, x: "-50%" }}

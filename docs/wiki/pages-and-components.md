@@ -49,11 +49,22 @@ server component that queries Supabase, then hands data to a `"use client"` shel
 - **`useFeedTriage`** (`lib/hooks/use-feed-triage.ts`) — the feed's one triage object: selection
   (initially `firstUndecided`), verdicts read only from `useArtistFeedback`'s `signals`, saves,
   playback per artist, and `judge(id, signal, { toggle, advance })`, which runs the pure
-  `decide()` (`lib/feed/decision.ts`) and executes its plan (send, select, play/pause). Tracks
-  fetched on demand by the focus pane are registered with `addTracks`.
+  `decide()` (`lib/feed/decision.ts`) and executes its plan (send, select, play/pause), then
+  shows one sonner toast (stable id, 5s) with an Undo action; `undoLast()` runs the plan's undo
+  (`setSignal` thumbs_up again / `removeSignal` / `dismiss`) and reselects, only while that toast
+  is up. Also `save`, `share` (share sheet, else clipboard), `artistLink`, `playTrack`, and
+  `tuning` (`lib/feed/tuning.ts`). Tracks fetched on demand by the focus pane are registered
+  with `addTracks`.
 - **`FeedDesktop`** (`components/feed/feed-desktop.tsx`, styles `feed.css` under `.ev-feed`) —
   queue column ("N of M left", strip, rows) and focus pane (artwork via `artworkFor` or a
-  letter panel, why, popularity, Play preview, the three triage buttons). No decision logic.
+  letter panel, why, popularity, Play preview, the three triage buttons, Save / Open in
+  {platform} / Share, up to three preview tracks, docked player), plus the rail "Tuning" block
+  via `<ShellSlot name="rail">`. No decision logic. `FeedClient` sets the Saved badge
+  (`useShellBadge`) to saves made since the feed opened.
+- **`MiniPlayer`** (`components/player/mini-player.tsx`) — floating pill by default;
+  `<MiniPlayer docked />` is the in-page player at the bottom of the desktop focus pane. While a
+  docked one is mounted (a module-level count read with `useSyncExternalStore`) the floating pill
+  renders nothing, so no route or width checks are needed.
 - **`TrackStrip`** — 1–3 playable tracks (expandable); play button → `onPlay`. No network.
 - **`MiniPlayer`** (`components/player/`) — persistent floating pill from `useAudio`
   context; play/pause/stop + progress.

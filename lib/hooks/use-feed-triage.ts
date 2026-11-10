@@ -1,10 +1,14 @@
 "use client"
 
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useMemo, useRef, useState } from "react"
+import { toast } from "sonner"
 import { useAudio } from "@/lib/audio-context"
 import { artworkFor } from "@/lib/feed/artwork"
 import { decide, type Plan } from "@/lib/feed/decision"
+import { whyText } from "@/lib/feed/card-copy"
 import { counts, firstUndecided, remaining, visibleQueue, type Signal } from "@/lib/feed/triage-queue"
+import { tuning } from "@/lib/feed/tuning"
+import { getArtistLink, getShareableArtistLink, type MusicPlatform } from "@/lib/music-links"
 import { resolveArtistColor } from "@/lib/color-utils"
 import { useArtistFeedback } from "@/lib/hooks/use-artist-feedback"
 import { useArtistSaves } from "@/lib/hooks/use-artist-saves"
@@ -24,10 +28,17 @@ export interface JudgeOptions {
  * runs the pure decision core and executes its plan. Every feed presentation
  * (desktop, legacy list, later Snap/tablet) reads the same object.
  */
-export function useFeedTriage(artists: CardArtist[]) {
+const TOAST_ID = "feed-triage"
+const TOAST_MS = 5000
+
+type Undo = NonNullable<Plan["undo"]>
+
+const linkRef = (a: CardArtist) => ({ artistId: a.id, spotifyId: a.spotifyId ?? null, artistName: a.name })
+
+export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatform) {
   const audio = useAudio()
   // Same error copy the feed has always passed.
-  const { signals, setSignal } = useArtistFeedback({
+  const { signals, setSignal, removeSignal, dismiss } = useArtistFeedback({
     errorMessages: {
       undoFailed: "Couldn't undo — try again",
       saveFailed: "Couldn't save feedback — try again",
@@ -78,6 +89,52 @@ export function useFeedTriage(artists: CardArtist[]) {
     [owns, playArtist, audio.isPlaying, pause, resume],
   )
 
+  /** Play track `index` of the artist's playable tracks; the playing one toggles pause/resume. */
+  const playTrack = useCallback(
+    (a: CardArtist, index: number) => {
+      const t = tracksOf(a).filter((x) => x.previewUrl)[index]
+      if (!t || current?.id !== t.id) playArtist(a, index)
+      else if (audio.isPlaying) pause()
+      else resume()
+    },
+    [tracksOf, current, playArtist, audio.isPlaying, pause, resume],
+  )
+
+  // One toast at a time (stable id): a new decision or save replaces the last.
+  // The undo stays available exactly as long as its toast is up.
+  const undoRef = useRef<{ undo: Undo; token: object } | null>(null)
+
+  /** Undo the most recent decision while its toast is showing, then reselect that artist. No-op otherwise. */
+  const undoLast = useCallback(() => {
+    const u = undoRef.current?.undo
+    if (!u) return
+    undoRef.current = null
+    toast.dismiss(TOAST_ID)
+    if (u.kind === "setThumbsUpAgain") void setSignal(u.artistId, "thumbs_up")
+    else if (u.kind === "removeSignal") void removeSignal(u.artistId)
+    else void dismiss(u.artistId)
+    setSelectedId(u.artistId)
+  }, [setSignal, removeSignal, dismiss])
+
+  const notify = useCallback(
+    (message: string, undo: Undo | null = null) => {
+      const token = {}
+      undoRef.current = undo ? { undo, token } : null
+      const expire = () => { if (undoRef.current?.token === token) undoRef.current = null }
+      toast(message, {
+        id: TOAST_ID,
+        duration: TOAST_MS,
+        unstyled: true,
+        position: "bottom-left",
+        classNames: { toast: "ev-toast", title: "ev-toast-text", actionButton: "ev-toast-undo" },
+        action: undo ? { label: "Undo", onClick: undoLast } : undefined,
+        onAutoClose: expire,
+        onDismiss: expire,
+      })
+    },
+    [undoLast],
+  )
+
   const judge = useCallback(
     (artistId: string, signal: Signal, opts: JudgeOptions): Plan | null => {
       const a = byId.get(artistId)
@@ -90,15 +147,54 @@ export function useFeedTriage(artists: CardArtist[]) {
         if (next) playArtist(next)
       } else if (plan.audio.kind === "pause") pause()
       setLastPlan(plan)
+      if (plan.message) notify(plan.message, plan.undo)
       return plan
     },
-    [byId, ids, signals, selectedId, playingArtistId, setSignal, playArtist, pause],
+    [byId, ids, signals, selectedId, playingArtistId, setSignal, playArtist, pause, notify],
+  )
+
+  const save = useCallback(
+    (a: CardArtist) => {
+      const was = savedIds.has(a.id)
+      void toggleSave(a.id)
+      notify(was ? `Removed ${a.name} from Saved` : `Saved ${a.name}`)
+    },
+    [savedIds, toggleSave, notify],
+  )
+
+  /** The artist on the user's preferred platform. */
+  const artistLink = useCallback((a: CardArtist) => getArtistLink(musicPlatform, linkRef(a)), [musicPlatform])
+
+  /** Share sheet when available, else copy the link. A dismissed sheet is not an error. */
+  const share = useCallback(
+    async (a: CardArtist) => {
+      const url = getShareableArtistLink(musicPlatform, linkRef(a))
+      if (navigator.share) {
+        try {
+          const why = whyText(a.why)
+          await navigator.share({ title: `${a.name} on flipside`, text: why ? `${why}. Have a listen:` : undefined, url })
+          return
+        } catch (e) {
+          if (e instanceof DOMException && e.name === "AbortError") return
+          // Share refused (e.g. not allowed here): fall through to copying.
+        }
+      }
+      try {
+        await navigator.clipboard.writeText(url)
+        notify(`Link to ${a.name} copied`)
+      } catch {
+        toast.error("Couldn't copy link")
+      }
+    },
+    [musicPlatform, notify],
   )
 
   const visible = useMemo(
     () => visibleQueue(ids, signals).map((id) => byId.get(id)!),
     [ids, signals, byId],
   )
+
+  const tuningValue = useMemo(() => tuning(artists, signals), [artists, signals])
 
   return {
     /** Every loaded artist id, in feed order (the progress strip). */
@@ -114,12 +210,21 @@ export function useFeedTriage(artists: CardArtist[]) {
     remaining: remaining(ids, signals),
     total: ids.length,
     counts: counts(ids, signals),
+    /** Genres liked artists lean toward (≤6) and passed ones away from (≤4). */
+    tuning: tuningValue,
     nowPlayingArtist,
     isPlaying,
     togglePlay,
+    playTrack,
+    tracksOf,
     addTracks,
     judge,
     lastPlan,
+    undoLast,
+    save,
+    musicPlatform,
+    artistLink,
+    share,
   }
 }
 
