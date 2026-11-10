@@ -254,6 +254,7 @@ function FocusCard({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
             {playable.map((t, i) => {
               const current = currentTrack?.id === t.id
               const on = current && playing
+              const dur = formatDuration(t.durationMs)
               return (
                 <li key={t.id}>
                   <button type="button" className="ev-track" data-current={current || undefined} onClick={() => triage.playTrack(a, i)} aria-label={`${on ? "Pause" : "Play"} ${t.name}`}>
@@ -262,7 +263,7 @@ function FocusCard({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
                       {!on && <Play className="ev-track-hover" size={13} fill="currentColor" strokeWidth={0} />}
                     </span>
                     <span className="ev-track-name">{t.name}<span className="ev-track-album">{t.albumName}</span></span>
-                    <span className="ev-track-dur">{formatDuration(t.durationMs)}</span>
+                    {dur && <span className="ev-track-dur">{dur}</span>}
                     {current && <span className="ev-track-bar" aria-hidden><span style={{ transform: `scaleX(${progress})` }} /></span>}
                   </button>
                 </li>
