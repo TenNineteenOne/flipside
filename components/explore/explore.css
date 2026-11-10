@@ -1,0 +1,179 @@
+/* Explore page (explore-client.tsx, challenge-card.tsx, app/(app)/explore/loading.tsx) in the
+   Evolved vocabulary of components/feed/feed.css. Every rule is scoped under .ev-explore; the
+   artist card has its own sheet (components/feed/artist-card.css, .ex-card). The page opts out of
+   the shell's 520px column at 900px and wider (.shell-wide, components/shell/shell.css). */
+
+.ev-explore {
+  width: 100%; max-width: 1240px; margin: 0 auto;
+  color: var(--fg);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  font-size: 15px; line-height: 1.5;
+  font-feature-settings: "ss01";
+}
+.ev-explore *, .ev-explore *::before, .ev-explore *::after { box-sizing: border-box; }
+.ev-explore h1, .ev-explore h2, .ev-explore p { margin: 0; }
+.ev-explore h1, .ev-explore h2 { font-weight: 600; text-wrap: balance; }
+.ev-explore button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+.ev-explore :focus-visible { outline: 2px solid var(--violet-ink); outline-offset: 2px; border-radius: 8px; }
+
+/* header: the feed queue header's pattern */
+.ev-explore .ex-head {
+  display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 8px 24px;
+  padding: 28px 0 18px; border-bottom: 1px solid var(--line);
+}
+.ev-explore .ex-title { font-size: 26px; letter-spacing: -0.025em; line-height: 1.15; }
+.ev-explore .ex-lede { margin-top: 4px; max-width: 60ch; color: var(--fg-3); font-size: 14px; text-wrap: pretty; }
+.ev-explore .ex-tally { font-size: 13px; color: var(--fg-3); white-space: nowrap; }
+.ev-explore .ex-tally strong { font: 500 12px/1 var(--font-mono); color: var(--fg); font-variant-numeric: tabular-nums; }
+.ev-explore .ex-tally-adv { color: var(--violet-ink); }
+
+/* control row: Adventurous switch + one line, then the pending Rebuild and Shuffle */
+.ev-explore .ex-controls {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px;
+  margin-top: 14px; padding: 10px 16px; border-radius: 12px; border: 1px solid transparent;
+  transition: background-color 200ms var(--ease), border-color 200ms var(--ease);
+}
+.ev-explore[data-adventurous] .ex-controls {
+  background: var(--violet-wash); border-color: color-mix(in oklch, var(--violet) 38%, transparent);
+}
+.ev-explore .ex-adv { display: flex; align-items: center; gap: 14px; flex: 1 1 300px; min-width: 0; min-height: 44px; text-align: left; }
+.ev-explore .ex-adv:disabled { cursor: default; }
+.ev-explore .ex-switch {
+  position: relative; flex-shrink: 0; width: 40px; height: 24px; border-radius: 12px;
+  background: var(--raise); border: 1px solid var(--line-strong);
+  transition: background-color 160ms var(--ease), border-color 160ms var(--ease);
+}
+.ev-explore .ex-switch > span {
+  position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--fg-2);
+  transition: transform 160ms var(--ease), background-color 160ms var(--ease);
+}
+.ev-explore .ex-adv[aria-pressed="true"] .ex-switch { background: var(--violet-fill); border-color: var(--violet-fill); }
+.ev-explore .ex-adv[aria-pressed="true"] .ex-switch > span { transform: translateX(16px); background: #fff; }
+.ev-explore .ex-adv:hover .ex-switch { border-color: var(--fg-3); }
+.ev-explore .ex-adv:disabled .ex-switch { opacity: 0.6; }
+.ev-explore .ex-adv-text { display: flex; flex-direction: column; min-width: 0; }
+.ev-explore .ex-adv-label { font-size: 15px; font-weight: 600; }
+.ev-explore .ex-adv[aria-pressed="true"] .ex-adv-label { color: var(--violet-ink); }
+.ev-explore .ex-adv-hint { font-size: 13px; color: var(--fg-3); text-wrap: pretty; }
+.ev-explore[data-adventurous] .ex-adv-hint { color: var(--fg-2); }
+.ev-explore .ex-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+
+.ev-explore .ex-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 44px; padding: 0 16px; border-radius: 10px; font-size: 14px; font-weight: 600; white-space: nowrap;
+  transition: background-color 150ms var(--ease), transform 150ms var(--ease), border-color 150ms var(--ease);
+}
+.ev-explore .ex-btn:active:not(:disabled) { transform: scale(0.98); }
+.ev-explore .ex-btn:disabled { cursor: default; opacity: 0.75; }
+.ev-explore .ex-btn-primary { background: var(--violet-fill); color: #fff; }
+.ev-explore .ex-btn-primary:hover:not(:disabled) { background: color-mix(in oklch, var(--violet) 86%, black); }
+.ev-explore .ex-btn-ghost { border: 1px solid var(--line-strong); color: var(--fg); }
+.ev-explore .ex-btn-ghost:hover:not(:disabled) { background: var(--raise); }
+.ev-explore .ex-spin { animation: ex-spin 900ms linear infinite; }
+@keyframes ex-spin { to { transform: rotate(360deg); } }
+
+/* weekly challenge: the cold-start panel's vocabulary (title, one line, mono count, thin violet bar) */
+.ev-explore .ex-challenge {
+  display: flex; flex-direction: column; gap: 10px; margin-top: 14px;
+  padding: 12px 16px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+}
+.ev-explore .ex-challenge-row { display: flex; align-items: baseline; justify-content: space-between; gap: 4px 16px; flex-wrap: wrap; }
+.ev-explore .ex-challenge-text { min-width: 0; flex: 1 1 260px; font-size: 13px; color: var(--fg-3); overflow-wrap: anywhere; }
+.ev-explore .ex-challenge-title { margin-right: 10px; font-size: 15px; font-weight: 600; color: var(--fg); }
+.ev-explore .ex-challenge-n { display: inline-flex; align-items: center; gap: 6px; font: 400 12px/1 var(--font-mono); color: var(--fg); font-variant-numeric: tabular-nums; }
+.ev-explore .ex-challenge[data-done] .ex-challenge-n { color: var(--violet-ink); }
+.ev-explore .ex-challenge-track { height: 3px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.ev-explore .ex-challenge-track > span {
+  display: block; height: 100%; background: var(--violet); border-radius: inherit;
+  transform-origin: left; transform: scaleX(var(--p, 0)); transition: transform 600ms var(--ease);
+}
+/* Streaming placeholder (Suspense fallback): the panel's own height, so nothing moves when it arrives. */
+.ev-explore .ex-skel-challenge { width: min(320px, 70%); margin: 4px 0 6.5px; }
+.ev-explore .ex-challenge-skel .ex-challenge-row { flex-direction: column; gap: 0; }
+.ev-explore .ex-challenge-skel .ex-skel-wrap { height: 12px; margin: 4px 0 3.5px; }
+
+/* rail tabs: pills that wrap on desktop and scroll (snapping) on phones and tablets */
+.ev-explore .ex-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 24px; }
+.ev-explore .ex-tab {
+  display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; min-height: 44px; padding: 0 16px;
+  border-radius: 999px; border: 1px solid var(--line); color: var(--fg-2); font-size: 14px; font-weight: 600; white-space: nowrap;
+  transition: background-color 120ms var(--ease), border-color 120ms var(--ease), color 120ms var(--ease);
+}
+.ev-explore .ex-tab:hover { color: var(--fg); border-color: var(--line-strong); }
+.ev-explore .ex-tab[aria-pressed="true"] { background: var(--raise); border-color: var(--line-strong); color: var(--fg); }
+.ev-explore .ex-tab svg { color: var(--fg-3); }
+.ev-explore .ex-tab[aria-pressed="true"] svg { color: var(--violet-ink); }
+.ev-explore .ex-tab-n { font: 400 11px/1 var(--font-mono); color: var(--fg-3); font-variant-numeric: tabular-nums; }
+.ev-explore .ex-tab[aria-pressed="true"] .ex-tab-n { color: var(--fg-2); }
+@media (width < 900px) {
+  .ev-explore .ex-tabs {
+    flex-wrap: nowrap; overflow-x: auto; margin-inline: -16px; padding-inline: 16px; scroll-padding-inline: 16px;
+    scroll-snap-type: x mandatory; overscroll-behavior-x: contain; scrollbar-width: none;
+  }
+  .ev-explore .ex-tabs::-webkit-scrollbar { display: none; }
+  .ev-explore .ex-tab { scroll-snap-align: start; }
+  /* The focus ring of a tab at the scroller's edge stays inside it. */
+  .ev-explore .ex-tab:focus-visible { outline-offset: -2px; }
+}
+
+/* the active rail: its title and line, then the grid */
+.ev-explore .ex-rail-head { display: flex; flex-direction: column; gap: 2px; margin: 18px 0 16px; }
+.ev-explore .ex-rail-title { font-size: 18px; letter-spacing: -0.015em; line-height: 1.25; }
+.ev-explore .ex-rail-sub { color: var(--fg-3); font-size: 14px; max-width: 70ch; text-wrap: pretty; }
+.ev-explore .ex-rail-adv { display: inline-flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 13px; color: var(--violet-ink); }
+.ev-explore .ex-rail-adv svg { flex-shrink: 0; }
+
+.ev-explore .ex-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr)); gap: 20px; align-items: start;
+}
+.ev-explore .ex-grid > * { min-width: 0; }
+
+/* empty / building states */
+.ev-explore .ex-empty {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 6px; max-width: 52ch;
+  margin-top: 24px; padding: 8px 0 20px; color: var(--fg-3); font-size: 14px; text-wrap: pretty;
+}
+.ev-explore .ex-empty-title { font-size: 16px; font-weight: 600; color: var(--fg); }
+.ev-explore .ex-empty-bar { position: relative; width: 160px; height: 3px; margin-top: 8px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.ev-explore .ex-empty-bar > span { position: absolute; inset: 0; width: 40%; background: var(--violet); border-radius: inherit; animation: ex-indeterminate 1.4s var(--ease) infinite; }
+@keyframes ex-indeterminate { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+
+/* loading skeleton (loading.tsx) and the cold-start build: the same boxes as the real page */
+.ev-explore .ex-skel-line { display: block; height: 12px; border-radius: 6px; }
+.ev-explore .ex-skel-card { display: flex; flex-direction: column; border-radius: 14px; border: 1px solid var(--line); background: var(--panel); overflow: hidden; }
+.ev-explore .ex-skel-art { aspect-ratio: 3 / 2; max-height: 300px; border-radius: 0; }
+.ev-explore .ex-skel-body { display: flex; flex-direction: column; gap: 12px; padding: 16px 18px 18px; }
+.ev-explore .ex-skel-row { display: flex; gap: 6px; }
+.ev-explore .ex-skel-row > .fs-skeleton { flex: 1; height: 44px; border-radius: 9px; }
+.ev-explore .ex-skel-name { width: 60%; height: 24px; }
+.ev-explore .ex-skel-meta { width: 45%; }
+.ev-explore .ex-skel-tracks { display: block; height: 160px; border-radius: 10px; }
+.ev-explore .ex-skel-tally { width: 110px; margin: 4px 0 3.5px; }
+.ev-explore .ex-skel-hint { width: min(300px, 70vw); margin: 4px 0 3.5px; }
+.ev-explore .ex-skel-btn { display: block; width: 112px; height: 44px; border-radius: 10px; }
+.ev-explore .ex-skel-tab { flex-shrink: 0; width: 132px; height: 44px; border-radius: 999px; }
+.ev-explore .ex-skel-title { width: 150px; height: 18px; margin: 2.25px 0; }
+.ev-explore .ex-skel-sub { width: min(380px, 80vw); margin: 4.5px 0; }
+/* Lines that wrap on narrow screens get a second skeleton line there (same heights as the copy). */
+.ev-explore .ex-skel-wrap { display: none; width: 50%; }
+@media (width < 640px) { .ev-explore .ex-controls .ex-skel-wrap, .ev-explore .ex-challenge .ex-skel-wrap { display: block; } }
+@media (width < 360px) { .ev-explore .ex-rail-head .ex-skel-wrap { display: block; margin-top: 2.5px; } }
+
+@media (width < 640px) {
+  .ev-explore .ex-head { padding-top: 18px; }
+  .ev-explore .ex-title { font-size: 24px; }
+  .ev-explore .ex-actions { margin-left: 0; width: 100%; }
+  .ev-explore .ex-actions > .ex-btn { flex: 1 1 auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ev-explore *, .ev-explore *::before, .ev-explore *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
+}
+@media (forced-colors: active) {
+  .ev-explore .ex-switch, .ev-explore .ex-tab, .ev-explore .ex-challenge-track { border: 1px solid CanvasText; }
+  .ev-explore .ex-switch > span, .ev-explore .ex-challenge-track > span { forced-color-adjust: none; background: CanvasText; }
+  .ev-explore .ex-tab[aria-pressed="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
+}
+@supports not (color: color-mix(in oklch, red, blue)) {
+  .ev-explore[data-adventurous] .ex-controls { border-color: var(--violet); }
+  .ev-explore .ex-btn-primary:hover:not(:disabled) { background: var(--violet-fill); }
+}

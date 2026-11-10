@@ -39,6 +39,12 @@
   .shell-main:has(.shell-wide) > .app-col { max-width: none; min-width: 0; }
 }
 
+/* At 900px and wider, a page containing .shell-wide (Explore) drops the 520px column and sets its own
+   max-width; unlike .shell-fill it keeps the shell's padding and normal page scrolling. */
+@media (width >= 900px) {
+  .shell-main:has(.shell-wide) > .app-col { max-width: none; min-width: 0; }
+}
+
 /* ---------- rail (desktop) ---------- */
 .shell-rail {
   position: fixed;
