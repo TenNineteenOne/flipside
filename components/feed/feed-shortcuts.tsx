@@ -39,6 +39,7 @@ export function FeedShortcuts({ triage }: { triage: FeedTriage }) {
       const el = e.target instanceof Element ? e.target : document.body
       const action = feedAction({
         key: e.key,
+        code: e.code,
         shiftKey: e.shiftKey,
         metaKey: e.metaKey,
         ctrlKey: e.ctrlKey,
