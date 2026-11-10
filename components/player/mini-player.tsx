@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useSyncExternalStore, type CSSProperties } from "react"
-import { AnimatePresence, motion } from "framer-motion"
+import { AnimatePresence, MotionConfig, motion } from "framer-motion"
 import Image from "next/image"
 import { Pause, Play, X } from "lucide-react"
 import { useAudio } from "@/lib/audio-context"
@@ -76,6 +76,8 @@ function FloatingPlayer() {
   const dynamicColor = artistColor && /^#[0-9a-fA-F]{6}$/.test(artistColor) ? artistColor : "#8b5cf6"
 
   return (
+    // Reduced motion: the pill appears and leaves without the spring.
+    <MotionConfig reducedMotion="user">
     <AnimatePresence>
       {currentTrack && !suppressed && (
         <motion.div
@@ -166,5 +168,6 @@ function FloatingPlayer() {
         </motion.div>
       )}
     </AnimatePresence>
+    </MotionConfig>
   )
 }
