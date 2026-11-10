@@ -149,6 +149,7 @@ export function FeedDesktop({ triage, signalCount, onLoadMore, generating }: Fee
           </AnimatePresence>
         </ul>
         {visible.length > 0 && remaining === 0 && <p className="ev-queue-foot">Queue clear. These are the ones you kept.</p>}
+        <div className="ev-queue-more"><LoadMore onLoadMore={onLoadMore} generating={generating} /></div>
       </main>
 
       <section className="ev-focus" aria-live="polite" aria-label="Selected artist">
@@ -292,11 +293,18 @@ export function EndState({ triage, onLoadMore, generating }: { triage: FeedTriag
         {lean.length > 0 && <> Tomorrow&rsquo;s batch leans toward <strong>{lean.join(" and ")}</strong>.</>}
       </p>
       <div className="ev-end-actions">
-        <button type="button" className="ev-btn ev-btn-primary" onClick={onLoadMore} disabled={generating}>
-          {generating ? "Generating…" : "Load more artists"}
-        </button>
+        <LoadMore onLoadMore={onLoadMore} generating={generating} primary />
         <Link className="ev-btn ev-btn-ghost" href="/saved">Review saved</Link>
       </div>
     </div>
+  )
+}
+
+/** "Load more artists": the end state's primary button, and always available at the end of the queue / Up next list. */
+export function LoadMore({ onLoadMore, generating, primary = false }: { onLoadMore: () => void; generating: boolean; primary?: boolean }) {
+  return (
+    <button type="button" className={`ev-btn ${primary ? "ev-btn-primary" : "ev-btn-ghost"}`} onClick={onLoadMore} disabled={generating}>
+      {generating ? "Generating…" : "Load more artists"}
+    </button>
   )
 }

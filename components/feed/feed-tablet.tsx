@@ -3,7 +3,7 @@
 import "./feed.css"
 import { useEffect, useRef } from "react"
 import { Heart, X } from "lucide-react"
-import { Art, artistVar, EndState } from "@/components/feed/feed-desktop"
+import { Art, artistVar, EndState, LoadMore } from "@/components/feed/feed-desktop"
 import { ColdLine, PlayerBar, TopBarProgress, TriageBar } from "@/components/feed/feed-snap"
 import { SnapCard } from "@/components/feed/snap-card"
 import { artworkFor } from "@/lib/feed/artwork"
@@ -90,6 +90,7 @@ export function FeedTablet({ triage, signalCount, onLoadMore, generating }: Feed
               </li>
             )
           })}
+          <li className="ev-m-rail-more"><LoadMore onLoadMore={onLoadMore} generating={generating} /></li>
         </ol>
       </nav>
     </div>
