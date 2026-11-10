@@ -39,13 +39,16 @@ The Feed ("For You") pipeline. Entry point: `buildRecommendations(input)` in
    latency knob.
 6. **Resolve** (`PlayableCandidates.resolve`, `playable-candidates.ts`) — the doorway
    (`ArtistIdentity`: name-cache → Last.fm `artist.getInfo` lookup → mint), keyed by the
-   input name. Concurrency 6, 125ms spacing for the blocking pool. The resolved artist carries
+   input name. Concurrency 6, 125ms spacing for the blocking pool (and the bleed); the
+   spacing is skipped after a name whose getInfo came from cache (no live call). The resolved artist carries
    its roster row's `spotify_id` and (when set) popularity — a name landing on a homonym's
    Spotify row keeps the Spotify fallback and scores on the row's popularity (#175 F-F).
 7. **Filter** (the `keep` gate, before rehydrate/confirm) — `Exclusions`
    (`exclusions.ts`: thumbs-down, listened over `playThreshold` by id or name key, thumbs-up
    or saved — Feed only, they never come back (D1, #175 F-B) — and the 7-day seen /
    dismissed cooldown), popularity>50 under underground mode, optional genre filter.
+   Exclusions start loading before the first hop; listened + thumbs-down rows are read once
+   per build (`preloadExclusionRows`) and shared by every soften run.
    Then **rehydrate** from `artist_tracks_cache` via `PreviewStore`.
 8. **Score** (`scoreCandidate` / `tierMultiplier`) —
    `k^popularity × 0.8 + seedRelevance × 0.2 − adventurousPenalty`, where `k` =
@@ -54,8 +57,10 @@ The Feed ("For You") pipeline. Entry point: `buildRecommendations(input)` in
    per-seed (8%) penalties.
 10. **Hard cluster cap** (`applyClusterCap`, `cluster-cap.ts`) — no genre > **25%** of the
     20-item feed. See [[genre-system]].
-11. **Adjacent-genre bleed** (`augmentWithAdjacent`) — inject 4–10 picks from
-    close/medium adjacent tags at positions 5–7+ (skipped when a `genre` filter is active).
+11. **Adjacent-genre bleed** (`fetchAdjacentPool` + `mergeAdjacent`; `augmentWithAdjacent`
+    is the sequential wrapper) — inject 4–10 picks from close/medium adjacent tags at
+    positions 5–7+ (skipped when a `genre` filter is active). The tag fetch + resolve starts
+    alongside step 6; the merge waits for the pick.
 12. **Confirm previews — Tier 1** (`PlayableCandidates.confirm` → `confirmToTarget` /
     `confirm-previews.ts`) — first 8 artists, in waves: rehydrated cache → **iTunes**
     `search?entity=song` → **Spotify `/artists/{id}/top-tracks`** fallback. Artists with no
