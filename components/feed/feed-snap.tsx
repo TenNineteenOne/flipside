@@ -94,7 +94,8 @@ export function FeedSnap({ triage, signalCount, onLoadMore, generating }: FeedSn
     }
     root.addEventListener("scrollend", done)
     timer = window.setTimeout(done, smooth ? SCROLL_GUARD_MS : 100)
-    root.scrollTo({ top: el.offsetTop, behavior: smooth ? "smooth" : "auto" })
+    // Both offsets are from .ev-snap (the fixed frame), so the cold line above the scroller cancels out.
+    root.scrollTo({ top: el.offsetTop - root.offsetTop, behavior: smooth ? "smooth" : "auto" })
     return () => {
       root.removeEventListener("scrollend", done)
       clearTimeout(timer)

@@ -39,7 +39,9 @@ export function FeedTablet({ triage, signalCount, onLoadMore, generating }: Feed
     const row = selectedId && list?.querySelector<HTMLElement>(`[data-id="${CSS.escape(selectedId)}"]`)
     if (!list || !row) return
     const smooth = !matchMedia("(prefers-reduced-motion: reduce)").matches
-    list.scrollTo({ top: row.offsetTop - list.clientHeight / 2 + row.clientHeight / 2, behavior: smooth ? "smooth" : "auto" })
+    // Row and list offsets are both from the fixed frame (.ev-tablet), so their difference is the row's place in the list.
+    const top = row.offsetTop - list.offsetTop
+    list.scrollTo({ top: top - list.clientHeight / 2 + row.clientHeight / 2, behavior: smooth ? "smooth" : "auto" })
   }, [selectedId])
 
   return (
