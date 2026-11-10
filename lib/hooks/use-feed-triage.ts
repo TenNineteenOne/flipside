@@ -49,7 +49,7 @@ const linkRef = (a: CardArtist) => ({ artistId: a.id, spotifyId: a.spotifyId ?? 
 export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatform) {
   const audio = useAudio()
   // Same error copy the feed has always passed.
-  const { signals, setSignal, removeSignal, dismiss } = useArtistFeedback({
+  const { signals, setSignal, restore } = useArtistFeedback({
     errorMessages: {
       undoFailed: "Couldn't undo — try again",
       saveFailed: "Couldn't save feedback — try again",
@@ -124,11 +124,9 @@ export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatfor
     if (!u) return
     undoRef.current = null
     toast.dismiss(TOAST_ID)
-    if (u.kind === "setThumbsUpAgain") void setSignal(u.artistId, "thumbs_up")
-    else if (u.kind === "removeSignal") void removeSignal(u.artistId)
-    else void dismiss(u.artistId)
+    void restore(u.artistId, u.restore)
     setSelectedId(u.artistId)
-  }, [setSignal, removeSignal, dismiss])
+  }, [restore])
 
   const notify = useCallback(
     (message: string, undo: Undo | null = null) => {

@@ -33,14 +33,16 @@ export type Plan = {
   selectId: string | null
   /** Start this artist's first track, pause, or leave audio alone. */
   audio: { kind: "play"; artistId: string } | { kind: "pause" } | { kind: "none" }
-  /** How to undo, or null when nothing was sent. */
-  undo: { kind: "setThumbsUpAgain" | "removeSignal" | "dismiss"; artistId: string } | null
+  /** The verdict to restore on Undo (undefined = undecided), or null when nothing was sent. */
+  undo: { artistId: string; restore: Signal | undefined } | null
   /** Toast text. */
   message: string
 }
 
-const UNDO = { thumbs_up: "setThumbsUpAgain", thumbs_down: "removeSignal", skip: "dismiss" } as const
 const MESSAGE = { thumbs_up: "More like", thumbs_down: "Less like", skip: "Dismissed" } as const
+
+const asSignal = (s: string | undefined): Signal | undefined =>
+  s === "thumbs_up" || s === "thumbs_down" || s === "skip" ? s : undefined
 
 export function decide(state: DecisionState, req: DecisionRequest): Plan {
   const { artistId, name, signal } = req
@@ -64,7 +66,7 @@ export function decide(state: DecisionState, req: DecisionRequest): Plan {
     send: { kind: "set", signal },
     selectId,
     audio,
-    undo: { kind: UNDO[signal], artistId },
+    undo: { artistId, restore: asSignal(state.signals.get(artistId)) },
     message: `${MESSAGE[signal]} ${name}`,
   }
 }

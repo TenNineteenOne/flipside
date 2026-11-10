@@ -20,15 +20,15 @@ const req = (over: Partial<Parameters<typeof decide>[1]> = {}) => ({
 
 describe("decide", () => {
   it.each([
-    ["thumbs_up", "More like Alpha", "setThumbsUpAgain"],
-    ["thumbs_down", "Less like Alpha", "removeSignal"],
-    ["skip", "Dismissed Alpha", "dismiss"],
-  ] as const)("%s sends the signal, advances, and undoes with %s", (signal, message, undoKind) => {
+    ["thumbs_up", "More like Alpha"],
+    ["thumbs_down", "Less like Alpha"],
+    ["skip", "Dismissed Alpha"],
+  ] as const)("%s sends the signal, advances, and undoes back to undecided", (signal, message) => {
     expect(decide(state(), req({ signal }))).toEqual({
       send: { kind: "set", signal },
       selectId: "b",
       audio: { kind: "none" },
-      undo: { kind: undoKind, artistId: "a" },
+      undo: { artistId: "a", restore: undefined },
       message,
     })
   })
@@ -91,10 +91,21 @@ describe("decide", () => {
     })
   })
 
-  it("passing an already-liked artist sends the new signal", () => {
+  it("passing an already-liked artist sends the new signal; undo restores the like", () => {
     const s = state({ signals: new Map([["a", "thumbs_up"]]) })
     const plan = decide(s, req({ signal: "thumbs_down", toggle: false }))
     expect(plan.send).toEqual({ kind: "set", signal: "thumbs_down" })
     expect(plan.selectId).toBe("b")
+    expect(plan.undo).toEqual({ artistId: "a", restore: "thumbs_up" })
+  })
+
+  it.each(["thumbs_up", "thumbs_down", "skip"] as const)("undo restores the earlier verdict %s", (before) => {
+    const s = state({ signals: new Map([["a", before]]) })
+    expect(decide(s, req({ signal: before === "skip" ? "thumbs_down" : "skip" })).undo).toEqual({ artistId: "a", restore: before })
+  })
+
+  it("an unknown stored value restores to undecided", () => {
+    const s = state({ signals: new Map([["a", "weird"]]) })
+    expect(decide(s, req({ signal: "skip" })).undo).toEqual({ artistId: "a", restore: undefined })
   })
 })
