@@ -220,6 +220,31 @@ describe("feedback: restore (feed undo)", () => {
     expect(toast.error).toHaveBeenCalledWith("Couldn't undo — try again")
   })
 
+  it("skip → thumbs: once the DELETE succeeded, a failed POST still counts as undone (no rollback, no toast)", async () => {
+    const { c, calls, sig, toast } = feedback()
+    c.store.replace(() => new Map([["a", "skip"]]))
+    const p = c.restore("a", "thumbs_up")
+    await flush()
+    calls[0].resolve(true) // DELETE /api/dismiss/a
+    await flush()
+    calls[1].resolve(false) // POST thumbs_up (only re-stamps seen_at)
+    expect(await p).toBe(true)
+    expect(sig()).toBe("thumbs_up")
+    expect(toast.error).not.toHaveBeenCalled()
+  })
+
+  it("skip → thumbs: a failed DELETE rolls back to skip and toasts", async () => {
+    const { c, calls, sig, toast } = feedback()
+    c.store.replace(() => new Map([["a", "skip"]]))
+    const p = c.restore("a", "thumbs_up")
+    await flush()
+    calls[0].resolve(false)
+    expect(await p).toBe(false)
+    expect(sig()).toBe("skip")
+    expect(calls).toHaveLength(1)
+    expect(toast.error).toHaveBeenCalledWith("Couldn't undo — try again")
+  })
+
   it("undo after a failed (rolled back) decision sends nothing", async () => {
     const { c, calls, sig } = feedback()
     const t = c.setSignal("a", "thumbs_up")
