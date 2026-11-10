@@ -11,6 +11,7 @@ import { counts, firstUndecided, reconcileSelection, remaining, step, visibleQue
 import { tuning } from "@/lib/feed/tuning"
 import { shouldHandOver } from "@/lib/feed/hand-over"
 import { isDoubleActivation } from "@/lib/feed/double-activation"
+import { nowPlayingArtistId } from "@/lib/feed/now-playing"
 import { getArtistLink, getShareableArtistLink, type MusicPlatform } from "@/lib/music-links"
 import { resolveArtistColor } from "@/lib/color-utils"
 import { useArtistFeedback } from "@/lib/hooks/use-artist-feedback"
@@ -77,9 +78,14 @@ export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatfor
   )
 
   const current = audio.currentTrack
-  const owns = useCallback((a: CardArtist) => !!current && tracksOf(a).some((t) => t.id === current.id), [current, tracksOf])
+  // The artist this hook last started a track for (shared track ids: see nowPlayingArtistId).
+  const [started, setStarted] = useState<{ trackId: string; artistId: string } | null>(null)
   /** The artist whose track is loaded in the player (playing or paused), or null. */
-  const nowPlayingArtist = useMemo(() => (current ? artists.find(owns) ?? null : null), [current, artists, owns])
+  const nowPlayingArtist = useMemo(() => {
+    const id = nowPlayingArtistId(current?.id ?? null, started, artists.map((a) => ({ id: a.id, tracks: tracksOf(a) })))
+    return id ? byId.get(id) ?? null : null
+  }, [current, started, artists, tracksOf, byId])
+  const owns = useCallback((a: CardArtist) => nowPlayingArtist?.id === a.id, [nowPlayingArtist])
   const playingArtistId = audio.isPlaying ? nowPlayingArtist?.id ?? null : null
   const isPlaying = useCallback((a: CardArtist) => a.id === playingArtistId, [playingArtistId])
 
@@ -88,8 +94,10 @@ export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatfor
     (a: CardArtist, index = 0) => {
       const playable = tracksOf(a).filter((t) => t.previewUrl)
       const t = playable[index]
-      if (t) play(t, a.name, artworkFor(a), resolveArtistColor(a.artistColor, a.name))
-      else pause()
+      if (t) {
+        setStarted({ trackId: t.id, artistId: a.id })
+        play(t, a.name, artworkFor(a), resolveArtistColor(a.artistColor, a.name))
+      } else pause()
     },
     [tracksOf, play, pause],
   )
@@ -108,11 +116,11 @@ export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatfor
     (a: CardArtist, index: number) => {
       const t = tracksOf(a).filter((x) => x.previewUrl)[index]
       if (!t) return // no such track (e.g. "3" on a one-preview artist): leave playback alone
-      if (current?.id !== t.id) playArtist(a, index)
+      if (current?.id !== t.id || !owns(a)) playArtist(a, index)
       else if (audio.isPlaying) pause()
       else resume()
     },
-    [tracksOf, current, playArtist, audio.isPlaying, pause, resume],
+    [tracksOf, current, owns, playArtist, audio.isPlaying, pause, resume],
   )
 
   // One toast at a time: each gets a fresh id and the previous one is dismissed.
