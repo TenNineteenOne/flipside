@@ -41,7 +41,8 @@ server component that queries Supabase, then hands data to a `"use client"` shel
 
 - **Dev preview** (`app/dev-preview/*`, `lib/dev-preview/fixtures.ts`) — development-only
   harness (404 in production) rendering the real shell and components with fixture artists and
-  a stubbed same-origin `/api/*` fetch. Production code never imports it.
+  a stubbed same-origin `/api/*` fetch. Production code never imports it. Its layout passes
+  `AppShell` `pathPrefix="/dev-preview"` so `/dev-preview/feed` marks Feed as current.
 - **`ArtistCard`** (`components/feed/artist-card.tsx`) — the primary card: 340px hero image
   (tinted by `artist_color`), `TrackStrip`, reason pill, actions. States via `dismissSignal`
   (collapse on down/skip, green outline on up). Hooks: `useAudio`, `useArtistTracks`,
@@ -61,6 +62,11 @@ server component that queries Supabase, then hands data to a `"use client"` shel
   {platform} / Share, up to three preview tracks, docked player), plus the rail "Tuning" block
   via `<ShellSlot name="rail">`. No decision logic. `FeedClient` sets the Saved badge
   (`useShellBadge`) to saves made since the feed opened.
+- **`FeedShortcuts`** (`components/feed/feed-shortcuts.tsx`) — mounted by `FeedClient` at every
+  width: one window `keydown` listener mapped by the pure `feedAction` (`lib/feed/feed-keymap.ts`)
+  onto the triage hook, and the "?" sheet (native `<dialog>`, also opened by the rail's Shortcuts
+  item via `useShellShortcuts`). Key hints (`Kbd`) are hidden on touch and below 900px.
+  `FeedClient` also sets the Feed badge to the number of undecided artists.
 - **`MiniPlayer`** (`components/player/mini-player.tsx`) — floating pill by default;
   `<MiniPlayer docked />` is the in-page player at the bottom of the desktop focus pane. While a
   docked one is mounted (a module-level count read with `useSyncExternalStore`) the floating pill

@@ -153,6 +153,31 @@
   border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 5px; background: var(--bg);
 }
 
+.ev-feed .ev-btn-play .ev-kbd { margin-left: 6px; color: oklch(0.42 0.01 293); background: transparent; border-color: oklch(0.8 0.01 293); }
+.ev-feed .ev-hints { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 14px; font-size: 12px; color: var(--fg-3); }
+.ev-feed .ev-hints > span { display: inline-flex; align-items: center; gap: 5px; }
+.ev-feed .ev-hints .ev-kbd + .ev-kbd { margin-left: -2px; }
+.ev-feed .ev-icon-btn { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 8px; color: var(--fg-2); }
+.ev-feed .ev-icon-btn:hover { background: var(--raise); color: var(--fg); }
+
+/* shortcut sheet (native dialog) */
+.ev-feed.ev-sheet {
+  width: min(420px, calc(100vw - 32px)); margin: auto; padding: 0; border: 1px solid var(--line-strong); border-radius: 14px;
+  background: var(--panel); color: var(--fg); box-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.7);
+}
+.ev-feed.ev-sheet::backdrop { background: rgba(8, 7, 10, 0.6); }
+.ev-feed.ev-sheet[open] { animation: ev-feed-pop 180ms var(--ease); }
+/* Pops in by transform only; never starts transparent. */
+@keyframes ev-feed-pop { from { transform: translateY(8px) scale(0.98); } }
+.ev-feed .ev-sheet-inner { padding: 16px 18px 18px; }
+.ev-feed .ev-sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.ev-feed .ev-sheet-head h2 { font-size: 16px; }
+.ev-feed .ev-sheet-list { margin: 0; }
+.ev-feed .ev-sheet-row { display: flex; align-items: center; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.ev-feed .ev-sheet-row dd { display: flex; gap: 4px; margin: 0; }
+.ev-feed .ev-sheet-row .ev-kbd { font-size: 11px; height: 22px; min-width: 22px; color: var(--fg-2); }
+.ev-feed .ev-sheet-note { margin-top: 12px; font-size: 13px; color: var(--fg-3); }
+
 /* secondary actions */
 .ev-feed .ev-secondary { display: flex; gap: 4px; }
 .ev-feed .ev-sec {
@@ -223,6 +248,15 @@
 [data-sonner-toast].ev-toast .ev-toast-undo {
   display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 10px; border: 0; border-radius: 8px;
   background: none; font: inherit; font-weight: 600; color: oklch(0.42 0.17 293); cursor: pointer;
+}
+[data-sonner-toast].ev-toast .ev-kbd {
+  display: inline-grid; place-items: center; min-width: 1.6em; height: 1.6em; padding: 0 0.4em;
+  font: 500 10px/1 var(--font-mono); color: oklch(0.45 0.01 293);
+  border: 1px solid oklch(0.8 0.01 293); border-bottom-width: 2px; border-radius: 5px; background: transparent;
+}
+/* Key hints only where there is a keyboard: not on touch, not below 900px (the sheet keeps its keycaps). */
+@media (hover: none), (max-width: 899px) {
+  .ev-feed .ev-card .ev-kbd, .ev-feed .ev-hints, .ev-feed .ev-player .ev-kbd, [data-sonner-toast].ev-toast .ev-kbd { display: none; }
 }
 [data-sonner-toast].ev-toast .ev-toast-undo:hover { background: oklch(0.92 0.02 293); }
 [data-sonner-toast].ev-toast .ev-toast-undo:focus-visible { outline: 2px solid oklch(0.42 0.17 293); outline-offset: 2px; }

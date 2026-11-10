@@ -7,6 +7,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion"
 import { Bookmark, Heart, Pause, Play, Share2, ThumbsDown, X } from "lucide-react"
 import { PlatformIcon } from "@/components/platform-icon"
 import { MiniPlayer } from "@/components/player/mini-player"
+import { Kbd } from "@/components/feed/feed-shortcuts"
 import { ShellSlot } from "@/components/shell/shell-context"
 import { useAudio } from "@/lib/audio-context"
 import { artworkFor } from "@/lib/feed/artwork"
@@ -192,6 +193,7 @@ function FocusCard({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
         <button type="button" className="ev-btn ev-btn-play" onClick={() => triage.togglePlay(a)} aria-pressed={playing} disabled={!canPlay}>
           {canPlay && (playing ? <Pause size={18} fill="currentColor" strokeWidth={0} aria-hidden /> : <Play size={18} fill="currentColor" strokeWidth={0} aria-hidden />)}
           {loading ? "Loading tracks…" : !canPlay ? "No preview available" : playing ? "Pause" : "Play preview"}
+          {canPlay && <Kbd>Space</Kbd>}
         </button>
 
         <div className="ev-triage" role="group" aria-label="Tell flipside what you think">
@@ -207,15 +209,20 @@ function FocusCard({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
           </button>
         </div>
 
+        <p className="ev-hints" aria-hidden>
+          <span><Kbd>X</Kbd>less</span><span><Kbd>D</Kbd>dismiss</span><span><Kbd>L</Kbd>more</span>
+          <span><Kbd>B</Kbd>save</span><span><Kbd>O</Kbd>open</span><span><Kbd>J</Kbd><Kbd>K</Kbd>move</span>
+        </p>
+
         <div className="ev-secondary">
-          <button type="button" className="ev-sec" onClick={() => triage.save(a)} aria-pressed={saved}>
+          <button type="button" className="ev-sec" onClick={() => triage.save(a)} aria-pressed={saved} title="Save for later (B)">
             <Bookmark size={16} strokeWidth={1.75} fill={saved ? "currentColor" : "none"} aria-hidden />
             <span>{saved ? "Saved" : "Save"}</span>
           </button>
-          <a className="ev-sec" href={triage.artistLink(a)} target="_blank" rel="noopener noreferrer" aria-label={`Open in ${platform.label}`} title={`Open in ${platform.label}`}>
+          <a className="ev-sec" href={triage.artistLink(a)} target="_blank" rel="noopener noreferrer" aria-label={`Open in ${platform.label}`} title={`Open in ${platform.label} (O)`}>
             <PlatformIcon platform={triage.musicPlatform} size={16} /><span>{platform.label}</span>
           </a>
-          <button type="button" className="ev-sec" onClick={() => void triage.share(a)}>
+          <button type="button" className="ev-sec" onClick={() => void triage.share(a)} title="Share (S)">
             <Share2 size={16} strokeWidth={1.75} aria-hidden /><span>Share</span>
           </button>
         </div>

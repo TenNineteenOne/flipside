@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { ArtistCard } from "@/components/feed/artist-card"
 import { ColdStartBanner } from "@/components/feed/cold-start-banner"
 import { FeedDesktop } from "@/components/feed/feed-desktop"
+import { FeedShortcuts } from "@/components/feed/feed-shortcuts"
 import { useShellBadge } from "@/components/shell/shell-context"
 import { Ambient } from "@/components/visual/ambient"
 import type { MusicPlatform } from "@/lib/music-links"
@@ -138,6 +139,8 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
   // Saved badge in the rail / tab bar: artists saved since the feed opened.
   const [savedAtMount] = useState(savedIds.size)
   useShellBadge("/saved", Math.max(0, savedIds.size - savedAtMount))
+  // Feed badge: artists still undecided (hidden at zero).
+  useShellBadge("/feed", triage.remaining)
   const wide = useSyncExternalStore(subscribeWide, isWide, notWide)
 
   async function handleGenerateMore() {
@@ -155,10 +158,12 @@ export function FeedClient({ recommendations, musicPlatform, signalCount }: Feed
     }
   }
 
-  if (wide) return <FeedDesktop triage={triage} />
+  const shortcuts = <FeedShortcuts triage={triage} />
+  if (wide) return <>{shortcuts}<FeedDesktop triage={triage} /></>
 
   return (
     <div style={{ position: "relative" }}>
+      {shortcuts}
       <Ambient palette={FEED_PALETTE} />
 
       {/* Page header */}

@@ -44,6 +44,15 @@ describe("AppShell server render", () => {
     expect(links.filter((a) => a.includes('aria-current="page"'))).toEqual([expect.stringContaining('href="/saved"')])
   })
 
+  it("pathPrefix (dev preview) is stripped before matching the current section", () => {
+    pathname = "/dev-preview/feed"
+    const html = renderToString(
+      <AppShell userSeed="seed" initialAdventurous={false} pathPrefix="/dev-preview"><p /></AppShell>,
+    )
+    const current = (block(html, 'class="shell-nav"', "nav").match(LINK) ?? []).filter((a) => a.includes('aria-current="page"'))
+    expect(current).toEqual([expect.stringContaining('href="/feed"')])
+  })
+
   it("does not mark a section whose path is only a prefix match", () => {
     const html = render("/feedback")
     expect(html).not.toContain('aria-current="page"')
