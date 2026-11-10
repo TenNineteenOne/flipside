@@ -1,6 +1,6 @@
 "use client"
 
-import { createElement, Fragment, useCallback, useMemo, useRef, useState } from "react"
+import { createElement, Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { Undo2 } from "lucide-react"
 import { useAudio } from "@/lib/audio-context"
@@ -31,7 +31,6 @@ export interface JudgeOptions {
  * runs the pure decision core and executes its plan. Every feed presentation
  * (desktop, legacy list, later Snap/tablet) reads the same object.
  */
-const TOAST_ID = "feed-triage"
 const TOAST_MS = 5000
 
 type Undo = NonNullable<Plan["undo"]>
@@ -115,37 +114,58 @@ export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatfor
     [tracksOf, current, playArtist, audio.isPlaying, pause, resume],
   )
 
-  // One toast at a time (stable id): a new decision or save replaces the last.
+  // One toast at a time: each gets a fresh id and the previous one is dismissed.
+  // (A reused id merged a new toast into one that was being dismissed, so it
+  // vanished with no working undo, and hovering an old toast paused the next.)
   // The undo stays available exactly as long as its toast is up.
   const undoRef = useRef<{ undo: Undo; token: object } | null>(null)
+  const toastId = useRef<string | null>(null)
+  const toastSeq = useRef(0)
+  const dismissToast = useCallback(() => {
+    if (toastId.current !== null) toast.dismiss(toastId.current)
+    toastId.current = null
+  }, [])
+
+  // Leaving the feed: its toast and its undo go with it.
+  useEffect(
+    () => () => {
+      undoRef.current = null
+      dismissToast()
+    },
+    [dismissToast],
+  )
 
   /** Undo the most recent decision while its toast is showing, then reselect that artist. No-op otherwise. */
   const undoLast = useCallback(() => {
     const u = undoRef.current?.undo
     if (!u) return
     undoRef.current = null
-    toast.dismiss(TOAST_ID)
+    dismissToast()
     void restore(u.artistId, u.restore)
     setSelectedId(u.artistId)
-  }, [restore])
+  }, [restore, dismissToast])
 
   const notify = useCallback(
     (message: string, undo: Undo | null = null) => {
       const token = {}
       undoRef.current = undo ? { undo, token } : null
       const expire = () => { if (undoRef.current?.token === token) undoRef.current = null }
+      dismissToast()
+      const id = `feed-triage-${++toastSeq.current}`
+      toastId.current = id
       toast(message, {
-        id: TOAST_ID,
+        id,
         duration: TOAST_MS,
         unstyled: true,
         position: "bottom-left",
         classNames: { toast: "ev-toast", title: "ev-toast-text", actionButton: "ev-toast-undo" },
-        action: undo ? { label: UNDO_LABEL, onClick: undoLast } : undefined,
+        // A dying older toast's Undo must not undo the newer decision.
+        action: undo ? { label: UNDO_LABEL, onClick: () => { if (undoRef.current?.token === token) undoLast() } } : undefined,
         onAutoClose: expire,
         onDismiss: expire,
       })
     },
-    [undoLast],
+    [undoLast, dismissToast],
   )
 
   const lastAdvance = useRef<{ artistId: string; at: number } | null>(null)
