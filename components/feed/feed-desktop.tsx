@@ -7,7 +7,6 @@ import { PlatformIcon } from "@/components/platform-icon"
 import { MiniPlayer } from "@/components/player/mini-player"
 import { Art, artistVar, EndState, LoadMore, type Wander } from "@/components/feed/feed-parts"
 import { WanderNote } from "@/components/feed/wander-switch"
-import { ColdStartBanner } from "@/components/feed/cold-start-banner"
 import { QueueColumns } from "@/components/feed/feed-skeleton"
 import { Kbd } from "@/components/feed/feed-shortcuts"
 import { ShellSlot } from "@/components/shell/shell-context"
@@ -32,20 +31,18 @@ const rowKey = (a: CardArtist) => a.id
  */
 interface FeedDesktopProps {
   triage: FeedTriage
-  /** Cold-start banner input (shown until the listener has a few signals). */
-  signalCount: number
   /** "Load more artists" (FeedClient's generate-more flow) and its in-flight state. */
   onLoadMore: () => void
   generating: boolean
   /** Wander farther: the switches beside each Load more. */
   wander: Wander
-  /** The weekly challenge strip (FeedClient's Suspense slot), shown under the header. */
+  /** The weekly challenge strip (FeedClient's Suspense slot), shown in the header's Load more row. */
   challenge?: React.ReactNode
   /** Called once this layout is mounted (FeedClient enables the keyboard shortcuts then). */
   onShown?: (layout: "phone" | "tablet" | "desktop") => void
 }
 
-export function FeedDesktop({ triage, signalCount, onLoadMore, generating, wander, challenge, onShown }: FeedDesktopProps) {
+export function FeedDesktop({ triage, onLoadMore, generating, wander, challenge, onShown }: FeedDesktopProps) {
   useEffect(() => onShown?.("desktop"), [onShown])
   const { visible, selected, selectedId, signals, remaining, total, tuning } = triage
   // Passed/dismissed rows fade and slide out (feed.css, .ev-row[data-leaving]); the list then closes up.
@@ -96,13 +93,11 @@ export function FeedDesktop({ triage, signalCount, onLoadMore, generating, wande
             </ol>
           </div>
           <div className="ev-wander-bar">
-            <WanderNote on={wander.on} />
+            <div className="ev-wander-chal">{challenge}</div>
             <div className="ev-wander-ctl"><LoadMore onLoadMore={onLoadMore} generating={generating} wander={wander} label="Load more" primary /></div>
+            <WanderNote on={wander.on} />
           </div>
         </header>
-
-        {challenge}
-        <div className="ev-coldstart"><ColdStartBanner signalCount={signalCount} /></div>
 
         {/* no labels floating above an emptied queue */}
         {rows.shown.length > 0 && <QueueColumns />}

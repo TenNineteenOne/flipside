@@ -71,26 +71,13 @@ export default async function FeedPage() {
   const challengePromise = loadChallenge(supabase, user.id)
 
   // Assemble cards (tracks-cache fallback, colour lift, playable filter,
-  // interleave — see lib/cards/feed-cards) + signal counts in parallel.
-  const [
-    cards,
-    { count: artistCount },
-    { count: feedbackCount },
-    { count: saveCount },
-  ] = await Promise.all([
-    loadFeedCards(supabase, validRecs),
-    supabase.from("listened_artists").select("*", { count: "exact", head: true }).eq("user_id", user.id),
-    supabase.from("feedback").select("*", { count: "exact", head: true }).eq("user_id", user.id).is("deleted_at", null),
-    supabase.from("saves").select("*", { count: "exact", head: true }).eq("user_id", user.id),
-  ])
-
-  const signalCount = (artistCount ?? 0) + (feedbackCount ?? 0) + (saveCount ?? 0)
+  // interleave — see lib/cards/feed-cards).
+  const cards = await loadFeedCards(supabase, validRecs)
 
   return (
     <FeedClient
       recommendations={cards}
       musicPlatform={musicPlatform}
-      signalCount={signalCount}
       initialAdventurous={!!user.adventurous}
       initialLayout={guessFeedLayout(await headers())}
       challengePromise={challengePromise}
@@ -103,7 +90,7 @@ async function loadChallenge(supabase: ReturnType<typeof createServiceClient>, u
   try {
     const c = await ensureCurrentChallenge(supabase, userId)
     if (!c?.template) return null
-    return { title: c.template.title, description: c.template.description, progress: c.progress, target: c.target, completed: !!c.completedAt }
+    return { description: c.template.description, progress: c.progress, target: c.target, completed: !!c.completedAt }
   } catch (err) {
     console.error("[feed-page] loadChallenge failed", err instanceof Error ? err.message : err)
     return null

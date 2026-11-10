@@ -42,7 +42,6 @@ const preloadLayouts = () => loaders.forEach((load) => void load())
 interface FeedClientProps {
   recommendations: CardArtist[]
   musicPlatform: MusicPlatform
-  signalCount: number
   /** users.adventurous: Wander farther, shown beside every Load more. */
   initialAdventurous?: boolean
   /** The server's guess (lib/feed/layout-guess) for the first render; matchMedia takes over after hydration. */
@@ -82,7 +81,7 @@ const useHydrating = () => useSyncExternalStore(noSubscribe, () => false, () => 
 // Main component
 // ---------------------------------------------------------------------------
 
-export function FeedClient({ recommendations, musicPlatform, signalCount, initialAdventurous = false, initialLayout = "phone", challengePromise }: FeedClientProps) {
+export function FeedClient({ recommendations, musicPlatform, initialAdventurous = false, initialLayout = "phone", challengePromise }: FeedClientProps) {
   // Generate requests (mount top-up + Load more) share one re-entry guard, so
   // a user's own "Load more" can't collide with the background top-up.
   const generation = useFeedGeneration()
@@ -231,7 +230,7 @@ export function FeedClient({ recommendations, musicPlatform, signalCount, initia
           <FeedSkeleton />
         </div>
       )}
-      <View triage={triage} signalCount={signalCount} onLoadMore={handleGenerateMore} generating={isGenerating} wander={wander} challenge={challenge} onShown={setShown} />
+      <View triage={triage} onLoadMore={handleGenerateMore} generating={isGenerating} wander={wander} challenge={challenge} onShown={setShown} />
     </>
   )
 }

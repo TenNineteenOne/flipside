@@ -4,7 +4,6 @@ import { memo, use, type CSSProperties } from "react"
 import { Check } from "lucide-react"
 
 export interface ChallengePayload {
-  title: string
   description: string
   progress: number
   target: number
@@ -13,15 +12,15 @@ export interface ChallengePayload {
 
 /**
  * The weekly challenge as one line under the Feed header (mockup public/mockups/feed-merge.html §6,
- * option Q). Styles in feed.css, `.ev-chal*`: a panel on desktop, a full-width line on phones and tablets.
+ * option Q). Styles in feed.css, `.ev-chal*`: a light line beside Load more in the desktop queue header, a full-width line on phones and tablets.
  */
-export const ChallengeStrip = memo(function ChallengeStrip({ title, description, progress, target, completed }: ChallengePayload) {
+export const ChallengeStrip = memo(function ChallengeStrip({ description, progress, target, completed }: ChallengePayload) {
   const pct = Math.min(100, Math.round((progress / target) * 100))
   return (
     <section aria-label="Weekly challenge" className="ev-chal" data-done={completed || undefined}>
       <p className="ev-chal-text">
-        {/* the hidden ":" keeps the title and description apart for screen readers and copy */}
-        <span className="ev-chal-title">{title}</span>
+        {/* the hidden ":" keeps the lead and description apart for screen readers and copy */}
+        <span className="ev-chal-title">Weekly challenge</span>
         <span className="sr-only">:</span>
         <span aria-hidden> · </span>
         {description}

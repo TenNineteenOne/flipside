@@ -1,9 +1,8 @@
 "use client"
 
 import "./feed.css"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef } from "react"
 import { Heart, Plus, ThumbsDown, X } from "lucide-react"
-import { ColdStartBanner } from "@/components/feed/cold-start-banner"
 import { EndState, type Wander } from "@/components/feed/feed-parts"
 import { WanderSwitch, wanderButton } from "@/components/feed/wander-switch"
 import { SnapCard } from "@/components/feed/snap-card"
@@ -29,8 +28,6 @@ const END = "__end"
  */
 interface FeedSnapProps {
   triage: FeedTriage
-  /** Cold-start hint input (shown as a dismissible line until the listener has a few signals). */
-  signalCount: number
   /** "Load more artists" on the end page, and its in-flight state. */
   onLoadMore: () => void
   generating: boolean
@@ -42,7 +39,7 @@ interface FeedSnapProps {
   onShown?: (layout: "phone" | "tablet" | "desktop") => void
 }
 
-export function FeedSnap({ triage, signalCount, onLoadMore, generating, wander, challenge, onShown }: FeedSnapProps) {
+export function FeedSnap({ triage, onLoadMore, generating, wander, challenge, onShown }: FeedSnapProps) {
   useEffect(() => onShown?.("phone"), [onShown])
   const { ids, selectedId } = triage
   const ended = triage.remaining === 0
@@ -132,7 +129,7 @@ export function FeedSnap({ triage, signalCount, onLoadMore, generating, wander, 
     }
     root.addEventListener("scrollend", done)
     timer = window.setTimeout(done, smooth ? SCROLL_GUARD_MS : 100)
-    // Both offsets are from .ev-snap (the fixed frame), so the cold line above the scroller cancels out.
+    // Both offsets are from .ev-snap (the fixed frame), so the challenge line above the scroller cancels out.
     root.scrollTo({ top: el.offsetTop - root.offsetTop, behavior: smooth ? "smooth" : "auto" })
     return () => {
       root.removeEventListener("scrollend", done)
@@ -144,7 +141,6 @@ export function FeedSnap({ triage, signalCount, onLoadMore, generating, wander, 
     <div className="ev-feed ev-snap">
       <TopBarProgress triage={triage} wander={wander} onLoadMore={onLoadMore} generating={generating} />
       {challenge}
-      <ColdLine signalCount={signalCount} />
 
       <main className="ev-m-snap" ref={scrollerRef} aria-label="Artists">
         {ids.map((id, i) => {
@@ -205,12 +201,6 @@ export function TopBarProgress({ triage, wander, onLoadMore, generating }: {
       </ShellSlot>
     </>
   )
-}
-
-/** The cold-start hint as one dismissible line (hidden for the rest of the visit once dismissed). */
-export function ColdLine({ signalCount }: { signalCount: number }) {
-  const [hidden, setHidden] = useState(false)
-  return hidden ? null : <ColdStartBanner signalCount={signalCount} onDismiss={() => setHidden(true)} />
 }
 
 /**

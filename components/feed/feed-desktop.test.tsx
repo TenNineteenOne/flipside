@@ -39,7 +39,7 @@ function Desktop({ artists, decided, challenge }: { artists: CardArtist[]; decid
         visible: visibleQueue(t.ids, decided).map((id) => artists.find((a) => a.id === id)!),
       }
     : t
-  return <FeedDesktop triage={triage} signalCount={10} onLoadMore={() => {}} generating={false} wander={{ on: false, toggle: () => {} }} challenge={challenge} />
+  return <FeedDesktop triage={triage} onLoadMore={() => {}} generating={false} wander={{ on: false, toggle: () => {} }} challenge={challenge} />
 }
 
 // Text only: drop React's <!-- --> separators between adjacent text nodes.
@@ -120,7 +120,7 @@ describe("Wander farther", () => {
     const triage: FeedTriage = decided
       ? { ...t, signals: decided, selectedId: null, selected: null, remaining: 0, counts: counts(t.ids, decided), tuning: tuning(artists, decided), visible: [] }
       : t
-    return <FeedDesktop triage={triage} signalCount={10} onLoadMore={() => {}} generating={false} wander={{ on, toggle: () => {} }} />
+    return <FeedDesktop triage={triage} onLoadMore={() => {}} generating={false} wander={{ on, toggle: () => {} }} />
   }
   const switches = (html: string) => [...html.matchAll(/role="switch" aria-checked="(true|false)"/g)].map((m) => m[1])
 
@@ -152,16 +152,19 @@ describe("Wander farther", () => {
 
 /** An already-settled promise: React's `use` reads it synchronously, so a server render shows the strip (or nothing). */
 const settled = <T,>(value: T) => Object.assign(Promise.resolve(value), { status: "fulfilled", value })
-const challenge: ChallengePayload = { title: "Five in a week", description: "like 5 artists this week", progress: 2, target: 5, completed: false }
+const challenge: ChallengePayload = { description: "like 5 artists this week", progress: 2, target: 5, completed: false }
 const renderWith = (c: ChallengePayload | null) =>
   renderToString(<AudioProvider><Desktop artists={[artist("a", "Yin Yin")]} challenge={<ChallengeSlot challengePromise={settled(c)} />} /></AudioProvider>).replaceAll("<!-- -->", "")
 
 describe("FeedDesktop weekly challenge", () => {
-  it("shows the strip under the queue header, before the queue", () => {
+  it("shows the strip in the header's Load more row, left of the controls, with no cold-start banner", () => {
     const html = renderWith(challenge)
     const strip = html.slice(html.indexOf('aria-label="Weekly challenge"'))
-    expect(html.indexOf("</header>")).toBeLessThan(html.indexOf('aria-label="Weekly challenge"'))
-    expect(strip).toMatch(/<span class="ev-chal-title">Five in a week<\/span><span class="sr-only">:<\/span><span aria-hidden="true"> · <\/span>like 5 artists this week/)
+    const bar = html.slice(html.indexOf('class="ev-wander-bar"'), html.indexOf("</header>"))
+    expect(bar.indexOf('aria-label="Weekly challenge"')).toBeGreaterThan(-1)
+    expect(bar.indexOf('aria-label="Weekly challenge"')).toBeLessThan(bar.indexOf('class="ev-wander-ctl"'))
+    expect(html).not.toContain("Flipside signal")
+    expect(strip).toMatch(/<span class="ev-chal-title">Weekly challenge<\/span><span class="sr-only">:<\/span><span aria-hidden="true"> · <\/span>like 5 artists this week/)
     expect(strip).toMatch(/class="ev-chal-n">2\/5</)
     expect(strip.indexOf("ev-chal")).toBeLessThan(strip.indexOf('aria-label="Artist queue"'))
   })

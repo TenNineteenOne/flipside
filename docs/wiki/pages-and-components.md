@@ -37,7 +37,7 @@ panes) at width ≥ 900px and height ≥ 540px; **tablet** feed at 640–899px w
 otherwise the phone **Snap** feed with the top bar and tab bar (this includes phones in landscape
 900px and wider, e.g. 932x430, and short desktop windows). Under `forced-colors: active` the
 progress strip (current = `Highlight`, liked = `CanvasText`, passed = `GrayText`), selected rows,
-popularity meter and cold-start bar get system colours, and the background-only controls (Snap
+popularity meter and challenge bar get system colours, and the background-only controls (Snap
 triage buttons, track chips, Play preview, the landing's primary buttons) a 1px `ButtonText` border.
 
 ## Screens (`app/(app)` + `app/(marketing)`)
@@ -108,18 +108,16 @@ triage buttons, track chips, Play preview, the landing's primary buttons) a 1px 
   `aria-sort` on its columnheader); the body rowgroup scrolls (max 360px) and is focusable. Numbers
   are formatted with one `Intl.NumberFormat("en-US")`, never the browser locale (a German browser
   would otherwise hydrate "1.234.567" against the server's "1,234,567").
-- **`ColdStartBanner`** (`components/feed/cold-start-banner.tsx`, styles `.ev-cold*` in
-  `feed.css`) — "Flipside signal · N of 5" with "Keep exploring — recs get smarter." and a thin
-  violet progress bar until the listener has 5 signals. A `--panel` box at the top of the
-  desktop queue; with `onDismiss`, one dismissible line under the top bar (phone and tablet).
 - **`ChallengeStrip`** (`components/feed/challenge-strip.tsx`, styles `.ev-chal*` in `feed.css`;
-  moved from the removed Explore page, #205) — the weekly challenge as one line ("**Five in a
-  week** · like 5 artists this week", a visually hidden ":" for screen readers), a mono `2/5`
+  moved from the removed Explore page, #205) — the weekly challenge as one line ("**Weekly
+  challenge** · like 5 artists this week": a fixed lead, not the template title, which the payload
+  no longer carries; a visually hidden ":" for screen readers), a mono `2/5`
   count (check mark once completed) and a thin `--wander-rainbow` bar; `aria-label="Weekly
-  challenge"`. Desktop: a `--raise` panel directly under the queue header, above the cold-start
-  banner. Tablet: a full-width line in its own grid row (`.ev-t-chal`) above the cold-start line.
-  Phone: a 36px line inside `.ev-snap` above the cold-start line (the scroller shrinks, so
-  `--ev-snap-top` is unchanged; hidden below 480px tall like the cold-start line); the text
+  challenge"`. Desktop: a light line (text, count, 3px bar; no panel) in the queue header's Load more row
+  (`.ev-wander-chal`, left of Load more + the switch; the Wander note sits right-aligned under the
+  controls); below a 560px queue container it takes its own line above the controls. Tablet: a
+  full-width line in its own grid row (`.ev-t-chal`). Phone: a 36px line inside `.ev-snap` under
+  the top bar (the scroller shrinks, so `--ev-snap-top` is unchanged; hidden below 480px tall); the text
   ellipsizes, the count never does. Progress is incremented server-side by `POST /api/feedback`
   on a thumbs-up; the strip shows it on the next page load or `router.refresh()` (Load more), not live.
 - **`useFeedTriage`** (`lib/hooks/use-feed-triage.ts`) — the feed's one triage object: selection
@@ -171,8 +169,8 @@ triage buttons, track chips, Play preview, the landing's primary buttons) a 1px 
   {platform} / Share, up to three preview tracks (styled like the Snap track chips: each in its own
   `chipColors` colour with a play circle), docked player; the end-of-queue state with
   counts and "Load more artists" when nothing is selected; `LoadMore` is `aria-disabled` with clicks
-  ignored while generating, never `disabled`, so keyboard focus stays on it), the cold-start banner at the top of
-  the queue, and the rail "Tuning" block
+  ignored while generating, never `disabled`, so keyboard focus stays on it), the weekly challenge in the header's
+  Load more row, and the rail "Tuning" block
   via `<ShellSlot name="rail">`. No decision logic. `FeedClient` sets the Saved badge
   (`useShellBadge`) to saves made since the feed opened. `Art` (`feed-parts.tsx`) fetches Apple (`*.mzstatic.com`)
   artwork at three times its display size up to 64px (sharp thumbnails on 3x phones) and twice above
@@ -182,8 +180,7 @@ triage buttons, track chips, Play preview, the landing's primary buttons) a 1px 
   history, onboarding search) use the same helper.
 - **`FeedSnap`** (`components/feed/feed-snap.tsx`) — phones below 640px, and every viewport too
   short for the tablet or desktop layout (phones in landscape at any width, browser zoom): a fixed column between
-  the shell top bar and tab bar (the page body does not scroll): the cold-start hint as one
-  dismissible line (`ColdStartBanner` with `onDismiss`; same threshold and copy), a vertical
+  the shell top bar and tab bar (the page body does not scroll): the weekly challenge line, a vertical
   scroller with mandatory snapping, one full-height page per loaded artist (decided ones included,
   feed order) plus a final end page (`EndState`, "Load more artists") once nothing is undecided, a
   small player bar (the docked `MiniPlayer`) only while the loaded track is not the artist on
@@ -213,7 +210,7 @@ triage buttons, track chips, Play preview, the landing's primary buttons) a 1px 
   whole from 220px up; wide short pages (landscape, ≥560px wide and <356px tall) put the artwork
   beside the text, down to ~90px (these sideways rules select Snap pages only; the tablet stage,
   also an `ev-page` container, keeps the card upright and gets the narrow pages' shrink steps at any
-  width). Under 480px of viewport height the cold-start line is hidden.
+  width). Under 480px of viewport height the challenge line is hidden.
   Programmatic scrolls measure offsets from the scroller (`el.offsetTop - root.offsetTop`).
   Swipe (framer-motion `drag="x"`, direction lock, `touch-action: pan-y pinch-zoom` set in CSS over
   framer's inline `pan-y`; a `pointercancel` / `touchcancel` never commits): past 96px, or a flick

@@ -24,22 +24,22 @@ function artist(id: string, name: string, imageUrl: string | null = `https://is1
 }
 
 /** The real hook; `decided` overrides its signals (as the feedback hook's map would hold them). */
-function Snap({ artists, decided, signalCount = 0 }: { artists: CardArtist[]; decided?: Map<string, string>; signalCount?: number }) {
+function Snap({ artists, decided }: { artists: CardArtist[]; decided?: Map<string, string> }) {
   const t = useFeedTriage(artists, "spotify")
   const triage = decided
     ? { ...t, signals: decided, selectedId: null, selected: null, remaining: artists.filter((a) => !decided.has(a.id)).length, counts: counts(t.ids, decided) }
     : t
   return (
     <>
-      <FeedSnap triage={triage} signalCount={signalCount} onLoadMore={() => {}} generating={false} wander={{ on: false, toggle: () => {} }} />
+      <FeedSnap triage={triage} onLoadMore={() => {}} generating={false} wander={{ on: false, toggle: () => {} }} />
       {/* The count is portalled into the shell top bar, which a server render has no slot for. */}
       <SnapCount triage={triage} />
     </>
   )
 }
 
-const render = (artists: CardArtist[], decided?: Map<string, string>, signalCount?: number) =>
-  renderToString(<AudioProvider><Snap artists={artists} decided={decided} signalCount={signalCount} /></AudioProvider>).replaceAll("<!-- -->", "")
+const render = (artists: CardArtist[], decided?: Map<string, string>) =>
+  renderToString(<AudioProvider><Snap artists={artists} decided={decided} /></AudioProvider>).replaceAll("<!-- -->", "")
 
 describe("FeedSnap server render", () => {
   const artists = [artist("a", "Yin Yin"), artist("b", "Altın Gün"), artist("c", "Glass Beams", null)]
@@ -78,35 +78,30 @@ describe("FeedSnap server render", () => {
     expect(html).toMatch(/class="ev-m-triage"[^>]*data-hidden="true"[^>]*inert=""/)
     expect(html).toContain("<strong>0</strong><span class=\"ev-m-count-of\"> of 3</span> left")
   })
-
-  it("shows the cold-start line (with a dismiss button) until the listener has five signals", () => {
-    expect(render(artists, undefined, 2)).toMatch(/class="ev-coldline"[\s\S]*Flipside signal · <span class="ev-cold-n">2 of 5<\/span>[\s\S]*aria-label="Hide signal hint"/)
-    expect(render(artists, undefined, 5)).not.toContain("ev-coldline")
-  })
 })
 
 const settled = <T,>(value: T) => Object.assign(Promise.resolve(value), { status: "fulfilled", value })
-const challenge: ChallengePayload = { title: "Five in a week", description: "like 5 artists this week", progress: 2, target: 5, completed: false }
+const challenge: ChallengePayload = { description: "like 5 artists this week", progress: 2, target: 5, completed: false }
 
 describe("FeedSnap weekly challenge", () => {
-  const renderWith = (c: ChallengePayload | null, signalCount = 0) =>
+  const renderWith = (c: ChallengePayload | null) =>
     renderToString(
       <AudioProvider>
-        <Phone challenge={<ChallengeSlot challengePromise={settled(c)} />} signalCount={signalCount} />
+        <Phone challenge={<ChallengeSlot challengePromise={settled(c)} />} />
       </AudioProvider>,
     ).replaceAll("<!-- -->", "")
-  function Phone({ challenge, signalCount }: { challenge: React.ReactNode; signalCount: number }) {
+  function Phone({ challenge }: { challenge: React.ReactNode }) {
     const triage = useFeedTriage([artist("a", "Yin Yin")], "spotify")
-    return <FeedSnap triage={triage} signalCount={signalCount} onLoadMore={() => {}} generating={false} wander={{ on: false, toggle: () => {} }} challenge={challenge} />
+    return <FeedSnap triage={triage} onLoadMore={() => {}} generating={false} wander={{ on: false, toggle: () => {} }} challenge={challenge} />
   }
 
-  it("shows the strip as one line above the cold-start line and the scroller", () => {
+  it("shows the strip as one line above the scroller, with no cold-start line", () => {
     const html = renderWith(challenge)
     const at = html.indexOf('<section aria-label="Weekly challenge" class="ev-chal">')
     expect(at).toBeGreaterThan(-1)
-    expect(html).toContain('<span class="ev-chal-title">Five in a week</span>')
+    expect(html).toContain('<span class="ev-chal-title">Weekly challenge</span>')
     expect(html).toMatch(/class="ev-chal-n">2\/5</)
-    expect(at).toBeLessThan(html.indexOf('class="ev-coldline"'))
+    expect(html).not.toContain("Flipside signal")
     expect(at).toBeLessThan(html.indexOf('class="ev-m-snap"'))
   })
 

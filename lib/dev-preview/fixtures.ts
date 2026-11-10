@@ -58,7 +58,6 @@ export function realisticArtists(real: boolean, count = 0): CardArtist[] {
 
 /** The weekly challenge strip on /dev-preview/feed (mockup feed-merge.html §6: 2 of 5 done). */
 export const previewChallenge: ChallengePayload = {
-  title: "Five in a week",
   description: "like 5 artists this week",
   progress: 2,
   target: 5,

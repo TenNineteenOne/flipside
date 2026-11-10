@@ -26,7 +26,7 @@ function Tablet({ artists, decided, selectedId }: { artists: CardArtist[]; decid
     remaining: artists.filter((a) => !signals.has(a.id)).length,
     counts: counts(t.ids, signals),
   }
-  return <FeedTablet triage={triage} signalCount={10} onLoadMore={() => {}} generating={false} wander={{ on: false, toggle: () => {} }} />
+  return <FeedTablet triage={triage} onLoadMore={() => {}} generating={false} wander={{ on: false, toggle: () => {} }} />
 }
 
 const render = (props: Parameters<typeof Tablet>[0]) =>

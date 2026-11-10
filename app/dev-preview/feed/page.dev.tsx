@@ -8,7 +8,7 @@ import { previewArtists, previewChallenge, realisticArtists } from "@/lib/dev-pr
  * `?start=N` starts with only the first N (the fetch stub then serves the rest in batches).
  * `?real=1` swaps in rows shaped like real data (popularity 0, long hyphenated genres);
  * `?n=N` repeats the fixtures up to N artists (e.g. 40 or 80) to stress the header strip.
- * The weekly challenge strip shows "Five in a week" at 2/5; `?challenge=done` shows it completed, `?challenge=none` hides it.
+ * The weekly challenge strip shows "like 5 artists this week" at 2/5; `?challenge=done` shows it completed, `?challenge=none` hides it.
  */
 export default async function FeedPreview({ searchParams }: { searchParams: Promise<{ start?: string; real?: string; n?: string; challenge?: string }> }) {
   const { start, real, n: count, challenge } = await searchParams
@@ -18,7 +18,6 @@ export default async function FeedPreview({ searchParams }: { searchParams: Prom
     <FeedClient
       recommendations={start === undefined ? base : previewArtists.slice(0, n)}
       musicPlatform="spotify"
-      signalCount={0}
       initialLayout={guessFeedLayout(await headers())}
       challengePromise={Promise.resolve(
         challenge === "none" ? null : { ...previewChallenge, ...(challenge === "done" && { progress: 5, completed: true }) },
