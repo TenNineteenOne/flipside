@@ -33,6 +33,11 @@
   .shell-main:has(.shell-fill) { height: 100dvh; padding: 0 0 0 var(--rail-w); }
   .shell-main:has(.shell-fill) > .app-col { max-width: none; min-width: 0; }
 }
+/* From 900px wide, a page containing .shell-wide (Stats and its loading skeleton) leaves the 520px
+   column but keeps the padding and normal page scrolling; the page caps its own width. */
+@media (width >= 900px) {
+  .shell-main:has(.shell-wide) > .app-col { max-width: none; min-width: 0; }
+}
 
 /* ---------- rail (desktop) ---------- */
 .shell-rail {
