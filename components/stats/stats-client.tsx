@@ -20,6 +20,9 @@ interface StatsClientProps {
   likedArtists: SavedArtist[]
 }
 
+/** One fixed-locale formatter: the browser's locale would render "1.234.567" against the server's "1,234,567" (hydration error). */
+const NUM = new Intl.NumberFormat("en-US")
+
 type TasteKind = "saved" | "liked"
 const KIND_LABEL: Record<TasteKind, string> = { saved: "Saved", liked: "Liked" }
 
@@ -34,7 +37,7 @@ function Totals({ rows }: { rows: { label: string; value: number }[] }) {
       {rows.map(({ label, value }) => (
         <div key={label}>
           <dt>{label}</dt>
-          <dd className="st-n">{value.toLocaleString()}</dd>
+          <dd className="st-n">{NUM.format(value)}</dd>
         </div>
       ))}
     </dl>
@@ -58,7 +61,7 @@ function TopGenres({ genres }: { genres: { genre: string; count: number }[] }) {
             <li key={genre} className="st-genre">
               <span className="st-genre-rank st-n" aria-hidden>{i + 1}</span>
               <span className="st-genre-name">{genre}</span>
-              <span className="st-genre-count st-n">{count}</span>
+              <span className="st-genre-count st-n">{NUM.format(count)}</span>
               <span className="st-bar" aria-hidden>
                 <span style={{ width: `${(count / maxCount) * 100}%` }} />
               </span>
@@ -149,7 +152,7 @@ function TasteProfileView({
             <div className="st-plot">
               <svg
                 role="img"
-                aria-label={`Taste profile popularity distribution: ${items.length} artists, median popularity ${mid}`}
+                aria-label={`Taste profile popularity distribution: ${NUM.format(items.length)} artists, median popularity ${mid}`}
                 aria-describedby={captionId}
               >
                 <g className="st-grid">
