@@ -1,6 +1,6 @@
 ---
 title: Auth & Session
-updated: 2026-10-24
+updated: 2026-11-10
 related: [[data-model]], [[api-routes]], [[infra-and-ops]]
 ---
 
@@ -77,7 +77,7 @@ Idempotent (already-encrypted passes through). One-time backfill:
 - **Onboarding resume**: `/feed` (server) redirects to `/onboarding` while the user has no
   `onboarding_completed_at`, no Last.fm username and no seed artists (the
   `/api/onboarding/check` rule). Onboarding's PATCH stamps `onboarding_completed_at`
-  (Skip too), so finishing lands on the feed.
+  (Skip too), so finishing lands on the feed. Sign-in relies on this: it always navigates to `/feed`.
 - **API wrappers** (`lib/api/with-authed-route.ts`): three factories —
   `withAuthedRoute` (session only), `withAuthedCsrfRoute` (+CSRF), `withAuthedJsonRoute`
   (+CSRF +JSON parse), each passing `{ userId, request, supabase }`; plus `withCronRoute` for

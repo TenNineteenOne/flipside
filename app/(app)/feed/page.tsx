@@ -20,6 +20,20 @@ export default async function FeedPage() {
   const userId = session.user.id
   const supabase = createServiceClient()
 
+  // Recs and signal counts only need the session id, so they run alongside
+  // the user lookup instead of after it. Without undergroundMode the helper
+  // reads users.underground_mode itself, in parallel with the cache fetch.
+  // The no-op catches keep a rejection unhandled-free if a redirect below
+  // throws first; awaiting the promises later still rejects as before.
+  const recsPromise = getUnseenRecommendations(supabase, userId, { limit: 20 })
+  recsPromise.catch(() => {})
+  const countsPromise = Promise.all([
+    supabase.from("listened_artists").select("*", { count: "exact", head: true }).eq("user_id", userId),
+    supabase.from("feedback").select("*", { count: "exact", head: true }).eq("user_id", userId).is("deleted_at", null),
+    supabase.from("saves").select("*", { count: "exact", head: true }).eq("user_id", userId),
+  ])
+  countsPromise.catch(() => {})
+
   // Look up user row (request-scoped cache — layout.tsx already fetched this)
   const user = await getCachedUser(userId)
   if (!user) {
@@ -38,15 +52,12 @@ export default async function FeedPage() {
     if ((count ?? 0) === 0) redirect("/onboarding")
   }
 
-  // Fetch cached recommendations, re-filtered by the user's current
+  // Cached recommendations, re-filtered by the user's current
   // underground_mode so a just-toggled setting is honored on first paint
   // instead of waiting for the client poll to replace the list.
   let recs: UnseenRecommendation[]
   try {
-    recs = await getUnseenRecommendations(supabase, user.id, {
-      limit: 20,
-      undergroundMode: !!user.underground_mode,
-    })
+    recs = await recsPromise
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error(`[feed-page] recs err="${message}" userId=${user.id}`)
@@ -62,27 +73,17 @@ export default async function FeedPage() {
 
   // No valid recommendations — client component triggers generation and refreshes
   if (validRecs.length === 0) {
-    return (
-      <>
-        <RecommendationsLoader />
-        <ExplorePrewarm />
-      </>
-    )
+    // No ExplorePrewarm here: it would compete with first feed generation for
+    // the Last.fm/iTunes limiters. It mounts after router.refresh once cards exist.
+    return <RecommendationsLoader />
   }
 
   // Assemble cards (tracks-cache fallback, colour lift, playable filter,
-  // interleave — see lib/cards/feed-cards) + signal counts in parallel.
+  // interleave — see lib/cards/feed-cards) while the signal counts finish.
   const [
     cards,
-    { count: artistCount },
-    { count: feedbackCount },
-    { count: saveCount },
-  ] = await Promise.all([
-    loadFeedCards(supabase, validRecs),
-    supabase.from("listened_artists").select("*", { count: "exact", head: true }).eq("user_id", user.id),
-    supabase.from("feedback").select("*", { count: "exact", head: true }).eq("user_id", user.id).is("deleted_at", null),
-    supabase.from("saves").select("*", { count: "exact", head: true }).eq("user_id", user.id),
-  ])
+    [{ count: artistCount }, { count: feedbackCount }, { count: saveCount }],
+  ] = await Promise.all([loadFeedCards(supabase, validRecs), countsPromise])
 
   const signalCount = (artistCount ?? 0) + (feedbackCount ?? 0) + (saveCount ?? 0)
 

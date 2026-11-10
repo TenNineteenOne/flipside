@@ -15,7 +15,15 @@ export default async function SavedPage() {
   const userId = session.user.id
   const supabase = createServiceClient()
 
-  const user = await getCachedUser(userId)
+  // Saves only need the session id: fetch them alongside the user row.
+  const [user, { data: saveRows }] = await Promise.all([
+    getCachedUser(userId),
+    supabase
+      .from("saves")
+      .select("artist_id, spotify_track_id, artist_name, created_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false }),
+  ])
 
   if (!user) redirect("/sign-in?reauth=1") // stale JWT, row gone: the proxy lets this through
 
@@ -23,13 +31,6 @@ export default async function SavedPage() {
   const musicPlatform: MusicPlatform = isMusicPlatform(user.preferred_music_platform)
     ? user.preferred_music_platform
     : DEFAULT_MUSIC_PLATFORM
-
-  // Fetch saved rows (newest first)
-  const { data: saveRows } = await supabase
-    .from("saves")
-    .select("artist_id, spotify_track_id, artist_name, created_at")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false })
 
   const artistIds = (saveRows ?? []).map((r: { artist_id: string }) => r.artist_id)
 
@@ -40,19 +41,22 @@ export default async function SavedPage() {
       .map((r: { artist_id: string; artist_name: string }) => [r.artist_id, r.artist_name])
   )
 
-  // Fetch richer artist data from recommendation_cache (best-effort)
+  // Fetch richer artist data from recommendation_cache (best-effort). Only
+  // the artist_data keys read below are selected; the full blob is large.
+  // A null artist_data yields all-null fields, which the ?? fallbacks treat
+  // the same as a missing row.
   const cacheMap = new Map<string, Record<string, unknown>>()
   if (artistIds.length > 0) {
     const { data: cacheRows } = await supabase
       .from("recommendation_cache")
-      .select("artist_id, artist_data")
+      .select(
+        "artist_id, name:artist_data->name, spotifyId:artist_data->spotifyId, genres:artist_data->genres, imageUrl:artist_data->imageUrl, artist_color:artist_data->artist_color"
+      )
       .eq("user_id", user.id)
       .in("artist_id", artistIds)
 
     for (const row of cacheRows ?? []) {
-      if (row.artist_data) {
-        cacheMap.set(row.artist_id, row.artist_data)
-      }
+      cacheMap.set(row.artist_id, row)
     }
   }
 

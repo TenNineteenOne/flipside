@@ -1,7 +1,24 @@
 "use client"
 
-import { LibraryEditor } from "@/components/settings/library-editor"
+import dynamic from "next/dynamic"
 import type { SpotifyArtist } from "@/components/onboarding/artist-search"
+
+// Client-only and split out: LibraryEditor pulls in the genre picker tree
+// (data/genres-picker.json, ~780 kB raw), which shouldn't block Settings'
+// first load. It maps saved tags to nodes on mount, so it must not mount
+// before that data exists; loading the whole editor lazily keeps that true.
+const LibraryEditor = dynamic(
+  () => import("@/components/settings/library-editor").then((m) => m.LibraryEditor),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="col gap-10" aria-busy="true">
+        <div className="fs-skeleton" style={{ height: 36, borderRadius: 8 }} />
+        <div className="fs-skeleton" style={{ height: 36, borderRadius: 8 }} />
+      </div>
+    ),
+  },
+)
 
 interface SeedsPanelProps {
   initialSelectedGenres: string[]

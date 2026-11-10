@@ -14,7 +14,29 @@ export default async function SettingsPage() {
 
   const userId = session.user.id
   const supabase = createServiceClient()
-  const user = await getCachedUser(userId)
+  // Everything below keys off the session id, so all four reads run at once.
+  // The Last.fm count is only used when the user row has a username.
+  const [user, { count: lastfmCount }, { data: seedArtistsData }, { data: recRows }] = await Promise.all([
+    getCachedUser(userId),
+    supabase
+      .from("listened_artists")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("source", "lastfm"),
+    supabase
+      .from("seed_artists")
+      .select("artist_id, name, image_url, added_at")
+      .eq("user_id", userId)
+      .order("added_at", { ascending: true }),
+    // Recent recs build distinct example artists at anchor popularities; only
+    // name + popularity are read, so skip the rest of the artist_data blob.
+    supabase
+      .from("recommendation_cache")
+      .select("name:artist_data->name, popularity:artist_data->popularity")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(200),
+  ])
 
   let lastfmUsername: string | null = null
   let statsfmUsername: string | null = null
@@ -29,21 +51,7 @@ export default async function SettingsPage() {
     console.error(`[settings-page] statsfm decrypt failed userId=${userId} err="${err instanceof Error ? err.message : err}"`)
   }
 
-  let lastfmArtistCount = 0
-  if (user?.lastfm_username) {
-    const { count } = await supabase
-      .from("listened_artists")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", userId)
-      .eq("source", "lastfm")
-    lastfmArtistCount = count ?? 0
-  }
-
-  const { data: seedArtistsData } = await supabase
-    .from("seed_artists")
-    .select("artist_id, name, image_url, added_at")
-    .eq("user_id", userId)
-    .order("added_at", { ascending: true })
+  const lastfmArtistCount = user?.lastfm_username ? (lastfmCount ?? 0) : 0
 
   const seedArtists = (seedArtistsData ?? []).map((r) => ({
     id: r.artist_id,
@@ -53,18 +61,10 @@ export default async function SettingsPage() {
     popularity: 0,
   }))
 
-  // Pull recent recs to build distinct example artists at anchor popularities
-  const { data: recRows } = await supabase
-    .from("recommendation_cache")
-    .select("artist_data")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false })
-    .limit(200)
-
   type FeedArtist = { name: string; popularity: number }
   const userArtists: FeedArtist[] = []
   for (const row of recRows ?? []) {
-    const data = row.artist_data as { name?: string; popularity?: number } | null
+    const data = row as { name?: string; popularity?: number } | null
     const pop = typeof data?.popularity === "number" ? data.popularity : null
     if (pop === null || !data?.name) continue
     userArtists.push({ name: data.name, popularity: pop })
