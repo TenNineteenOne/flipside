@@ -1,12 +1,13 @@
 "use client"
 
 import "./feed.css"
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
 import { Bookmark, Heart, Pause, Play, Share2, ThumbsDown, X } from "lucide-react"
 import { PlatformIcon } from "@/components/platform-icon"
 import { MiniPlayer } from "@/components/player/mini-player"
 import { Art, artistVar, EndState, LoadMore } from "@/components/feed/feed-parts"
 import { ColdStartBanner } from "@/components/feed/cold-start-banner"
+import { QueueColumns } from "@/components/feed/feed-skeleton"
 import { Kbd } from "@/components/feed/feed-shortcuts"
 import { ShellSlot } from "@/components/shell/shell-context"
 import { useAudio } from "@/lib/audio-context"
@@ -43,6 +44,16 @@ export function FeedDesktop({ triage, signalCount, onLoadMore, generating, onSho
   const { visible, selected, selectedId, signals, remaining, total, tuning } = triage
   // Passed/dismissed rows fade and slide out (feed.css, .ev-row[data-leaving]); the list then closes up.
   const rows = useLeaving(visible, rowKey, !useReducedMotion())
+  // The column labels stick just under the (sticky, variable-height) queue header: feed.css reads its height.
+  const headRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    const head = headRef.current
+    if (!head?.parentElement) return
+    const queue = head.parentElement
+    const ro = new ResizeObserver(() => queue.style.setProperty("--ev-head-h", `${head.offsetHeight}px`))
+    ro.observe(head)
+    return () => ro.disconnect()
+  }, [])
   return (
     <div className="ev-feed ev-app shell-fill">
       {tuning.more.length + tuning.less.length > 0 && (
@@ -65,7 +76,7 @@ export function FeedDesktop({ triage, signalCount, onLoadMore, generating, onSho
         </ShellSlot>
       )}
       <main className="ev-queue" aria-labelledby="ev-queue-title">
-        <header className="ev-queue-head">
+        <header ref={headRef} className="ev-queue-head">
           <div>
             <h1 id="ev-queue-title" className="ev-queue-title">Today&rsquo;s flipside</h1>
             <p className="ev-queue-sub">{total} artists you&rsquo;ve never played, picked from what you told us.</p>
@@ -82,6 +93,7 @@ export function FeedDesktop({ triage, signalCount, onLoadMore, generating, onSho
 
         <div className="ev-coldstart"><ColdStartBanner signalCount={signalCount} /></div>
 
+        <QueueColumns />
         <ul className="ev-rows" aria-label="Artist queue">
           {rows.shown.map(({ item: a, leaving }, i) => {
             const sel = a.id === selectedId
@@ -119,10 +131,12 @@ export function FeedDesktop({ triage, signalCount, onLoadMore, generating, onSho
                   </span>
                   <span className="ev-row-why">{whyText(a.why)}</span>
                 </div>
-                <span className="ev-row-genre">{a.genres[0]}</span>
+                <span className="ev-row-genre">{a.genres[0] && <><span className="sr-only">Genre: </span>{a.genres[0]}</>}</span>
                 <span className="ev-row-pop" title={`Popularity ${a.popularity}/100`}>
+                  <span className="sr-only">Popularity: </span>
                   <span className="ev-meter" aria-hidden><span style={{ width: `${a.popularity}%` }} /></span>
                   <span className="ev-row-pop-n">{a.popularity}</span>
+                  <span className="sr-only"> out of 100</span>
                 </span>
                 <span className="ev-row-state">
                   {liked ? (
