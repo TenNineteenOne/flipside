@@ -50,21 +50,37 @@
 
 /* Flipside — dark mode only, purple accent */
 :root {
-  /* Design tokens */
-  --bg-base:        #080808;
-  --bg-card:        #0f0f0f;
-  --bg-elevated:    #141414;
-  --border:         rgba(255,255,255,0.08);
-  --text-primary:   #eeeeee;
-  --text-secondary: #888888;
-  --text-muted:     #5a5a5a;
-  --text-faint:     #3a3a3a;
+  /* Evolved design tokens */
+  --bg:          oklch(0.155 0.007 293);   /* page */
+  --rail:        oklch(0.135 0.007 293);   /* nav rail, bars */
+  --panel:       oklch(0.185 0.008 293);   /* cards, panes */
+  --raise:       oklch(0.225 0.01 293);    /* hover, raised controls */
+  --line:        oklch(0.27 0.01 293);
+  --line-strong: oklch(0.36 0.012 293);
+  --fg:          oklch(0.965 0.004 293);   /* primary text */
+  --fg-2:        oklch(0.82 0.008 293);    /* secondary text */
+  --fg-3:        oklch(0.68 0.01 293);     /* tertiary text; do not go dimmer for body copy */
+  --violet:      #8b5cf6;                  /* the one brand accent */
+  --violet-hi:   oklch(0.66 0.2 293);
+  --violet-ink:  oklch(0.8 0.12 293);      /* violet text on dark, focus rings */
+  --violet-wash: color-mix(in oklch, #8b5cf6 16%, transparent);
+  --ease:        cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Legacy names, re-pointed at the Evolved tokens */
+  --bg-base:        var(--bg);
+  --bg-card:        var(--panel);
+  --bg-elevated:    var(--raise);
+  --border:         var(--line);
+  --text-primary:   var(--fg);
+  --text-secondary: var(--fg-2);
+  --text-muted:     var(--fg-3);
+  --text-faint:     var(--fg-3);
   --accent:         #8b5cf6;
   --accent-soft:    rgba(139,92,246,0.14);
   --accent-subtle:  rgba(139,92,246,0.12);
   --accent-border:  rgba(139,92,246,0.32);
   --accent-glow:    rgba(139,92,246,0.45);
-  --border-strong:  rgba(255,255,255,0.14);
+  --border-strong:  var(--line-strong);
 
   --spotify: #1db954;
   --like:    #22c55e;
@@ -74,11 +90,12 @@
   --radius-lg: 24px;
   --radius-xl: 32px;
 
-  --font-display-settings: "opsz" 144, "SOFT" 50, "WONK" 1;
+  /* Familjen Grotesk carries display and (former) serif text too */
+  --font-display: var(--font-sans);
+  --font-serif:   var(--font-sans);
 
   --shell-max:    520px;
   --easing:       cubic-bezier(0.2, 0.8, 0.2, 1);
-  --grain-opacity: 0.06;
 
   /* Shadcn/Tailwind structural tokens mapped to design tokens */
   --background: var(--bg-base);
@@ -140,18 +157,6 @@
   }
 }
 
-/* Film grain overlay */
-body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 1000;
-  opacity: var(--grain-opacity, 0.06);
-  mix-blend-mode: overlay;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 1 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
-}
-
 /* ── App shell ─────────────────────────────────────────────────── */
 .app {
   min-height: 100dvh;
@@ -179,9 +184,7 @@ body::after {
   position: sticky;
   top: 0;
   padding-top: env(safe-area-inset-top);
-  background: rgba(8,8,8,0.85);
-  backdrop-filter: blur(18px) saturate(1.15);
-  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+  background: var(--rail);
   border-bottom: 1px solid var(--border);
   z-index: 50;
 }
@@ -198,7 +201,6 @@ body::after {
   gap: 10px;
   flex: 0 0 auto;
   font-family: var(--font-display);
-  font-variation-settings: var(--font-display-settings);
   font-weight: 800;
   font-size: 19px;
   letter-spacing: -0.02em;
@@ -280,8 +282,6 @@ body::after {
    plus the existing brighter-glass treatment. */
 .appnav.adventurous {
   border-bottom: none;
-  backdrop-filter: blur(18px) saturate(1.5) brightness(1.08);
-  -webkit-backdrop-filter: blur(18px) saturate(1.5) brightness(1.08);
 }
 .appnav.adventurous::after {
   content: "";
@@ -302,7 +302,6 @@ body::after {
 }
 .page-head h1 {
   font-family: var(--font-display);
-  font-variation-settings: var(--font-display-settings);
   font-size: 28px;
   font-weight: 800;
   letter-spacing: -0.025em;
@@ -319,8 +318,8 @@ body::after {
   margin-left: 16px;
 }
 .page-head .sub .serif {
-  font-family: var(--font-serif), 'Instrument Serif', serif;
-  font-style: italic;
+  font-family: var(--font-serif);
+  font-style: normal;
   text-transform: none;
   letter-spacing: 0;
   white-space: normal;
@@ -403,14 +402,6 @@ body::after {
   padding: 20px;
 }
 
-@supports ((backdrop-filter: blur(30px)) or (-webkit-backdrop-filter: blur(30px))) {
-  .fs-card {
-    background: rgba(15, 15, 15, 0.65);
-    backdrop-filter: blur(30px) saturate(1.1);
-    -webkit-backdrop-filter: blur(30px) saturate(1.1);
-  }
-}
-
 /* ── Chips ─────────────────────────────────────────────────────── */
 .chip {
   display: inline-flex;
@@ -458,11 +449,10 @@ body::after {
   font-family: var(--font-display);
   font-weight: 500;
   letter-spacing: -0.035em;
-  font-variation-settings: var(--font-display-settings);
   font-feature-settings: "ss01";
 }
 .display-bold { font-weight: 700; }
-.serif { font-family: var(--font-serif), 'Instrument Serif', serif; font-style: italic; }
+.serif { font-family: var(--font-serif); font-style: normal; }
 .mono { font-family: var(--font-mono); }
 .muted { color: var(--text-secondary); }
 .faint { color: var(--text-muted); }
@@ -535,26 +525,6 @@ body::after {
   background-size: 200% 100%;
   animation: fs-shimmer 1.6s linear infinite;
   border-radius: 8px;
-}
-
-/* Splash gradient aura */
-.aura {
-  position: fixed;
-  pointer-events: none;
-  z-index: -1;
-  inset: 0;
-}
-.aura::before {
-  content: "";
-  position: absolute;
-  top: 10%;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 800px;
-  height: 800px;
-  background: radial-gradient(circle, var(--accent-glow) 0%, transparent 60%);
-  opacity: 0.5;
-  filter: blur(40px);
 }
 
 /* ── Scrollbar ─────────────────────────────────────────────────── */

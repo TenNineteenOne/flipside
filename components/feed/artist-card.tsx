@@ -222,9 +222,7 @@ function ArtistCardImpl({
         width: "100%",
         borderRadius: "var(--radius-xl)",
         overflow: "hidden",
-        background: "rgba(15,15,15,0.65)",
-        backdropFilter: "blur(30px)",
-        WebkitBackdropFilter: "blur(30px)",
+        background: "var(--panel)",
         border: isLiked
           ? "2px solid rgba(34,197,94,0.55)"
           : "1px solid rgba(255,255,255,0.08)",

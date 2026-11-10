@@ -36,9 +36,7 @@ export const ChallengeCard = memo(function ChallengeCard({
         padding: "14px 16px",
         marginBottom: 24,
         borderRadius: 14,
-        background: "rgba(15,15,15,0.55)",
-        backdropFilter: "blur(18px)",
-        WebkitBackdropFilter: "blur(18px)",
+        background: "var(--panel)",
         border: `1px solid ${accent.border}`,
       }}
     >
