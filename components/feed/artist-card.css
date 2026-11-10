@@ -80,7 +80,7 @@
 
 .ex-card .ex-secondary { display: flex; gap: 4px; }
 .ex-card .ex-sec {
-  display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: 1; min-width: 0; min-height: 44px;
+  position: relative; padding: 0 6px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: 1; min-width: 0; min-height: 44px;
   border-radius: 8px; font-size: 13px; color: var(--fg-2); text-decoration: none; white-space: nowrap;
   transition: background-color 120ms var(--ease), color 120ms var(--ease);
 }
@@ -93,8 +93,11 @@
   .ex-card .ex-tri { gap: 0; padding: 0 6px; font-size: 13px; }
   .ex-card .ex-tri svg { display: none; }
 }
-@container (width < 260px) {
-  .ex-card .ex-sec { font-size: 12px; gap: 4px; }
+/* Secondary labels shrink with an ellipsis ("YouTube Music" in a narrow card), and below 280px the
+   row is icons only; the labels stay in the accessibility tree (the link and Share also have aria-labels). */
+.ex-card .ex-sec-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+@container (width < 280px) {
+  .ex-card .ex-sec-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }
 
 /* collapsed: passed / dismissed */

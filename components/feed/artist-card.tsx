@@ -210,7 +210,7 @@ function ArtistCardImpl({
           <div className="ex-secondary">
             <button type="button" className="ex-sec" onClick={handleSave} aria-pressed={isSaved}>
               <Bookmark size={16} strokeWidth={1.75} fill={isSaved ? "currentColor" : "none"} aria-hidden />
-              {isSaved ? "Bookmarked" : "Bookmark"}
+              <span className="ex-sec-label">{isSaved ? "Bookmarked" : "Bookmark"}</span>
             </button>
             <a
               href={getArtistLink(musicPlatform, {
@@ -225,7 +225,7 @@ function ArtistCardImpl({
               onClick={(e) => e.stopPropagation()}
             >
               <PlatformIcon platform={musicPlatform} size={16} />
-              {platform.label}
+              <span className="ex-sec-label">{platform.label}</span>
             </a>
             <button
               type="button"
@@ -234,7 +234,7 @@ function ArtistCardImpl({
               title="Copy artist link"
               aria-label={`Share: copy link to ${artist.name}`}
             >
-              <Share2 size={16} strokeWidth={1.75} aria-hidden /> Share
+              <Share2 size={16} strokeWidth={1.75} aria-hidden /> <span className="ex-sec-label">Share</span>
             </button>
           </div>
         </div>
