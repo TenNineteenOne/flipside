@@ -54,10 +54,10 @@ export const TrackStrip = memo(function TrackStrip({
             <div
               key={track.id}
               onClick={(e) => handlePlayClick(e, track)}
-              className="rounded-r-2xl p-3 flex items-center gap-4 cursor-pointer transition-transform hover:translate-x-1"
+              className="rounded-xl p-3 flex items-center gap-4 cursor-pointer transition-transform hover:translate-x-1"
               style={{
                 background: baseTintFlow,
-                borderLeft: `3px solid ${artistColor}`
+                border: "1px solid var(--line-strong)"
               }}
             >
               <div className="relative w-12 h-12 shrink-0">
@@ -102,10 +102,10 @@ export const TrackStrip = memo(function TrackStrip({
           <div
             key={track.id}
             onClick={(e) => handlePlayClick(e, track)}
-            className="rounded-r-2xl p-2.5 flex items-center gap-4 cursor-pointer transition-transform hover:translate-x-1"
+            className="rounded-xl p-2.5 flex items-center gap-4 cursor-pointer transition-transform hover:translate-x-1"
             style={{
               background: baseTintFlow,
-              borderLeft: `3px solid ${artistColor}`
+              border: "1px solid var(--line)"
             }}
           >
             <div className="relative w-10 h-10 shrink-0">
@@ -144,10 +144,10 @@ export const TrackStrip = memo(function TrackStrip({
       {remainingCount > 0 && !compact && (
         <button
           type="button"
-          className="rounded-r-2xl p-2.5 flex items-center gap-4 cursor-pointer text-left transition-transform hover:translate-x-1"
+          className="rounded-xl p-2.5 flex items-center gap-4 cursor-pointer text-left transition-transform hover:translate-x-1"
           style={{
             background: baseTintFlow,
-            borderLeft: `3px solid ${artistColor}`
+            border: "1px solid var(--line)"
           }}
           onClick={(e) => {
             e.stopPropagation()
