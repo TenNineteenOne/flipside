@@ -23,8 +23,8 @@ them, so untouched pages follow. Two fonts (`next/font`): Familjen Grotesk for a
 Mono for key hints, durations and counts. Each artist's colour is `--a` on its card or row, with
 `--a-dark` / `--a-light` derived in CSS. No glow, blur, grain or blend layers. A base
 `:focus-visible` rule draws a 2px `--violet-ink` ring on everything focusable; components may
-refine it. Untouched legacy pages (Explore, History, Saved, Stats, Settings) still use the
-`components/visual/ambient.tsx` radial page backgrounds.
+refine it. The old per-page radial "ambient" backgrounds (Explore, Saved, Settings) are gone; those
+pages sit on the plain `--bg`.
 
 ## Screens (`app/(app)` + `app/(marketing)`)
 

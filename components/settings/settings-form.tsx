@@ -1,9 +1,6 @@
 "use client"
 
-import { Ambient } from "@/components/visual/ambient"
-import { hexToRgba } from "@/lib/color-utils"
 import { useFeedGeneration } from "@/lib/hooks/use-feed-generation"
-import { ACCENT, MINT, ROSE } from "@/lib/settings/obscurity"
 import { ProfilePanel } from "@/components/settings/panels/profile-panel"
 import { AccountPanel } from "@/components/settings/panels/account-panel"
 import { PlatformPanel } from "@/components/settings/panels/platform-panel"
@@ -50,12 +47,6 @@ export function SettingsForm({
   // toggle-handlers both passing the re-entry check.
   const { generating: isGenerating, rebuild } = useFeedGeneration()
 
-  const palette = `
-    radial-gradient(50% 40% at 18% 20%, ${hexToRgba(ACCENT, 0.20)} 0%, transparent 70%),
-    radial-gradient(55% 45% at 82% 35%, ${hexToRgba(MINT, 0.14)} 0%, transparent 70%),
-    radial-gradient(60% 50% at 50% 95%, ${hexToRgba(ROSE, 0.12)} 0%, transparent 70%)
-  `
-
   async function handleRegenerateBoth() {
     await rebuild()
   }
@@ -88,8 +79,6 @@ export function SettingsForm({
           cursor: pointer;
         }
       `}</style>
-
-      <Ambient palette={palette} />
 
       <div>
         <div className="page-head">
