@@ -46,6 +46,7 @@ export function FeedShortcuts({ triage }: { triage: FeedTriage }) {
         targetIsEditable: !!el.closest(EDITABLE),
         targetIsButtonOrLink: el.tagName === "BUTTON" || el.tagName === "A",
         helpOpen: open,
+        repeat: e.repeat,
       })
       if (!action) return
       if (action === "next" || action === "prev" || action === "togglePlay" || action === "toggleHelp") e.preventDefault()

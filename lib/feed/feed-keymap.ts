@@ -27,7 +27,13 @@ export function feedAction(e: {
   targetIsEditable: boolean      // input, textarea, select, contenteditable
   targetIsButtonOrLink: boolean  // Space must not double-fire on a focused control
   helpOpen: boolean
+  repeat: boolean                // held-key auto-repeat: only movement repeats
 }): FeedAction | null {
+  const action = keyAction(e)
+  return e.repeat && action !== "next" && action !== "prev" ? null : action
+}
+
+function keyAction(e: Parameters<typeof feedAction>[0]): FeedAction | null {
   if (e.metaKey || e.ctrlKey || e.altKey || e.targetIsEditable) return null
   if (e.key === "?" || (e.key === "/" && e.shiftKey)) return "toggleHelp"
   if (e.helpOpen) return null

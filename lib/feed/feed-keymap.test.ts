@@ -11,6 +11,7 @@ const press = (key: string, ctx: Partial<Parameters<typeof feedAction>[0]> = {})
     targetIsEditable: false,
     targetIsButtonOrLink: false,
     helpOpen: false,
+    repeat: false,
     ...ctx,
   })
 
@@ -76,3 +77,13 @@ describe("feedAction", () => {
     expect(press("?", { helpOpen: true })).toBe("toggleHelp")
   })
 })
+
+describe("feedAction: key repeat", () => {
+  it.each(["x", "l", "d", "o", " ", "b", "s", "z", "1", "?"])("ignores an auto-repeat of %j", (key) => {
+    expect(press(key, { repeat: true })).toBeNull()
+  })
+  it.each([["j", "next"], ["k", "prev"], ["ArrowDown", "next"], ["ArrowUp", "prev"]])("repeats %s (movement)", (key, action) => {
+    expect(press(key, { repeat: true })).toBe(action)
+  })
+})
+
