@@ -229,7 +229,8 @@ triage buttons, track chips, Play preview, the landing's primary buttons) a 1px 
   Each page renders **`SnapCard`** (`components/feed/snap-card.tsx`, shared with the tablet
   layout): artwork sized `min(100cqw - 52px, 100cqh - 236px, 460px)` on an artist-colour mat,
   64px play button with a 30-second ring, name, genres + save / open / share, why, up to three
-  track chips; artists without tracks fetch them (`useArtistTracks`) only while selected.
+  track chips (each outlined in a different colour rotated away from the artist's hue, with a
+  round play icon; the playing chip gets a white ring); artists without tracks fetch them (`useArtistTracks`) only while selected.
   Short pages (container queries on the page, `ev-page`): the artwork shrinks to 76px, then the
   chips go (below 312px), then the why line (below 262px), so play, name and the icon row stay
   whole from 220px up; wide short pages (landscape, ≥560px wide and <356px tall) put the artwork

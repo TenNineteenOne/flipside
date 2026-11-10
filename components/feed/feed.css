@@ -469,7 +469,23 @@ html:has(.ev-snap), html:has(.ev-snap) body { overflow: hidden; }
 }
 .ev-feed .ev-m-chip span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ev-feed .ev-m-chip svg { flex-shrink: 0; }
-.ev-feed .ev-m-chip[data-current] { background: var(--fg); color: oklch(0.18 0.01 293); }
+/* Track chips: each a different colour turned away from the artist's on the colour wheel (so they
+   never blend into the card), as a tint with a bold edge and a coloured play circle. Playing = white ring. */
+.ev-feed button.ev-m-chip {
+  --c: oklch(0.68 0.15 255); padding-left: 6px; gap: 8px; color: var(--fg);
+  background: color-mix(in oklch, var(--c) 18%, transparent); box-shadow: inset 0 0 0 2px var(--c);
+  transition: background-color 120ms var(--ease), transform 120ms var(--ease);
+}
+.ev-feed button.ev-m-chip:nth-child(2) { --c: oklch(0.68 0.15 330); }
+.ev-feed button.ev-m-chip:nth-child(3) { --c: oklch(0.68 0.15 40); }
+@supports (color: oklch(from red l c h)) {
+  .ev-feed button.ev-m-chip { --c: oklch(from var(--a, var(--violet)) 0.68 0.15 calc(h + 100)); }
+  .ev-feed button.ev-m-chip:nth-child(2) { --c: oklch(from var(--a, var(--violet)) 0.68 0.15 calc(h + 180)); }
+  .ev-feed button.ev-m-chip:nth-child(3) { --c: oklch(from var(--a, var(--violet)) 0.68 0.15 calc(h + 260)); }
+}
+.ev-feed button.ev-m-chip:active { transform: scale(0.96); }
+.ev-feed .ev-m-chip-ico { display: grid; place-items: center; flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%; background: var(--c); color: #fff; }
+.ev-feed button.ev-m-chip[data-current] { background: color-mix(in oklch, var(--c) 38%, transparent); box-shadow: inset 0 0 0 2.5px var(--fg), 0 0 18px -4px var(--c); }
 /* No tracks yet / none: the desktop pane's copy, in the chips' place and height. */
 .ev-feed .ev-m-chips-note { align-items: center; height: 40px; font-size: 13px; color: var(--fg-3); }
 
@@ -700,4 +716,5 @@ body:has(.ev-snap) [data-sonner-toaster][data-y-position="top"] {
   .ev-feed .ev-btn-primary:hover:not(:disabled, [aria-disabled="true"]) { background: var(--violet-fill); }
   .ev-feed .ev-m-verdict-more { background: rgba(139, 92, 246, 0.42); }
   .ev-feed .ev-m-tri-like { background: var(--raise); }
+  .ev-feed button.ev-m-chip, .ev-feed button.ev-m-chip[data-current] { background: var(--raise); }
 }
