@@ -93,7 +93,8 @@ export function FeedDesktop({ triage, signalCount, onLoadMore, generating, onSho
 
         <div className="ev-coldstart"><ColdStartBanner signalCount={signalCount} /></div>
 
-        <QueueColumns />
+        {/* no labels floating above an emptied queue */}
+        {rows.shown.length > 0 && <QueueColumns />}
         <ul className="ev-rows" aria-label="Artist queue">
           {rows.shown.map(({ item: a, leaving }, i) => {
             const sel = a.id === selectedId

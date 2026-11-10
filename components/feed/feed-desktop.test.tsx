@@ -71,6 +71,12 @@ describe("FeedDesktop server render", () => {
     expect(queue).toMatch(/<span class="ev-row-pop-n">0<\/span><span class="sr-only"> out of 100<\/span>/)
   })
 
+  it("hides the column labels when no rows are visible", () => {
+    const html = render([])
+    expect(html).toContain('class="ev-queue"')
+    expect(html).not.toContain('class="ev-cols"')
+  })
+
   it("an artist with no image and no tracks shows the letter panel, not an image", () => {
     const html = render([artist("z", "zola jesus", null)])
     expect(html).toMatch(/class="ev-card-art ev-letter" style="background:#[0-9a-f]{6};color:#(ffffff|14121a)" aria-hidden="true">Z</)
