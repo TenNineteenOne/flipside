@@ -190,8 +190,11 @@
 /* ── Page head ─────────────────────────────────────────────────── */
 .page-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  gap: 4px 16px;
+  min-width: 0;
   padding: 18px 0 8px;
 }
 .page-head h1 {
@@ -208,8 +211,13 @@
   text-transform: uppercase;
   letter-spacing: 0.12em;
   white-space: nowrap;
-  flex-shrink: 0;
-  margin-left: 16px;
+  min-width: 0;
+}
+/* The tagline inside .sub reads as a sentence: normal case and tracking, and it may wrap. */
+.page-head .sub .serif {
+  text-transform: none;
+  letter-spacing: 0;
+  white-space: normal;
 }
 @media (min-width: 900px) {
   .page-head h1 { font-size: 38px; }
