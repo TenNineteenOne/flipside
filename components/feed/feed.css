@@ -351,6 +351,9 @@ html:has(.ev-snap), html:has(.ev-snap) body { overflow: hidden; }
   background: color-mix(in oklch, var(--a-dark) 42%, var(--panel)); border: 1px solid color-mix(in oklch, var(--a) 24%, var(--line));
   box-shadow: 0 24px 50px -24px rgba(0, 0, 0, 0.8);
   cursor: grab; user-select: none; -webkit-user-select: none;
+  /* Vertical scrolling and pinch-zoom stay with the browser over the card (it covers most of the
+     screen); !important beats the pan-y framer-motion writes inline for drag="x". */
+  touch-action: pan-y pinch-zoom !important;
 }
 .ev-feed .ev-m-card:active { cursor: grabbing; }
 /* Artwork is sized against BOTH the container's width and height so the whole card always fits;
