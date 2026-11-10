@@ -3,7 +3,7 @@
 import "./feed.css"
 import { useEffect, useRef } from "react"
 import { Heart, X } from "lucide-react"
-import { Art, artistVar, EndState, LoadMore } from "@/components/feed/feed-desktop"
+import { Art, artistVar, EndState, LoadMore } from "@/components/feed/feed-parts"
 import { ColdLine, PlayerBar, TopBarProgress, TriageBar } from "@/components/feed/feed-snap"
 import { SnapCard } from "@/components/feed/snap-card"
 import { artworkFor } from "@/lib/feed/artwork"

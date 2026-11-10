@@ -1,20 +1,18 @@
 "use client"
 
 import "./feed.css"
-import { useEffect, type CSSProperties } from "react"
-import Link from "next/link"
-import Image from "next/image"
+import { useEffect } from "react"
 import { Bookmark, Heart, Pause, Play, Share2, ThumbsDown, X } from "lucide-react"
 import { PlatformIcon } from "@/components/platform-icon"
 import { MiniPlayer } from "@/components/player/mini-player"
+import { Art, artistVar, EndState, LoadMore } from "@/components/feed/feed-parts"
 import { ColdStartBanner } from "@/components/feed/cold-start-banner"
 import { Kbd } from "@/components/feed/feed-shortcuts"
 import { ShellSlot } from "@/components/shell/shell-context"
 import { useAudio } from "@/lib/audio-context"
-import { artworkAt, artworkFor, letterFor } from "@/lib/feed/artwork"
+import { artworkFor } from "@/lib/feed/artwork"
 import { formatDuration, listSeparator, popularityLabel, whyParts, whyText } from "@/lib/feed/card-copy"
 import { PLATFORM_META } from "@/lib/music-links"
-import { readableTextOn, resolveArtistColor } from "@/lib/color-utils"
 import { useArtistTracks } from "@/lib/hooks/use-artist-tracks"
 import { useLeaving } from "@/lib/hooks/use-leaving"
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion"
@@ -23,35 +21,6 @@ import type { CardArtist } from "@/lib/cards/card-artist"
 
 const VERDICT: Record<string, string> = { thumbs_up: "liked", thumbs_down: "passed", skip: "dismissed" }
 const rowKey = (a: CardArtist) => a.id
-
-/** Per-artist colour as `--a`; feed.css derives `--a-dark` / `--a-light` from it. */
-export const artistVar = (a: CardArtist) => ({ "--a": resolveArtistColor(a.artistColor, a.name) }) as CSSProperties
-
-/**
- * Artwork, or a colour panel with the first letter when there is none (never a broken image).
- * `size` is the display size: Apple artwork is fetched at twice it (artworkAt). `priority`
- * marks the likely LCP image (the selected artist's art) as a high-priority fetch.
- */
-export function Art({ a, src, size, className, alt = "", eager = false, priority = false }: {
-  a: CardArtist; src: string | null; size: number; className: string; alt?: string; eager?: boolean; priority?: boolean
-}) {
-  if (!src) {
-    const bg = resolveArtistColor(a.artistColor, a.name)
-    return <span className={`${className} ev-letter`} style={{ background: bg, color: readableTextOn(bg) }} aria-hidden>{letterFor(a.name)}</span>
-  }
-  return (
-    <Image
-      className={className}
-      src={artworkAt(src, size)}
-      alt={alt}
-      width={size}
-      height={size}
-      loading={eager ? "eager" : "lazy"}
-      decoding={eager ? undefined : "async"}
-      fetchPriority={priority ? "high" : undefined}
-    />
-  )
-}
 
 /**
  * Desktop feed (≥900px): queue column + focus pane, filling the shell's main
@@ -288,39 +257,5 @@ function FocusCard({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
         </section>
       )}
     </article>
-  )
-}
-
-/** Focus pane when nothing is left to decide (PRD "End of queue"). */
-export function EndState({ triage, onLoadMore, generating }: { triage: FeedTriage; onLoadMore: () => void; generating: boolean }) {
-  const { counts, total, tuning, visible, signals } = triage
-  const liked = visible.filter((a) => signals.get(a.id) === "thumbs_up").slice(0, 4)
-  const lean = tuning.more.slice(0, 2)
-  return (
-    <div className="ev-end">
-      {liked.length > 0 && (
-        <div className="ev-end-art" aria-hidden>
-          {liked.map((a) => <Art key={a.id} a={a} src={artworkFor(a)} size={96} className="ev-end-img" />)}
-        </div>
-      )}
-      <h2 className="ev-end-title">You&rsquo;ve heard all {total}.</h2>
-      <p className="ev-end-body">
-        {counts.liked} liked, {counts.passed} less like this, {counts.dismissed} dismissed.
-        {lean.length > 0 && <> Tomorrow&rsquo;s batch leans toward <strong>{lean.join(" and ")}</strong>.</>}
-      </p>
-      <div className="ev-end-actions">
-        <LoadMore onLoadMore={onLoadMore} generating={generating} primary />
-        <Link className="ev-btn ev-btn-ghost" href="/saved">Review saved</Link>
-      </div>
-    </div>
-  )
-}
-
-/** "Load more artists": the end state's primary button, and always available at the end of the queue / Up next list. */
-export function LoadMore({ onLoadMore, generating, primary = false }: { onLoadMore: () => void; generating: boolean; primary?: boolean }) {
-  return (
-    <button type="button" className={`ev-btn ${primary ? "ev-btn-primary" : "ev-btn-ghost"}`} onClick={onLoadMore} disabled={generating}>
-      {generating ? "Generating…" : "Load more artists"}
-    </button>
   )
 }

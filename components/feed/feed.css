@@ -265,7 +265,7 @@
 .ev-feed .ev-btn-ghost { border: 1px solid var(--line-strong); color: var(--fg); text-decoration: none; }
 .ev-feed .ev-btn-ghost:hover { background: var(--raise); }
 
-/* loading skeleton (app/(app)/feed/loading.tsx): desktop panes ≥900px, tablet 640–899px, Snap below */
+/* loading skeleton (components/feed/feed-skeleton.tsx): desktop panes ≥900px, tablet 640–899px, Snap below */
 .ev-feed .ev-skel-line { display: block; height: 12px; }
 .ev-feed .ev-skel-card { background: var(--panel); animation: none; }
 .ev-feed .ev-skel-card > .fs-skeleton { display: block; }

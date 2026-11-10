@@ -1,11 +1,10 @@
 "use client"
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react"
+import dynamic from "next/dynamic"
 import { useRouter } from "next/navigation"
-import { FeedDesktop } from "@/components/feed/feed-desktop"
 import { FeedShortcuts } from "@/components/feed/feed-shortcuts"
-import { FeedSnap } from "@/components/feed/feed-snap"
-import { FeedTablet } from "@/components/feed/feed-tablet"
+import { FeedSkeleton } from "@/components/feed/feed-skeleton"
 import { useShellBadge } from "@/components/shell/shell-context"
 import type { MusicPlatform } from "@/lib/music-links"
 import { useFeedFill } from "@/lib/hooks/use-feed-fill"
@@ -13,6 +12,14 @@ import { useFeedGeneration } from "@/lib/hooks/use-feed-generation"
 import { useFeedTriage } from "@/lib/hooks/use-feed-triage"
 import type { CardArtist } from "@/lib/cards/card-artist"
 import type { GenerateResult } from "@/lib/client/feed-generation"
+
+// Each layout is its own chunk, so a device downloads only the one it shows (the Snap
+// layout also brings the swipe code). The layout the server rendered has its chunk
+// preloaded by the page; switching to another (a wrong guess, a resize) shows the
+// skeleton while that chunk loads.
+const FeedDesktop = dynamic(() => import("@/components/feed/feed-desktop").then((m) => m.FeedDesktop), { loading: FeedSkeleton })
+const FeedTablet = dynamic(() => import("@/components/feed/feed-tablet").then((m) => m.FeedTablet), { loading: FeedSkeleton })
+const FeedSnap = dynamic(() => import("@/components/feed/feed-snap").then((m) => m.FeedSnap), { loading: FeedSkeleton })
 
 interface FeedClientProps {
   recommendations: CardArtist[]
@@ -31,7 +38,7 @@ const TOPUP_THRESHOLD = 8
 // feed too. The server (and hydration) renders the Snap tree: it is what the
 // slowest clients need, and feed.css hides it under the same two conditions
 // until the client switches, so wider screens never flash a phone layout.
-// Keep these in step with feed.css and app/(app)/feed/loading.tsx.
+// Keep these in step with feed.css and components/feed/feed-skeleton.tsx.
 type Layout = "phone" | "tablet" | "desktop"
 const QUERIES = ["(width >= 900px)", "(width >= 640px) and (height >= 680px)"]
 const subscribeLayout = (cb: () => void) => {

@@ -36,6 +36,8 @@ function size(file) {
   }
   return sizes.get(file)
 }
+// Labels for next/dynamic chunks, by a class name only that component renders.
+const LABELS = [["ev-m-rail-wrap", "feed-tablet"], ["ev-m-snap", "feed-snap"], ["ev-queue-title", "feed-desktop"]]
 const kB = (n) => (n / 1000).toFixed(1).padStart(7) + " kB"
 
 const rootMain = JSON.parse(readFileSync(join(NEXT, "build-manifest.json"), "utf8")).rootMainFiles
@@ -52,6 +54,7 @@ function routeFiles(entry) {
 
 console.log("Route        files        raw       gzip")
 const usedBy = new Map()
+const lazyByRoute = new Map()
 for (const [route, entry] of Object.entries(ROUTES)) {
   const files = routeFiles(entry)
   let raw = 0, gz = 0
@@ -62,7 +65,25 @@ for (const [route, entry] of Object.entries(ROUTES)) {
     usedBy.set(f, [...(usedBy.get(f) ?? []), route])
   }
   console.log(`${route.padEnd(12)} ${String(files.length).padStart(5)} ${kB(raw)} ${kB(gz)}`)
+  lazyByRoute.set(route, lazyGroups(entry, new Set(files)))
 }
+
+// next/dynamic chunks per route (react-loadable-manifest): loaded on demand, or preloaded by the
+// page's HTML when the server renders that component (then they add to that page's first load).
+function lazyGroups(entry, firstLoad) {
+  const path = join(NEXT, "server/app", entry, "react-loadable-manifest.json")
+  if (!existsSync(path)) return []
+  return Object.values(JSON.parse(readFileSync(path, "utf8"))).map(({ files }) => {
+    const js = files.filter((f) => f.endsWith(".js") && !firstLoad.has(f))
+    const text = files.filter((f) => f.endsWith(".js")).map((f) => readFileSync(join(NEXT, f), "utf8")).join("")
+    const label = LABELS.find(([marker]) => text.includes(marker))?.[1] ?? files[0]
+    return { label, files: js.length, raw: js.reduce((n, f) => n + size(f).raw, 0), gzip: js.reduce((n, f) => n + size(f).gzip, 0) }
+  })
+}
+
+console.log("\nnext/dynamic chunks (not in the route's first load above; preloaded when server-rendered)")
+for (const [route, groups] of lazyByRoute)
+  for (const g of groups) console.log(`${route.padEnd(12)} + ${g.label.padEnd(22)} ${String(g.files).padStart(2)} files ${kB(g.raw)} ${kB(g.gzip)}`)
 
 const chunks = readdirSync(join(NEXT, "static/chunks"))
   .filter((f) => f.endsWith(".js"))
