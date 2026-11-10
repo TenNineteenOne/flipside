@@ -177,7 +177,9 @@
   /* A page's second row (ShellSlot "topSub"); the bar grows by its height. */
   .shell-top-sub { padding: 0 12px 0 16px; }
   .shell-top-sub:empty { display: none; }
-  .shell-top-brand { border-radius: 6px; }
+  .shell-top-brand { position: relative; border-radius: 6px; }
+  /* 44px touch target around the 26px wordmark, same look */
+  .shell-top-brand::after { content: ""; position: absolute; inset: -9px -4px; }
   .shell-top-slot { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: flex-end; }
   .shell-avatar {
     display: grid;
@@ -239,7 +241,7 @@
     height: 16px;
     padding: 0 4px;
     border-radius: 8px;
-    background: var(--violet);
+    background: var(--violet-fill);
     color: #fff;
     font: 600 10px/16px var(--font-sans);
     text-align: center;

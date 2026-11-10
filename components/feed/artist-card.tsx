@@ -387,7 +387,7 @@ function ArtistCardImpl({
               style={{
                 ...quietBtnStyle,
                 flex: 1.2,
-                background: isLiked ? "var(--violet)" : "var(--raise)",
+                background: isLiked ? "var(--violet-fill)" : "var(--raise)",
                 color: isLiked ? "#fff" : "var(--violet-ink)",
               }}
             >

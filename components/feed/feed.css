@@ -48,7 +48,7 @@
 .ev-feed button.ev-tri:hover { color: var(--fg); background: color-mix(in oklch, var(--raise), white 6%); }
 .ev-feed button.ev-tri:active { transform: scale(0.97); }
 .ev-feed .ev-tri-like { color: var(--violet-ink); }
-.ev-feed .ev-tri-like[aria-pressed="true"] { background: var(--violet); color: #fff; }
+.ev-feed .ev-tri-like[aria-pressed="true"] { background: var(--violet-fill); color: #fff; }
 
 /* Two panes filling the shell's main area (the rail is the shell's). */
 .ev-feed.ev-app {
@@ -106,7 +106,7 @@
 .ev-feed .ev-row-pop-n { font: 400 11px/1 var(--font-mono); color: var(--fg-3); }
 .ev-feed .ev-row-state { display: flex; justify-content: flex-end; pointer-events: none; }
 .ev-feed .ev-saved-tag { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; border-radius: 6px; font-size: 12px; font-weight: 600; color: var(--fg-2); background: var(--raise); }
-.ev-feed .ev-liked-tag { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; border-radius: 6px; font-size: 12px; font-weight: 600; color: #fff; background: var(--violet); }
+.ev-feed .ev-liked-tag { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; border-radius: 6px; font-size: 12px; font-weight: 600; color: #fff; background: var(--violet-fill); }
 .ev-feed .ev-row[data-liked] .ev-row-name { color: var(--fg); }
 
 .ev-feed .ev-eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 12px; }
@@ -197,7 +197,8 @@
 .ev-feed .ev-track-hover { position: absolute; opacity: 0; color: var(--fg); }
 .ev-feed .ev-track:hover .ev-track-hover { opacity: 1; }
 .ev-feed .ev-track:hover .ev-track-i { opacity: 0; }
-.ev-feed .ev-track[data-current] .ev-track-name, .ev-feed .ev-track[data-current] .ev-track-n { color: var(--a-light); }
+/* Text uses a lighter mix than --a-light so dark artist colours still reach 4.5:1 on the pane. */
+.ev-feed .ev-track[data-current] .ev-track-name, .ev-feed .ev-track[data-current] .ev-track-n { color: color-mix(in oklch, var(--a) 35%, white); }
 .ev-feed .ev-track-name { display: flex; flex-direction: column; min-width: 0; font-size: 14px; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ev-feed .ev-track-album { font-size: 12px; font-weight: 400; color: var(--fg-3); overflow: hidden; text-overflow: ellipsis; }
 .ev-feed .ev-track-dur { font: 400 11px/1 var(--font-mono); color: var(--fg-3); }
@@ -240,8 +241,8 @@
 .ev-feed .ev-end-body { color: var(--fg-2); max-width: 36ch; }
 .ev-feed .ev-end-body strong { color: var(--fg); font-weight: 600; }
 .ev-feed .ev-end-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
-.ev-feed .ev-btn-primary { background: var(--violet); color: #fff; }
-.ev-feed .ev-btn-primary:hover:not(:disabled) { background: var(--violet-hi); }
+.ev-feed .ev-btn-primary { background: var(--violet-fill); color: #fff; }
+.ev-feed .ev-btn-primary:hover:not(:disabled) { background: color-mix(in oklch, var(--violet) 86%, black); }
 .ev-feed .ev-btn-primary:disabled { cursor: default; opacity: 0.7; }
 .ev-feed .ev-btn-ghost { border: 1px solid var(--line-strong); color: var(--fg); text-decoration: none; }
 .ev-feed .ev-btn-ghost:hover { background: var(--raise); }
@@ -359,7 +360,7 @@ html:has(.ev-snap), html:has(.ev-snap) body { overflow: hidden; }
 .ev-feed .ev-m-verdict { position: absolute; inset: 0; display: flex; align-items: flex-start; padding: 14px; pointer-events: none; }
 .ev-feed .ev-m-verdict span { display: inline-flex; align-items: center; gap: 7px; height: 38px; padding: 0 14px; border-radius: 10px; font-size: 16px; font-weight: 650; }
 .ev-feed .ev-m-verdict-more { background: color-mix(in oklch, var(--violet) 42%, transparent); }
-.ev-feed .ev-m-verdict-more span { background: var(--violet); color: #fff; }
+.ev-feed .ev-m-verdict-more span { background: var(--violet-fill); color: #fff; }
 .ev-feed .ev-m-verdict-less { justify-content: flex-end; background: rgba(12, 10, 16, 0.6); }
 .ev-feed .ev-m-verdict-less span { background: var(--fg); color: oklch(0.18 0.01 293); }
 /* decided cards stay in the scroll: liked badge; passed / dismissed artwork dimmed with a badge */
@@ -367,7 +368,7 @@ html:has(.ev-snap), html:has(.ev-snap) body { overflow: hidden; }
   position: absolute; left: 12px; bottom: 12px; display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px;
   border-radius: 8px; font-size: 13px; font-weight: 600;
 }
-.ev-feed .ev-m-liked { background: var(--violet); color: #fff; }
+.ev-feed .ev-m-liked { background: var(--violet-fill); color: #fff; }
 .ev-feed .ev-m-judged { gap: 6px; background: var(--fg); color: oklch(0.18 0.01 293); }
 .ev-feed .ev-m-card[data-v="passed"] .ev-m-img, .ev-feed .ev-m-card[data-v="dismissed"] .ev-m-img { opacity: 0.4; filter: grayscale(0.7); }
 .ev-feed .ev-m-play {
@@ -414,7 +415,7 @@ html:has(.ev-snap), html:has(.ev-snap) body { overflow: hidden; }
 }
 .ev-feed .ev-m-tri:active { transform: scale(0.96); background: color-mix(in oklch, var(--raise), white 8%); }
 .ev-feed .ev-m-tri-like { color: var(--violet-ink); background: color-mix(in oklch, var(--violet) 14%, var(--raise)); }
-.ev-feed .ev-m-tri-like[aria-pressed="true"] { background: var(--violet); color: #fff; }
+.ev-feed .ev-m-tri-like[aria-pressed="true"] { background: var(--violet-fill); color: #fff; }
 .ev-feed .ev-m-triage[data-hidden] { visibility: hidden; }
 
 /* end of queue: the final snap page */
@@ -513,7 +514,7 @@ body:has(.ev-snap .ev-m-mini) [data-sonner-toaster] {
 .ev-feed .ev-m-thumb-x { position: absolute; left: 6px; top: 6px; width: 44px; height: 44px; display: grid; place-items: center; color: var(--fg-2); }
 .ev-feed .ev-m-thumb-badge {
   position: absolute; left: 36px; top: 36px; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%;
-  background: var(--violet); color: #fff; box-shadow: 0 0 0 2px var(--bg);
+  background: var(--violet-fill); color: #fff; box-shadow: 0 0 0 2px var(--bg);
 }
 .ev-feed .ev-m-thumb-text { display: flex; flex-direction: column; min-width: 0; font-size: 12px; color: var(--fg-3); }
 .ev-feed .ev-m-thumb-text > * { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

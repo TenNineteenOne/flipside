@@ -63,6 +63,8 @@
   --violet-hi:   oklch(0.66 0.2 293);
   --violet-ink:  oklch(0.8 0.12 293);      /* violet text on dark, focus rings */
   --violet-wash: color-mix(in oklch, #8b5cf6 16%, transparent);
+  /* Fill behind white text: --violet with white is 4.2:1, this is 4.7:1 (WCAG AA 4.5). */
+  --violet-fill: color-mix(in oklch, var(--violet) 94%, black);
   --ease:        cubic-bezier(0.16, 1, 0.3, 1);
 
   /* Legacy names, re-pointed at the Evolved tokens */
@@ -148,6 +150,11 @@
     @apply bg-background text-foreground;
     font-feature-settings: "ss01", "cv11";
     overflow-x: hidden;
+  }
+  /* PRD #182: a visible 2px --violet-ink ring on everything focusable (component rules may refine it). */
+  :focus-visible {
+    outline: 2px solid var(--violet-ink);
+    outline-offset: 2px;
   }
   html {
     @apply font-sans;

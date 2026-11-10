@@ -128,7 +128,17 @@ export function AppShell({ userSeed, initialAdventurous, pathPrefix, children }:
           {/* Optional second row (empty → hidden): the phone feed's progress strip. */}
           <div className="shell-top-sub" ref={setTopSubSlot} />
         </header>
-        <div id="shell-menu" ref={menuRef} popover="auto" className="shell-menu">
+        <div
+          id="shell-menu"
+          ref={menuRef}
+          popover="auto"
+          className="shell-menu"
+          // Tabbing out of the menu closes it (menu-button pattern); Escape and outside clicks are native.
+          onBlur={(e) => {
+            const next = e.relatedTarget as HTMLElement | null
+            if (next && !e.currentTarget.contains(next) && !next.closest(".shell-avatar")) closeMenu()
+          }}
+        >
           <Link
             href="/settings"
             className="shell-menu-item"
