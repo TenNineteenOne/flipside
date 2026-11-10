@@ -317,7 +317,7 @@ body:has(.ev-skel-m) .shell-top-slot:empty::before { content: ""; width: 76px; h
   font: 500 10px/1 var(--font-mono); color: oklch(0.45 0.01 293);
   border: 1px solid oklch(0.8 0.01 293); border-bottom-width: 2px; border-radius: 5px; background: transparent;
 }
-/* Key hints only where there is a keyboard: not on touch, not below 900px (the sheet keeps its keycaps). */
+/* Key hints only where there is a keyboard: not on touch, not outside the desktop layout (the sheet keeps its keycaps). */
 @media (hover: none), (width < 900px), (height < 540px) {
   .ev-feed .ev-card .ev-kbd, .ev-feed .ev-hints, .ev-feed .ev-player .ev-kbd, [data-sonner-toast].ev-toast .ev-kbd { display: none; }
   .ev-feed .ev-idle-keys { display: none; }
@@ -333,7 +333,7 @@ body:has(.ev-skel-m) .shell-top-slot:empty::before { content: ""; width: 76px; h
   [data-sonner-toaster][data-x-position="left"] { --offset-left: 260px !important; }
 }
 
-/* ---------- Phone feed ("Snap", below 640px) and the snap card (shared with the tablet stage) ----------
+/* ---------- Phone feed ("Snap": below 640px, or too short for tablet / desktop) and the snap card (shared with the tablet stage) ----------
    Ported from the prototype's .ev-m-* rules (design-lab: app/lab/evolved/evolved.css). */
 
 /* Top bar: "N of M left" (ShellSlot "top") and the strip (ShellSlot "topSub", 10px tall). */

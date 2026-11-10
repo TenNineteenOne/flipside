@@ -23,7 +23,7 @@ const VERDICT: Record<string, string> = { thumbs_up: "liked", thumbs_down: "pass
 const rowKey = (a: CardArtist) => a.id
 
 /**
- * Desktop feed (≥900px): queue column + focus pane, filling the shell's main
+ * Desktop feed (≥900px wide and ≥540px tall): queue column + focus pane, filling the shell's main
  * area (the `shell-fill` class opts out of the 520px column; see shell.css).
  * Presentation only: every decision goes through the triage hook.
  */

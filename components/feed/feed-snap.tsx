@@ -18,7 +18,8 @@ const SCROLL_GUARD_MS = 900
 const END = "__end"
 
 /**
- * Phone feed below 640px ("Snap", PRD #182): a vertical scroller with one
+ * Phone feed ("Snap", PRD #182; below 640px, and any viewport too short for the tablet or
+ * desktop layout, see feed-client.tsx): a vertical scroller with one
  * full-height page per loaded artist (decided ones included, in feed order),
  * the three-button triage bar, and "N of M left" + strip in the shell top bar.
  * The page at least 60% in view is the selected artist; any other selection

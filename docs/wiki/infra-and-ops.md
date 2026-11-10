@@ -1,6 +1,6 @@
 ---
 title: Infra & Ops
-updated: 2026-06-06
+updated: 2026-11-10
 related: [[auth-and-session]], [[api-routes]], [[data-model]]
 ---
 
@@ -56,3 +56,12 @@ by request-count, not wall-clock.
 ## Tests & build
 `vitest` (`npm test`), `next build`, `eslint`. Genre/cache scripts via `npx tsx` (see
 [[genre-system]]).
+
+- `npm run measure:bundle` (`scripts/measure-bundle.mjs`): after `npx next build`, prints each
+  page route's first-load client JS (raw and gzip), the feed's `next/dynamic` layout chunks
+  (from the route's `react-loadable-manifest.json`) and the 15 largest client chunks (their
+  contents too if `npx next analyze --output` ran after the build).
+- `npm run build:landing-sample` (`scripts/build-landing-sample.mjs`): regenerates
+  `data/landing-sample.json`, the landing page's six sample artists (iTunes artwork and
+  previews from the public iTunes Search API); run `npm test` after it, where
+  `validateLandingSample` checks every URL is on the CSP's iTunes hosts.

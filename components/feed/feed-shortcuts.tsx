@@ -7,7 +7,7 @@ import { feedAction } from "@/lib/feed/feed-keymap"
 import { PLATFORM_META } from "@/lib/music-links"
 import type { FeedTriage } from "@/lib/hooks/use-feed-triage"
 
-/** Small keycap hint; feed.css hides it on touch and below 900px (except in the sheet). */
+/** Small keycap hint; feed.css hides it on touch and outside the desktop layout (except in the sheet). */
 export function Kbd({ children }: { children: ReactNode }) {
   return <kbd className="ev-kbd">{children}</kbd>
 }

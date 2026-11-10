@@ -25,7 +25,7 @@ interface FeedTabletProps {
 }
 
 /**
- * Tablet feed, 640–899px (PRD #182 "Breakpoints"; the prototype's `card` view):
+ * Tablet feed, 640–899px wide and at least 680px tall (PRD #182 "Breakpoints"; the prototype's `card` view):
  * the selected artist's card (swipeable, not in a scroller) with the triage bar
  * under it, beside a 280px "Up next" list of every loaded artist in feed order.
  * The end state takes the card's place when nothing is left. Presentation only.
