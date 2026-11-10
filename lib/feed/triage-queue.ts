@@ -59,15 +59,20 @@ export function nextUndecided(ids: readonly string[], signals: Signals, fromId: 
 }
 
 /**
- * Neighbour in the visible queue for keyboard movement; clamps at both ends.
- * A selected id that is unknown, null or no longer visible selects the first visible artist.
+ * Neighbour in the visible queue for keyboard movement, in feed order relative
+ * to the selected artist's position in `ids` (Snap and tablet select decided
+ * artists too): next = first visible after it, prev = last visible before it.
+ * Clamps at both ends (no neighbour that way: stays). An unknown or null id
+ * selects the first visible artist.
  */
 export function step(ids: readonly string[], signals: Signals, selectedId: string | null, dir: 1 | -1): string | null {
-  const visible = visibleQueue(ids, signals)
-  if (visible.length === 0) return null
-  const i = selectedId === null ? -1 : visible.indexOf(selectedId)
-  if (i < 0) return visible[0]
-  return visible[Math.min(visible.length - 1, Math.max(0, i + dir))]
+  const queue = visibleQueue(ids, signals)
+  if (queue.length === 0) return null
+  const i = selectedId === null ? -1 : ids.indexOf(selectedId)
+  if (i < 0) return queue[0]
+  const visible = new Set(queue)
+  for (let k = i + dir; k >= 0 && k < ids.length; k += dir) if (visible.has(ids[k])) return ids[k]
+  return selectedId
 }
 
 /**

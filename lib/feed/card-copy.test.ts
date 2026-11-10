@@ -62,7 +62,16 @@ describe("formatDuration", () => {
   it("formats m:ss", () => {
     expect(formatDuration(5_000)).toBe("0:05")
     expect(formatDuration(201_000)).toBe("3:21")
-    expect(formatDuration(0)).toBe("0:00")
+  })
+
+  it("is empty for a missing, zero, negative or non-finite duration", () => {
+    for (const ms of [0, -1, NaN, Infinity, -Infinity, undefined, null]) expect(formatDuration(ms)).toBe("")
+  })
+
+  it("renders hours as h:mm:ss", () => {
+    expect(formatDuration(3_600_000)).toBe("1:00:00")
+    expect(formatDuration(3_725_000)).toBe("1:02:05")
+    expect(formatDuration(3_599_000)).toBe("59:59")
   })
 
   it("rounds to the nearest second without producing :60", () => {

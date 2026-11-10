@@ -102,8 +102,21 @@ describe("step", () => {
     const s = sig({ a: "skip" })
     expect(step(ids, s, "zz", 1)).toBe("b")
     expect(step(ids, s, null, -1)).toBe("b")
-    // a selected artist that has left the queue counts as unknown
-    expect(step(ids, s, "a", 1)).toBe("b")
+  })
+
+  it("from a decided selection (Snap, tablet), moves to the nearest visible neighbour in feed order", () => {
+    // middle
+    const mid = sig({ c: "thumbs_down", b: "skip" })
+    expect(step(ids, mid, "c", 1)).toBe("d")
+    expect(step(ids, mid, "c", -1)).toBe("a")
+    // start
+    const start = sig({ a: "skip" })
+    expect(step(ids, start, "a", 1)).toBe("b")
+    expect(step(ids, start, "a", -1)).toBe("a") // nothing before: stays
+    // end
+    const end = sig({ e: "thumbs_down" })
+    expect(step(ids, end, "e", -1)).toBe("d")
+    expect(step(ids, end, "e", 1)).toBe("e") // nothing after: stays
   })
 
   it("is null when the visible queue is empty", () => {
