@@ -1,6 +1,7 @@
 import "@/components/feed/feed.css"
 
 const ROWS = Array.from({ length: 10 }, (_, i) => i)
+const SEGS = Array.from({ length: 20 }, (_, i) => i)
 
 /**
  * Feed skeleton (the route's loading.tsx, and FeedClient's fallback while a layout's code
@@ -22,7 +23,13 @@ export function FeedSkeleton() {
               {/* inside the real subtitle's box, so the header (and the rows under it) keep their height */}
               <p className="ev-queue-sub"><span className="fs-skeleton ev-skel-line" style={{ display: "inline-block", width: 320, verticalAlign: "middle" }} /></p>
             </div>
-            <span className="fs-skeleton" style={{ width: 220, height: 14 }} />
+            {/* the real progress block's structure, so the header's height matches at every width */}
+            <div className="ev-progress">
+              <span className="ev-progress-text"><span className="fs-skeleton" style={{ display: "inline-block", width: 84, height: 12, verticalAlign: "middle" }} /></span>
+              <ol className="ev-strip" style={{ "--n": SEGS.length } as React.CSSProperties}>
+                {SEGS.map((i) => <li key={i} className="ev-seg" />)}
+              </ol>
+            </div>
           </div>
           <QueueColumns />
           <div className="ev-rows">

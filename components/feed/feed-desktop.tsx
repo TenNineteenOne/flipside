@@ -83,7 +83,7 @@ export function FeedDesktop({ triage, signalCount, onLoadMore, generating, onSho
           </div>
           <div className="ev-progress" aria-label={`${remaining} of ${total} left`}>
             <span className="ev-progress-text"><strong>{remaining}</strong> of {total} left</span>
-            <ol className="ev-strip" aria-hidden>
+            <ol className="ev-strip" aria-hidden style={{ "--n": triage.ids.length } as React.CSSProperties}>
               {triage.ids.map((id) => (
                 <li key={id} className="ev-seg" data-v={VERDICT[signals.get(id) ?? ""] ?? "none"} data-sel={id === selectedId || undefined} />
               ))}

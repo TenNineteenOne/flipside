@@ -69,23 +69,36 @@
 /* queue */
 .ev-feed .ev-queue {
   grid-area: queue; min-height: 0; overflow-y: auto; padding: 0 28px 96px; scrollbar-gutter: stable;
+  container: ev-queue / inline-size;
   /* Focus scrolling, undo reselect and scrollIntoView all stop below the sticky header + column row. */
   scroll-padding-top: calc(var(--ev-head-h, 0px) + var(--ev-cols-h) + 2px);
 }
+/* Header: the title block takes the width; count + strip sit on their own full-width line below it,
+   or in a fixed 260px column beside it once the queue is wide enough (a container query, not content
+   wrapping, so the skeleton, which has the same structure, always matches). */
 .ev-feed .ev-queue-head {
-  position: sticky; top: 0; z-index: 10; display: flex; align-items: flex-end; justify-content: space-between; gap: 24px;
+  position: sticky; top: 0; z-index: 10; display: grid; grid-template-columns: minmax(0, 1fr); align-items: end; gap: 12px 24px;
   padding: 28px 0 18px; margin-bottom: 6px; background: var(--bg); border-bottom: 1px solid var(--line);
 }
 .ev-feed .ev-queue-title { font-size: 26px; letter-spacing: -0.025em; line-height: 1.15; }
 .ev-feed .ev-queue-sub { margin-top: 4px; color: var(--fg-3); font-size: 14px; }
-.ev-feed .ev-progress { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex-shrink: 0; }
-.ev-feed .ev-progress-text { font-size: 13px; color: var(--fg-3); font-variant-numeric: tabular-nums; }
+.ev-feed .ev-progress { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.ev-feed .ev-progress-text { flex: none; font-size: 13px; line-height: 16px; color: var(--fg-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ev-feed .ev-progress-text strong { color: var(--fg); font-weight: 600; }
-.ev-feed .ev-strip { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 3px; }
-.ev-feed .ev-seg { width: 9px; height: 14px; border-radius: 2px; background: var(--line); transition: background-color 200ms var(--ease), transform 200ms var(--ease); }
+/* One row of flexible segments for any count (--n): 2–9px wide, gaps shrink to 0 past ~80 artists. */
+.ev-feed .ev-strip {
+  display: flex; justify-content: flex-end; flex: 0 1 320px; min-width: 0; margin-left: auto; overflow: hidden;
+  gap: clamp(0px, round(down, (100% - var(--n, 20) * 2px) / var(--n, 20), 1px), 3px);
+}
+.ev-feed .ev-seg { flex: 1 1 0; min-width: 2px; max-width: 9px; height: 14px; border-radius: 2px; background: var(--line); transition: background-color 200ms var(--ease), transform 200ms var(--ease); }
 .ev-feed .ev-seg[data-v="liked"] { background: var(--violet); }
 .ev-feed .ev-seg[data-v="passed"], .ev-feed .ev-seg[data-v="dismissed"] { background: color-mix(in oklch, var(--fg-3) 30%, var(--bg)); transform: scaleY(0.45); }
 .ev-feed .ev-seg[data-sel] { background: var(--fg); }
+@container ev-queue (width >= 660px) {
+  .ev-feed .ev-queue-head { grid-template-columns: minmax(0, 1fr) 260px; }
+  .ev-feed .ev-progress { flex-direction: column; align-items: flex-end; gap: 8px; }
+  .ev-feed .ev-strip { flex: none; width: 100%; margin-left: 0; }
+}
 
 .ev-feed .ev-rows { display: flex; flex-direction: column; gap: 2px; }
 /* One grid for the rows and their column labels (.ev-cols), so a label can't drift off its column.
