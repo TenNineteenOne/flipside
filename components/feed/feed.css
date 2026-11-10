@@ -643,6 +643,8 @@ body:has(.ev-snap) [data-sonner-toaster][data-y-position="top"] {
   .ev-feed .ev-row[data-sel], .ev-feed .ev-m-thumb[aria-current="true"] { outline: 2px solid Highlight; outline-offset: -2px; }
   .ev-feed .ev-meter, .ev-feed .ev-cold-track { border: 1px solid CanvasText; }
   .ev-feed .ev-meter > span, .ev-feed .ev-cold-track > span { forced-color-adjust: none; background: CanvasText; }
+  /* Background-only controls get a visible edge. */
+  .ev-feed .ev-m-tri, .ev-feed .ev-m-chip, .ev-feed .ev-btn-play { border: 1px solid ButtonText; }
 }
 
 /* Safari before 16.2 has no color-mix(): artist shades fall back to the artist colour itself and the
