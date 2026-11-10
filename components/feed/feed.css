@@ -535,6 +535,19 @@ body:has(.ev-snap .ev-m-mini) [data-sonner-toaster] {
   --offset-bottom: calc(56px + 80px + env(safe-area-inset-bottom, 0px) + 66px) !important;
   --mobile-offset-bottom: calc(56px + 80px + env(safe-area-inset-bottom, 0px) + 66px) !important;
 }
+/* Under 480px tall (phones in landscape) useFeedTriage puts the toast top right instead, under the
+   top bar and its strip row, where it covers the least of the card. */
+body:has(.ev-snap) [data-sonner-toaster][data-y-position="top"] {
+  --offset-top: calc(56px + env(safe-area-inset-top, 0px) + 11px + 8px) !important;
+  --mobile-offset-top: calc(56px + env(safe-area-inset-top, 0px) + 11px + 8px) !important;
+  --offset-right: 16px !important;
+  --mobile-offset-right: 16px !important;
+}
+/* Sonner stretches toasts across the width below 600px; this one stays its own size, right-aligned. */
+@media (width < 600px) {
+  body:has(.ev-snap) [data-sonner-toaster][data-y-position="top"] { left: auto; width: auto; }
+  body:has(.ev-snap) [data-sonner-toaster][data-y-position="top"] [data-sonner-toast].ev-toast { left: auto; width: max-content; }
+}
 
 /* Server render / hydration is the guessed tree (feed-client.tsx). Where the tablet or desktop view
    will be used (same conditions as feed-client.tsx) a server-rendered Snap tree stays hidden until

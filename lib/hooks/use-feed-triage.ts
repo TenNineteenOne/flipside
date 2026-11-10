@@ -33,6 +33,8 @@ export interface JudgeOptions {
  * (desktop, tablet and Snap) reads the same object.
  */
 const TOAST_MS = 5000
+/** Keep in step with the top-right toast offsets in components/feed/feed.css. */
+const SHORT = "(height < 480px)"
 
 type Undo = NonNullable<Plan["undo"]>
 
@@ -166,7 +168,9 @@ export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatfor
         id,
         duration: TOAST_MS,
         unstyled: true,
-        position: "bottom-left",
+        // Short viewports (phones in landscape: the Snap feed) have no room above the triage bar:
+        // the toast goes to the top right of the feed area instead (feed.css sets the offsets).
+        position: matchMedia(SHORT).matches ? "top-right" : "bottom-left",
         classNames: { toast: "ev-toast", title: "ev-toast-text", actionButton: "ev-toast-undo" },
         // A dying older toast's Undo must not undo the newer decision.
         action: undo ? { label: UNDO_LABEL, onClick: () => { if (undoRef.current?.token === token) undoLast() } } : undefined,
