@@ -17,10 +17,24 @@ import type { FeedLayout } from "@/lib/feed/layout-guess"
 // Each layout is its own chunk, so a device downloads only the one it shows (the Snap
 // layout also brings the swipe code). The layout the server rendered has its chunk
 // preloaded by the page; switching to another (a wrong guess, a resize) shows the
-// skeleton while that chunk loads.
-const FeedDesktop = dynamic(() => import("@/components/feed/feed-desktop").then((m) => m.FeedDesktop), { loading: FeedSkeleton })
-const FeedTablet = dynamic(() => import("@/components/feed/feed-tablet").then((m) => m.FeedTablet), { loading: FeedSkeleton })
-const FeedSnap = dynamic(() => import("@/components/feed/feed-snap").then((m) => m.FeedSnap), { loading: FeedSkeleton })
+// skeleton while that chunk loads. Once the first layout is up, the other two are
+// fetched when the browser is idle (FeedClient), so a later switch needs no network.
+// A chunk that still fails to load (offline, or gone after a new deploy) is tried again
+// every few seconds while the skeleton stays, instead of the feed turning into the error page.
+const RETRY_MS = 4000
+function retry<T>(load: () => Promise<T>): Promise<T> {
+  return load().catch(() => new Promise<T>((resolve) => setTimeout(() => resolve(retry(load)), RETRY_MS)))
+}
+// The loaders are kept for preloading. The import() must stay inside each dynamic() call: Next
+// compiles it there as the layout's own chunk (and preloads it when server-rendered); a plain
+// import() elsewhere would fetch a separate copy.
+const loaders: (() => Promise<unknown>)[] = []
+const keep = <T,>(load: () => Promise<T>) => (loaders.push(load), load)
+const FeedDesktop = dynamic(keep(() => retry(() => import("@/components/feed/feed-desktop")).then((m) => m.FeedDesktop)), { loading: FeedSkeleton })
+const FeedTablet = dynamic(keep(() => retry(() => import("@/components/feed/feed-tablet")).then((m) => m.FeedTablet)), { loading: FeedSkeleton })
+const FeedSnap = dynamic(keep(() => retry(() => import("@/components/feed/feed-snap")).then((m) => m.FeedSnap)), { loading: FeedSkeleton })
+/** Load every layout chunk now (the one on screen costs nothing), so a later layout switch needs no network. */
+const preloadLayouts = () => loaders.forEach((load) => void load())
 
 interface FeedClientProps {
   recommendations: CardArtist[]
@@ -35,16 +49,17 @@ interface FeedClientProps {
 // new recs land server-side for next time.
 const TOPUP_THRESHOLD = 8
 
-// One layout at a time (PRD "Breakpoints"): ≥900px desktop, 640–899px tablet,
-// below 640px the Snap feed. The tablet layout needs about 660px of height, so
-// shorter viewports below 900px (phones in landscape, browser zoom) get the Snap
-// feed too. The server (and hydration) renders the layout guessed from the request
-// headers (`initialLayout`: Snap for phones, else desktop). feed.css hides the Snap
-// tree at tablet/desktop sizes and the desktop tree below 900px until the client
-// switches, so a wrong guess never flashes the wrong layout.
+// One layout at a time (PRD "Breakpoints"): desktop at 900px and wider when at least
+// 540px tall; tablet at 640–899px when at least 680px tall; otherwise the Snap feed,
+// which adapts to short and landscape viewports (phones in landscape, even 900px+ wide
+// ones, and browser zoom). The server (and hydration) renders the layout guessed from
+// the request headers (`initialLayout`: Snap for phones, else desktop). feed.css hides
+// the guessed tree wherever it is not the viewport's layout and shows that layout's
+// skeleton instead until the client switches, so a wrong guess never flashes the wrong layout.
+// The shell (shell.css) shows its rail under the same desktop condition.
 // Keep these in step with feed.css and components/feed/feed-skeleton.tsx.
 type Layout = FeedLayout
-const QUERIES = ["(width >= 900px)", "(width >= 640px) and (height >= 680px)"]
+const QUERIES = ["(width >= 900px) and (height >= 540px)", "(width >= 640px) and (height >= 680px)"]
 const subscribeLayout = (cb: () => void) => {
   const ms = QUERIES.map((q) => matchMedia(q))
   ms.forEach((m) => m.addEventListener("change", cb))
@@ -52,6 +67,9 @@ const subscribeLayout = (cb: () => void) => {
 }
 const currentLayout = (): Layout =>
   matchMedia(QUERIES[0]).matches ? "desktop" : matchMedia(QUERIES[1]).matches ? "tablet" : "phone"
+/** true for the server render and hydration, false once the client has taken over. */
+const noSubscribe = () => () => {}
+const useHydrating = () => useSyncExternalStore(noSubscribe, () => false, () => true)
 
 // ---------------------------------------------------------------------------
 // Main component
@@ -140,6 +158,28 @@ export function FeedClient({ recommendations, musicPlatform, signalCount, initia
   useShellBadge("/feed", triage.remaining)
   // The server snapshot is used for SSR and for hydration, so both render `initialLayout`.
   const layout = useSyncExternalStore(subscribeLayout, currentLayout, () => initialLayout)
+  const hydrating = useHydrating()
+  // The layout whose tree is mounted and showing (set by the layout itself); until it is the
+  // current one (a layout's chunk still loading) the keyboard shortcuts stay inert.
+  const [shown, setShown] = useState<Layout | null>(null)
+  const mounted = shown !== null
+  // After the page's load event (artwork, fonts) and then when the browser is idle.
+  useEffect(() => {
+    if (!mounted) return
+    let idle = 0
+    let timer = 0
+    const schedule = () => {
+      if (typeof requestIdleCallback === "function") idle = requestIdleCallback(preloadLayouts, { timeout: 5000 })
+      else timer = window.setTimeout(preloadLayouts, 2000) // Safari before 18 has no requestIdleCallback
+    }
+    if (document.readyState === "complete") schedule()
+    else window.addEventListener("load", schedule, { once: true })
+    return () => {
+      window.removeEventListener("load", schedule)
+      if (idle) cancelIdleCallback(idle)
+      clearTimeout(timer)
+    }
+  }, [mounted])
 
   async function handleGenerateMore() {
     const r = await generation.requestMore()
@@ -159,8 +199,17 @@ export function FeedClient({ recommendations, musicPlatform, signalCount, initia
   const View = layout === "desktop" ? FeedDesktop : layout === "tablet" ? FeedTablet : FeedSnap
   return (
     <>
-      <FeedShortcuts triage={triage} />
-      <View triage={triage} signalCount={signalCount} onLoadMore={handleGenerateMore} generating={isGenerating} />
+      <FeedShortcuts triage={triage} enabled={shown === layout} />
+      {/* Server render and hydration: where CSS hides the guessed tree (the guess doesn't match the
+          viewport), the skeleton for the viewport shows in its place (feed.css, .ev-guess-skel).
+          The client's first render replaces it with the right layout or that layout's loading
+          skeleton, which draws the same frame. */}
+      {hydrating && (
+        <div className="ev-guess-skel" data-guess={initialLayout}>
+          <FeedSkeleton />
+        </div>
+      )}
+      <View triage={triage} signalCount={signalCount} onLoadMore={handleGenerateMore} generating={isGenerating} onShown={setShown} />
     </>
   )
 }

@@ -20,15 +20,18 @@ interface FeedTabletProps {
   /** "Load more artists" in the end state, and its in-flight state. */
   onLoadMore: () => void
   generating: boolean
+  /** Called once this layout is mounted (FeedClient enables the keyboard shortcuts then). */
+  onShown?: (layout: "phone" | "tablet" | "desktop") => void
 }
 
 /**
- * Tablet feed, 640–899px (PRD #182 "Breakpoints"; the prototype's `card` view):
+ * Tablet feed, 640–899px wide and at least 680px tall (PRD #182 "Breakpoints"; the prototype's `card` view):
  * the selected artist's card (swipeable, not in a scroller) with the triage bar
  * under it, beside a 280px "Up next" list of every loaded artist in feed order.
  * The end state takes the card's place when nothing is left. Presentation only.
  */
-export function FeedTablet({ triage, signalCount, onLoadMore, generating }: FeedTabletProps) {
+export function FeedTablet({ triage, signalCount, onLoadMore, generating, onShown }: FeedTabletProps) {
+  useEffect(() => onShown?.("tablet"), [onShown])
   const { selected, selectedId, signals } = triage
   const next = selectedId ? triage.byId.get(nextUndecided(triage.ids, signals, selectedId) ?? "") : undefined
   const listRef = useRef<HTMLOListElement>(null)

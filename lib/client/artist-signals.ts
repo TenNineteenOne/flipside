@@ -190,7 +190,11 @@ export interface ArtistFeedback {
    *   thumbs → undecided        DELETE feedback
    *   skip   → undecided        DELETE dismiss
    *   skip   → thumbs           DELETE dismiss, then POST thumbs (the row was
-   *                             never removed; the POST restores seen_at)
+   *                             never removed; the POST only restores seen_at,
+   *                             so it is best-effort: once the DELETE succeeded
+   *                             the undo has succeeded, and a failed POST is
+   *                             swallowed, so client and server agree on the
+   *                             verdict)
    *   thumbs → skip             DELETE feedback (skip_at is still set)
    *   anything else             POST previous; same value: no request
    */
@@ -255,7 +259,7 @@ export function createArtistFeedback({
         previous === undefined
           ? [current === "skip" ? () => undismiss(artistId) : () => del(buildFeedbackDeleteUrl(artistId))]
           : current === "skip"
-            ? [() => undismiss(artistId), () => post(artistId, previous, rail)]
+            ? [() => undismiss(artistId), () => post(artistId, previous, rail).catch(() => {})]
             : previous === "skip" && current !== undefined
               ? [() => del(buildFeedbackDeleteUrl(artistId))]
               : [() => post(artistId, previous, rail)]

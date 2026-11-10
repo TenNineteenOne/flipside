@@ -21,6 +21,9 @@ export const NAV = [
   { href: "/settings", label: "Settings", icon: Settings },
 ] as const
 
+/** Where shell.css shows the rail instead of the top bar and tab bar. */
+const RAIL_QUERY = "(width >= 900px) and (height >= 540px)"
+
 /** The phone/tablet tab bar: everything but Settings, which lives in the avatar menu. */
 const TABS = NAV.filter((n) => n.href !== "/settings")
 
@@ -36,7 +39,7 @@ interface AppShellProps {
 }
 
 /**
- * Signed-in app shell. ≥900px: a fixed navigation rail. Below 900px: a slim
+ * Signed-in app shell. ≥900px wide and ≥540px tall: a fixed navigation rail. Otherwise a slim
  * top bar (wordmark + avatar menu) and a bottom tab bar. Which one shows is
  * pure CSS, so the server render is the same at every width.
  */
@@ -86,11 +89,17 @@ export function AppShell({ userSeed, initialAdventurous, pathPrefix, children }:
     const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.key === "Escape") { e.preventDefault(); closeMenu(true) }
     }
+    // The menu belongs to the top bar, which CSS hides where the rail shows: close it there, so it
+    // neither swallows the next Escape nor comes back when the window narrows again.
+    const rail = matchMedia(RAIL_QUERY)
+    const onRail = () => { if (rail.matches) closeMenu() }
     document.addEventListener("pointerdown", onDown)
     document.addEventListener("keydown", onKey)
+    rail.addEventListener("change", onRail)
     return () => {
       document.removeEventListener("pointerdown", onDown)
       document.removeEventListener("keydown", onKey)
+      rail.removeEventListener("change", onRail)
     }
   }, [menuOpen, closeMenu])
 

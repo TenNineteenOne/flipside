@@ -69,6 +69,9 @@ describe("FeedSnap server render", () => {
     expect(html).toMatch(/data-v="liked"[\s\S]*class="ev-m-liked"[^>]*>.*?Liked</)
     expect(html).toMatch(/class="ev-m-judged">.*?Less like this</)
     expect(html).toMatch(/class="ev-m-judged">.*?Dismissed</)
+    // A second copy beside the name, shown instead of the artwork's by feed.css on sideways (landscape) cards.
+    expect(html).toMatch(/class="ev-m-name">Yin Yin<\/h2><span class="ev-m-liked ev-m-badge-side">/)
+    expect(html).toMatch(/class="ev-m-judged ev-m-badge-side">.*?Dismissed</)
     expect(html).toContain("You’ve heard all 3.")
     expect(html).toContain("Load more artists")
     expect(html).toMatch(/class="ev-m-triage"[^>]*data-hidden="true"[^>]*inert=""/)

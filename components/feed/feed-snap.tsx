@@ -1,7 +1,7 @@
 "use client"
 
 import "./feed.css"
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Heart, ThumbsDown, X } from "lucide-react"
 import { ColdStartBanner } from "@/components/feed/cold-start-banner"
 import { EndState } from "@/components/feed/feed-parts"
@@ -18,7 +18,8 @@ const SCROLL_GUARD_MS = 900
 const END = "__end"
 
 /**
- * Phone feed below 640px ("Snap", PRD #182): a vertical scroller with one
+ * Phone feed ("Snap", PRD #182; below 640px, and any viewport too short for the tablet or
+ * desktop layout, see feed-client.tsx): a vertical scroller with one
  * full-height page per loaded artist (decided ones included, in feed order),
  * the three-button triage bar, and "N of M left" + strip in the shell top bar.
  * The page at least 60% in view is the selected artist; any other selection
@@ -32,9 +33,12 @@ interface FeedSnapProps {
   /** "Load more artists" on the end page, and its in-flight state. */
   onLoadMore: () => void
   generating: boolean
+  /** Called once this layout is mounted (FeedClient enables the keyboard shortcuts then). */
+  onShown?: (layout: "phone" | "tablet" | "desktop") => void
 }
 
-export function FeedSnap({ triage, signalCount, onLoadMore, generating }: FeedSnapProps) {
+export function FeedSnap({ triage, signalCount, onLoadMore, generating, onShown }: FeedSnapProps) {
+  useEffect(() => onShown?.("phone"), [onShown])
   const { ids, selectedId } = triage
   const ended = triage.remaining === 0
   /** The page that should be in view: the selected artist, else the end page. */
@@ -47,7 +51,36 @@ export function FeedSnap({ triage, signalCount, onLoadMore, generating }: FeedSn
   const target = useRef<string | null>(null)
   const first = useRef(true)
   const becomeCurrent = useRef(triage.becomeCurrent)
-  useEffect(() => { becomeCurrent.current = triage.becomeCurrent })
+  const keyRef = useRef(key)
+  useEffect(() => {
+    becomeCurrent.current = triage.becomeCurrent
+    keyRef.current = key
+  })
+
+  /**
+   * Put the selected page exactly in view, instantly. Browsers don't re-snap a scroller whose
+   * size changed during or after a smooth scroll (the player bar showing for a moment while
+   * playback hands over after J/K), which left it stuck between pages. Skipped while a
+   * programmatic scroll is in flight (its end calls this). The observer then only reports the
+   * selected page again, which changes nothing.
+   */
+  const align = useCallback(() => {
+    const root = scrollerRef.current
+    const k = keyRef.current
+    if (!root || !k || target.current) return
+    const el = root.querySelector<HTMLElement>(`[data-id="${CSS.escape(k)}"]`)
+    if (!el) return
+    const top = el.offsetTop - root.offsetTop
+    if (Math.abs(root.scrollTop - top) >= 1) root.scrollTo({ top, behavior: "instant" })
+  }, [])
+
+  useEffect(() => {
+    const root = scrollerRef.current
+    if (!root) return
+    const ro = new ResizeObserver(() => align())
+    ro.observe(root)
+    return () => ro.disconnect()
+  }, [align])
 
   useEffect(() => {
     const root = scrollerRef.current
@@ -90,7 +123,7 @@ export function FeedSnap({ triage, signalCount, onLoadMore, generating }: FeedSn
       if (id && id !== key) {
         fromScroll.current = id
         becomeCurrent.current(id === END ? null : id)
-      }
+      } else align()
     }
     root.addEventListener("scrollend", done)
     timer = window.setTimeout(done, smooth ? SCROLL_GUARD_MS : 100)
@@ -100,7 +133,7 @@ export function FeedSnap({ triage, signalCount, onLoadMore, generating }: FeedSn
       root.removeEventListener("scrollend", done)
       clearTimeout(timer)
     }
-  }, [key])
+  }, [key, align])
 
   return (
     <div className="ev-feed ev-snap">

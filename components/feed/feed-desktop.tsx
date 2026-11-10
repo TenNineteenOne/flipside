@@ -23,7 +23,7 @@ const VERDICT: Record<string, string> = { thumbs_up: "liked", thumbs_down: "pass
 const rowKey = (a: CardArtist) => a.id
 
 /**
- * Desktop feed (≥900px): queue column + focus pane, filling the shell's main
+ * Desktop feed (≥900px wide and ≥540px tall): queue column + focus pane, filling the shell's main
  * area (the `shell-fill` class opts out of the 520px column; see shell.css).
  * Presentation only: every decision goes through the triage hook.
  */
@@ -34,9 +34,12 @@ interface FeedDesktopProps {
   /** "Load more artists" (FeedClient's generate-more flow) and its in-flight state. */
   onLoadMore: () => void
   generating: boolean
+  /** Called once this layout is mounted (FeedClient enables the keyboard shortcuts then). */
+  onShown?: (layout: "phone" | "tablet" | "desktop") => void
 }
 
-export function FeedDesktop({ triage, signalCount, onLoadMore, generating }: FeedDesktopProps) {
+export function FeedDesktop({ triage, signalCount, onLoadMore, generating, onShown }: FeedDesktopProps) {
+  useEffect(() => onShown?.("desktop"), [onShown])
   const { visible, selected, selectedId, signals, remaining, total, tuning } = triage
   // Passed/dismissed rows fade and slide out (feed.css, .ev-row[data-leaving]); the list then closes up.
   const rows = useLeaving(visible, rowKey, !useReducedMotion())
@@ -164,7 +167,7 @@ function FocusCard({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
   const loading = !canPlay && isFetching
   const why = whyParts(a.why)
   const art = artworkFor({ imageUrl: a.imageUrl, topTracks: tracks })
-  const { currentTrack, progress } = useAudio()
+  const { progress } = useAudio()
   const playable = tracks.filter((t) => t.previewUrl).slice(0, 3)
   const saved = triage.savedIds.has(a.id)
   const platform = PLATFORM_META[triage.musicPlatform]
@@ -236,7 +239,7 @@ function FocusCard({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
           <h3 className="ev-tracks-title">Previews <span>30 seconds each</span></h3>
           <ol>
             {playable.map((t, i) => {
-              const current = currentTrack?.id === t.id
+              const current = triage.isCurrentTrack(a, t)
               const on = current && playing
               const dur = formatDuration(t.durationMs)
               return (

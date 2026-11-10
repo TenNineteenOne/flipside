@@ -76,7 +76,7 @@ export function SnapCard({ a, triage, eager = false, enter = false }: {
   const why = whyParts(a.why)
   const art = artworkFor({ imageUrl: a.imageUrl, topTracks: tracks })
   const { currentTrack, progress } = useAudio()
-  const mine = !!currentTrack && tracks.some((t) => t.id === currentTrack.id)
+  const mine = !!currentTrack && triage.nowPlayingArtist?.id === a.id
   // Artists that arrived without tracks fetch them once selected, as the desktop focus pane does.
   const fetchTracks = a.topTracks.length === 0 && a.id === triage.selectedId
 
@@ -111,17 +111,15 @@ export function SnapCard({ a, triage, eager = false, enter = false }: {
           <span><ThumbsDown size={18} strokeWidth={2} />Less like this</span>
         </motion.div>
         <PlayRing a={a} playing={playing} progress={mine ? progress : 0} disabled={playable.length === 0} onClick={() => triage.togglePlay(a)} />
-        {v === "liked" && <span className="ev-m-liked"><Heart size={13} fill="currentColor" strokeWidth={0} aria-hidden />Liked</span>}
-        {(v === "passed" || v === "dismissed") && (
-          <span className="ev-m-judged">
-            {v === "passed" ? <ThumbsDown size={13} aria-hidden /> : <X size={13} aria-hidden />}
-            {v === "passed" ? "Less like this" : "Dismissed"}
-          </span>
-        )}
+        {v && <Badge v={v} />}
       </div>
 
       <div className="ev-m-info">
-        <h2 className="ev-m-name">{a.name}</h2>
+        <div className="ev-m-title">
+          <h2 className="ev-m-name">{a.name}</h2>
+          {/* Sideways (landscape) cards show the badge here instead: their artwork can be too small to hold it beside the play button. */}
+          {v && <Badge v={v} side />}
+        </div>
         <div className="ev-m-meta">
           <p className="ev-m-genres">{a.genres.join(" · ")}</p>
           <div className="ev-m-sec">
@@ -147,7 +145,7 @@ export function SnapCard({ a, triage, eager = false, enter = false }: {
         {playable.length > 0 ? (
           <div className="ev-m-chips" role="group" aria-label="Previews">
             {playable.map((t, i) => {
-              const cur = currentTrack?.id === t.id
+              const cur = triage.isCurrentTrack(a, t)
               const on = cur && playing
               return (
                 <button key={t.id} type="button" className="ev-m-chip" data-current={cur || undefined} aria-pressed={on} aria-label={`${on ? "Pause" : "Play"} ${t.name}`} onClick={() => triage.playTrack(a, i)}>
@@ -164,6 +162,18 @@ export function SnapCard({ a, triage, eager = false, enter = false }: {
         )}
       </div>
     </motion.article>
+  )
+}
+
+/** "Liked" / "Less like this" / "Dismissed" on a decided card. */
+function Badge({ v, side = false }: { v: "liked" | "passed" | "dismissed"; side?: boolean }) {
+  const cls = side ? " ev-m-badge-side" : ""
+  if (v === "liked") return <span className={`ev-m-liked${cls}`}><Heart size={13} fill="currentColor" strokeWidth={0} aria-hidden />Liked</span>
+  return (
+    <span className={`ev-m-judged${cls}`}>
+      {v === "passed" ? <ThumbsDown size={13} aria-hidden /> : <X size={13} aria-hidden />}
+      {v === "passed" ? "Less like this" : "Dismissed"}
+    </span>
   )
 }
 

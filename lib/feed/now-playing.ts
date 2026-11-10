@@ -13,3 +13,16 @@ export function nowPlayingArtistId(
   if (started?.trackId === trackId && artists.some((a) => a.id === started.artistId)) return started.artistId
   return artists.find((a) => a.tracks.some((t) => t.id === trackId))?.id ?? null
 }
+
+/**
+ * Whether `trackId` on `artistId`'s card is the loaded track: the player's track on the artist
+ * it is playing for (nowPlayingArtistId), so a collaboration track shows on one card only.
+ */
+export function isCurrentTrack(
+  playingArtistId: string | null,
+  playingTrackId: string | null,
+  artistId: string,
+  trackId: string,
+): boolean {
+  return playingArtistId === artistId && playingTrackId === trackId
+}

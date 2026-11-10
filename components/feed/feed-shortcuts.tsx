@@ -7,19 +7,25 @@ import { feedAction } from "@/lib/feed/feed-keymap"
 import { PLATFORM_META } from "@/lib/music-links"
 import type { FeedTriage } from "@/lib/hooks/use-feed-triage"
 
-/** Small keycap hint; feed.css hides it on touch and below 900px (except in the sheet). */
+/** Small keycap hint; feed.css hides it on touch and outside the desktop layout (except in the sheet). */
 export function Kbd({ children }: { children: ReactNode }) {
   return <kbd className="ev-kbd">{children}</kbd>
 }
 
 const EDITABLE = "input, textarea, select, [contenteditable]"
+/** Open menus, dialogs and popups own their keys (the shell's avatar menu: arrows, letters). */
+const POPUP = '[role="menu"], [role="dialog"], dialog[open]'
 
 /**
  * Feed keyboard control (PRD #182, keyboard stories): one window `keydown`
  * listener while the feed is mounted, mapped by the pure `feedAction`, and the
  * "?" shortcut sheet (native dialog), also opened from the rail's Shortcuts item.
  */
-export function FeedShortcuts({ triage }: { triage: FeedTriage }) {
+export function FeedShortcuts({ triage, enabled = true }: {
+  triage: FeedTriage
+  /** false while the layout on screen is not mounted yet (its chunk loading): every key is ignored. */
+  enabled?: boolean
+}) {
   const [open, setOpen] = useState(false)
   const dialogRef = useRef<HTMLDialogElement>(null)
   const openSheet = useCallback(() => setOpen(true), [])
@@ -36,6 +42,7 @@ export function FeedShortcuts({ triage }: { triage: FeedTriage }) {
   const handlerRef = useRef<(e: KeyboardEvent) => void>(() => {})
   useEffect(() => {
     handlerRef.current = (e: KeyboardEvent) => {
+      if (!enabled) return
       const el = e.target instanceof Element ? e.target : document.body
       const action = feedAction({
         key: e.key,
@@ -46,6 +53,9 @@ export function FeedShortcuts({ triage }: { triage: FeedTriage }) {
         altKey: e.altKey,
         targetIsEditable: !!el.closest(EDITABLE),
         targetIsButtonOrLink: el.tagName === "BUTTON" || el.tagName === "A",
+        // The shortcut sheet is a dialog too; its own keys ("?" closes it) stay handled here.
+        targetInPopup: !!el.closest(POPUP) && !dialogRef.current?.contains(el),
+        defaultPrevented: e.defaultPrevented,
         helpOpen: open,
         repeat: e.repeat,
       })

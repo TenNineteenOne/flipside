@@ -2,7 +2,7 @@ import Link from "next/link"
 
 const PAGES = [
   { href: "/dev-preview/shell", label: "Shell", note: "Rail, top bar, tab bar and avatar menu around tall filler content" },
-  { href: "/dev-preview/feed", label: "Feed", note: "Production FeedClient with the 19 fixture artists: desktop feed at 900px and wider, tablet 640–899px, Snap below" },
+  { href: "/dev-preview/feed", label: "Feed", note: "Production FeedClient with the 19 fixture artists: desktop feed at 900px+ wide and 540px+ tall, tablet 640–899px wide and 680px+ tall, Snap otherwise" },
   { href: "/dev-preview/feed?start=3", label: "Feed, 3 to start", note: "Starts with 3 artists; the mount top-up and each Load more append the next 6 through the real fill hook" },
   { href: "/dev-preview/feed-loading", label: "Feed loading", note: "The feed route's loading skeleton" },
   { href: "/dev-preview/explore-card", label: "Explore card", note: "Explore's artist card: expanded, liked + saved, no image, no tracks, passed, dismissed (buttons toggle locally)" },

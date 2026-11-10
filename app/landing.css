@@ -223,3 +223,8 @@
   .ev-landing .ev-btn-primary:hover { background: var(--violet-fill); }
   .ev-landing button.ev-tri:hover { background: var(--raise); }
 }
+
+/* Forced colours (Windows High Contrast): the primary buttons are background-only, so they get an edge. */
+@media (forced-colors: active) {
+  .ev-landing .ev-btn-primary { border: 1px solid ButtonText; }
+}

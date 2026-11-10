@@ -15,3 +15,18 @@ export function isDoubleActivation(
 ): boolean {
   return advance && last !== null && last.artistId !== artistId && now - last.at < DOUBLE_ACTIVATION_MS
 }
+
+/**
+ * The guard's stamp after an advancing decision on `artistId`: a new window only when the
+ * selection actually moved (`selectedBefore` → `selectedAfter`); a decision that left it in
+ * place (an un-like) keeps the previous stamp.
+ */
+export function activationStamp(
+  last: { artistId: string; at: number } | null,
+  artistId: string,
+  selectedBefore: string | null,
+  selectedAfter: string | null,
+  now: number,
+): { artistId: string; at: number } | null {
+  return selectedAfter !== selectedBefore ? { artistId, at: now } : last
+}

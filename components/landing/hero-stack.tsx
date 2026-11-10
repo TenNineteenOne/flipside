@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, type CSSProperties } from "react"
+import { useEffect, useRef, useState, type CSSProperties, type MouseEvent } from "react"
 import Image from "next/image"
 import { Heart, Pause, Play, ThumbsDown } from "lucide-react"
 import { useAudio } from "@/lib/audio-context"
@@ -40,6 +40,8 @@ export function HeroStack() {
   const [liked, setLiked] = useState<string[]>([])
   /** Cards being thrown off, each removed when its animation ends. */
   const [leaving, setLeaving] = useState<(CardView & { dir: 1 | -1 })[]>([])
+  /** The verdict button to focus on the next card: set only when the verdict came from the keyboard. */
+  const [refocus, setRefocus] = useState<Verdict | null>(null)
   const a = STACK[i % STACK.length]
   const owns = !!audio.currentTrack && a.tracks.some((t) => t.id === audio.currentTrack!.id)
   const playing = owns && audio.isPlaying
@@ -53,7 +55,8 @@ export function HeroStack() {
     } else audio.play(toTrack(a, 0), a.name, a.imageUrl, a.color)
   }
 
-  const next = (like: boolean) => {
+  const next = (like: boolean, fromKeyboard: boolean) => {
+    setRefocus(fromKeyboard ? (like ? "more" : "less") : null)
     if (like) setLiked((l) => [...l, a.name])
     // Two clicks before a re-render throw the same card once.
     setLeaving((l) => (l.some((x) => x.key === view.key) ? l : [...l, { ...view, dir: like ? 1 : -1 }]))
@@ -81,7 +84,7 @@ export function HeroStack() {
           onAnimationEnd={() => setLeaving((l) => l.filter((x) => x.key !== v.key))}
         />
       ))}
-      <Card key={view.key} view={view} className={view.first ? "" : "ev-stack-enter"} onToggle={toggle} onNext={next} />
+      <Card key={view.key} view={view} className={view.first ? "" : "ev-stack-enter"} onToggle={toggle} onNext={next} focus={refocus} />
       <p className="ev-stack-note" aria-live="polite">
         {liked.length === 0
           ? `${STACK.length} artists in this sample. No account needed to listen.`
@@ -91,17 +94,35 @@ export function HeroStack() {
   )
 }
 
-/** One sample card. Without handlers it is a thrown card: inert and hidden from assistive tech. */
-function Card({ view, className, style, onToggle, onNext, onAnimationEnd }: {
+type Verdict = "less" | "more"
+
+/**
+ * A keyboard activation of the focused button (a click event with no pointer: detail 0). Pointer
+ * users are never moved: their focus stays where the browser put it.
+ */
+const fromKeyboard = (e: MouseEvent<HTMLButtonElement>) => e.detail === 0 && document.activeElement === e.currentTarget
+
+/**
+ * One sample card. Without handlers it is a thrown card: inert and hidden from assistive tech.
+ * `focus`: on mount, focus that verdict button (the previous card's was used from the keyboard,
+ * and that card is now inert, so focus would otherwise fall to the page).
+ */
+function Card({ view, className, style, onToggle, onNext, onAnimationEnd, focus = null }: {
   view: CardView
   className: string
   style?: CSSProperties
   onToggle?: () => void
-  onNext?: (like: boolean) => void
+  onNext?: (like: boolean, fromKeyboard: boolean) => void
   onAnimationEnd?: () => void
+  focus?: Verdict | null
 }) {
   const { a, first, owns, playing, progress, track } = view
   const live = !!onToggle
+  const lessRef = useRef<HTMLButtonElement>(null)
+  const moreRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (focus) (focus === "more" ? moreRef : lessRef).current?.focus()
+  }, [focus])
   const why = whyParts(a.why)
   return (
     <article
@@ -164,11 +185,11 @@ function Card({ view, className, style, onToggle, onNext, onAnimationEnd }: {
           </span>
         </button>
         <div className="ev-stack-triage">
-          <button type="button" className="ev-tri" onClick={() => onNext?.(false)}>
+          <button type="button" className="ev-tri" ref={lessRef} onClick={(e) => onNext?.(false, fromKeyboard(e))}>
             <ThumbsDown size={16} strokeWidth={1.75} aria-hidden />
             <span>Less like this</span>
           </button>
-          <button type="button" className="ev-tri ev-tri-like" onClick={() => onNext?.(true)}>
+          <button type="button" className="ev-tri ev-tri-like" ref={moreRef} onClick={(e) => onNext?.(true, fromKeyboard(e))}>
             <Heart size={16} strokeWidth={1.75} aria-hidden />
             <span>More like this</span>
           </button>
