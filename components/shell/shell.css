@@ -1,4 +1,4 @@
-/* Signed-in app shell: rail (≥900px), top bar + tab bar (<900px).
+/* Signed-in app shell: rail (≥900px wide and ≥540px tall), top bar + tab bar otherwise.
    Values copied from the Evolved prototype (design-lab: app/lab/evolved/evolved.css). */
 
 .shell {
@@ -29,7 +29,7 @@
 /* At 900px and wider, a page containing .shell-fill (the desktop feed and its loading
    skeleton) fills the whole area right of the rail at viewport height: no padding,
    no 520px column, no page scroll. */
-@media (width >= 900px) {
+@media (width >= 900px) and (height >= 540px) {
   .shell-main:has(.shell-fill) { height: 100dvh; padding: 0 0 0 var(--rail-w); }
   .shell-main:has(.shell-fill) > .app-col { max-width: none; min-width: 0; }
 }
@@ -111,7 +111,7 @@
   pointer-events: none;
 }
 
-/* 900–1099px: icons only. */
+/* 900–1099px: icons only (only applies while the rail shows). */
 @media (width < 1100px) {
   .shell { --rail-w: 64px; }
   .shell-rail { padding: 18px 10px; align-items: center; }
@@ -140,7 +140,7 @@
   box-shadow: 0 24px 60px -16px rgba(0, 0, 0, 0.7);
 }
 /* The menu belongs to the top bar's avatar; if the window widens while it is open, it goes with the bar. */
-@media (width >= 900px) { .shell-menu { display: none; } }
+@media (width >= 900px) and (height >= 540px) { .shell-menu { display: none; } }
 .shell-menu-item {
   display: flex;
   align-items: center;
@@ -160,7 +160,10 @@
 .shell-menu-item[aria-current="page"] { color: var(--fg); }
 .shell-menu-item[aria-current="page"] svg { color: var(--violet-ink); }
 
-@media (width < 900px) {
+/* Also short wide windows (phones in landscape at 900px and wider): the feed is the phone Snap
+   layout there, which needs the top bar (count, strip) and the tab bar, and a rail would only
+   take width from a view that is short of height. */
+@media (width < 900px), (height < 540px) {
   .shell-rail { display: none; }
   .shell-main {
     padding: calc(var(--top-h) + var(--safe-t)) 16px calc(var(--tab-h) + var(--safe-b) + 24px);

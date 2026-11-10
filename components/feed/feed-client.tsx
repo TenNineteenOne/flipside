@@ -35,16 +35,17 @@ interface FeedClientProps {
 // new recs land server-side for next time.
 const TOPUP_THRESHOLD = 8
 
-// One layout at a time (PRD "Breakpoints"): ≥900px desktop, 640–899px tablet,
-// below 640px the Snap feed. The tablet layout needs about 660px of height, so
-// shorter viewports below 900px (phones in landscape, browser zoom) get the Snap
-// feed too. The server (and hydration) renders the layout guessed from the request
-// headers (`initialLayout`: Snap for phones, else desktop). feed.css hides the Snap
-// tree at tablet/desktop sizes and the desktop tree below 900px until the client
-// switches, so a wrong guess never flashes the wrong layout.
+// One layout at a time (PRD "Breakpoints"): desktop at 900px and wider when at least
+// 540px tall; tablet at 640–899px when at least 680px tall; otherwise the Snap feed,
+// which adapts to short and landscape viewports (phones in landscape, even 900px+ wide
+// ones, and browser zoom). The server (and hydration) renders the layout guessed from
+// the request headers (`initialLayout`: Snap for phones, else desktop). feed.css hides
+// the guessed tree wherever it is not the viewport's layout and shows that layout's
+// skeleton instead until the client switches, so a wrong guess never flashes the wrong layout.
+// The shell (shell.css) shows its rail under the same desktop condition.
 // Keep these in step with feed.css and components/feed/feed-skeleton.tsx.
 type Layout = FeedLayout
-const QUERIES = ["(width >= 900px)", "(width >= 640px) and (height >= 680px)"]
+const QUERIES = ["(width >= 900px) and (height >= 540px)", "(width >= 640px) and (height >= 680px)"]
 const subscribeLayout = (cb: () => void) => {
   const ms = QUERIES.map((q) => matchMedia(q))
   ms.forEach((m) => m.addEventListener("change", cb))

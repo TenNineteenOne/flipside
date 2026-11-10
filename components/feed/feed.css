@@ -265,12 +265,13 @@
 .ev-feed .ev-btn-ghost { border: 1px solid var(--line-strong); color: var(--fg); text-decoration: none; }
 .ev-feed .ev-btn-ghost:hover { background: var(--raise); }
 
-/* loading skeleton (components/feed/feed-skeleton.tsx): desktop panes ≥900px, tablet 640–899px, Snap below */
+/* loading skeleton (components/feed/feed-skeleton.tsx): desktop panes ≥900px wide and ≥540px tall,
+   tablet 640–899px wide and ≥680px tall, Snap otherwise (the layout rule in feed-client.tsx) */
 .ev-feed .ev-skel-line { display: block; height: 12px; }
 .ev-feed .ev-skel-card { background: var(--panel); animation: none; }
 .ev-feed .ev-skel-card > .fs-skeleton { display: block; }
 .ev-feed.ev-skel-wide .ev-row { content-visibility: visible; }
-@media (width < 900px) { .ev-skel-wide { display: none !important; } }
+@media (width < 900px), (height < 540px) { .ev-skel-wide { display: none !important; } }
 @media (width < 640px), (width >= 900px), (height < 680px) { .ev-feed.ev-tablet.ev-skel-tablet { display: none; } }
 .ev-feed.ev-skel-m .ev-m-page, .ev-feed.ev-skel-m .ev-m-rail > li { content-visibility: visible; }
 .ev-feed.ev-skel-m span.fs-skeleton {
@@ -317,7 +318,7 @@ body:has(.ev-skel-m) .shell-top-slot:empty::before { content: ""; width: 76px; h
   border: 1px solid oklch(0.8 0.01 293); border-bottom-width: 2px; border-radius: 5px; background: transparent;
 }
 /* Key hints only where there is a keyboard: not on touch, not below 900px (the sheet keeps its keycaps). */
-@media (hover: none), (width < 900px) {
+@media (hover: none), (width < 900px), (height < 540px) {
   .ev-feed .ev-card .ev-kbd, .ev-feed .ev-hints, .ev-feed .ev-player .ev-kbd, [data-sonner-toast].ev-toast .ev-kbd { display: none; }
   .ev-feed .ev-idle-keys { display: none; }
   .ev-feed .ev-idle-touch { display: inline; }
@@ -325,10 +326,10 @@ body:has(.ev-skel-m) .shell-top-slot:empty::before { content: ""; width: 76px; h
 [data-sonner-toast].ev-toast .ev-toast-undo:hover { background: oklch(0.92 0.02 293); }
 [data-sonner-toast].ev-toast .ev-toast-undo:focus-visible { outline: 2px solid oklch(0.42 0.17 293); outline-offset: 2px; }
 /* Only feed toasts use bottom-left: on desktop it starts at the queue column, clear of the rail. */
-@media (width >= 900px) {
+@media (width >= 900px) and (height >= 540px) {
   [data-sonner-toaster][data-x-position="left"] { --offset-left: 84px !important; }
 }
-@media (width >= 1100px) {
+@media (width >= 1100px) and (height >= 540px) {
   [data-sonner-toaster][data-x-position="left"] { --offset-left: 260px !important; }
 }
 
@@ -521,9 +522,10 @@ body:has(.ev-snap .ev-m-mini) [data-sonner-toaster] {
 /* Server render / hydration is the guessed tree (feed-client.tsx). Where the tablet or desktop view
    will be used (same conditions as feed-client.tsx) a server-rendered Snap tree stays hidden until
    the client switches, so no phone layout flashes. */
-@media (width >= 900px), (width >= 640px) and (height >= 680px) { .ev-feed.ev-snap:not(.ev-tablet) { display: none; } }
-/* The desktop tree, server-rendered for a desktop guess (feed-client.tsx), stays hidden below 900px until the client switches. */
-@media (width < 900px) { .ev-feed.ev-app { display: none; } }
+@media (width >= 900px) and (height >= 540px), (width >= 640px) and (height >= 680px) { .ev-feed.ev-snap:not(.ev-tablet) { display: none; } }
+/* The desktop tree, server-rendered for a desktop guess (feed-client.tsx), stays hidden outside the desktop
+   layout (below 900px wide or 540px tall) until the client switches. */
+@media (width < 900px), (height < 540px) { .ev-feed.ev-app { display: none; } }
 /* Meanwhile the skeleton rendered beside the guessed tree (FeedClient, server render and hydration
    only) shows the viewport's own layout exactly where the guessed tree is hidden: its tree for the
    guessed layout never shows, the other two follow the skeleton's media queries above. */
