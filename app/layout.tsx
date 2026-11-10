@@ -1,30 +1,21 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Fraunces, JetBrains_Mono, Instrument_Serif } from "next/font/google";
+import { Familjen_Grotesk, Martian_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 
-const inter = Inter({
+// Two families only: Familjen Grotesk for all text, Martian Mono for hints, durations and counts.
+const sans = Familjen_Grotesk({
   variable: "--font-sans",
-  subsets: ["latin"],
+  subsets: ["latin", "latin-ext"],
+  weight: "variable",
+  display: "swap",
 });
 
-const fraunces = Fraunces({
-  variable: "--font-display",
-  subsets: ["latin"],
-  axes: ["SOFT", "WONK"],
-});
-
-const jetbrainsMono = JetBrains_Mono({
+const mono = Martian_Mono({
   variable: "--font-mono",
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-});
-
-const instrumentSerif = Instrument_Serif({
-  variable: "--font-serif",
-  subsets: ["latin"],
-  weight: ["400"],
-  style: ["italic", "normal"],
+  subsets: ["latin", "latin-ext"],
+  weight: ["400", "500"],
+  display: "swap",
 });
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://127.0.0.1:3000"
@@ -35,8 +26,8 @@ export const viewport: Viewport = {
   maximumScale: 5,
   viewportFit: "cover",
   themeColor: [
-    { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" },
-    { media: "(prefers-color-scheme: light)", color: "#0a0a0a" },
+    { media: "(prefers-color-scheme: dark)", color: "#121015" },
+    { media: "(prefers-color-scheme: light)", color: "#121015" },
   ],
 }
 
@@ -80,19 +71,9 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${fraunces.variable} ${jetbrainsMono.variable} ${instrumentSerif.variable} h-full antialiased dark`}
+      className={`${sans.variable} ${mono.variable} h-full antialiased dark`}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
-        <style
-          dangerouslySetInnerHTML={{
-            __html: `
-              @supports ((backdrop-filter: blur(30px)) or (-webkit-backdrop-filter: blur(30px))) {
-                .fs-card { backdrop-filter: blur(30px) saturate(1.1); -webkit-backdrop-filter: blur(30px) saturate(1.1); }
-                .appnav { backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
-              }
-            `,
-          }}
-        />
         <Toaster theme="dark" position="bottom-center" />
         {children}
       </body>

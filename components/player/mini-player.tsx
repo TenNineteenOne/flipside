@@ -21,9 +21,7 @@ export function MiniPlayer() {
            transition={{ type: "spring", damping: 30, stiffness: 300 }}
            className="mini-player-pill fixed bottom-0 left-1/2 z-50 w-[92%] max-w-[480px] overflow-hidden"
            style={{
-             background: "rgba(10, 10, 10, 0.8)",
-             backdropFilter: "blur(40px)",
-             WebkitBackdropFilter: "blur(40px)",
+             background: "var(--rail)",
              borderRadius: "24px",
              border: "1px solid rgba(255, 255, 255, 0.15)",
              boxShadow: `0 20px 40px rgba(0,0,0,0.8), 0 0 40px ${dynamicColor}33`,

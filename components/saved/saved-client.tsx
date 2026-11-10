@@ -149,8 +149,6 @@ export function SavedClient({ artists, hasLastfm, musicPlatform }: SavedClientPr
                       height: 30,
                       borderRadius: "50%",
                       background: "rgba(0,0,0,0.6)",
-                      backdropFilter: "blur(8px)",
-                      WebkitBackdropFilter: "blur(8px)",
                       border: 0,
                       color: "#fff",
                       display: "grid",

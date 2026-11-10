@@ -5,9 +5,7 @@ interface ColdStartBannerProps {
 
 const containerStyle: React.CSSProperties = {
   padding: "12px 16px",
-  background: "rgba(15,15,15,0.65)",
-  backdropFilter: "blur(18px)",
-  WebkitBackdropFilter: "blur(18px)",
+  background: "var(--panel)",
   border: "1px solid rgba(255,255,255,0.08)",
   borderRadius: 14,
   display: "flex",

@@ -198,9 +198,7 @@ export function ExploreClient({
             : "1px solid rgba(255,255,255,0.08)",
           background: adventurous
             ? "linear-gradient(135deg, rgba(245,176,71,0.22) 0%, rgba(236,111,181,0.18) 40%, rgba(125,217,198,0.14) 75%, rgba(168,199,250,0.12) 100%)"
-            : "rgba(15,15,15,0.55)",
-          backdropFilter: "blur(18px)",
-          WebkitBackdropFilter: "blur(18px)",
+            : "var(--panel)",
           color: "var(--text-primary)",
           cursor: isTogglingAdv ? "default" : "pointer",
           opacity: isTogglingAdv ? 0.75 : 1,
@@ -314,8 +312,6 @@ export function ExploreClient({
             borderRadius: 18,
             border: "1px solid rgba(245,176,71,0.45)",
             background: "linear-gradient(135deg, rgba(245,176,71,0.28) 0%, rgba(236,111,181,0.24) 45%, rgba(125,217,198,0.18) 80%, rgba(168,199,250,0.16) 100%)",
-            backdropFilter: "blur(18px)",
-            WebkitBackdropFilter: "blur(18px)",
             color: "#fff",
             cursor: isApplyingAdv ? "default" : "pointer",
             opacity: isApplyingAdv ? 0.75 : 1,
