@@ -38,8 +38,10 @@ export default function ExploreLoading() {
 
       <div className="ex-rail-head" aria-hidden>
         <span className="fs-skeleton ex-skel-line ex-skel-title" />
-        <span className="fs-skeleton ex-skel-line ex-skel-sub" />
-        <span className="fs-skeleton ex-skel-line ex-skel-sub ex-skel-wrap" />
+        <p className="ex-rail-sub">
+          <span className="fs-skeleton ex-skel-line ex-skel-sub" />
+          <span className="fs-skeleton ex-skel-line ex-skel-sub ex-skel-wrap" />
+        </p>
       </div>
 
       <div className="ex-grid" aria-hidden>

@@ -265,12 +265,16 @@ export function ExploreClient({
         <section aria-labelledby="ex-rail-title">
           <div className="ex-rail-head">
             <h2 id="ex-rail-title" className="ex-rail-title">{activeRail.title}</h2>
-            <p className="ex-rail-sub">{activeRail.subtitle}</p>
-            {adventurous && (
-              <p className="ex-rail-adv">
-                <Sparkles size={14} aria-hidden /> Adventurous order: the furthest-out rails come first
-              </p>
-            )}
+            {/* The Adventurous note shares the subtitle's line (reserved in the skeleton, explore.css). */}
+            <p className="ex-rail-sub">
+              {activeRail.subtitle}
+              {adventurous && " "}
+              {adventurous && (
+                <span className="ex-rail-adv">
+                  <Sparkles size={13} aria-hidden /> Adventurous order: furthest-out rails first
+                </span>
+              )}
+            </p>
           </div>
 
           {activeRail.artists.length === 0 ? (

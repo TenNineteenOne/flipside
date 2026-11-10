@@ -119,9 +119,13 @@
 /* the active rail: its title and line, then the grid */
 .ev-explore .ex-rail-head { display: flex; flex-direction: column; gap: 2px; margin: 18px 0 16px; }
 .ev-explore .ex-rail-title { font-size: 18px; letter-spacing: -0.015em; line-height: 1.25; }
-.ev-explore .ex-rail-sub { color: var(--fg-3); font-size: 14px; max-width: 70ch; text-wrap: pretty; }
-.ev-explore .ex-rail-adv { display: inline-flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 13px; color: var(--violet-ink); }
-.ev-explore .ex-rail-adv svg { flex-shrink: 0; }
+/* One line on desktop, the Adventurous note after the subtitle. Phones reserve the extra line the
+   note may need, in the skeleton too, so the grid sits at the same height whether it shows or not. */
+.ev-explore .ex-rail-sub { color: var(--fg-3); font-size: 14px; line-height: 21px; text-wrap: pretty; }
+.ev-explore .ex-rail-adv { white-space: nowrap; color: var(--violet-ink); }
+.ev-explore .ex-rail-adv svg { display: inline; vertical-align: -1px; margin: 0 2px 0 4px; }
+@media (width < 900px) { .ev-explore .ex-rail-sub { min-height: 42px; } }
+@media (width < 360px) { .ev-explore .ex-rail-sub { min-height: 63px; } }
 
 .ev-explore .ex-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr)); gap: 20px; align-items: start;
@@ -154,10 +158,11 @@
 .ev-explore .ex-skel-tab { flex-shrink: 0; width: 132px; height: 44px; border-radius: 999px; }
 .ev-explore .ex-skel-title { width: 150px; height: 18px; margin: 2.25px 0; }
 .ev-explore .ex-skel-sub { width: min(380px, 80vw); margin: 4.5px 0; }
+.ev-explore .ex-rail-sub > .ex-skel-sub { margin: 4.5px 0; }
 /* Lines that wrap on narrow screens get a second skeleton line there (same heights as the copy). */
 .ev-explore .ex-skel-wrap { display: none; width: 50%; }
 @media (width < 640px) { .ev-explore .ex-controls .ex-skel-wrap, .ev-explore .ex-challenge .ex-skel-wrap { display: block; } }
-@media (width < 360px) { .ev-explore .ex-rail-head .ex-skel-wrap { display: block; margin-top: 2.5px; } }
+@media (width < 900px) { .ev-explore .ex-rail-head .ex-skel-wrap { display: block; margin-top: 2.5px; } }
 
 @media (width < 640px) {
   .ev-explore .ex-head { padding-top: 18px; }
