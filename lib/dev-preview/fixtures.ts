@@ -7,9 +7,10 @@ export const PREVIEW_USER_SEED = "dev-preview-user"
 
 /**
  * The prototype's 19 artists as production card artists. Edge cases:
- * the 4th has no artist image (tracks keep album art), the 9th has no image and no tracks.
+ * the 4th has no artist image (tracks keep album art), the 9th has no image and no tracks, and
+ * the 2nd's third track is the 1st's first track (a collaboration: two artists sharing a track id).
  */
-export const previewArtists: CardArtist[] = labArtists.map((a, i) => ({
+const mapped: CardArtist[] = labArtists.map((a, i) => ({
   id: a.id,
   name: a.name,
   genres: a.genres,
@@ -31,3 +32,7 @@ export const previewArtists: CardArtist[] = labArtists.map((a, i) => ({
           source: "itunes" as const,
         })),
 }))
+
+export const previewArtists: CardArtist[] = mapped.map((a, i) =>
+  i === 1 ? { ...a, topTracks: [...a.topTracks.slice(0, 2), mapped[0].topTracks[0]] } : a,
+)

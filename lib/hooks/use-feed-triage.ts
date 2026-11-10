@@ -11,7 +11,7 @@ import { counts, firstUndecided, reconcileSelection, remaining, step, visibleQue
 import { tuning } from "@/lib/feed/tuning"
 import { shouldHandOver } from "@/lib/feed/hand-over"
 import { isDoubleActivation } from "@/lib/feed/double-activation"
-import { nowPlayingArtistId } from "@/lib/feed/now-playing"
+import { isCurrentTrack as isCurrent, nowPlayingArtistId } from "@/lib/feed/now-playing"
 import { getArtistLink, getShareableArtistLink, type MusicPlatform } from "@/lib/music-links"
 import { resolveArtistColor } from "@/lib/color-utils"
 import { useArtistFeedback } from "@/lib/hooks/use-artist-feedback"
@@ -88,6 +88,11 @@ export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatfor
     return id ? byId.get(id) ?? null : null
   }, [current, started, artists, tracksOf, byId])
   const owns = useCallback((a: CardArtist) => nowPlayingArtist?.id === a.id, [nowPlayingArtist])
+  /** The loaded track on this artist's card (progress ring, current chip / row); by artist, as tracks can be shared. */
+  const isCurrentTrack = useCallback(
+    (a: CardArtist, t: Track) => isCurrent(nowPlayingArtist?.id ?? null, current?.id ?? null, a.id, t.id),
+    [nowPlayingArtist, current],
+  )
   const playingArtistId = audio.isPlaying ? nowPlayingArtist?.id ?? null : null
   const isPlaying = useCallback((a: CardArtist) => a.id === playingArtistId, [playingArtistId])
 
@@ -301,6 +306,7 @@ export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatfor
     /** Genres liked artists lean toward (≤6) and passed ones away from (≤4). */
     tuning: tuningValue,
     nowPlayingArtist,
+    isCurrentTrack,
     isPlaying,
     togglePlay,
     playTrack,

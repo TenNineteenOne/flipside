@@ -167,7 +167,7 @@ function FocusCard({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
   const loading = !canPlay && isFetching
   const why = whyParts(a.why)
   const art = artworkFor({ imageUrl: a.imageUrl, topTracks: tracks })
-  const { currentTrack, progress } = useAudio()
+  const { progress } = useAudio()
   const playable = tracks.filter((t) => t.previewUrl).slice(0, 3)
   const saved = triage.savedIds.has(a.id)
   const platform = PLATFORM_META[triage.musicPlatform]
@@ -239,7 +239,7 @@ function FocusCard({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
           <h3 className="ev-tracks-title">Previews <span>30 seconds each</span></h3>
           <ol>
             {playable.map((t, i) => {
-              const current = currentTrack?.id === t.id
+              const current = triage.isCurrentTrack(a, t)
               const on = current && playing
               const dur = formatDuration(t.durationMs)
               return (

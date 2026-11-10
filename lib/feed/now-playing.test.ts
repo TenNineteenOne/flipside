@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { nowPlayingArtistId } from "./now-playing"
+import { isCurrentTrack, nowPlayingArtistId } from "./now-playing"
 
 const t = (id: string) => ({ id })
 // "a" and "b" share track "x" (a collaboration).
@@ -21,5 +21,15 @@ describe("nowPlayingArtistId", () => {
   })
   it("is null for a track no loaded artist owns", () => {
     expect(nowPlayingArtistId("q", null, artists)).toBeNull()
+  })
+})
+
+describe("isCurrentTrack", () => {
+  it("marks a track current only on the artist the player is playing it for (a shared track shows once)", () => {
+    const playing = nowPlayingArtistId("x", { trackId: "x", artistId: "b" }, artists)
+    expect(isCurrentTrack(playing, "x", "b", "x")).toBe(true)
+    expect(isCurrentTrack(playing, "x", "a", "x")).toBe(false)
+    expect(isCurrentTrack(playing, "x", "b", "y")).toBe(false)
+    expect(isCurrentTrack(null, null, "a", "x")).toBe(false)
   })
 })

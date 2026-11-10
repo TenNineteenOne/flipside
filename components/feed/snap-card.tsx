@@ -76,7 +76,7 @@ export function SnapCard({ a, triage, eager = false, enter = false }: {
   const why = whyParts(a.why)
   const art = artworkFor({ imageUrl: a.imageUrl, topTracks: tracks })
   const { currentTrack, progress } = useAudio()
-  const mine = !!currentTrack && tracks.some((t) => t.id === currentTrack.id)
+  const mine = !!currentTrack && triage.nowPlayingArtist?.id === a.id
   // Artists that arrived without tracks fetch them once selected, as the desktop focus pane does.
   const fetchTracks = a.topTracks.length === 0 && a.id === triage.selectedId
 
@@ -145,7 +145,7 @@ export function SnapCard({ a, triage, eager = false, enter = false }: {
         {playable.length > 0 ? (
           <div className="ev-m-chips" role="group" aria-label="Previews">
             {playable.map((t, i) => {
-              const cur = currentTrack?.id === t.id
+              const cur = triage.isCurrentTrack(a, t)
               const on = cur && playing
               return (
                 <button key={t.id} type="button" className="ev-m-chip" data-current={cur || undefined} aria-pressed={on} aria-label={`${on ? "Pause" : "Play"} ${t.name}`} onClick={() => triage.playTrack(a, i)}>
