@@ -436,3 +436,76 @@ body:has(.ev-snap .ev-m-mini) [data-sonner-toaster] {
   --offset-bottom: calc(56px + 80px + env(safe-area-inset-bottom, 0px) + 66px) !important;
   --mobile-offset-bottom: calc(56px + 80px + env(safe-area-inset-bottom, 0px) + 66px) !important;
 }
+
+/* Server render / hydration is the Snap tree (feed-client.tsx); at 640px and wider it stays
+   hidden until the client switches to the tablet or desktop view, so no phone layout flashes. */
+@media (min-width: 640px) { .ev-feed.ev-snap:not(.ev-tablet) { display: none; } }
+
+/* ---------- Tablet feed, 640–899px (prototype `card` view, tablet branch) ---------- */
+@media (min-width: 640px) and (max-width: 899px) {
+  .ev-feed.ev-m-strip { height: 14px; padding-bottom: 10px; }
+}
+.ev-feed.ev-tablet {
+  --ev-snap-top: calc(var(--top-h) + var(--safe-t) + 14px + 1px);
+  display: grid; grid-template-columns: minmax(0, 1fr) 280px;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-areas: "cold cold" "stage rail" "mini rail" "tri rail";
+}
+.ev-feed .ev-t-cold { grid-area: cold; }
+.ev-feed .ev-t-cold:empty { display: none; }
+.ev-feed .ev-m-stage {
+  grid-area: stage; min-height: 0; container-type: size;
+  display: flex; justify-content: center; align-items: center; padding: 24px 24px 0;
+}
+.ev-feed .ev-m-deck { position: relative; width: min(100%, 480px); }
+.ev-feed .ev-m-ghost {
+  --a-dark: color-mix(in oklch, var(--a) 45%, black);
+  position: absolute; inset: 0; border-radius: 20px; overflow: hidden; transform: translateY(-10px) scale(0.93); transform-origin: top center;
+  background: color-mix(in oklch, var(--a-dark) 40%, var(--panel)); border: 1px solid var(--line);
+}
+.ev-feed .ev-m-ghost-img { width: 100%; height: 100%; object-fit: cover; opacity: 0.5; }
+.ev-feed .ev-m-ghost-img.ev-letter { font-size: 0; }
+.ev-feed.ev-tablet .ev-m-stage > .ev-end { align-self: center; padding: 24px 20px; }
+.ev-feed.ev-tablet .ev-m-name { font-size: 28px; }
+.ev-feed.ev-tablet .ev-m-mini { grid-area: mini; margin: 6px 24px 0; }
+.ev-feed.ev-tablet .ev-m-triage { grid-area: tri; width: min(100%, 528px); justify-self: center; padding: 12px 24px; height: auto; }
+.ev-feed.ev-tablet .ev-m-tri { min-height: 64px; }
+
+/* Up next: every loaded artist in feed order; scrolls on its own */
+.ev-feed .ev-m-rail-wrap { grid-area: rail; display: flex; flex-direction: column; min-height: 0; padding: 16px 0 0; border-left: 1px solid var(--line); }
+.ev-feed .ev-m-rail-title { padding: 0 16px 8px; font-size: 13px; color: var(--fg-3); }
+.ev-feed .ev-m-rail {
+  display: flex; flex-direction: column; gap: 2px; min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 0 8px 16px;
+  scroll-snap-type: y proximity; overscroll-behavior: contain; scrollbar-width: none;
+}
+.ev-feed .ev-m-rail::-webkit-scrollbar { display: none; }
+.ev-feed .ev-m-rail > li { flex-shrink: 0; content-visibility: auto; contain-intrinsic-size: auto 56px; }
+.ev-feed .ev-m-thumb {
+  --a-dark: color-mix(in oklch, var(--a) 45%, black);
+  position: relative; display: flex; align-items: center; gap: 12px; width: 100%; padding: 6px; border-radius: 10px; text-align: left;
+}
+.ev-feed .ev-m-thumb:hover { background: var(--panel); }
+.ev-feed .ev-m-thumb[aria-current="true"] { background: var(--raise); }
+.ev-feed .ev-m-thumb-img { flex-shrink: 0; width: 44px; height: 44px; border-radius: 9px; object-fit: cover; background: var(--a-dark); transition: opacity 200ms var(--ease); }
+.ev-feed .ev-m-thumb-img.ev-letter { font-size: 18px; }
+.ev-feed .ev-m-thumb[data-v="passed"] .ev-m-thumb-img, .ev-feed .ev-m-thumb[data-v="dismissed"] .ev-m-thumb-img { opacity: 0.3; filter: grayscale(1); }
+.ev-feed .ev-m-thumb-x { position: absolute; left: 6px; top: 6px; width: 44px; height: 44px; display: grid; place-items: center; color: var(--fg-2); }
+.ev-feed .ev-m-thumb-badge {
+  position: absolute; left: 36px; top: 36px; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%;
+  background: var(--violet); color: #fff; box-shadow: 0 0 0 2px var(--bg);
+}
+.ev-feed .ev-m-thumb-text { display: flex; flex-direction: column; min-width: 0; font-size: 12px; color: var(--fg-3); }
+.ev-feed .ev-m-thumb-text > * { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev-feed .ev-m-thumb-text strong { font-size: 14px; color: var(--fg); font-weight: 600; }
+.ev-feed .ev-m-thumb[data-v="passed"] .ev-m-thumb-text, .ev-feed .ev-m-thumb[data-v="dismissed"] .ev-m-thumb-text { opacity: 0.45; }
+
+/* Toast on tablets: above the triage bar (88px) + tab bar, clear of the Up next list. */
+@media (min-width: 640px) and (max-width: 899px) {
+  body:has(.ev-tablet) [data-sonner-toaster] {
+    --offset-bottom: calc(56px + 88px + env(safe-area-inset-bottom, 0px) + 6px) !important;
+    --offset-left: 24px !important;
+  }
+  body:has(.ev-tablet .ev-m-mini) [data-sonner-toaster] { --offset-bottom: calc(56px + 88px + env(safe-area-inset-bottom, 0px) + 70px) !important; }
+  body:has(.ev-tablet) [data-sonner-toaster] { --width: calc(100vw - 24px - 304px) !important; }
+  body:has(.ev-tablet) [data-sonner-toast].ev-toast { width: 100%; max-width: none; }
+}

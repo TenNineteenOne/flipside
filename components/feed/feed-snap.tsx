@@ -35,15 +35,10 @@ interface FeedSnapProps {
 }
 
 export function FeedSnap({ triage, signalCount, onLoadMore, generating }: FeedSnapProps) {
-  const { ids, selected, selectedId } = triage
+  const { ids, selectedId } = triage
   const ended = triage.remaining === 0
   /** The page that should be in view: the selected artist, else the end page. */
   const key = selectedId ?? (ended ? END : null)
-  const [coldHidden, setColdHidden] = useState(false)
-  // The phone feed has its own small player bar, shown only while the loaded track (playing or
-  // paused) is not the artist on screen; the floating pill stays hidden here.
-  useSuppressFloatingPlayer()
-  const showPlayer = !!useAudio().currentTrack && triage.nowPlayingArtist?.id !== selectedId
   const scrollerRef = useRef<HTMLDivElement>(null)
   const ioRef = useRef<IntersectionObserver | null>(null)
   /** Selection the observer just reported (no scroll needed for it). */
@@ -106,26 +101,13 @@ export function FeedSnap({ triage, signalCount, onLoadMore, generating }: FeedSn
     }
   }, [key])
 
-  const liked = !!selected && triage.signals.get(selected.id) === "thumbs_up"
-  const judge = (signal: "thumbs_up" | "thumbs_down" | "skip") => {
-    if (selected) triage.judge(selected.id, signal, { toggle: true, advance: true })
-  }
-
   return (
     <div className="ev-feed ev-snap">
-      <ShellSlot name="top"><SnapCount triage={triage} /></ShellSlot>
-      <ShellSlot name="topSub">
-        <ol className="ev-feed ev-m-strip" aria-hidden>
-          {ids.map((id) => (
-            <li key={id} className="ev-seg" data-v={VERDICT[triage.signals.get(id) ?? ""] ?? "none"} data-sel={id === selectedId || undefined} />
-          ))}
-        </ol>
-      </ShellSlot>
-
-      {!coldHidden && <ColdStartBanner signalCount={signalCount} onDismiss={() => setColdHidden(true)} />}
+      <TopBarProgress triage={triage} />
+      <ColdLine signalCount={signalCount} />
 
       <main className="ev-m-snap" ref={scrollerRef} aria-label="Artists">
-        {triage.ids.map((id, i) => {
+        {ids.map((id, i) => {
           const a = triage.byId.get(id)!
           return (
             <section key={id} className="ev-m-page" data-id={id} aria-label={a.name}>
@@ -140,27 +122,74 @@ export function FeedSnap({ triage, signalCount, onLoadMore, generating }: FeedSn
         )}
       </main>
 
-      {showPlayer && <div className="ev-m-mini"><MiniPlayer docked /></div>}
+      <PlayerBar triage={triage} />
+      <TriageBar triage={triage} />
+    </div>
+  )
+}
 
-      {/* Hidden, not removed, with no artist selected (end page): keeps every page the same height. */}
-      <div
-        className="ev-m-triage"
-        role="group"
-        aria-label={selected ? `Tell flipside what you think of ${selected.name}` : "Tell flipside what you think"}
-        data-hidden={!selected || undefined}
-        inert={!selected}
-      >
-          <button type="button" className="ev-m-tri" onClick={() => judge("thumbs_down")}>
-            <ThumbsDown size={22} strokeWidth={1.75} aria-hidden /><span>Less like this</span>
-          </button>
-          <button type="button" className="ev-m-tri" onClick={() => judge("skip")}>
-            <X size={22} strokeWidth={1.75} aria-hidden /><span>Dismiss</span>
-          </button>
-          <button type="button" className="ev-m-tri ev-m-tri-like" onClick={() => judge("thumbs_up")} aria-pressed={liked}>
-            <Heart size={22} strokeWidth={1.75} fill={liked ? "currentColor" : "none"} aria-hidden />
-            <span>{liked ? "Liked" : "More like this"}</span>
-          </button>
-      </div>
+/* ---- pieces shared by the phone (Snap) and tablet feeds ---- */
+
+/** "N of M left" in the shell top bar and the segment strip as its second row. */
+export function TopBarProgress({ triage }: { triage: FeedTriage }) {
+  return (
+    <>
+      <ShellSlot name="top"><SnapCount triage={triage} /></ShellSlot>
+      <ShellSlot name="topSub">
+        <ol className="ev-feed ev-m-strip" aria-hidden>
+          {triage.ids.map((id) => (
+            <li key={id} className="ev-seg" data-v={VERDICT[triage.signals.get(id) ?? ""] ?? "none"} data-sel={id === triage.selectedId || undefined} />
+          ))}
+        </ol>
+      </ShellSlot>
+    </>
+  )
+}
+
+/** The cold-start hint as one dismissible line (hidden for the rest of the visit once dismissed). */
+export function ColdLine({ signalCount }: { signalCount: number }) {
+  const [hidden, setHidden] = useState(false)
+  return hidden ? null : <ColdStartBanner signalCount={signalCount} onDismiss={() => setHidden(true)} />
+}
+
+/**
+ * The small player bar, shown only while the loaded track (playing or paused) is not the
+ * selected artist's; the floating pill stays hidden while these feeds are mounted.
+ */
+export function PlayerBar({ triage }: { triage: FeedTriage }) {
+  useSuppressFloatingPlayer()
+  const show = !!useAudio().currentTrack && triage.nowPlayingArtist?.id !== triage.selectedId
+  return show ? <div className="ev-m-mini"><MiniPlayer docked /></div> : null
+}
+
+/**
+ * The three triage buttons for the selected artist. Hidden (not removed) and inert when
+ * nothing is selected (end of queue), so the layout around it never changes height.
+ */
+export function TriageBar({ triage }: { triage: FeedTriage }) {
+  const { selected } = triage
+  const liked = !!selected && triage.signals.get(selected.id) === "thumbs_up"
+  const judge = (signal: "thumbs_up" | "thumbs_down" | "skip") => {
+    if (selected) triage.judge(selected.id, signal, { toggle: true, advance: true })
+  }
+  return (
+    <div
+      className="ev-m-triage"
+      role="group"
+      aria-label={selected ? `Tell flipside what you think of ${selected.name}` : "Tell flipside what you think"}
+      data-hidden={!selected || undefined}
+      inert={!selected}
+    >
+      <button type="button" className="ev-m-tri" onClick={() => judge("thumbs_down")}>
+        <ThumbsDown size={22} strokeWidth={1.75} aria-hidden /><span>Less like this</span>
+      </button>
+      <button type="button" className="ev-m-tri" onClick={() => judge("skip")}>
+        <X size={22} strokeWidth={1.75} aria-hidden /><span>Dismiss</span>
+      </button>
+      <button type="button" className="ev-m-tri ev-m-tri-like" onClick={() => judge("thumbs_up")} aria-pressed={liked}>
+        <Heart size={22} strokeWidth={1.75} fill={liked ? "currentColor" : "none"} aria-hidden />
+        <span>{liked ? "Liked" : "More like this"}</span>
+      </button>
     </div>
   )
 }

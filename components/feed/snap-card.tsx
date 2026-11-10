@@ -55,7 +55,11 @@ function useSwipe(onCommit: (dir: 1 | -1) => void) {
  * the why sentence, up to three track chips. Sized against the nearest size
  * container (a Snap page; the tablet stage in #193). Presentation only.
  */
-export function SnapCard({ a, triage, eager = false }: { a: CardArtist; triage: FeedTriage; eager?: boolean }) {
+export function SnapCard({ a, triage, eager = false, enter = false }: {
+  a: CardArtist; triage: FeedTriage; eager?: boolean
+  /** Tablet stage: the card arrives with a small scale-up (never from transparent). */
+  enter?: boolean
+}) {
   const tracks = triage.tracksOf(a)
   const playable = tracks.filter((t) => t.previewUrl).slice(0, 3)
   const playing = triage.isPlaying(a)
@@ -76,6 +80,9 @@ export function SnapCard({ a, triage, eager = false }: { a: CardArtist; triage: 
       className="ev-m-card"
       data-v={v}
       style={{ ...artistVar(a), ...sw.style }}
+      initial={enter && !sw.reduce ? { scale: 0.96 } : false}
+      animate={{ scale: 1 }}
+      transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
       drag={sw.drag}
       dragDirectionLock
       dragMomentum={false}
