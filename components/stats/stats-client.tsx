@@ -1,7 +1,9 @@
 "use client"
 
-import { Disc3, Bookmark, ThumbsUp, ThumbsDown, Music, ArrowUpDown } from "lucide-react"
-import { useMemo, useState, type ReactNode } from "react"
+import "./stats.css"
+import Link from "next/link"
+import { ArrowUpDown } from "lucide-react"
+import { useId, useMemo, useState } from "react"
 
 interface SavedArtist {
   name: string
@@ -19,98 +21,52 @@ interface StatsClientProps {
 }
 
 type TasteKind = "saved" | "liked"
-const KIND_COLOR: Record<TasteKind, string> = {
-  saved: "var(--accent)",
-  liked: "#22c55e",
+const KIND_LABEL: Record<TasteKind, string> = { saved: "Saved", liked: "Liked" }
+
+/** The shape that marks a kind everywhere on the page (chart, legend, badge): filled violet = saved, ring = liked. */
+function Mark({ kind }: { kind: TasteKind }) {
+  return <span className={`st-mark st-mark-${kind}`} aria-hidden />
 }
 
-function StatCard({
-  icon,
-  label,
-  value,
-  accentColor,
-}: {
-  icon: ReactNode
-  label: string
-  value: number
-  accentColor?: string
-}) {
+function Totals({ rows }: { rows: { label: string; value: number }[] }) {
   return (
-    <div
-      style={{
-        background: "var(--bg-card)",
-        border: "1px solid var(--border)",
-        borderRadius: 16,
-        padding: "24px 20px",
-        display: "flex",
-        flexDirection: "column",
-        gap: 12,
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 8, color: accentColor ?? "var(--text-secondary)" }}>
-        {icon}
-        <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text-secondary)" }}>{label}</span>
-      </div>
-      <span
-        className="mono"
-        style={{ fontSize: 36, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.02em", lineHeight: 1 }}
-      >
-        {value.toLocaleString()}
-      </span>
-    </div>
+    <dl className="st-counts" aria-label="Totals">
+      {rows.map(({ label, value }) => (
+        <div key={label}>
+          <dt>{label}</dt>
+          <dd className="st-n">{value.toLocaleString()}</dd>
+        </div>
+      ))}
+    </dl>
   )
 }
 
-function GenreCard({ genres }: { genres: { genre: string; count: number }[] }) {
+function TopGenres({ genres }: { genres: { genre: string; count: number }[] }) {
   const maxCount = genres.length > 0 ? genres[0].count : 1
+  const headingId = useId()
 
   return (
-    <div
-      style={{
-        background: "var(--bg-card)",
-        border: "1px solid var(--border)",
-        borderRadius: 16,
-        padding: "24px 20px",
-        display: "flex",
-        flexDirection: "column",
-        gap: 16,
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <Music size={16} style={{ color: "var(--accent)" }} />
-        <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text-secondary)" }}>Top Genres</span>
+    <section aria-labelledby={headingId}>
+      <div className="st-sec-head">
+        <h2 id={headingId} className="st-h2">Top genres</h2>
       </div>
-
       {genres.length === 0 ? (
-        <p style={{ fontSize: 14, color: "var(--text-muted)" }}>
-          Like some artists to see your top genres
-        </p>
+        <p className="st-empty">Like some artists to see your top genres</p>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {genres.map(({ genre, count }) => (
-            <div key={genre} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text-primary)", textTransform: "capitalize" }}>
-                  {genre}
-                </span>
-                <span className="mono" style={{ fontSize: 13, color: "var(--text-secondary)" }}>{count}</span>
-              </div>
-              <div style={{ height: 4, borderRadius: 2, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
-                <div
-                  style={{
-                    height: "100%",
-                    width: `${(count / maxCount) * 100}%`,
-                    borderRadius: 2,
-                    background: "var(--accent)",
-                    transition: "width 0.5s ease",
-                  }}
-                />
-              </div>
-            </div>
+        <ol className="st-genres">
+          {genres.map(({ genre, count }, i) => (
+            <li key={genre} className="st-genre">
+              <span className="st-genre-rank st-n" aria-hidden>{i + 1}</span>
+              <span className="st-genre-name">{genre}</span>
+              <span className="st-genre-count st-n">{count}</span>
+              <span className="st-bar" aria-hidden>
+                <span style={{ width: `${(count / maxCount) * 100}%` }} />
+              </span>
+            </li>
           ))}
-        </div>
+        </ol>
       )}
-    </div>
+    </section>
   )
 }
 
@@ -131,38 +87,15 @@ function hashSeed(str: string): number {
   return (h >>> 0) / 4294967295
 }
 
-function LegendSwatch({ color, label }: { color: string; label: string }) {
-  return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, color: "var(--text-muted)" }}>
-      <span style={{ width: 8, height: 8, borderRadius: "50%", background: color, display: "inline-block" }} />
-      {label}
-    </span>
-  )
-}
-
-function KindBadge({ kind }: { kind: TasteKind }) {
-  const color = KIND_COLOR[kind]
-  const label = kind === "saved" ? "Saved" : "Liked"
-  return (
-    <span
-      style={{
-        display: "inline-block",
-        padding: "2px 8px",
-        borderRadius: 999,
-        fontSize: 10,
-        fontWeight: 600,
-        letterSpacing: "0.02em",
-        color,
-        border: `1px solid ${color}`,
-        opacity: 0.9,
-      }}
-    >
-      {label}
-    </span>
-  )
+function median(values: number[]): number {
+  const s = [...values].sort((a, b) => a - b)
+  const m = s.length >> 1
+  return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2)
 }
 
 type TasteItem = { name: string; popularity: number; kind: TasteKind }
+
+const TICKS = [0, 20, 40, 60, 80, 100]
 
 function TasteProfileView({
   savedArtists,
@@ -172,6 +105,8 @@ function TasteProfileView({
   likedArtists: SavedArtist[]
 }) {
   const [sortDesc, setSortDesc] = useState(false)
+  const headingId = useId()
+  const captionId = useId()
 
   const items = useMemo<TasteItem[]>(() => {
     const savedNames = new Set(savedArtists.map((a) => a.name))
@@ -188,166 +123,88 @@ function TasteProfileView({
     [items, sortDesc]
   )
 
-  const svgHeight = 110
-  const svgPad = { left: 20, right: 20, top: 20, bottom: 30 }
-  const plotW = 400 - svgPad.left - svgPad.right
-  const plotH = svgHeight - svgPad.top - svgPad.bottom
+  const mid = items.length > 0 ? median(items.map((a) => a.popularity)) : 0
 
   return (
-    <div
-      style={{
-        background: "var(--bg-card)",
-        border: "1px solid var(--border)",
-        borderRadius: 16,
-        padding: "24px 20px",
-        display: "flex",
-        flexDirection: "column",
-        gap: 16,
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "space-between", flexWrap: "wrap" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Bookmark size={16} style={{ color: "var(--accent)" }} />
-          <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text-secondary)" }}>
-            Your taste profile
-          </span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <LegendSwatch color={KIND_COLOR.saved} label="Saved" />
-          <LegendSwatch color={KIND_COLOR.liked} label="Liked" />
-        </div>
+    <section className="st-panel" aria-labelledby={headingId}>
+      <div className="st-sec-head">
+        <h2 id={headingId} className="st-h2">Your taste profile</h2>
+        {items.length > 0 && (
+          <div className="st-legend">
+            <span><Mark kind="saved" />Saved</span>
+            <span><Mark kind="liked" />Liked</span>
+          </div>
+        )}
       </div>
 
       {items.length === 0 ? (
-        <p style={{ fontSize: 14, color: "var(--text-muted)" }}>
-          Save or like some artists to see where they fall on the popularity scale.
-        </p>
+        <p className="st-empty">Save or like some artists to see where they fall on the popularity scale.</p>
       ) : (
         <>
-          <svg
-            viewBox={`0 0 400 ${svgHeight}`}
-            width="100%"
-            style={{ display: "block" }}
-            aria-label="Taste profile popularity distribution"
-          >
-            <line
-              x1={svgPad.left}
-              y1={svgHeight - svgPad.bottom}
-              x2={400 - svgPad.right}
-              y2={svgHeight - svgPad.bottom}
-              stroke="rgba(255,255,255,0.12)"
-              strokeWidth="1"
-            />
-
-            {[0, 20, 40, 60, 80, 100].map((tick) => {
-              const x = svgPad.left + (tick / 100) * plotW
-              return (
-                <g key={tick}>
-                  <line
-                    x1={x}
-                    y1={svgHeight - svgPad.bottom}
-                    x2={x}
-                    y2={svgHeight - svgPad.bottom + 4}
-                    stroke="rgba(255,255,255,0.2)"
-                    strokeWidth="1"
-                  />
-                  <text
-                    x={x}
-                    y={svgHeight - svgPad.bottom + 16}
-                    textAnchor="middle"
-                    fill="var(--text-muted)"
-                    fontSize="10"
-                    className="mono"
-                  >
-                    {tick}
-                  </text>
+          <figure className="st-fig">
+            <figcaption id={captionId} className="st-caption">
+              Each mark is an artist you saved or liked, placed by popularity from 0 (barely known) to 100
+              (mainstream). Half of yours score {mid} or less.
+            </figcaption>
+            <div className="st-plot">
+              <svg
+                role="img"
+                aria-label={`Taste profile popularity distribution: ${items.length} artists, median popularity ${mid}`}
+                aria-describedby={captionId}
+              >
+                <g className="st-grid">
+                  {TICKS.map((tick) => (
+                    <line key={tick} x1={`${tick}%`} x2={`${tick}%`} y1="0" y2="100%" />
+                  ))}
                 </g>
-              )
-            })}
+                <line className="st-axis" x1="0" x2="100%" y1="100%" y2="100%" />
+                {items.map((a) => (
+                  <circle
+                    key={`${a.kind}-${a.name}`}
+                    className={`st-dot-${a.kind}`}
+                    cx={`${a.popularity}%`}
+                    cy={`${8 + hashSeed(a.name) * 80}%`}
+                    r={a.kind === "saved" ? 5 : 4.5}
+                  >
+                    <title>{`${a.name} · popularity ${a.popularity} · ${a.kind}`}</title>
+                  </circle>
+                ))}
+              </svg>
+              <div className="st-ticks st-n" aria-hidden>
+                {TICKS.map((tick) => (
+                  <span key={tick} style={{ left: `${tick}%` }}>{tick}</span>
+                ))}
+              </div>
+            </div>
+            <p className="st-axis-title" aria-hidden>Popularity</p>
+          </figure>
 
-            {items.map((a) => {
-              const cx = svgPad.left + (a.popularity / 100) * plotW
-              const jitter = hashSeed(a.name)
-              const cy = svgPad.top + jitter * plotH
-              return (
-                <circle
-                  key={`${a.kind}-${a.name}`}
-                  cx={cx}
-                  cy={cy}
-                  r="4"
-                  fill={KIND_COLOR[a.kind]}
-                  fillOpacity="0.7"
-                  stroke="var(--bg-card)"
-                  strokeWidth="1"
-                >
-                  <title>{`${a.name} · popularity ${a.popularity} · ${a.kind}`}</title>
-                </circle>
-              )
-            })}
-          </svg>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+          <div className="st-table">
             <button
               type="button"
+              className="st-thead"
               onClick={() => setSortDesc((v) => !v)}
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 72px 90px",
-                gap: 8,
-                padding: "8px 0",
-                background: "transparent",
-                border: 0,
-                borderBottom: "1px solid var(--border)",
-                color: "var(--text-muted)",
-                fontSize: 11,
-                fontWeight: 500,
-                textTransform: "uppercase",
-                letterSpacing: "0.08em",
-                textAlign: "left",
-                cursor: "pointer",
-              }}
+              aria-label={`Sort by popularity, ${sortDesc ? "lowest" : "highest"} first`}
             >
               <span>Artist</span>
-              <span style={{ textAlign: "right" }}>Kind</span>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 4, justifyContent: "flex-end" }}>
+              <span>Kind</span>
+              <span className="st-thead-sort">
                 Popularity
-                <ArrowUpDown size={11} />
+                <ArrowUpDown size={12} aria-hidden />
               </span>
             </button>
 
-            <div style={{ maxHeight: 320, overflowY: "auto" }}>
+            <div className="st-rows" tabIndex={0} role="region" aria-label="Saved and liked artists by popularity">
               {sorted.map((a) => (
-                <div
-                  key={`${a.kind}-${a.name}`}
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 72px 90px",
-                    gap: 8,
-                    padding: "10px 0",
-                    borderBottom: "1px solid rgba(255,255,255,0.04)",
-                    alignItems: "center",
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: 13,
-                      color: "var(--text-primary)",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                    title={a.name}
-                  >
-                    {a.name}
+                <div key={`${a.kind}-${a.name}`} className="st-row">
+                  <span className="st-row-name" title={a.name}>{a.name}</span>
+                  <span className="st-row-kind">
+                    <span className={`st-kind st-kind-${a.kind}`}>
+                      <Mark kind={a.kind} />
+                      {KIND_LABEL[a.kind]}
+                    </span>
                   </span>
-                  <span style={{ textAlign: "right" }}>
-                    <KindBadge kind={a.kind} />
-                  </span>
-                  <span
-                    className="mono"
-                    style={{ fontSize: 12, color: "var(--text-secondary)", textAlign: "right" }}
-                    title={popularityTier(a.popularity)}
-                  >
+                  <span className="st-row-pop st-n" title={popularityTier(a.popularity)}>
                     {a.popularity}
                   </span>
                 </div>
@@ -356,7 +213,7 @@ function TasteProfileView({
           </div>
         </>
       )}
-    </div>
+    </section>
   )
 }
 
@@ -369,22 +226,33 @@ export function StatsClient({
   savedArtists,
   likedArtists,
 }: StatsClientProps) {
+  const nothingDecided = topGenres.length === 0 && savedArtists.length === 0 && likedArtists.length === 0
+
   return (
-    <div>
-      <div className="page-head">
-        <h1>Stats</h1>
-        <span className="sub">your discovery journey</span>
-      </div>
+    <div className="st shell-wide">
+      <header className="st-head">
+        <h1 className="st-title">Stats</h1>
+        <p className="st-sub">Your discovery journey</p>
+        {nothingDecided && (
+          <p className="st-lead">
+            Your top genres and taste profile fill in as you decide on artists. Like or save a few in
+            the <Link href="/feed">feed</Link> and come back.
+          </p>
+        )}
+      </header>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
-        <StatCard icon={<Disc3 size={16} />} label="Discovered" value={totalDiscovered} accentColor="var(--accent)" />
-        <StatCard icon={<Bookmark size={16} />} label="Saved" value={totalSaves} accentColor="#a78bfa" />
-        <StatCard icon={<ThumbsUp size={16} />} label="Liked" value={totalLikes} accentColor="#22c55e" />
-        <StatCard icon={<ThumbsDown size={16} />} label="Passed" value={totalDislikes} accentColor="#ff4b4b" />
-      </div>
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <GenreCard genres={topGenres} />
+      <div className="st-body">
+        <div className="st-col">
+          <Totals
+            rows={[
+              { label: "Discovered", value: totalDiscovered },
+              { label: "Saved", value: totalSaves },
+              { label: "Liked", value: totalLikes },
+              { label: "Passed", value: totalDislikes },
+            ]}
+          />
+          <TopGenres genres={topGenres} />
+        </div>
         <TasteProfileView savedArtists={savedArtists} likedArtists={likedArtists} />
       </div>
     </div>
