@@ -149,7 +149,7 @@ export function SnapCard({ a, triage, eager = false, enter = false }: {
               const on = cur && playing
               return (
                 <button key={t.id} type="button" className="ev-m-chip" data-current={cur || undefined} aria-pressed={on} aria-label={`${on ? "Pause" : "Play"} ${t.name}`} onClick={() => triage.playTrack(a, i)}>
-                  {on ? <Pause size={11} fill="currentColor" strokeWidth={0} aria-hidden /> : <Play size={11} fill="currentColor" strokeWidth={0} aria-hidden />}
+                  <span className="ev-m-chip-ico" aria-hidden>{on ? <Pause size={12} fill="currentColor" strokeWidth={0} /> : <Play size={12} fill="currentColor" strokeWidth={0} />}</span>
                   <span>{t.name}</span>
                 </button>
               )
