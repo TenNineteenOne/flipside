@@ -10,6 +10,7 @@ import { whyText } from "@/lib/feed/card-copy"
 import { counts, firstUndecided, reconcileSelection, remaining, step, visibleQueue, type Signal } from "@/lib/feed/triage-queue"
 import { tuning } from "@/lib/feed/tuning"
 import { shouldHandOver } from "@/lib/feed/hand-over"
+import { isDoubleActivation } from "@/lib/feed/double-activation"
 import { getArtistLink, getShareableArtistLink, type MusicPlatform } from "@/lib/music-links"
 import { resolveArtistColor } from "@/lib/color-utils"
 import { useArtistFeedback } from "@/lib/hooks/use-artist-feedback"
@@ -147,10 +148,16 @@ export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatfor
     [undoLast],
   )
 
+  const lastAdvance = useRef<{ artistId: string; at: number } | null>(null)
+
+  /** Returns null when the artist is unknown or the call is a double activation (ignored). */
   const judge = useCallback(
     (artistId: string, signal: Signal, opts: JudgeOptions): Plan | null => {
       const a = byId.get(artistId)
       if (!a) return null
+      const now = performance.now()
+      if (isDoubleActivation(lastAdvance.current, artistId, opts.advance, now)) return null
+      if (opts.advance) lastAdvance.current = { artistId, at: now }
       const plan = decide({ ids, signals, selectedId, playingArtistId }, { artistId, name: a.name, signal, ...opts })
       if (plan.send.kind === "set") void setSignal(artistId, plan.send.signal)
       setSelectedId(plan.selectId)
