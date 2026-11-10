@@ -4,18 +4,22 @@ import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 
 // Two families only: Familjen Grotesk for all text, Martian Mono for hints, durations and counts.
+// `subsets` only picks what is preloaded: every subset's @font-face is still declared, and the browser
+// fetches latin-ext (or Martian Mono) by unicode-range when a page uses it. So only Familjen Grotesk
+// latin is preloaded; Martian Mono (small hints and counts) loads on use, with metric-matched fallbacks.
 const sans = Familjen_Grotesk({
   variable: "--font-sans",
-  subsets: ["latin", "latin-ext"],
+  subsets: ["latin"],
   weight: "variable",
   display: "swap",
 });
 
 const mono = Martian_Mono({
   variable: "--font-mono",
-  subsets: ["latin", "latin-ext"],
+  subsets: ["latin"],
   weight: ["400", "500"],
   display: "swap",
+  preload: false,
 });
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://127.0.0.1:3000"
