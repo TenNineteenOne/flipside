@@ -5,8 +5,8 @@ const ROWS = Array.from({ length: 10 }, (_, i) => i)
 /**
  * Feed skeleton, one tree per layout picked with CSS (feed.css); this file has no JS.
  * 900px and wider: the desktop queue + focus pane (same grid and `shell-fill`
- * opt-out). 640–899px: the tablet card, triage bar and Up next list. Below
- * 640px: one Snap page and the triage bar. Each uses the real view's frame, so
+ * opt-out). 640–899px and at least 680px tall: the tablet card, triage bar and
+ * Up next list. Otherwise (below 640px, or short): one Snap page and the triage bar. Each uses the real view's frame, so
  * nothing shifts when the feed arrives. The cold-start hint depends on data, so
  * no space is reserved for it.
  */
@@ -45,7 +45,7 @@ export default function FeedLoading() {
         </div>
       </div>
 
-      {/* Phone (Snap) below 640px and tablet 640–899px: the same fixed frame, card and triage bar
+      {/* Phone (Snap) below 640px or under 680px tall, and tablet 640–899px: the same fixed frame, card and triage bar
           as the real views (feed.css also reserves the top bar's count/strip row). */}
       <div className="ev-feed ev-snap ev-skel-m" aria-hidden>
         <div className="ev-m-snap"><div className="ev-m-page"><SnapCardSkeleton /></div></div>

@@ -258,7 +258,7 @@
 .ev-feed .ev-skel-card > .fs-skeleton { display: block; }
 .ev-feed.ev-skel-wide .ev-row { content-visibility: visible; }
 @media (max-width: 899px) { .ev-skel-wide { display: none !important; } }
-@media (max-width: 639px), (min-width: 900px) { .ev-feed.ev-tablet.ev-skel-tablet { display: none; } }
+@media (width < 640px), (width >= 900px), (height < 680px) { .ev-feed.ev-tablet.ev-skel-tablet { display: none; } }
 .ev-feed.ev-skel-m .ev-m-page, .ev-feed.ev-skel-m .ev-m-rail > li { content-visibility: visible; }
 .ev-feed.ev-skel-m span.fs-skeleton {
   display: block; background-color: transparent;
@@ -269,7 +269,7 @@
 body:has(.ev-skel-m) .shell-top-sub:empty { display: flex; align-items: center; height: 10px; padding-right: 16px; }
 body:has(.ev-skel-m) .shell-top-sub:empty::before { content: ""; flex: 1; height: 4px; border-radius: 2px; background: var(--line); }
 body:has(.ev-skel-m) .shell-top-slot:empty::before { content: ""; width: 76px; height: 14px; border-radius: 7px; background: var(--line); }
-@media (min-width: 640px) and (max-width: 899px) {
+@media (640px <= width < 900px) and (height >= 680px) {
   body:has(.ev-skel-m) .shell-top-sub:empty { align-items: flex-start; height: 14px; }
 }
 
@@ -464,12 +464,13 @@ body:has(.ev-snap .ev-m-mini) [data-sonner-toaster] {
   --mobile-offset-bottom: calc(56px + 80px + env(safe-area-inset-bottom, 0px) + 66px) !important;
 }
 
-/* Server render / hydration is the Snap tree (feed-client.tsx); at 640px and wider it stays
-   hidden until the client switches to the tablet or desktop view, so no phone layout flashes. */
-@media (min-width: 640px) { .ev-feed.ev-snap:not(.ev-tablet) { display: none; } }
+/* Server render / hydration is the Snap tree (feed-client.tsx); where the tablet or desktop view
+   will be used (same conditions as feed-client.tsx) it stays hidden until the client switches,
+   so no phone layout flashes. */
+@media (width >= 900px), (width >= 640px) and (height >= 680px) { .ev-feed.ev-snap:not(.ev-tablet) { display: none; } }
 
-/* ---------- Tablet feed, 640–899px (prototype `card` view, tablet branch) ---------- */
-@media (min-width: 640px) and (max-width: 899px) {
+/* ---------- Tablet feed, 640–899px and at least 680px tall (prototype `card` view, tablet branch) ---------- */
+@media (640px <= width < 900px) and (height >= 680px) {
   .ev-feed.ev-m-strip { height: 14px; padding-bottom: 10px; }
 }
 .ev-feed.ev-tablet {
@@ -527,7 +528,7 @@ body:has(.ev-snap .ev-m-mini) [data-sonner-toaster] {
 .ev-feed .ev-m-thumb[data-v="passed"] .ev-m-thumb-text, .ev-feed .ev-m-thumb[data-v="dismissed"] .ev-m-thumb-text { opacity: 0.45; }
 
 /* Toast on tablets: above the triage bar (88px) + tab bar, clear of the Up next list. */
-@media (min-width: 640px) and (max-width: 899px) {
+@media (640px <= width < 900px) and (height >= 680px) {
   body:has(.ev-tablet) [data-sonner-toaster] {
     --offset-bottom: calc(56px + 88px + env(safe-area-inset-bottom, 0px) + 6px) !important;
     --offset-left: 24px !important;

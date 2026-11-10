@@ -26,11 +26,14 @@ interface FeedClientProps {
 const TOPUP_THRESHOLD = 8
 
 // One layout at a time (PRD "Breakpoints"): ≥900px desktop, 640–899px tablet,
-// below 640px the Snap feed. The server (and hydration) renders the Snap tree:
-// it is what the slowest clients need, and feed.css hides it at ≥640px until
-// the client switches, so wider screens never flash a phone layout.
+// below 640px the Snap feed. The tablet layout needs about 660px of height, so
+// shorter viewports below 900px (phones in landscape, browser zoom) get the Snap
+// feed too. The server (and hydration) renders the Snap tree: it is what the
+// slowest clients need, and feed.css hides it under the same two conditions
+// until the client switches, so wider screens never flash a phone layout.
+// Keep these in step with feed.css and app/(app)/feed/loading.tsx.
 type Layout = "phone" | "tablet" | "desktop"
-const QUERIES = ["(min-width: 900px)", "(min-width: 640px)"]
+const QUERIES = ["(width >= 900px)", "(width >= 640px) and (height >= 680px)"]
 const subscribeLayout = (cb: () => void) => {
   const ms = QUERIES.map((q) => matchMedia(q))
   ms.forEach((m) => m.addEventListener("change", cb))
