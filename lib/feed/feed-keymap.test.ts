@@ -16,6 +16,14 @@ const press = (key: string, ctx: Partial<Parameters<typeof feedAction>[0]> = {})
   })
 
 describe("feedAction", () => {
+  it("ignores keys inside an open menu, dialog or popup, and keys already handled (defaultPrevented)", () => {
+    for (const k of ["ArrowDown", "x", "j", " ", "?"]) {
+      expect(press(k, { targetInPopup: true })).toBeNull()
+      expect(press(k, { defaultPrevented: true })).toBeNull()
+    }
+    expect(press("x", { targetInPopup: false, defaultPrevented: false })).toBe("less")
+  })
+
   it.each([
     ["j", "next"],
     ["ArrowDown", "next"],

@@ -13,6 +13,8 @@ export function Kbd({ children }: { children: ReactNode }) {
 }
 
 const EDITABLE = "input, textarea, select, [contenteditable]"
+/** Open menus, dialogs and popups own their keys (the shell's avatar menu: arrows, letters). */
+const POPUP = '[role="menu"], [role="dialog"], dialog[open]'
 
 /**
  * Feed keyboard control (PRD #182, keyboard stories): one window `keydown`
@@ -51,6 +53,9 @@ export function FeedShortcuts({ triage, enabled = true }: {
         altKey: e.altKey,
         targetIsEditable: !!el.closest(EDITABLE),
         targetIsButtonOrLink: el.tagName === "BUTTON" || el.tagName === "A",
+        // The shortcut sheet is a dialog too; its own keys ("?" closes it) stay handled here.
+        targetInPopup: !!el.closest(POPUP) && !dialogRef.current?.contains(el),
+        defaultPrevented: e.defaultPrevented,
         helpOpen: open,
         repeat: e.repeat,
       })

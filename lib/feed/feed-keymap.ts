@@ -36,13 +36,15 @@ export function feedAction(e: {
   helpOpen: boolean
   repeat: boolean                // held-key auto-repeat: only movement repeats
   code?: string                  // physical key, used when `key` is not bound
+  targetInPopup?: boolean        // inside an open menu / dialog / popup (not the shortcut sheet): its keys are its own
+  defaultPrevented?: boolean     // something else already handled the key
 }): FeedAction | null {
   const action = keyAction(e)
   return e.repeat && action !== "next" && action !== "prev" ? null : action
 }
 
 function keyAction(e: Parameters<typeof feedAction>[0]): FeedAction | null {
-  if (e.metaKey || e.ctrlKey || e.altKey || e.targetIsEditable) return null
+  if (e.metaKey || e.ctrlKey || e.altKey || e.targetIsEditable || e.targetInPopup || e.defaultPrevented) return null
   if (e.key === "?" || (e.key === "/" && e.shiftKey)) return "toggleHelp"
   if (e.helpOpen) return null
   // Lower-case so caps lock / Shift still match. An unbound Latin letter is a
