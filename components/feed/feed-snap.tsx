@@ -32,9 +32,12 @@ interface FeedSnapProps {
   /** "Load more artists" on the end page, and its in-flight state. */
   onLoadMore: () => void
   generating: boolean
+  /** Called once this layout is mounted (FeedClient enables the keyboard shortcuts then). */
+  onShown?: (layout: "phone" | "tablet" | "desktop") => void
 }
 
-export function FeedSnap({ triage, signalCount, onLoadMore, generating }: FeedSnapProps) {
+export function FeedSnap({ triage, signalCount, onLoadMore, generating, onShown }: FeedSnapProps) {
+  useEffect(() => onShown?.("phone"), [onShown])
   const { ids, selectedId } = triage
   const ended = triage.remaining === 0
   /** The page that should be in view: the selected artist, else the end page. */

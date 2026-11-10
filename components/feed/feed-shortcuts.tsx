@@ -19,7 +19,11 @@ const EDITABLE = "input, textarea, select, [contenteditable]"
  * listener while the feed is mounted, mapped by the pure `feedAction`, and the
  * "?" shortcut sheet (native dialog), also opened from the rail's Shortcuts item.
  */
-export function FeedShortcuts({ triage }: { triage: FeedTriage }) {
+export function FeedShortcuts({ triage, enabled = true }: {
+  triage: FeedTriage
+  /** false while the layout on screen is not mounted yet (its chunk loading): every key is ignored. */
+  enabled?: boolean
+}) {
   const [open, setOpen] = useState(false)
   const dialogRef = useRef<HTMLDialogElement>(null)
   const openSheet = useCallback(() => setOpen(true), [])
@@ -36,6 +40,7 @@ export function FeedShortcuts({ triage }: { triage: FeedTriage }) {
   const handlerRef = useRef<(e: KeyboardEvent) => void>(() => {})
   useEffect(() => {
     handlerRef.current = (e: KeyboardEvent) => {
+      if (!enabled) return
       const el = e.target instanceof Element ? e.target : document.body
       const action = feedAction({
         key: e.key,

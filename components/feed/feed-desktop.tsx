@@ -34,9 +34,12 @@ interface FeedDesktopProps {
   /** "Load more artists" (FeedClient's generate-more flow) and its in-flight state. */
   onLoadMore: () => void
   generating: boolean
+  /** Called once this layout is mounted (FeedClient enables the keyboard shortcuts then). */
+  onShown?: (layout: "phone" | "tablet" | "desktop") => void
 }
 
-export function FeedDesktop({ triage, signalCount, onLoadMore, generating }: FeedDesktopProps) {
+export function FeedDesktop({ triage, signalCount, onLoadMore, generating, onShown }: FeedDesktopProps) {
+  useEffect(() => onShown?.("desktop"), [onShown])
   const { visible, selected, selectedId, signals, remaining, total, tuning } = triage
   // Passed/dismissed rows fade and slide out (feed.css, .ev-row[data-leaving]); the list then closes up.
   const rows = useLeaving(visible, rowKey, !useReducedMotion())

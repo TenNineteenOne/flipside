@@ -524,6 +524,13 @@ body:has(.ev-snap .ev-m-mini) [data-sonner-toaster] {
 @media (width >= 900px), (width >= 640px) and (height >= 680px) { .ev-feed.ev-snap:not(.ev-tablet) { display: none; } }
 /* The desktop tree, server-rendered for a desktop guess (feed-client.tsx), stays hidden below 900px until the client switches. */
 @media (width < 900px) { .ev-feed.ev-app { display: none; } }
+/* Meanwhile the skeleton rendered beside the guessed tree (FeedClient, server render and hydration
+   only) shows the viewport's own layout exactly where the guessed tree is hidden: its tree for the
+   guessed layout never shows, the other two follow the skeleton's media queries above. */
+.ev-guess-skel { display: contents; }
+.ev-guess-skel[data-guess="desktop"] > .ev-skel-wide,
+.ev-guess-skel[data-guess="tablet"] > .ev-skel-tablet,
+.ev-guess-skel[data-guess="phone"] > .ev-skel-m:not(.ev-skel-tablet) { display: none !important; }
 
 /* ---------- Tablet feed, 640–899px and at least 680px tall (prototype `card` view, tablet branch) ---------- */
 @media (640px <= width < 900px) and (height >= 680px) {

@@ -52,6 +52,9 @@ const subscribeLayout = (cb: () => void) => {
 }
 const currentLayout = (): Layout =>
   matchMedia(QUERIES[0]).matches ? "desktop" : matchMedia(QUERIES[1]).matches ? "tablet" : "phone"
+/** true for the server render and hydration, false once the client has taken over. */
+const noSubscribe = () => () => {}
+const useHydrating = () => useSyncExternalStore(noSubscribe, () => false, () => true)
 
 // ---------------------------------------------------------------------------
 // Main component
@@ -140,6 +143,10 @@ export function FeedClient({ recommendations, musicPlatform, signalCount, initia
   useShellBadge("/feed", triage.remaining)
   // The server snapshot is used for SSR and for hydration, so both render `initialLayout`.
   const layout = useSyncExternalStore(subscribeLayout, currentLayout, () => initialLayout)
+  const hydrating = useHydrating()
+  // The layout whose tree is mounted and showing (set by the layout itself); until it is the
+  // current one (a layout's chunk still loading) the keyboard shortcuts stay inert.
+  const [shown, setShown] = useState<Layout | null>(null)
 
   async function handleGenerateMore() {
     const r = await generation.requestMore()
@@ -159,8 +166,17 @@ export function FeedClient({ recommendations, musicPlatform, signalCount, initia
   const View = layout === "desktop" ? FeedDesktop : layout === "tablet" ? FeedTablet : FeedSnap
   return (
     <>
-      <FeedShortcuts triage={triage} />
-      <View triage={triage} signalCount={signalCount} onLoadMore={handleGenerateMore} generating={isGenerating} />
+      <FeedShortcuts triage={triage} enabled={shown === layout} />
+      {/* Server render and hydration: where CSS hides the guessed tree (the guess doesn't match the
+          viewport), the skeleton for the viewport shows in its place (feed.css, .ev-guess-skel).
+          The client's first render replaces it with the right layout or that layout's loading
+          skeleton, which draws the same frame. */}
+      {hydrating && (
+        <div className="ev-guess-skel" data-guess={initialLayout}>
+          <FeedSkeleton />
+        </div>
+      )}
+      <View triage={triage} signalCount={signalCount} onLoadMore={handleGenerateMore} generating={isGenerating} onShown={setShown} />
     </>
   )
 }
