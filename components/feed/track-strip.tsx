@@ -4,6 +4,7 @@ import { memo, useState } from "react"
 import Image from "next/image"
 import { Play } from "lucide-react"
 import { hexToRgba } from "@/lib/color-utils"
+import { artworkAt } from "@/lib/feed/artwork"
 import type { Track } from "@/lib/music-provider/types"
 
 // ---------------------------------------------------------------------------
@@ -63,7 +64,7 @@ export const TrackStrip = memo(function TrackStrip({
               <div className="relative w-12 h-12 shrink-0">
                 {track.albumImageUrl ? (
                   <Image
-                    src={track.albumImageUrl}
+                    src={artworkAt(track.albumImageUrl, 48)}
                     alt={track.albumName}
                     width={48}
                     height={48}
@@ -111,7 +112,7 @@ export const TrackStrip = memo(function TrackStrip({
             <div className="relative w-10 h-10 shrink-0">
                {track.albumImageUrl ? (
                  <Image
-                   src={track.albumImageUrl}
+                   src={artworkAt(track.albumImageUrl, 40)}
                    alt={track.albumName}
                    width={40}
                    height={40}

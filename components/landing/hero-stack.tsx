@@ -53,7 +53,7 @@ export function HeroStack() {
           {[2, 1].map((k) => {
             const b = STACK[(i + k) % STACK.length]
             return (
-              <Image key={`${b.id}-${k}`} className={`ev-stack-ghost ev-stack-ghost-${k}`} src={b.imageUrl} alt="" width={600} height={600} loading="eager" />
+              <Image key={`${b.id}-${k}`} className={`ev-stack-ghost ev-stack-ghost-${k}`} src={b.imageUrl} alt="" width={600} height={600} loading="eager" decoding="async" />
             )
           })}
         </div>

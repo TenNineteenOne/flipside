@@ -33,3 +33,29 @@ export function letterFor(name: string): string {
   const upper = first.toUpperCase()
   return upper.length === first.length ? upper : first
 }
+
+/** Apple's image CDN serves any square size by URL: `…/<w>x<h>bb.jpg` (also .png / .webp). */
+const MZSTATIC_SIZE = /\/(\d+)x(\d+)bb\.(jpg|png|webp)$/
+
+/**
+ * The artwork URL for an image displayed at `px` CSS pixels: Apple (`*.mzstatic.com`)
+ * artwork is requested at twice that (for high-density screens) instead of the
+ * stored 600x600, so a 48px thumbnail fetches a few kB instead of ~100 kB. Never
+ * asks for more than the stored size. Anything else (Spotify `i.scdn.co`, an
+ * unrecognised shape, null) is returned unchanged.
+ */
+export function artworkAt<T extends string | null>(url: T, px: number): T {
+  if (!url) return url
+  let host: string
+  try {
+    host = new URL(url).hostname
+  } catch {
+    return url
+  }
+  if (!host.endsWith(".mzstatic.com")) return url
+  const m = MZSTATIC_SIZE.exec(url)
+  if (!m) return url
+  const want = Math.ceil(px * 2)
+  if (want >= Number(m[1]) || want >= Number(m[2])) return url
+  return url.replace(MZSTATIC_SIZE, `/${want}x${want}bb.${m[3]}`) as T
+}

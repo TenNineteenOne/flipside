@@ -12,7 +12,7 @@ import { ColdStartBanner } from "@/components/feed/cold-start-banner"
 import { Kbd } from "@/components/feed/feed-shortcuts"
 import { ShellSlot } from "@/components/shell/shell-context"
 import { useAudio } from "@/lib/audio-context"
-import { artworkFor, letterFor } from "@/lib/feed/artwork"
+import { artworkAt, artworkFor, letterFor } from "@/lib/feed/artwork"
 import { formatDuration, listSeparator, popularityLabel, whyParts, whyText } from "@/lib/feed/card-copy"
 import { PLATFORM_META } from "@/lib/music-links"
 import { readableTextOn, resolveArtistColor } from "@/lib/color-utils"
@@ -28,15 +28,30 @@ const ROW_EXIT = { opacity: 0, x: -32, transition: { duration: 0.2, ease: EASE }
 /** Per-artist colour as `--a`; feed.css derives `--a-dark` / `--a-light` from it. */
 export const artistVar = (a: CardArtist) => ({ "--a": resolveArtistColor(a.artistColor, a.name) }) as CSSProperties
 
-/** Artwork, or a colour panel with the first letter when there is none (never a broken image). */
-export function Art({ a, src, size, className, alt = "", eager = false }: {
-  a: CardArtist; src: string | null; size: number; className: string; alt?: string; eager?: boolean
+/**
+ * Artwork, or a colour panel with the first letter when there is none (never a broken image).
+ * `size` is the display size: Apple artwork is fetched at twice it (artworkAt). `priority`
+ * marks the likely LCP image (the selected artist's art) as a high-priority fetch.
+ */
+export function Art({ a, src, size, className, alt = "", eager = false, priority = false }: {
+  a: CardArtist; src: string | null; size: number; className: string; alt?: string; eager?: boolean; priority?: boolean
 }) {
   if (!src) {
     const bg = resolveArtistColor(a.artistColor, a.name)
     return <span className={`${className} ev-letter`} style={{ background: bg, color: readableTextOn(bg) }} aria-hidden>{letterFor(a.name)}</span>
   }
-  return <Image className={className} src={src} alt={alt} width={size} height={size} loading={eager ? "eager" : "lazy"} />
+  return (
+    <Image
+      className={className}
+      src={artworkAt(src, size)}
+      alt={alt}
+      width={size}
+      height={size}
+      loading={eager ? "eager" : "lazy"}
+      decoding={eager ? undefined : "async"}
+      fetchPriority={priority ? "high" : undefined}
+    />
+  )
 }
 
 /**
@@ -189,7 +204,7 @@ function FocusCard({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
   return (
     <article className="ev-card" style={artistVar(a)}>
       <div className="ev-card-hero">
-        <Art a={a} src={art} size={600} className="ev-card-art" alt={`${tracks[0]?.albumName || a.name} cover art`} eager />
+        <Art a={a} src={art} size={600} className="ev-card-art" alt={`${tracks[0]?.albumName || a.name} cover art`} eager priority />
         <div className="ev-card-id">
           <h2 className="ev-card-name">{a.name}</h2>
           {a.genres.length > 0 && <p className="ev-card-genres">{a.genres.join(" · ")}</p>}

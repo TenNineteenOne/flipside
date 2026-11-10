@@ -54,7 +54,7 @@ export function FeedTablet({ triage, signalCount, onLoadMore, generating }: Feed
           <div className="ev-m-deck">
             {next && (
               <div className="ev-m-ghost" style={artistVar(next)} aria-hidden>
-                <Art a={next} src={artworkFor(next)} size={600} className="ev-m-ghost-img" />
+                <Art a={next} src={artworkFor(next)} size={600} className="ev-m-ghost-img" eager />
               </div>
             )}
             <SnapCard key={selected.id} a={selected} triage={triage} eager enter />

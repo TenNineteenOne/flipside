@@ -103,7 +103,7 @@ export function SnapCard({ a, triage, eager = false, enter = false }: {
       aria-label={`${a.name}. Swipe right for more like this, left for less.`}
     >
       <div className="ev-m-art">
-        <Art a={a} src={art} size={600} className="ev-m-img" alt={`${tracks[0]?.albumName || a.name} cover art`} eager={eager} />
+        <Art a={a} src={art} size={600} className="ev-m-img" alt={`${tracks[0]?.albumName || a.name} cover art`} eager={eager} priority={eager} />
         <motion.div className="ev-m-verdict ev-m-verdict-more" style={{ opacity: sw.more }} aria-hidden>
           <span><Heart size={18} fill="currentColor" strokeWidth={0} />More like this</span>
         </motion.div>

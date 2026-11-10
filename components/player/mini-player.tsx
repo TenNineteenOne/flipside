@@ -6,7 +6,7 @@ import Image from "next/image"
 import { Pause, Play, X } from "lucide-react"
 import { useAudio } from "@/lib/audio-context"
 import { readableTextOn, sanitizeHex } from "@/lib/color-utils"
-import { letterFor } from "@/lib/feed/artwork"
+import { artworkAt, letterFor } from "@/lib/feed/artwork"
 
 // How many mounted components currently hide the floating pill: the docked
 // player (the desktop feed's focus pane has its own player) and the phone feed
@@ -53,7 +53,7 @@ function DockedPlayer() {
   return (
     <div className="ev-player" style={artistColor ? ({ "--a": artistColor } as CSSProperties) : undefined}>
       {art ? (
-        <Image src={art} alt="" width={40} height={40} />
+        <Image src={artworkAt(art, 40)} alt="" width={40} height={40} />
       ) : (
         <span className="ev-player-blank ev-letter" style={{ background: sanitizeHex(artistColor), color: readableTextOn(sanitizeHex(artistColor)) }} aria-hidden>
           {letterFor(artistName)}
@@ -109,7 +109,7 @@ function FloatingPlayer() {
             <div className="shrink-0 relative">
               {currentTrack.albumImageUrl ? (
                 <Image
-                  src={currentTrack.albumImageUrl}
+                  src={artworkAt(currentTrack.albumImageUrl, 48)}
                   alt={currentTrack.albumName}
                   width={48}
                   height={48}

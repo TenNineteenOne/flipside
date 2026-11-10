@@ -4,6 +4,7 @@ import Link from "next/link"
 import { ArrowRight, Heart, ThumbsDown, X } from "lucide-react"
 import { AudioProvider } from "@/lib/audio-context"
 import { whyText } from "@/lib/feed/card-copy"
+import { artworkAt } from "@/lib/feed/artwork"
 import { artistVars, landingSample } from "@/lib/landing/sample"
 import { HeroStack } from "@/components/landing/hero-stack"
 import "./landing.css"
@@ -94,7 +95,7 @@ export default function LandingPage() {
           <ul className="ev-frag ev-frag-queue" aria-label="A sample of the queue">
             {landingSample.queue.map((a) => (
               <li key={a.id} style={artistVars(a)}>
-                <Image src={a.imageUrl} alt="" width={44} height={44} />
+                <Image src={artworkAt(a.imageUrl, 44)} alt="" width={44} height={44} decoding="async" />
                 <span className="ev-frag-q-text"><strong>{a.name}</strong><span>{whyText(a.why)}</span></span>
                 <span className="ev-frag-q-genre">{a.genres[0]}</span>
               </li>
