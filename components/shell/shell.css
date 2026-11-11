@@ -206,17 +206,6 @@
     padding: 0;
     cursor: pointer;
   }
-  .shell.adventurous .shell-top { border-bottom-color: transparent; }
-  .shell.adventurous .shell-top::after {
-    content: "";
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: -1px;
-    height: 2px;
-    background: var(--violet);
-    pointer-events: none;
-  }
 
   .shell-tabs {
     position: fixed;
@@ -229,6 +218,19 @@
     padding-bottom: var(--safe-b);
     background: var(--rail);
     border-top: 1px solid var(--line);
+  }
+  /* Wander farther on: the violet line sits on the tab bar's top edge, separating the feed from the
+     navigation the way the desktop rail's inner-edge line does. */
+  .shell.adventurous .shell-tabs { border-top-color: transparent; }
+  .shell.adventurous .shell-tabs::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: -1px;
+    height: 2px;
+    background: var(--violet);
+    pointer-events: none;
   }
   .shell-tab {
     position: relative;
