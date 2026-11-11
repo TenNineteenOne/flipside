@@ -47,7 +47,7 @@ triage buttons, track chips, Play preview, the landing's primary buttons) a 1px 
 | `/` (landing) | nothing: static, prerendered; never reads session, cookies or headers | `app/page.tsx` + `app/landing.css` (scoped under `.ev-landing`). Hero is `HeroStack` (`components/landing/hero-stack.tsx`) inside its own `AudioProvider`: six sample artists from `data/landing-sample.json` (the card throw and settle are CSS keyframes in `landing.css`, no framer-motion on this page; Less throws left, More right; a verdict given from the keyboard moves focus to the same button on the next card, a pointer verdict never moves focus) (regenerate with `npm run build:landing-sample`; `validateLandingSample` in `lib/landing/sample.ts` keeps every URL on the CSP's iTunes hosts). Signed-in visitors never see it: the proxy redirects `/` to `/feed` |
 | `/sign-in` | — | username-only `signIn("credentials")` (Existing / New mode, `?mode=new` from the landing CTA), then `/api/onboarding/check` → onboarding or feed (`router.replace`); signed-in users are bounced to `/feed` by the proxy |
 | `/onboarding` | — | artist search + genre picker + Last.fm/stats.fm usernames + platform; saves via `patchSettings` (`PATCH /api/settings`) + `POST /api/onboarding/seeds` (a different route from Settings' `/api/settings/seed-artists`); fire-and-forget first generate (`postGenerate`). Genres cap at 50; "Get started" is disabled while 1–2 artists are picked (the seeds route needs ≥3). `/feed` redirects here until onboarding is done |
-| `/feed` | `recommendation_cache` (unseen, scored, ≤20), tracks cache, signal counts; empty → `RecommendationsLoader`; `loading.tsx` (re-exporting `FeedSkeleton`, `components/feed/feed-skeleton.tsx`) is a CSS-only skeleton per layout (desktop panes, tablet card + Up next, one Snap page + triage bar, reserving the top bar's count/strip row), so nothing shifts when the feed arrives | `FeedClient`: the desktop layout renders `FeedDesktop` (queue + focus pane), the tablet layout `FeedTablet`, otherwise `FeedSnap` (layout rule under Look; one tree, picked by a `matchMedia` `useSyncExternalStore`; each layout is a `next/dynamic` chunk with `FeedSkeleton` as its fallback, so a device downloads only its layout. The server and hydration render the layout guessed from the request (`guessFeedLayout`, `lib/feed/layout-guess.ts`: `Sec-CH-UA-Mobile`, else the user agent; Snap for phones, desktop otherwise) passed as `initialLayout` and returned as the server snapshot, so its chunk is preloaded; `feed.css` hides a server-rendered Snap or desktop tree wherever it is not the viewport's layout, and during the server render and hydration `FeedClient` renders `FeedSkeleton` beside it (`.ev-guess-skel`, `data-guess`) whose tree for the guessed layout never shows, so a wrong guess (every tablet in portrait, some Android tablets) shows the viewport's skeleton, never a blank area; after hydration the right layout's `loading` skeleton takes its place in the same frame. Each layout reports itself mounted (`onShown`) and `FeedShortcuts` ignores keys until the layout on screen is mounted. After the first layout has mounted, the load event and an idle callback, the three `dynamic()` loaders are run (kept by reference: a plain `import()` compiles to a separate copy of each chunk), so a later layout switch needs no network; a loader whose import fails (offline, or the chunk gone after a deploy) retries every 4s while the skeleton stays instead of reaching the error boundary. Art, `artistVar`, `EndState` and `LoadMore` live in `feed-parts.tsx`, shared by the three layouts); all read `useFeedTriage`, so resizing keeps selection, verdicts, saves and playback. Renders `CardArtist[]` from `loadFeedCards` (`lib/cards/feed-cards.ts`: tracks-cache fallback, colour lift, drop no-preview cards, `interleave()`); `useFeedFill` poll-append (same assembler via `GET /api/recommendations`), low-queue auto-generate. The weekly challenge (`ensureCurrentChallenge`, `lib/challenges/engine.ts`) is loaded unawaited by the page (`loadChallenge`; any failure resolves `null`) and passed as `challengePromise`; `FeedClient` renders `ChallengeSlot` in `Suspense` (fallback `ChallengeSkeleton`) and hands it to the layout as `challenge` |
+| `/feed` | `recommendation_cache` (unseen, scored, ≤20), tracks cache, signal counts; empty → `RecommendationsLoader`; `loading.tsx` (re-exporting `FeedSkeleton`, `components/feed/feed-skeleton.tsx`) is a CSS-only skeleton per layout (desktop panes, tablet card + Up next, one Snap page, reserving the top bar's strip), so nothing shifts when the feed arrives | `FeedClient`: the desktop layout renders `FeedDesktop` (queue + focus pane), the tablet layout `FeedTablet`, otherwise `FeedSnap` (layout rule under Look; one tree, picked by a `matchMedia` `useSyncExternalStore`; each layout is a `next/dynamic` chunk with `FeedSkeleton` as its fallback, so a device downloads only its layout. The server and hydration render the layout guessed from the request (`guessFeedLayout`, `lib/feed/layout-guess.ts`: `Sec-CH-UA-Mobile`, else the user agent; Snap for phones, desktop otherwise) passed as `initialLayout` and returned as the server snapshot, so its chunk is preloaded; `feed.css` hides a server-rendered Snap or desktop tree wherever it is not the viewport's layout, and during the server render and hydration `FeedClient` renders `FeedSkeleton` beside it (`.ev-guess-skel`, `data-guess`) whose tree for the guessed layout never shows, so a wrong guess (every tablet in portrait, some Android tablets) shows the viewport's skeleton, never a blank area; after hydration the right layout's `loading` skeleton takes its place in the same frame. Each layout reports itself mounted (`onShown`) and `FeedShortcuts` ignores keys until the layout on screen is mounted. After the first layout has mounted, the load event and an idle callback, the three `dynamic()` loaders are run (kept by reference: a plain `import()` compiles to a separate copy of each chunk), so a later layout switch needs no network; a loader whose import fails (offline, or the chunk gone after a deploy) retries every 4s while the skeleton stays instead of reaching the error boundary. Art, `artistVar`, `EndState`, `LoadMore`, `CardActions` and `TrackList` live in `feed-parts.tsx`, shared by the three layouts); all read `useFeedTriage`, so resizing keeps selection, verdicts, saves and playback. Renders `CardArtist[]` from `loadFeedCards` (`lib/cards/feed-cards.ts`: tracks-cache fallback, colour lift, drop no-preview cards, `interleave()`); `useFeedFill` poll-append (same assembler via `GET /api/recommendations`), low-queue auto-generate. The weekly challenge (`ensureCurrentChallenge`, `lib/challenges/engine.ts`) is loaded unawaited by the page (`loadChallenge`; any failure resolves `null`) and passed as `challengePromise`; `FeedClient` renders `ChallengeSlot` in `Suspense` (fallback `ChallengeSkeleton`) and hands it to the layout as `challenge` |
 | `/explore` | — | Removed 2026-11-10 (#205): `next.config.ts` `redirects()` sends `/explore` and `/explore/*` to `/feed` with a 308 |
 | `/history` | seen recs + feedback/saves, derived `signal` | `HistoryClient`: filter tabs, time grouping; signal changes + undo/unblock via `useArtistFeedback` (`setSignal` / `removeSignal` / `dismiss`) |
 | `/saved` | `saves` enriched from `recommendation_cache` | `SavedClient`: grid, optimistic unsave, open-in-platform + share |
@@ -192,12 +192,14 @@ triage buttons, track chips, Play preview, the landing's primary buttons) a 1px 
   scroller with mandatory snapping, one full-height page per loaded artist (decided ones included,
   feed order) plus a final end page (`EndState`, "Load more artists") once nothing is undecided, a
   small player bar (the docked `MiniPlayer`) only while the loaded track is not the artist on
-  screen, and the three-button triage bar (kept in layout but hidden and `inert` with no artist
-  selected, so pages never resize). `TopBarProgress` fills `<ShellSlot name="top">` with the
+  screen. There is no separate triage bar: each card carries its own actions. On phones
+  (`controls={false}`) `TopBarProgress` puts only the segment strip in `<ShellSlot name="top">`,
+  between the wordmark and the avatar (`flex: 1`), and leaves `topSub` empty, so the top bar is one
+  56px row (`--ev-snap-top` = top bar + safe area + 1px border). On tablets it fills `<ShellSlot name="top">` with the
   Wander farther switch (label "Wander" below 440px, track only below 360px; accessible name
   always "Wander farther"), a header Load more (a 40px icon button with the accessible name
   "Load more artists", icon + "Load more" from 600px; rainbow while Wander farther is on;
-  `aria-disabled` and named "Generating…" while generating) and "N of M left"; the segment
+  `aria-disabled` and named "Generating…" while generating), and the segment
   strip goes in `<ShellSlot name="topSub">`. Measured in the dev preview, the bar fits at 320px
   with two-digit counts (5px spare); a three-digit count at 320px would crowd the wordmark. An `IntersectionObserver` (scroller root, threshold 0.6)
   calls the hook's `becomeCurrent(id | null)` (null = end page), which also hands playback over
@@ -208,17 +210,23 @@ triage buttons, track chips, Play preview, the landing's primary buttons) a 1px 
   showing or leaving during a hand-over), the selected page is put exactly in view instantly, as
   browsers do not re-snap after a size change.
   Each page renders **`SnapCard`** (`components/feed/snap-card.tsx`, shared with the tablet
-  layout): artwork sized `min(100cqw - 52px, 100cqh - 236px, 460px)` on an artist-colour mat,
-  64px play button with a 30-second ring, name, genres + save / open / share, why, up to three
-  track chips (each outlined in a different colour turned away from the artist's hue and snapped
-  to a six-colour set without yellow-green, `chipColors` in `lib/color-utils.ts`, with a round
-  play icon; the playing chip gets a white ring); artists without tracks fetch them (`useArtistTracks`) only while selected.
-  Short pages (container queries on the page, `ev-page`): the artwork shrinks to 76px, then the
-  chips go (below 312px), then the why line (below 262px), so play, name and the icon row stay
-  whole from 220px up; wide short pages (landscape, ≥560px wide and <356px tall) put the artwork
-  beside the text, down to ~90px (these sideways rules select Snap pages only; the tablet stage,
-  also an `ev-page` container, keeps the card upright and gets the narrow pages' shrink steps at any
-  width). Under 480px of viewport height the challenge line is hidden.
+  layout) in the desktop focus card's order: artwork filling the height left (`flex: 1`, at least
+  160px, `object-fit: cover`) with the name (26px) and genres (one line, ellipsis) over its lower
+  edge on a dark gradient; the why sentence (two lines at most); the six-action icon row and the
+  previews, both the desktop card's own components (`CardActions` and `TrackList` in
+  `feed-parts.tsx`: Less, Skip, More/Liked, Save/Saved, Open in {platform}, Share; up to three
+  full-width track rows, each outlined in a colour from `chipColors` in `lib/color-utils.ts`, with
+  the playing row's progress bar). On cards the buttons are 48px tall and track rows 44px with the
+  album line hidden. There is no play button on the artwork: the track rows, Space and the other
+  shortcuts play. "Loading tracks…" / "No preview available" take the rows' place; artists without
+  tracks fetch them (`useArtistTracks`) only while selected. Measured at 375×690: art 329×267,
+  card bottom 10px above the tab bar.
+  Short pages (container queries on the page, `ev-page`): below 470px the artwork may shrink to
+  96px, below 410px the previews go, below 260px the why line goes (artwork down to 64px), so name,
+  genres and the icon row stay whole; wide short Snap pages (landscape, ≥560px wide and <356px
+  tall) put a square artwork beside the rest (previews back from 290px, why from 150px). The tablet
+  stage, also an `ev-page` container, keeps the card upright at any width. Under 480px of viewport
+  height the challenge line is hidden.
   Programmatic scrolls measure offsets from the scroller (`el.offsetTop - root.offsetTop`).
   Swipe (framer-motion `drag="x"`, direction lock, `touch-action: pan-y pinch-zoom` set in CSS over
   framer's inline `pan-y`; a `pointercancel` / `touchcancel` never commits): past 96px, or a flick
@@ -227,17 +235,18 @@ triage buttons, track chips, Play preview, the landing's primary buttons) a 1px 
   `thumbs_down` via `judge(…, { toggle: false, advance: true })`; the card springs back to rest in
   place (`dragSnapToOrigin`) while the scroller moves on, and ignores drags until at rest. Violet /
   dark labels fade in from 24 to 96px. Decided cards show a "Liked" badge, or dimmed artwork with a
-  "Less like this" / "Dismissed" badge, on the artwork; sideways cards show it beside the name instead
-  (a second copy in `.ev-m-title`), as their artwork can be too small to hold it beside the play button. Reduced motion: no rotation or spring, instant scroll.
+  "Less like this" / "Dismissed" badge, at the artwork's top left (icon only on artwork under
+  120px tall). Reduced motion: no rotation or spring, instant scroll.
   The floating pill is hidden while the feed is mounted (`useSuppressFloatingPlayer`); the undo
-  toast is lifted above the triage bar (and the player bar when shown).
+  toast sits above the tab bar (and the player bar when shown).
 - **`FeedTablet`** (`components/feed/feed-tablet.tsx`) — 640–899px and at least 680px tall: the selected artist's
   `SnapCard` (swipeable, entrance scale-up, next undecided artist as a ghost behind it) in a size
-  container, the triage bar under it (≤528px), and a 280px "Up next" list of every loaded artist
+  container (the card fills the stage's height and carries its own actions; no separate triage
+  bar), and a 280px "Up next" list of every loaded artist
   in feed order (thumbnail, name, first genre; violet heart badge when liked, dimmed with an X when
   passed/dismissed; `aria-current` on the selected row; tap selects; scrolls on its own and keeps
   the selected row centred; "Load more artists" is always its last item, as it is at the end of
-  the desktop queue column). Shares `TopBarProgress`, `ColdLine`, `PlayerBar` and `TriageBar`
+  the desktop queue column). Shares `TopBarProgress` and `PlayerBar`
   with `FeedSnap`; the end state takes the card's place when nothing is left.
 - **`FeedShortcuts`** (`components/feed/feed-shortcuts.tsx`) — mounted by `FeedClient` at every
   width: one window `keydown` listener mapped by the pure `feedAction` (`lib/feed/feed-keymap.ts`)

@@ -1,18 +1,14 @@
 "use client"
 
 import "./feed.css"
-import { useEffect, useRef, type CSSProperties } from "react"
-import { Bookmark, Heart, Pause, Play, Share2, ThumbsDown, X } from "lucide-react"
-import { PlatformIcon } from "@/components/platform-icon"
+import { useEffect, useRef } from "react"
+import { Bookmark, Heart, Pause, Play } from "lucide-react"
 import { MiniPlayer } from "@/components/player/mini-player"
-import { Art, artistVar, EndState, LoadMore, type Wander } from "@/components/feed/feed-parts"
+import { Art, artistVar, CardActions, EndState, LoadMore, TrackList, type Wander } from "@/components/feed/feed-parts"
 import { QueueColumns } from "@/components/feed/feed-skeleton"
 import { ShellSlot } from "@/components/shell/shell-context"
-import { useAudio } from "@/lib/audio-context"
-import { chipColors, resolveArtistColor } from "@/lib/color-utils"
 import { artworkFor } from "@/lib/feed/artwork"
-import { formatDuration, listSeparator, whyParts, whyText } from "@/lib/feed/card-copy"
-import { PLATFORM_META } from "@/lib/music-links"
+import { listSeparator, whyParts, whyText } from "@/lib/feed/card-copy"
 import { useArtistTracks } from "@/lib/hooks/use-artist-tracks"
 import { useLeaving } from "@/lib/hooks/use-leaving"
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion"
@@ -177,18 +173,10 @@ function FocusCard({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
     if (a.topTracks.length === 0 && tracks.length > 0) addTracks(a.id, tracks)
   }, [a.id, a.topTracks.length, tracks, addTracks])
 
-  const liked = triage.signals.get(a.id) === "thumbs_up"
-  const playing = triage.isPlaying(a)
   const canPlay = tracks.some((t) => t.previewUrl)
   const loading = !canPlay && isFetching
   const why = whyParts(a.why)
   const art = artworkFor({ imageUrl: a.imageUrl, topTracks: tracks })
-  const { progress } = useAudio()
-  const playable = tracks.filter((t) => t.previewUrl).slice(0, 3)
-  const chips = chipColors(resolveArtistColor(a.artistColor, a.name))
-  const saved = triage.savedIds.has(a.id)
-  const platform = PLATFORM_META[triage.musicPlatform]
-  const judge = (signal: "thumbs_up" | "thumbs_down" | "skip") => triage.judge(a.id, signal, { toggle: true, advance: true })
 
   return (
     <article className="ev-card" style={artistVar(a)}>
@@ -210,53 +198,10 @@ function FocusCard({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
         )}
       </div>
 
-      <div className="ev-card-actions">
-        <div className="ev-triage" role="group" aria-label="Tell flipside what you think">
-          <button type="button" className="ev-ib" onClick={() => judge("thumbs_down")} aria-label="Less like this" title="Less like this (X)">
-            <ThumbsDown size={18} strokeWidth={1.75} aria-hidden /><span>Less</span>
-          </button>
-          <button type="button" className="ev-ib" onClick={() => judge("skip")} aria-label="Skip this artist" title="Dismiss (D)">
-            <X size={18} strokeWidth={1.75} aria-hidden /><span>Skip</span>
-          </button>
-          <button type="button" className="ev-ib ev-ib-like" onClick={() => judge("thumbs_up")} aria-pressed={liked} aria-label={liked ? "Liked" : "More like this"} title="More like this (L)">
-            <Heart size={18} strokeWidth={1.75} fill={liked ? "currentColor" : "none"} aria-hidden /><span>{liked ? "Liked" : "More"}</span>
-          </button>
-        </div>
-        <div className="ev-secondary">
-          <button type="button" className="ev-ib" onClick={() => triage.save(a)} aria-pressed={saved} aria-label={saved ? "Saved" : "Save for later"} title="Save for later (B)">
-            <Bookmark size={18} strokeWidth={1.75} fill={saved ? "currentColor" : "none"} aria-hidden /><span>{saved ? "Saved" : "Save"}</span>
-          </button>
-          <a className="ev-ib" href={triage.artistLink(a)} target="_blank" rel="noopener noreferrer" aria-label={`Open in ${platform.label}`} title={`Open in ${platform.label} (O)`}>
-            <PlatformIcon platform={triage.musicPlatform} size={18} /><span>{platform.label}</span>
-          </a>
-          <button type="button" className="ev-ib" onClick={() => void triage.share(a)} aria-label="Share" title="Share (S)">
-            <Share2 size={18} strokeWidth={1.75} aria-hidden /><span>Share</span>
-          </button>
-        </div>
-      </div>
+      <CardActions a={a} triage={triage} />
 
-      {playable.length > 0 ? (
-        <section className="ev-tracks" aria-label="Previews">
-          <ol>
-            {playable.map((t, i) => {
-              const current = triage.isCurrentTrack(a, t)
-              const on = current && playing
-              const dur = formatDuration(t.durationMs)
-              return (
-                <li key={t.id}>
-                  <button type="button" className="ev-track" style={{ "--c": chips[i] } as CSSProperties} data-current={current || undefined} onClick={() => triage.playTrack(a, i)} aria-label={`${on ? "Pause" : "Play"} ${t.name}`}>
-                    <span className="ev-track-n" aria-hidden>
-                      {on ? <Pause size={13} fill="currentColor" strokeWidth={0} /> : <Play size={13} fill="currentColor" strokeWidth={0} />}
-                    </span>
-                    <span className="ev-track-name">{t.name}<span className="ev-track-album">{t.albumName}</span></span>
-                    {dur && <span className="ev-track-dur">{dur}</span>}
-                    {current && <span className="ev-track-bar" aria-hidden><span style={{ transform: `scaleX(${progress})` }} /></span>}
-                  </button>
-                </li>
-              )
-            })}
-          </ol>
-        </section>
+      {canPlay ? (
+        <TrackList a={a} triage={triage} tracks={tracks} />
       ) : (
         <p className="ev-tracks-empty">{loading ? "Loading tracks…" : "No preview available"}</p>
       )}

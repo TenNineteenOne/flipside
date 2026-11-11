@@ -4,8 +4,13 @@ import "./feed.css"
 import type { CSSProperties } from "react"
 import Link from "next/link"
 import Image from "next/image"
+import { Bookmark, Heart, Pause, Play, Share2, ThumbsDown, X } from "lucide-react"
+import { PlatformIcon } from "@/components/platform-icon"
+import { useAudio } from "@/lib/audio-context"
 import { artworkAt, artworkFor, letterFor } from "@/lib/feed/artwork"
-import { readableTextOn, resolveArtistColor } from "@/lib/color-utils"
+import { chipColors, readableTextOn, resolveArtistColor } from "@/lib/color-utils"
+import { formatDuration } from "@/lib/feed/card-copy"
+import { PLATFORM_META } from "@/lib/music-links"
 import type { FeedTriage } from "@/lib/hooks/use-feed-triage"
 import type { CardArtist } from "@/lib/cards/card-artist"
 import { WanderSwitch, wanderButton } from "@/components/feed/wander-switch"
@@ -93,5 +98,72 @@ export function LoadMore({ onLoadMore, generating, wander, primary = false, labe
       </button>
       <WanderSwitch on={wander.on} onToggle={wander.toggle} />
     </>
+  )
+}
+
+/**
+ * The artist card's icon row (desktop focus card and the phone / tablet SnapCard): six even columns,
+ * Less, Skip, More, then Save, Open in {platform}, Share, each an icon over a one-word label.
+ */
+export function CardActions({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
+  const liked = triage.signals.get(a.id) === "thumbs_up"
+  const saved = triage.savedIds.has(a.id)
+  const platform = PLATFORM_META[triage.musicPlatform]
+  const judge = (signal: "thumbs_up" | "thumbs_down" | "skip") => triage.judge(a.id, signal, { toggle: true, advance: true })
+  return (
+    <div className="ev-card-actions">
+      <div className="ev-triage" role="group" aria-label="Tell flipside what you think">
+        <button type="button" className="ev-ib" onClick={() => judge("thumbs_down")} aria-label="Less like this" title="Less like this (X)">
+          <ThumbsDown size={18} strokeWidth={1.75} aria-hidden /><span>Less</span>
+        </button>
+        <button type="button" className="ev-ib" onClick={() => judge("skip")} aria-label="Skip this artist" title="Dismiss (D)">
+          <X size={18} strokeWidth={1.75} aria-hidden /><span>Skip</span>
+        </button>
+        <button type="button" className="ev-ib ev-ib-like" onClick={() => judge("thumbs_up")} aria-pressed={liked} aria-label={liked ? "Liked" : "More like this"} title="More like this (L)">
+          <Heart size={18} strokeWidth={1.75} fill={liked ? "currentColor" : "none"} aria-hidden /><span>{liked ? "Liked" : "More"}</span>
+        </button>
+      </div>
+      <div className="ev-secondary">
+        <button type="button" className="ev-ib" onClick={() => triage.save(a)} aria-pressed={saved} aria-label={saved ? "Saved" : "Save for later"} title="Save for later (B)">
+          <Bookmark size={18} strokeWidth={1.75} fill={saved ? "currentColor" : "none"} aria-hidden /><span>{saved ? "Saved" : "Save"}</span>
+        </button>
+        <a className="ev-ib" href={triage.artistLink(a)} target="_blank" rel="noopener noreferrer" aria-label={`Open in ${platform.label}`} title={`Open in ${platform.label} (O)`}>
+          <PlatformIcon platform={triage.musicPlatform} size={18} /><span>{platform.label}</span>
+        </a>
+        <button type="button" className="ev-ib" onClick={() => void triage.share(a)} aria-label="Share" title="Share (S)">
+          <Share2 size={18} strokeWidth={1.75} aria-hidden /><span>Share</span>
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/** Up to three previews as full-width rows, each in its own colour (chipColors); the playing one shows its progress. */
+export function TrackList({ a, triage, tracks }: { a: CardArtist; triage: FeedTriage; tracks: CardArtist["topTracks"] }) {
+  const { progress } = useAudio()
+  const playing = triage.isPlaying(a)
+  const chips = chipColors(resolveArtistColor(a.artistColor, a.name))
+  return (
+    <section className="ev-tracks" aria-label="Previews">
+      <ol>
+        {tracks.filter((t) => t.previewUrl).slice(0, 3).map((t, i) => {
+          const current = triage.isCurrentTrack(a, t)
+          const on = current && playing
+          const dur = formatDuration(t.durationMs)
+          return (
+            <li key={t.id}>
+              <button type="button" className="ev-track" style={{ "--c": chips[i] } as CSSProperties} data-current={current || undefined} onClick={() => triage.playTrack(a, i)} aria-label={`${on ? "Pause" : "Play"} ${t.name}`}>
+                <span className="ev-track-n" aria-hidden>
+                  {on ? <Pause size={13} fill="currentColor" strokeWidth={0} /> : <Play size={13} fill="currentColor" strokeWidth={0} />}
+                </span>
+                <span className="ev-track-name">{t.name}<span className="ev-track-album">{t.albumName}</span></span>
+                {dur && <span className="ev-track-dur">{dur}</span>}
+                {current && <span className="ev-track-bar" aria-hidden><span style={{ transform: `scaleX(${progress})` }} /></span>}
+              </button>
+            </li>
+          )
+        })}
+      </ol>
+    </section>
   )
 }

@@ -35,14 +35,15 @@ const render = (props: Parameters<typeof Tablet>[0]) =>
 describe("FeedTablet server render", () => {
   const artists = [artist("a", "Yin Yin"), artist("b", "Altın Gün"), artist("c", "Glass Beams", null)]
 
-  it("shows the selected artist's card, the triage bar and every artist in Up next with verdict marks", () => {
+  it("shows the selected artist's card with its own actions (no separate triage bar) and every artist in Up next with verdict marks", () => {
     const html = render({ artists, decided: new Map([["a", "thumbs_up"], ["b", "skip"]]), selectedId: "c" })
-    const stage = html.slice(html.indexOf('class="ev-m-stage"'), html.indexOf('class="ev-m-triage"'))
+    expect(html).not.toContain("ev-m-triage")
+    const stage = html.slice(html.indexOf('class="ev-m-stage"'), html.indexOf('class="ev-m-rail-wrap"'))
     expect(stage).toContain('<h2 class="ev-m-name">Glass Beams</h2>')
     expect(stage).not.toContain("ev-m-name\">Yin Yin")
-    const bar = html.slice(html.indexOf('class="ev-m-triage"'))
-    expect(bar).toContain('aria-label="Tell flipside what you think of Glass Beams"')
-    for (const label of ["Less", "Skip", "More"]) expect(bar).toContain(`<span>${label}</span>`)
+    const actions = stage.slice(stage.indexOf('class="ev-card-actions"'))
+    expect(actions).toContain('aria-label="Tell flipside what you think"')
+    for (const label of ["Less", "Skip", "More", "Save", "Spotify", "Share"]) expect(actions).toContain(`<span>${label}</span>`)
     const rows = [...html.matchAll(/<button type="button" class="ev-m-thumb"([^>]*)>/g)].map((m) => m[1])
     expect(rows).toHaveLength(3)
     expect(rows[0]).toMatch(/data-v="liked"[^>]*aria-label="Yin Yin, liked"/)
@@ -54,10 +55,10 @@ describe("FeedTablet server render", () => {
     expect(html).toMatch(/<li class="ev-m-rail-more"><button type="button" class="ev-btn ev-btn-ghost">Load more artists<\/button><button type="button" role="switch"[^>]*>[\s\S]*?<\/button><\/li><\/ol>/)
   })
 
-  it("the end state takes the card's place and the triage bar is hidden when nothing is left", () => {
+  it("the end state takes the card's place when nothing is left", () => {
     const html = render({ artists, decided: new Map([["a", "thumbs_up"], ["b", "thumbs_down"], ["c", "skip"]]), selectedId: null })
     expect(html).not.toContain("ev-m-card")
     expect(html).toContain("You’ve heard all 3.")
-    expect(html).toMatch(/class="ev-m-triage"[^>]*data-hidden="true"[^>]*inert=""/)
+    expect(html).not.toContain("ev-card-actions")
   })
 })

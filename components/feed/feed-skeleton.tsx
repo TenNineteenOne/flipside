@@ -7,8 +7,8 @@ const SEGS = Array.from({ length: 20 }, (_, i) => i)
  * Feed skeleton (the route's loading.tsx, and FeedClient's fallback while a layout's code
  * loads), one tree per layout picked with CSS (feed.css); this file has no JS.
  * 900px and wider and at least 540px tall: the desktop queue + focus pane (same grid and
- * `shell-fill` opt-out). 640–899px and at least 680px tall: the tablet card, triage bar and
- * Up next list. Otherwise (below 640px, or short): one Snap page and the triage bar. Each uses the real view's frame, so
+ * `shell-fill` opt-out). 640–899px and at least 680px tall: the tablet card and
+ * Up next list. Otherwise (below 640px, or short): one Snap page. Each uses the real view's frame, so
  * nothing shifts when the feed arrives.
  */
 export function FeedSkeleton() {
@@ -51,15 +51,13 @@ export function FeedSkeleton() {
         </div>
       </div>
 
-      {/* Phone (Snap) everywhere the desktop and tablet rules don't apply, and tablet 640–899px x ≥680px: the same fixed frame, card and triage bar
-          as the real views (feed.css also reserves the top bar's count/strip row). */}
+      {/* Phone (Snap) everywhere the desktop and tablet rules don't apply, and tablet 640–899px x ≥680px: the same fixed frame and card
+          as the real views (feed.css also reserves the top bar's strip). */}
       <div className="ev-feed ev-snap ev-skel-m" aria-hidden>
         <div className="ev-m-snap"><div className="ev-m-page"><SnapCardSkeleton /></div></div>
-        <TriageSkeleton />
       </div>
       <div className="ev-feed ev-snap ev-tablet ev-skel-m ev-skel-tablet" aria-hidden>
         <div className="ev-m-stage"><div className="ev-m-deck"><SnapCardSkeleton /></div></div>
-        <TriageSkeleton />
         <div className="ev-m-rail-wrap">
           <h2 className="ev-m-rail-title">Up next</h2>
           <ol className="ev-m-rail">
@@ -96,29 +94,20 @@ export function QueueColumns() {
   )
 }
 
-/** The snap card's shape: artwork, name, genres + three 44px icon slots, why line, three chips. */
+/** The snap card's shape: artwork, why line, the six-action row, three track rows. */
 function SnapCardSkeleton() {
   return (
     <div className="ev-m-card ev-skel-mcard">
       <span className="fs-skeleton ev-m-art" />
       <div className="ev-m-info">
-        <span className="fs-skeleton ev-m-name" style={{ width: "55%", height: "1.15em" }} />
-        <div className="ev-m-meta" style={{ height: 44 }}>
-          <span className="fs-skeleton ev-skel-line" style={{ width: "45%" }} />
-        </div>
         <span className="fs-skeleton ev-skel-line" style={{ width: "75%", height: 14, margin: "3px 0" }} />
-        <div className="ev-m-chips">
-          {[0, 1, 2].map((i) => <span key={i} className="fs-skeleton ev-m-chip" />)}
+        <div className="ev-card-actions">
+          {[0, 1, 2, 3, 4, 5].map((i) => <span key={i} className="fs-skeleton ev-ib" />)}
         </div>
+        <div className="ev-tracks"><ol>
+          {[0, 1, 2].map((i) => <li key={i}><span className="fs-skeleton ev-track" /></li>)}
+        </ol></div>
       </div>
-    </div>
-  )
-}
-
-function TriageSkeleton() {
-  return (
-    <div className="ev-m-triage">
-      {[0, 1, 2].map((i) => <span key={i} className="fs-skeleton ev-m-tri" />)}
     </div>
   )
 }
