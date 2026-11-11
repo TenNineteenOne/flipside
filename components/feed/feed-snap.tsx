@@ -139,7 +139,7 @@ export function FeedSnap({ triage, onLoadMore, generating, wander, challenge, on
 
   return (
     <div className="ev-feed ev-snap">
-      <TopBarProgress triage={triage} wander={wander} onLoadMore={onLoadMore} generating={generating} />
+      <TopBarProgress triage={triage} wander={wander} onLoadMore={onLoadMore} generating={generating} controls={false} />
       {challenge}
 
       <main className="ev-m-snap" ref={scrollerRef} aria-label="Artists">
@@ -167,16 +167,19 @@ export function FeedSnap({ triage, onLoadMore, generating, wander, challenge, on
 /* ---- pieces shared by the phone (Snap) and tablet feeds ---- */
 
 /**
- * Wander farther + Load more + "N of M left" in the shell top bar, and the segment strip as its
+ * Wander farther + Load more in the shell top bar (tablet only), and the segment strip as its
  * second row. Load more is an icon button on phones ("Load more" text from 600px wide); rainbow
  * while Wander farther is on; aria-disabled (focus stays) while generating, like LoadMore.
  */
-export function TopBarProgress({ triage, wander, onLoadMore, generating }: {
+export function TopBarProgress({ triage, wander, onLoadMore, generating, controls = true }: {
   triage: FeedTriage; wander: Wander; onLoadMore: () => void; generating: boolean
+  /** Phones pass false: their header is just the wordmark and avatar; Load more and Wander farther
+   *  live in the end state (and Wander in Settings). */
+  controls?: boolean
 }) {
   return (
     <>
-      <ShellSlot name="top">
+      {controls && <ShellSlot name="top">
         <span className="ev-feed ev-m-topbar">
           <WanderSwitch on={wander.on} onToggle={wander.toggle} compact />
           <button
@@ -190,7 +193,7 @@ export function TopBarProgress({ triage, wander, onLoadMore, generating }: {
             <span className="ev-m-more-text" aria-hidden>{generating ? "Generating…" : "Load more"}</span>
           </button>
         </span>
-      </ShellSlot>
+      </ShellSlot>}
       <ShellSlot name="topSub">
         <ol className="ev-feed ev-m-strip" aria-hidden>
           {triage.ids.map((id) => (

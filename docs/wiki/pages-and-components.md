@@ -65,7 +65,7 @@ triage buttons, track chips, Play preview, the landing's primary buttons) a 1px 
   to the button), outside pointer down, Tab out, item activation and route change, arrow keys move
   between items) and a four-item bottom tab bar (Feed, History, Saved, Stats). Which shows is CSS only.
   `aria-current="page"` when the path equals a link or starts with it plus `/`. Adventurous
-  mode (`useAdventurousMode`) draws a solid 2px `--violet` line on the rail edge / under the top bar.
+  mode (`useAdventurousMode`) draws a solid 2px `--violet` line on the rail edge / on the phone tab bar's top edge.
   Pages hook in via `components/shell/shell-context.tsx`: `useShellBadge(href, n)` (nav count),
   `useShellShortcuts(fn)` (shows the rail's Shortcuts button), `<ShellSlot name="top"|"topSub"|"rail">` (topSub: an optional full-width second row under the phone top bar, hidden when empty)
   (portal into the top bar / under the rail nav). The rail shows at ≥900px wide and ≥540px tall,
@@ -147,9 +147,17 @@ triage buttons, track chips, Play preview, the landing's primary buttons) a 1px 
   artist lacks does nothing), and `tuning` (`lib/feed/tuning.ts`, genres deduped
   case-insensitively, liked wins over passed). Tracks fetched on demand by the focus pane are
   registered with `addTracks`.
+- **Phone top bar** (`TopBarProgress` in `feed-snap.tsx`, `controls={false}` on phones): wordmark and
+  avatar only, plus the segment strip row. Load more and Wander farther live in the end state
+  (`EndState` → `LoadMore` with the switch) and Settings; the tablet keeps them in its top bar.
+- **Focus pane (desktop)**: banner art (height `clamp(220px, 100vh - 362px, 560px)`) with the name
+  and genres over its lower edge, the "Because you like" line, one row of six even icon columns with
+  one-word labels (Less, Skip, More, Save, the Open-in app, Share; full phrases in `aria-label`/`title`),
+  then the three previews, which are the play controls (no separate Play button; Space still toggles).
+- **Share** (`useFeedTriage.share`): `navigator.share({ url })` with just the artist link, else copy it.
 - **`FeedDesktop`** (`components/feed/feed-desktop.tsx`, styles `feed.css` under `.ev-feed`) —
-  queue column (sticky header: the title and "N artists you've never played…" take the width, and
-  "N of M left" with the segment strip sits in a 260px column beside them when the queue is at least
+  queue column (sticky header: the title takes the width, and the segment strip (count in its
+  `aria-label` only; no visible "N of M left") sits in a 260px column beside them when the queue is at least
   660px wide, otherwise on its own line below, decided by a container query on `.ev-queue`, so the
   header is 102px or 130px whatever the artist count; strip segments flex between 2px and 9px in one
   row and the gaps shrink to 0 past ~80 artists (`--n` on the strip); the skeleton has the same
