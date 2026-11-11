@@ -50,7 +50,7 @@ describe("FeedSnap server render", () => {
     expect(pages).toEqual(["Yin Yin", "Altın Gün", "Glass Beams"])
     const bar = html.slice(html.indexOf('class="ev-m-triage"'))
     expect(bar).toContain('aria-label="Tell flipside what you think of Yin Yin"')
-    for (const label of ["Less like this", "Dismiss", "More like this"]) expect(bar).toContain(`<span>${label}</span>`)
+    for (const label of ["Less", "Skip", "More"]) expect(bar).toContain(`<span>${label}</span>`)
     expect(html).toContain("<strong>3</strong><span class=\"ev-m-count-of\"> of 3</span> left")
   })
 

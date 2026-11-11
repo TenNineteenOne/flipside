@@ -42,7 +42,7 @@ describe("FeedTablet server render", () => {
     expect(stage).not.toContain("ev-m-name\">Yin Yin")
     const bar = html.slice(html.indexOf('class="ev-m-triage"'))
     expect(bar).toContain('aria-label="Tell flipside what you think of Glass Beams"')
-    for (const label of ["Less like this", "Dismiss", "More like this"]) expect(bar).toContain(`<span>${label}</span>`)
+    for (const label of ["Less", "Skip", "More"]) expect(bar).toContain(`<span>${label}</span>`)
     const rows = [...html.matchAll(/<button type="button" class="ev-m-thumb"([^>]*)>/g)].map((m) => m[1])
     expect(rows).toHaveLength(3)
     expect(rows[0]).toMatch(/data-v="liked"[^>]*aria-label="Yin Yin, liked"/)

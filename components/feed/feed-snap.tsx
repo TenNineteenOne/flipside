@@ -231,15 +231,15 @@ export function TriageBar({ triage }: { triage: FeedTriage }) {
       data-hidden={!selected || undefined}
       inert={!selected}
     >
-      <button type="button" className="ev-m-tri" onClick={() => judge("thumbs_down")}>
-        <ThumbsDown size={22} strokeWidth={1.75} aria-hidden /><span>Less like this</span>
+      <button type="button" className="ev-m-tri" onClick={() => judge("thumbs_down")} aria-label="Less like this">
+        <ThumbsDown size={22} strokeWidth={1.75} aria-hidden /><span>Less</span>
       </button>
-      <button type="button" className="ev-m-tri" onClick={() => judge("skip")}>
-        <X size={22} strokeWidth={1.75} aria-hidden /><span>Dismiss</span>
+      <button type="button" className="ev-m-tri" onClick={() => judge("skip")} aria-label="Skip this artist">
+        <X size={22} strokeWidth={1.75} aria-hidden /><span>Skip</span>
       </button>
-      <button type="button" className="ev-m-tri ev-m-tri-like" onClick={() => judge("thumbs_up")} aria-pressed={liked}>
+      <button type="button" className="ev-m-tri ev-m-tri-like" onClick={() => judge("thumbs_up")} aria-pressed={liked} aria-label={liked ? "Liked" : "More like this"}>
         <Heart size={22} strokeWidth={1.75} fill={liked ? "currentColor" : "none"} aria-hidden />
-        <span>{liked ? "Liked" : "More like this"}</span>
+        <span>{liked ? "Liked" : "More"}</span>
       </button>
     </div>
   )

@@ -1,7 +1,7 @@
 "use client"
 
 import "./feed.css"
-import { useEffect, useRef, useState, type CSSProperties } from "react"
+import { useEffect, useRef, type CSSProperties } from "react"
 import { Bookmark, Heart, Pause, Play, Share2, ThumbsDown, X } from "lucide-react"
 import { PlatformIcon } from "@/components/platform-icon"
 import { MiniPlayer } from "@/components/player/mini-player"
@@ -170,26 +170,6 @@ export function FeedDesktop({ triage, onLoadMore, generating, wander, challenge,
   )
 }
 
-/** Two candidate panel layouts: "m" (banner art, name over it) and "l" (square art, name below).
- * The toggle shows outside production only, while Flux picks one; the choice persists per browser. */
-type PanelLayout = "m" | "l"
-const SHOW_LAYOUT_TOGGLE = process.env.NODE_ENV !== "production"
-const LAYOUT_KEY = "flipside.panelLayout"
-function usePanelLayout(): [PanelLayout, (l: PanelLayout) => void] {
-  const [layout, setState] = useState<PanelLayout>("m")
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(LAYOUT_KEY)
-      if (saved === "m" || saved === "l") setState(saved)
-    } catch { /* storage blocked: keep the default */ }
-  }, [])
-  const set = (l: PanelLayout) => {
-    setState(l)
-    try { localStorage.setItem(LAYOUT_KEY, l) } catch { /* storage blocked: choice lasts this page only */ }
-  }
-  return [layout, set]
-}
-
 function FocusCard({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
   // Artists that arrived without tracks fetch them here, as the old card did (selected artist only).
   const { tracks, isFetching } = useArtistTracks({ artistId: a.id, artistName: a.name, initialTracks: a.topTracks })
@@ -210,17 +190,9 @@ function FocusCard({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
   const saved = triage.savedIds.has(a.id)
   const platform = PLATFORM_META[triage.musicPlatform]
   const judge = (signal: "thumbs_up" | "thumbs_down" | "skip") => triage.judge(a.id, signal, { toggle: true, advance: true })
-  const [layout, setLayout] = usePanelLayout()
 
   return (
-    <article className="ev-card" style={artistVar(a)} data-layout={layout}>
-      {SHOW_LAYOUT_TOGGLE && (
-        <div className="ev-layout-toggle" role="group" aria-label="Panel layout (dev only)">
-          {(["m", "l"] as const).map((k) => (
-            <button key={k} type="button" aria-pressed={layout === k} onClick={() => setLayout(k)}>{k.toUpperCase()}</button>
-          ))}
-        </div>
-      )}
+    <article className="ev-card" style={artistVar(a)}>
       <div className="ev-card-hero">
         <div className="ev-card-art-wrap">
           <Art a={a} src={art} size={600} className="ev-card-art" alt={`${tracks[0]?.albumName || a.name} cover art`} eager priority />
