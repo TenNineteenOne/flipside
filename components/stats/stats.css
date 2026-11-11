@@ -24,7 +24,6 @@
 /* header: the feed's queue header */
 .st-head { padding: 28px 0 18px; border-bottom: 1px solid var(--line); }
 .st-title { font-size: 26px; letter-spacing: -0.025em; line-height: 1.15; }
-.st-sub { margin-top: 4px; font-size: 14px; color: var(--fg-3); }
 .st-lead { margin-top: 14px; max-width: 60ch; color: var(--fg-2); }
 .st-lead a { color: var(--violet-ink); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
 

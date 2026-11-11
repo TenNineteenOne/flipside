@@ -65,7 +65,7 @@ describe("FeedDesktop server render", () => {
     const queue = html.slice(html.indexOf('class="ev-queue"'), html.indexOf('class="ev-focus"'))
     const cols = queue.slice(queue.indexOf('class="ev-cols"'), queue.indexOf('class="ev-rows"'))
     // the scale is visible text; the hint is said once (no title on the header or the rows)
-    expect(cols).toMatch(/<span>Artist<\/span><span class="ev-col-genre">Genre<\/span><span class="ev-col-pop">Popularity <span class="ev-col-scale">0–100<\/span><span class="sr-only">. Lower means more obscure.<\/span>/)
+    expect(cols).toMatch(/<span><\/span><span class="ev-col-genre">Genre<\/span><span class="ev-col-pop">Popularity <span class="ev-col-scale">0–100<\/span><span class="sr-only">. Lower means more obscure.<\/span>/)
     expect(queue).not.toMatch(/title="Popularity/)
     expect(queue).toContain('<span class="ev-row-genre" title="dub"><span class="sr-only">Genre: </span>dub</span>')
     expect(queue).toMatch(/<span class="sr-only">Popularity: <\/span>.*?<span class="ev-row-pop-n">40<\/span><span class="sr-only"> out of 100<\/span>/)
@@ -91,7 +91,7 @@ describe("FeedDesktop server render", () => {
     const html = render(artists, new Map([["a", "thumbs_up"], ["b", "thumbs_down"], ["c", "skip"]]))
     expect(html).toContain("You’ve heard all 3.")
     expect(html).toContain("1 liked, 1 less like this, 1 dismissed.")
-    expect(html).toContain("Tomorrow’s batch leans toward <strong>dub and kraut</strong>.")
+    expect(html).not.toContain("Tomorrow")
     expect(html).toContain("Load more artists")
     expect(html).toMatch(/<a[^>]*href="\/saved"[^>]*>Review saved<\/a>/)
     expect(html).toContain("<strong>0</strong> of 3 left")
@@ -131,14 +131,12 @@ describe("Wander farther", () => {
     expect(switches(renderWith(true))).toEqual(["true", "true"])
   })
 
-  it("on: the Load more buttons go rainbow and the next-batch note shows; off: neither", () => {
+  it("on: the Load more buttons go rainbow; off: not", () => {
     const on = renderWith(true)
     expect(on.match(/class="ev-btn [^"]*wander-btn-on"/g)).toHaveLength(2)
-    expect(on).toContain("Your <b>next batch</b> goes farther afield.")
     expect(on).toMatch(/class="ev-btn ev-btn-primary wander-btn-on"[^>]*>Load more<\/button>/)
     const off = renderWith(false)
     expect(off).not.toContain("wander-btn-on")
-    expect(off).not.toContain("next batch")
   })
 
   it("a far pick's why-line reads Outside your usual, marked for the teal accent", () => {

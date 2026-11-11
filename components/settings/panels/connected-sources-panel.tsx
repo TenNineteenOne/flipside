@@ -190,9 +190,7 @@ export function ConnectedSourcesPanel({
           className="muted"
           style={{ fontSize: 11, lineHeight: 1.5, marginTop: 4 }}
         >
-          Your Last.fm and stats.fm usernames are encrypted at rest. We keep
-          them recoverable because we need the originals to call Last.fm and
-          stats.fm on sync — they&rsquo;re public handles, not credentials.
+          Usernames are stored encrypted.
         </div>
       </div>
     </div>

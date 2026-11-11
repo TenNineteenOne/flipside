@@ -37,14 +37,5 @@ export function WanderSwitch({ on, onToggle, caption, compact = false }: {
   )
 }
 
-/** The line under a Wander farther control while it is on (hidden while off). */
-export function WanderNote({ on }: { on: boolean }) {
-  return (
-    <p className="wander-note">
-      {on && <>Your <b>next batch</b> goes farther afield.</>}
-    </p>
-  )
-}
-
 /** Class for a Load more button that should wear the rainbow while Wander farther is on. */
 export const wanderButton = (on: boolean) => (on ? " wander-btn-on" : "")

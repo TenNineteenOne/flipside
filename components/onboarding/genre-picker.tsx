@@ -154,7 +154,7 @@ export function GenrePicker({ selected, onToggle, cap }: GenrePickerProps) {
           type="text"
           value={rawQuery}
           onChange={(e) => setRawQuery(e.target.value)}
-          placeholder="Search genres — post-rock, lo-fi, dream pop…"
+          placeholder="Search genres"
           style={{
             flex: 1,
             border: 0,
@@ -185,7 +185,7 @@ export function GenrePicker({ selected, onToggle, cap }: GenrePickerProps) {
 
       {atCap && (
         <div className="mono" role="status" style={{ fontSize: 11, color: "var(--text-muted)" }}>
-          Max {cap} genres — remove one to add another
+          Max {cap} genres. Remove one to add another
         </div>
       )}
 

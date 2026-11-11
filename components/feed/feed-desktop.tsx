@@ -6,9 +6,7 @@ import { Bookmark, Heart, Pause, Play, Share2, ThumbsDown, X } from "lucide-reac
 import { PlatformIcon } from "@/components/platform-icon"
 import { MiniPlayer } from "@/components/player/mini-player"
 import { Art, artistVar, EndState, LoadMore, type Wander } from "@/components/feed/feed-parts"
-import { WanderNote } from "@/components/feed/wander-switch"
 import { QueueColumns } from "@/components/feed/feed-skeleton"
-import { Kbd } from "@/components/feed/feed-shortcuts"
 import { ShellSlot } from "@/components/shell/shell-context"
 import { useAudio } from "@/lib/audio-context"
 import { chipColors, resolveArtistColor } from "@/lib/color-utils"
@@ -82,7 +80,6 @@ export function FeedDesktop({ triage, onLoadMore, generating, wander, challenge,
         <header ref={headRef} className="ev-queue-head">
           <div>
             <h1 id="ev-queue-title" className="ev-queue-title">Today&rsquo;s flipside</h1>
-            <p className="ev-queue-sub">{total} artists you&rsquo;ve never played, picked from what you told us.</p>
           </div>
           <div className="ev-progress" aria-label={`${remaining} of ${total} left`}>
             <span className="ev-progress-text"><strong>{remaining}</strong> of {total} left</span>
@@ -95,7 +92,6 @@ export function FeedDesktop({ triage, onLoadMore, generating, wander, challenge,
           <div className="ev-wander-bar">
             <div className="ev-wander-chal">{challenge}</div>
             <div className="ev-wander-ctl"><LoadMore onLoadMore={onLoadMore} generating={generating} wander={wander} label="Load more" primary /></div>
-            <WanderNote on={wander.on} />
           </div>
         </header>
 
@@ -156,7 +152,7 @@ export function FeedDesktop({ triage, onLoadMore, generating, wander, challenge,
             )
           })}
         </ul>
-        {visible.length > 0 && remaining === 0 && <p className="ev-queue-foot">Queue clear. These are the ones you kept.</p>}
+        {visible.length > 0 && remaining === 0 && <p className="ev-queue-foot">Queue clear.</p>}
         <div className="ev-queue-more"><LoadMore onLoadMore={onLoadMore} generating={generating} wander={wander} /></div>
       </main>
 
@@ -218,29 +214,23 @@ function FocusCard({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
       </div>
 
       <div className="ev-card-actions">
-        <button type="button" className="ev-btn ev-btn-play" onClick={() => triage.togglePlay(a)} aria-pressed={playing} disabled={!canPlay}>
+        <button type="button" className="ev-btn ev-btn-play" onClick={() => triage.togglePlay(a)} aria-pressed={playing} disabled={!canPlay} title={canPlay ? "Play / pause (Space)" : undefined}>
           {canPlay && (playing ? <Pause size={18} fill="currentColor" strokeWidth={0} aria-hidden /> : <Play size={18} fill="currentColor" strokeWidth={0} aria-hidden />)}
           {loading ? "Loading tracks…" : !canPlay ? "No preview available" : playing ? "Pause" : "Play preview"}
-          {canPlay && <Kbd>Space</Kbd>}
         </button>
 
         <div className="ev-triage" role="group" aria-label="Tell flipside what you think">
-          <button type="button" className="ev-tri" onClick={() => judge("thumbs_down")}>
+          <button type="button" className="ev-tri" onClick={() => judge("thumbs_down")} title="Less like this (X)">
             <ThumbsDown size={16} strokeWidth={1.75} aria-hidden /><span>Less like this</span>
           </button>
-          <button type="button" className="ev-tri" onClick={() => judge("skip")}>
+          <button type="button" className="ev-tri" onClick={() => judge("skip")} title="Dismiss (D)">
             <X size={16} strokeWidth={1.75} aria-hidden /><span>Dismiss</span>
           </button>
-          <button type="button" className="ev-tri ev-tri-like" onClick={() => judge("thumbs_up")} aria-pressed={liked}>
+          <button type="button" className="ev-tri ev-tri-like" onClick={() => judge("thumbs_up")} aria-pressed={liked} title="More like this (L)">
             <Heart size={16} strokeWidth={1.75} fill={liked ? "currentColor" : "none"} aria-hidden />
             <span>{liked ? "Liked" : "More like this"}</span>
           </button>
         </div>
-
-        <p className="ev-hints" aria-hidden>
-          <span><Kbd>X</Kbd>less</span><span><Kbd>D</Kbd>dismiss</span><span><Kbd>L</Kbd>more</span>
-          <span><Kbd>B</Kbd>save</span><span><Kbd>O</Kbd>open</span><span><Kbd>J</Kbd><Kbd>K</Kbd>move</span>
-        </p>
 
         <div className="ev-secondary">
           <button type="button" className="ev-sec" onClick={() => triage.save(a)} aria-pressed={saved} title="Save for later (B)">
@@ -258,7 +248,7 @@ function FocusCard({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
 
       {playable.length > 0 && (
         <section className="ev-tracks" aria-label="Previews">
-          <h3 className="ev-tracks-title">Previews <span>30 seconds each</span></h3>
+          <h3 className="ev-tracks-title">Previews</h3>
           <ol>
             {playable.map((t, i) => {
               const current = triage.isCurrentTrack(a, t)

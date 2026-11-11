@@ -29,7 +29,7 @@ interface CardView {
 }
 
 /**
- * The landing hero: a real, playable slice of the feed. No account needed to listen.
+ * The landing hero: a real, playable slice of the feed.
  * A verdict throws the top card off (left for less, right for more: landing.css
  * `.ev-stack-leaving`, fading as it goes) while the next one settles in from slightly
  * smaller and lower (`.ev-stack-enter`). Reduced motion: the thrown card only fades.
@@ -37,7 +37,6 @@ interface CardView {
 export function HeroStack() {
   const audio = useAudio()
   const [i, setI] = useState(0)
-  const [liked, setLiked] = useState<string[]>([])
   /** Cards being thrown off, each removed when its animation ends. */
   const [leaving, setLeaving] = useState<(CardView & { dir: 1 | -1 })[]>([])
   /** The verdict button to focus on the next card: set only when the verdict came from the keyboard. */
@@ -57,7 +56,6 @@ export function HeroStack() {
 
   const next = (like: boolean, fromKeyboard: boolean) => {
     setRefocus(fromKeyboard ? (like ? "more" : "less") : null)
-    if (like) setLiked((l) => [...l, a.name])
     // Two clicks before a re-render throw the same card once.
     setLeaving((l) => (l.some((x) => x.key === view.key) ? l : [...l, { ...view, dir: like ? 1 : -1 }]))
     setI(i + 1)
@@ -85,11 +83,6 @@ export function HeroStack() {
         />
       ))}
       <Card key={view.key} view={view} className={view.first ? "" : "ev-stack-enter"} onToggle={toggle} onNext={next} focus={refocus} />
-      <p className="ev-stack-note" aria-live="polite">
-        {liked.length === 0
-          ? `${STACK.length} artists in this sample. No account needed to listen.`
-          : `Noted: more like ${liked.slice(-2).join(" and ")}. Pick a name and flipside keeps it.`}
-      </p>
     </div>
   )
 }

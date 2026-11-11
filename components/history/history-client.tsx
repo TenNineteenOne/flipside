@@ -128,7 +128,7 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
     errorMessages: {
       // undoFailed default ("Couldn't undo — try again") already matches
       // this page's copy for both undo paths below.
-      saveFailed: "Couldn't update signal — try again",
+      saveFailed: "Couldn't update signal. Try again",
     },
   })
 
@@ -212,7 +212,6 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
       {/* Page header */}
       <div className="page-head">
         <h1>History</h1>
-        <span className="sub">your taps &amp; skips</span>
       </div>
 
       {/* Filter chips */}
@@ -255,7 +254,7 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
           />
           <div style={{ fontSize: 14 }}>
             {filter === "all"
-              ? "No history yet. Start discovering artists in your feed."
+              ? "No history yet."
               : `No ${FILTER_TABS.find((t) => t.key === filter)?.label.toLowerCase()} artists yet.`}
           </div>
         </div>

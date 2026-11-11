@@ -8,7 +8,7 @@ import { artworkAt, artworkFor, letterFor } from "@/lib/feed/artwork"
 import { readableTextOn, resolveArtistColor } from "@/lib/color-utils"
 import type { FeedTriage } from "@/lib/hooks/use-feed-triage"
 import type { CardArtist } from "@/lib/cards/card-artist"
-import { WanderNote, WanderSwitch, wanderButton } from "@/components/feed/wander-switch"
+import { WanderSwitch, wanderButton } from "@/components/feed/wander-switch"
 
 // Pieces shared by the desktop, tablet and phone feeds, kept out of feed-desktop.tsx so the
 // tablet and phone layout chunks don't carry the desktop layout.
@@ -51,9 +51,8 @@ export interface Wander {
 
 /** Focus pane when nothing is left to decide (PRD "End of queue"). */
 export function EndState({ triage, onLoadMore, generating, wander }: { triage: FeedTriage; onLoadMore: () => void; generating: boolean; wander: Wander }) {
-  const { counts, total, tuning, visible, signals } = triage
+  const { counts, total, visible, signals } = triage
   const liked = visible.filter((a) => signals.get(a.id) === "thumbs_up").slice(0, 4)
-  const lean = tuning.more.slice(0, 2)
   return (
     <div className="ev-end">
       {liked.length > 0 && (
@@ -64,13 +63,11 @@ export function EndState({ triage, onLoadMore, generating, wander }: { triage: F
       <h2 className="ev-end-title">You&rsquo;ve heard all {total}.</h2>
       <p className="ev-end-body">
         {counts.liked} liked, {counts.passed} less like this, {counts.dismissed} dismissed.
-        {lean.length > 0 && <> Tomorrow&rsquo;s batch leans toward <strong>{lean.join(" and ")}</strong>.</>}
       </p>
       <div className="ev-end-actions">
         <LoadMore onLoadMore={onLoadMore} generating={generating} wander={wander} primary />
         <Link className="ev-btn ev-btn-ghost" href="/saved">Review saved</Link>
       </div>
-      <WanderNote on={wander.on} />
     </div>
   )
 }

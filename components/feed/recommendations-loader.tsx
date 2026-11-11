@@ -32,7 +32,7 @@ export function RecommendationsLoader() {
           isCancelled: () => cancelled,
         })
         if (outcome === "ready") router.refresh()
-        else if (outcome === "timeout") setError("Still working on your feed — refresh in a moment.")
+        else if (outcome === "timeout") setError("Still working on your feed. Refresh in a moment.")
         return
       }
       setError(next.message)
@@ -69,10 +69,7 @@ export function RecommendationsLoader() {
         <Loader2 size={32} className="animate-spin" style={{ color: "var(--accent)" }} />
       </div>
       <div className="col" style={{ gap: 6 }}>
-        <p className="serif" style={{ fontSize: 18, fontWeight: 600 }}>Discovering music for you…</p>
-        <p className="muted" style={{ fontSize: 14 }}>
-          Building your discovery feed. This takes about 15 seconds on your first visit.
-        </p>
+        <p className="serif" style={{ fontSize: 18, fontWeight: 600 }}>Building your feed. About 15 seconds the first time.</p>
       </div>
     </div>
   )

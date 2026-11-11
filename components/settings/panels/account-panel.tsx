@@ -50,7 +50,7 @@ export function AccountPanel() {
             : "Forget my account permanently"}
         </button>
         <div className="muted" style={{ fontSize: 11.5, lineHeight: 1.5 }}>
-          No email. No password. If you forget your username, your account is gone.
+          If you forget your username, your account is gone.
         </div>
       </div>
     </div>

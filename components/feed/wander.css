@@ -24,20 +24,12 @@
 @media (width < 440px) { .wander-sw[data-compact] .wander-far { display: none; } }
 .wander-sw[data-compact] { gap: 8px; font-size: 13px; }
 
-.wander-note { margin: 6px 0 0; font-size: 12px; line-height: 1.5; color: var(--fg-3); }
-.wander-note:empty { display: none; }
-.wander-note b {
-  font-weight: 600; color: transparent;
-  background: var(--wander-rainbow); -webkit-background-clip: text; background-clip: text;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .wander-track, .wander-track::after { transition: none; }
 }
 @media (forced-colors: active) {
   .wander-track { border: 1px solid ButtonText; }
   .wander-sw[aria-checked="true"] .wander-track { background: Highlight; }
-  .wander-note b { color: CanvasText; background: none; }
 }
 /* Narrowest phones: the track alone (aria-label keeps the name). */
 @media (width < 360px) { .wander-sw[data-compact] .wander-label { display: none; } }

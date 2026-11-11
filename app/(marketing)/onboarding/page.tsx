@@ -159,11 +159,8 @@ export default function OnboardingPage() {
           <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
             <Wordmark />
           </div>
-          <div className="serif" style={{ fontSize: 26, lineHeight: 1.25, marginBottom: 8 }}>
-            How should we seed your feed?
-          </div>
-          <div className="muted" style={{ fontSize: 13 }}>
-            Pick one or more paths — or skip and start cold.
+          <div className="serif" style={{ fontSize: 26, lineHeight: 1.25 }}>
+            Seed your feed
           </div>
         </div>
 
@@ -175,9 +172,7 @@ export default function OnboardingPage() {
           <div style={{ fontSize: 14, fontWeight: 600 }}>Where do you listen?</div>
           <PlatformPicker value={musicPlatform} onChange={setMusicPlatform} />
           <div className="muted" style={{ fontSize: 11.5, lineHeight: 1.5 }}>
-            We&rsquo;ll use this to open artists in the app you already use.{" "}
-            <strong style={{ color: "var(--text-secondary)" }}>No login needed &mdash; we just link out.</strong>{" "}
-            You can change this anytime in Settings.
+            Flipside links out to it and never asks for your login.
           </div>
         </div>
 
@@ -188,7 +183,6 @@ export default function OnboardingPage() {
           <PathCard
             icon={<Music size={16} />}
             title="Artists I like"
-            subtitle="Search for artists to seed the engine"
             open={openPaths.has("artists")}
             onToggle={() => togglePath("artists")}
             chipCount={selectedArtists.length}
@@ -205,7 +199,6 @@ export default function OnboardingPage() {
           <PathCard
             icon={<span style={{ fontSize: 15 }}>♫</span>}
             title="Genres I love"
-            subtitle="Start broad, drill into niche"
             open={openPaths.has("genres")}
             onToggle={() => togglePath("genres")}
             chipCount={selectedGenres.length}
@@ -245,10 +238,7 @@ export default function OnboardingPage() {
                 </div>
               )}
               <div className="muted" style={{ fontSize: 11.5, lineHeight: 1.5 }}>
-                We&rsquo;ll pull your top artists to filter out music you already know.
-                Your username is encrypted at rest. We keep it recoverable because we
-                need the original to call Last.fm on sync — it&rsquo;s a public handle,
-                not a credential.
+                Used to skip artists you already know. Stored encrypted.
               </div>
             </div>
           </PathCard>
@@ -281,10 +271,7 @@ export default function OnboardingPage() {
                 </div>
               )}
               <div className="muted" style={{ fontSize: 11.5, lineHeight: 1.5 }}>
-                Your stats.fm profile must be public. We&rsquo;ll pull top artists to filter familiars.
-                Your username is encrypted at rest. We keep it recoverable because we
-                need the original to call stats.fm on sync — it&rsquo;s a public handle,
-                not a credential.
+                Your stats.fm profile must be public. Used to skip artists you already know. Stored encrypted.
               </div>
             </div>
           </PathCard>
@@ -304,7 +291,7 @@ export default function OnboardingPage() {
             disabled={!hasAnyInput || artistsShort || lastfmInvalid || statsfmInvalid || saving}
             style={{ height: 48, fontSize: 15 }}
           >
-            {saving ? "Saving…" : "Get started →"}
+            {saving ? "Saving…" : "Get started"}
           </button>
           <button
             className="btn btn-block"
@@ -312,12 +299,8 @@ export default function OnboardingPage() {
             disabled={saving}
             style={{ height: 44, fontSize: 14, color: "var(--text-muted)", borderColor: "var(--border)" }}
           >
-            Skip — show me anything
+            Skip
           </button>
-        </div>
-
-        <div className="mono" style={{ marginTop: 20, textAlign: "center", fontSize: 10, color: "var(--text-faint)" }}>
-          You can change any of this in Settings later.
         </div>
       </div>
     </div>
@@ -337,7 +320,7 @@ function PathCard({
 }: {
   icon: React.ReactNode
   title: string
-  subtitle: string
+  subtitle?: string
   open: boolean
   onToggle: () => void
   chipCount: number
@@ -403,7 +386,7 @@ function PathCard({
               </span>
             )}
           </div>
-          <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>{subtitle}</div>
+          {subtitle && <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>{subtitle}</div>}
         </div>
         <div style={{ color: "var(--text-faint)", flexShrink: 0 }}>
           {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}

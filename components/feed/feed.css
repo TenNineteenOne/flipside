@@ -81,7 +81,6 @@
   padding: 28px 0 18px; margin-bottom: 6px; background: var(--bg); border-bottom: 1px solid var(--line);
 }
 .ev-feed .ev-queue-title { font-size: 26px; letter-spacing: -0.025em; line-height: 1.15; }
-.ev-feed .ev-queue-sub { margin-top: 4px; color: var(--fg-3); font-size: 14px; }
 .ev-feed .ev-progress { display: flex; align-items: center; gap: 16px; min-width: 0; }
 .ev-feed .ev-progress-text { flex: none; font-size: 13px; line-height: 16px; color: var(--fg-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ev-feed .ev-progress-text strong { color: var(--fg); font-weight: 600; }
@@ -209,10 +208,6 @@
   border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 5px; background: var(--bg);
 }
 
-.ev-feed .ev-btn-play .ev-kbd { margin-left: 6px; color: oklch(0.42 0.01 293); background: transparent; border-color: oklch(0.8 0.01 293); }
-.ev-feed .ev-hints { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 14px; font-size: 12px; color: var(--fg-3); }
-.ev-feed .ev-hints > span { display: inline-flex; align-items: center; gap: 5px; }
-.ev-feed .ev-hints .ev-kbd + .ev-kbd { margin-left: -2px; }
 .ev-feed .ev-icon-btn { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 8px; color: var(--fg-2); }
 .ev-feed .ev-icon-btn:hover { background: var(--raise); color: var(--fg); }
 
@@ -245,7 +240,6 @@
 
 /* track list */
 .ev-feed .ev-tracks-title { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; color: var(--fg-3); padding: 0 8px 6px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
-.ev-feed .ev-tracks-title span { font-weight: 400; }
 /* Same look as the phone card's chips: a tint, a bold edge and a play circle in the track's own colour
    (`--c`, set inline from chipColors in lib/color-utils.ts). Playing = white ring. */
 .ev-feed .ev-tracks ol { display: flex; flex-direction: column; gap: 6px; }
@@ -277,7 +271,6 @@
 .ev-feed .ev-player-bar { position: absolute; left: 0; right: 0; top: -1px; height: 2px; }
 .ev-feed .ev-player-bar span { display: block; height: 100%; background: var(--a-light); transform-origin: left; transition: transform 250ms linear; }
 .ev-feed .ev-player-idle { font-size: 13px; color: var(--fg-3); }
-.ev-feed .ev-idle-touch { display: none; }
 
 /* rail tuning block (portalled into the shell rail; the shell hides its slot below 1100px) */
 .ev-feed.ev-tuning { display: flex; flex-direction: column; gap: 8px; }
@@ -384,9 +377,7 @@ body:has(.ev-skel-m) .shell-top-slot:empty::before { content: ""; width: 76px; h
 }
 /* Key hints only where there is a keyboard: not on touch, not outside the desktop layout (the sheet keeps its keycaps). */
 @media (hover: none), (width < 900px), (height < 540px) {
-  .ev-feed .ev-card .ev-kbd, .ev-feed .ev-hints, .ev-feed .ev-player .ev-kbd, [data-sonner-toast].ev-toast .ev-kbd { display: none; }
-  .ev-feed .ev-idle-keys { display: none; }
-  .ev-feed .ev-idle-touch { display: inline; }
+  [data-sonner-toast].ev-toast .ev-kbd { display: none; }
 }
 [data-sonner-toast].ev-toast .ev-toast-undo:hover { background: oklch(0.92 0.02 293); }
 [data-sonner-toast].ev-toast .ev-toast-undo:focus-visible { outline: 2px solid oklch(0.42 0.17 293); outline-offset: 2px; }
@@ -718,27 +709,22 @@ body:has(.ev-snap) [data-sonner-toaster][data-y-position="top"] {
 }
 
 /* ---------- Wander farther (#205): switches beside Load more, rainbow buttons, far-pick why-line ----------
-   The switch and note themselves are in wander.css (shared with Settings). */
-/* Desktop header row: the weekly challenge (left, ellipsizes) beside Load more + switch (right); the Wander
-   note sits right-aligned under the controls. A narrow queue (<560px) gives the challenge its own line above
-   the controls. With no challenge the note takes the empty left cell instead, as before. */
+   The switch itself is in wander.css (shared with Settings). */
+/* Desktop header row: the weekly challenge (left, ellipsizes) beside Load more + switch (right). A narrow
+   queue (<560px) gives the challenge its own line above the controls. */
 .ev-feed .ev-wander-bar { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 24px; }
 .ev-feed .ev-wander-chal { grid-area: 1 / 1 / 2 / 3; min-width: 0; }
 .ev-feed .ev-wander-chal:empty { display: none; }
 .ev-feed .ev-wander-ctl { grid-area: 2 / 2; display: flex; align-items: center; gap: 16px; }
-.ev-feed .ev-wander-bar .wander-note { grid-area: 3 / 2; justify-self: end; margin: -6px 0 0; }
 .ev-feed .ev-wander-bar:has(> .ev-wander-chal:empty) .ev-wander-ctl { grid-area: 1 / 2; }
-.ev-feed .ev-wander-bar:has(> .ev-wander-chal:empty) .wander-note { grid-area: 1 / 1; justify-self: start; margin: 0; }
 @container ev-queue (width >= 560px) {
   .ev-feed .ev-wander-bar { row-gap: 2px; }
   .ev-feed .ev-wander-chal { grid-area: 1 / 1; max-width: 460px; }
   .ev-feed .ev-wander-ctl { grid-area: 1 / 2; }
-  .ev-feed .ev-wander-bar .wander-note { grid-area: 2 / 2; margin: 0; }
 }
 .ev-feed .ev-queue-more { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 .ev-feed .ev-m-rail > li.ev-m-rail-more { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 .ev-feed .ev-end-actions { align-items: center; }
-.ev-feed .ev-end .wander-note { margin-top: -6px; }
 .ev-feed .ev-btn.wander-btn-on { background: var(--wander-rainbow); border-color: transparent; color: oklch(0.16 0.01 293); }
 .ev-feed .ev-btn.wander-btn-on:hover:not([aria-disabled="true"]) { background: var(--wander-rainbow); filter: brightness(1.06); }
 /* Phone / tablet top bar: the switch, then "N of M left". */

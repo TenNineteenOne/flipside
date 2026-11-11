@@ -6,7 +6,6 @@ export default function StatsLoading() {
     <div className="st shell-wide" aria-busy="true">
       <header className="st-head">
         <h1 className="st-title">Stats</h1>
-        <p className="st-sub">Your discovery journey</p>
       </header>
 
       <div className="st-body" aria-hidden>

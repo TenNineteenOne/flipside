@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react"
 import { toast } from "sonner"
-import { WanderNote, WanderSwitch } from "@/components/feed/wander-switch"
+import { WanderSwitch } from "@/components/feed/wander-switch"
 import { useAdventurousMode } from "@/lib/hooks/use-adventurous-mode"
 import { patchSettings } from "@/lib/settings/patch-settings"
 import { FAME_LEVELS, MAX_FAME_LEVEL } from "@/lib/settings/fame"
@@ -85,9 +85,8 @@ export function DiscoveryPanel({ initialFameLevel, initialAdventurous }: { initi
           <WanderSwitch
             on={adventurous}
             onToggle={() => setAdventurous(!adventurous).catch(() => toast.error("Failed to save Wander farther"))}
-            caption="About half of each new batch comes from outside your usual genres. Also on Feed."
+            caption="About half of each batch comes from outside your usual genres."
           />
-          <WanderNote on={adventurous} />
         </div>
       </div>
     </div>

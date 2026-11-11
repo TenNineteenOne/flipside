@@ -74,8 +74,7 @@ export function LibraryEditor({ initialGenreTags, initialSeedArtists, flat = fal
         if ((err as { name?: string } | null)?.name === "AbortError") return
         // Fall back to the old "heads up" toast if the auto-prune didn't land.
         toast.info(
-          `${orphanCount} previously-selected genre${orphanCount === 1 ? "" : "s"} ` +
-            `no longer map to our updated taxonomy and will be removed on your next save.`,
+          `${orphanCount} old genre tag${orphanCount === 1 ? "" : "s"} will be removed on your next save.`,
         )
       }
     })()
@@ -149,7 +148,6 @@ export function LibraryEditor({ initialGenreTags, initialSeedArtists, flat = fal
     <>
       <Collapsible
         title="Artists"
-        subtitle="The starting points for your feed"
         count={artists.length}
         open={artistsOpen}
         onToggle={() => setArtistsOpen((v) => !v)}
@@ -166,7 +164,6 @@ export function LibraryEditor({ initialGenreTags, initialSeedArtists, flat = fal
 
       <Collapsible
         title="Genres"
-        subtitle="Steer the feed toward what you love"
         count={genres.length}
         open={genresOpen}
         onToggle={() => setGenresOpen((v) => !v)}
@@ -189,7 +186,6 @@ export function LibraryEditor({ initialGenreTags, initialSeedArtists, flat = fal
 
 function Collapsible({
   title,
-  subtitle,
   count,
   open,
   onToggle,
@@ -197,7 +193,6 @@ function Collapsible({
   flat,
 }: {
   title: string
-  subtitle: string
   count: number
   open: boolean
   onToggle: () => void
@@ -250,7 +245,6 @@ function Collapsible({
               </span>
             )}
           </div>
-          <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>{subtitle}</div>
         </div>
         <div style={{ color: "var(--text-faint)", flexShrink: 0 }}>
           {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}

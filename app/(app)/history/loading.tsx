@@ -3,12 +3,6 @@ export default function HistoryLoading() {
     <div>
       <div className="page-head">
         <h1>History</h1>
-        <span className="sub" aria-hidden>
-          <span
-            className="fs-skeleton"
-            style={{ display: "inline-block", width: 64, height: 14 }}
-          />
-        </span>
       </div>
 
       <div

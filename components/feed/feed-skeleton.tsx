@@ -19,8 +19,6 @@ export function FeedSkeleton() {
           <div className="ev-queue-head">
             <div>
               <h1 className="ev-queue-title">Today&rsquo;s flipside</h1>
-              {/* inside the real subtitle's box, so the header (and the rows under it) keep their height */}
-              <p className="ev-queue-sub"><span className="fs-skeleton ev-skel-line" style={{ display: "inline-block", width: 320, verticalAlign: "middle" }} /></p>
             </div>
             {/* the real progress block's structure, so the header's height matches at every width */}
             <div className="ev-progress">
@@ -91,7 +89,8 @@ export function FeedSkeleton() {
 export function QueueColumns() {
   return (
     <div className="ev-cols">
-      <span>Artist</span>
+      {/* empty first cell: .ev-cols > :first-child holds the Artist column (the name needs no label) */}
+      <span />
       <span className="ev-col-genre">Genre</span>
       <span className="ev-col-pop">Popularity <span className="ev-col-scale">0–100</span><span className="sr-only">. Lower means more obscure.</span></span>
     </div>

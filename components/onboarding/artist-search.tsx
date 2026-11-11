@@ -18,10 +18,10 @@ type SearchError =
 function errorMessage(kind: SearchError): string {
   switch (kind) {
     case "unauth": return "Please sign in again to search artists"
-    case "rate-limited": return "Too many searches — try again in a few seconds"
+    case "rate-limited": return "Too many searches. Try again in a few seconds"
     case "unavailable": return "Search is temporarily unavailable"
-    case "network": return "Network error — check your connection"
-    case "unknown": return "Couldn't search — try again"
+    case "network": return "Network error. Check your connection"
+    case "unknown": return "Couldn't search. Try again"
   }
 }
 
@@ -199,12 +199,12 @@ export function ArtistSearch({ selected, onAdd, onRemove, cap, minForHint = 3 }:
       )}
       {!error && degraded && results.length > 0 && (
         <div className="mono muted" style={{ fontSize: 11 }}>
-          Showing cached results — live search is rate-limited
+          Showing cached results. Live search is rate-limited
         </div>
       )}
       {!error && !searching && query.trim().length >= MIN_QUERY && results.length === 0 && (
         <div className="mono muted" style={{ fontSize: 11, textAlign: "center", padding: "12px 0" }}>
-          No artists found for &ldquo;{query.trim()}&rdquo; — try a different spelling
+          No artists found for &ldquo;{query.trim()}&rdquo;. Try a different spelling
         </div>
       )}
       {results.length > 0 && (

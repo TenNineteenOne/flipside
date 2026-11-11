@@ -41,20 +41,20 @@ export const metadata: Metadata = {
     default: "Flipside",
     template: "%s · Flipside",
   },
-  description: "Music discovery, without the strings.",
+  description: "Music discovery that only asks for a name.",
   applicationName: "Flipside",
   formatDetection: { telephone: false, email: false, address: false },
   openGraph: {
     type: "website",
     siteName: "Flipside",
     title: "Flipside",
-    description: "Music discovery, without the strings.",
+    description: "Music discovery that only asks for a name.",
     url: "/",
   },
   twitter: {
     card: "summary_large_image",
     title: "Flipside",
-    description: "Music discovery, without the strings.",
+    description: "Music discovery that only asks for a name.",
   },
   robots: {
     index: true,

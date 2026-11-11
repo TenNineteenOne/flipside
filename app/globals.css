@@ -221,12 +221,6 @@
   white-space: nowrap;
   min-width: 0;
 }
-/* The tagline inside .sub reads as a sentence: normal case and tracking, and it may wrap. */
-.page-head .sub .serif {
-  text-transform: none;
-  letter-spacing: 0;
-  white-space: normal;
-}
 @media (width >= 900px) {
   .page-head h1 { font-size: 38px; }
 }
