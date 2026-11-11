@@ -242,24 +242,24 @@ function FocusCard({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
       <div className="ev-card-actions">
         <div className="ev-triage" role="group" aria-label="Tell flipside what you think">
           <button type="button" className="ev-ib" onClick={() => judge("thumbs_down")} aria-label="Less like this" title="Less like this (X)">
-            <ThumbsDown size={18} strokeWidth={1.75} aria-hidden />
+            <ThumbsDown size={18} strokeWidth={1.75} aria-hidden /><span>Less</span>
           </button>
-          <button type="button" className="ev-ib" onClick={() => judge("skip")} aria-label="Dismiss" title="Dismiss (D)">
-            <X size={18} strokeWidth={1.75} aria-hidden />
+          <button type="button" className="ev-ib" onClick={() => judge("skip")} aria-label="Skip this artist" title="Dismiss (D)">
+            <X size={18} strokeWidth={1.75} aria-hidden /><span>Skip</span>
           </button>
           <button type="button" className="ev-ib ev-ib-like" onClick={() => judge("thumbs_up")} aria-pressed={liked} aria-label={liked ? "Liked" : "More like this"} title="More like this (L)">
-            <Heart size={18} strokeWidth={1.75} fill={liked ? "currentColor" : "none"} aria-hidden />
+            <Heart size={18} strokeWidth={1.75} fill={liked ? "currentColor" : "none"} aria-hidden /><span>{liked ? "Liked" : "More"}</span>
           </button>
         </div>
         <div className="ev-secondary">
-          <button type="button" className="ev-ib ev-ib-quiet" onClick={() => triage.save(a)} aria-pressed={saved} aria-label={saved ? "Saved" : "Save for later"} title="Save for later (B)">
-            <Bookmark size={18} strokeWidth={1.75} fill={saved ? "currentColor" : "none"} aria-hidden />
+          <button type="button" className="ev-ib" onClick={() => triage.save(a)} aria-pressed={saved} aria-label={saved ? "Saved" : "Save for later"} title="Save for later (B)">
+            <Bookmark size={18} strokeWidth={1.75} fill={saved ? "currentColor" : "none"} aria-hidden /><span>{saved ? "Saved" : "Save"}</span>
           </button>
-          <a className="ev-ib ev-ib-quiet" href={triage.artistLink(a)} target="_blank" rel="noopener noreferrer" aria-label={`Open in ${platform.label}`} title={`Open in ${platform.label} (O)`}>
-            <PlatformIcon platform={triage.musicPlatform} size={18} />
+          <a className="ev-ib" href={triage.artistLink(a)} target="_blank" rel="noopener noreferrer" aria-label={`Open in ${platform.label}`} title={`Open in ${platform.label} (O)`}>
+            <PlatformIcon platform={triage.musicPlatform} size={18} /><span>{platform.label}</span>
           </a>
-          <button type="button" className="ev-ib ev-ib-quiet" onClick={() => void triage.share(a)} aria-label="Share" title="Share (S)">
-            <Share2 size={18} strokeWidth={1.75} aria-hidden />
+          <button type="button" className="ev-ib" onClick={() => void triage.share(a)} aria-label="Share" title="Share (S)">
+            <Share2 size={18} strokeWidth={1.75} aria-hidden /><span>Share</span>
           </button>
         </div>
       </div>

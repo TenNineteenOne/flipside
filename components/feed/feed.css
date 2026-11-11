@@ -187,37 +187,39 @@
 .ev-feed .ev-card-why strong { color: var(--fg); font-weight: 600; }
 
 /* Layout M: the art is an edge-to-edge banner with the name over its lower edge. Its height leaves
-   room for the reason, the icon row and three full-size previews: 350px is everything else in the
+   room for the reason, the icon row and three full-size previews: 362px is everything else in the
    pane plus the docked player, measured in a 1470x707 window (11px spare). */
 .ev-feed .ev-card[data-layout="m"] .ev-card-art-wrap { margin: -24px -24px 0; }
-.ev-feed .ev-card[data-layout="m"] .ev-card-art { width: 100%; height: clamp(220px, 100vh - 350px, 560px); aspect-ratio: auto; border-radius: 0; box-shadow: none; }
+.ev-feed .ev-card[data-layout="m"] .ev-card-art { width: 100%; height: clamp(220px, 100vh - 362px, 560px); aspect-ratio: auto; border-radius: 0; box-shadow: none; }
 .ev-feed .ev-card[data-layout="m"] .ev-card-title {
   position: absolute; inset: auto 0 0 0; padding: 64px 24px 16px;
   background: linear-gradient(to top, color-mix(in oklch, var(--panel) 92%, transparent), transparent);
 }
 
 /* Layout L: square art, name below it, the reason tucked under the genres and compact previews.
-   415px is the rest of the pane plus the docked player (23px spare at 1470x707). */
+   427px is the rest of the pane plus the docked player (23px spare at 1470x707). */
 .ev-feed .ev-card[data-layout="l"] .ev-card-hero { gap: 6px; }
-.ev-feed .ev-card[data-layout="l"] .ev-card-art { width: max(160px, min(100%, 56vh, 100vh - 415px)); height: auto; aspect-ratio: 1; }
+.ev-feed .ev-card[data-layout="l"] .ev-card-art { width: max(160px, min(100%, 56vh, 100vh - 427px)); height: auto; aspect-ratio: 1; }
 .ev-feed .ev-card[data-layout="l"] .ev-card-why { font-size: 14px; }
 .ev-feed .ev-card[data-layout="l"] .ev-track { min-height: 40px; padding-block: 4px; }
 .ev-feed .ev-card[data-layout="l"] .ev-track-album { display: none; }
 
-/* icon row: triage on the left, Save / Open / Share on the right */
-.ev-feed .ev-card-actions { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
-.ev-feed .ev-triage, .ev-feed .ev-secondary { display: flex; gap: 6px; }
-.ev-feed .ev-secondary { gap: 2px; }
+/* icon row: six even columns, each an icon with a one-word label (Less, Skip, More, Save, Open-in
+   app, Share). The two role groups use display: contents so all six share one grid. */
+.ev-feed .ev-card-actions { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; }
+.ev-feed .ev-triage, .ev-feed .ev-secondary { display: contents; }
 .ev-feed .ev-ib {
-  display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; background: var(--raise); color: var(--fg-2);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; width: 100%; height: 52px;
+  border-radius: 10px; color: var(--fg-2); text-decoration: none;
   transition: background-color 120ms var(--ease), color 120ms var(--ease);
 }
-.ev-feed .ev-ib:hover { background: color-mix(in oklch, var(--raise), white 8%); color: var(--fg); }
+.ev-feed .ev-ib span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; line-height: 1; color: var(--fg-3); }
+.ev-feed .ev-ib:hover { background: var(--raise); color: var(--fg); }
+.ev-feed .ev-ib:hover span { color: var(--fg-2); }
 .ev-feed .ev-ib:active { transform: scale(0.95); }
 .ev-feed .ev-ib-like { color: var(--violet-ink); }
-.ev-feed .ev-ib-like[aria-pressed="true"] { background: var(--violet-fill); color: #fff; }
-.ev-feed .ev-ib-quiet { background: none; }
-.ev-feed .ev-ib-quiet[aria-pressed="true"] { color: var(--violet-ink); }
+.ev-feed .ev-ib[aria-pressed="true"] { color: var(--violet-ink); background: var(--violet-wash); }
+.ev-feed .ev-ib[aria-pressed="true"] span { color: var(--violet-ink); }
 
 /* dev-only switch between layouts M and L (FocusCard, SHOW_LAYOUT_TOGGLE) */
 .ev-feed .ev-layout-toggle { position: absolute; top: 10px; right: 10px; z-index: 3; display: flex; padding: 2px; border-radius: 8px; background: rgba(0, 0, 0, 0.6); }
