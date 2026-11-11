@@ -7,7 +7,7 @@ import { AudioProvider } from "@/lib/audio-context"
 import { useFeedTriage } from "@/lib/hooks/use-feed-triage"
 import { counts } from "@/lib/feed/triage-queue"
 import type { CardArtist } from "@/lib/cards/card-artist"
-import { FeedSnap, SnapCount } from "./feed-snap"
+import { FeedSnap } from "./feed-snap"
 import { ChallengeSlot, type ChallengePayload } from "./challenge-strip"
 
 function artist(id: string, name: string, imageUrl: string | null = `https://is1-ssl.mzstatic.com/${id}.jpg`): CardArtist {
@@ -29,13 +29,7 @@ function Snap({ artists, decided }: { artists: CardArtist[]; decided?: Map<strin
   const triage = decided
     ? { ...t, signals: decided, selectedId: null, selected: null, remaining: artists.filter((a) => !decided.has(a.id)).length, counts: counts(t.ids, decided) }
     : t
-  return (
-    <>
-      <FeedSnap triage={triage} onLoadMore={() => {}} generating={false} wander={{ on: false, toggle: () => {} }} />
-      {/* The count is portalled into the shell top bar, which a server render has no slot for. */}
-      <SnapCount triage={triage} />
-    </>
-  )
+  return <FeedSnap triage={triage} onLoadMore={() => {}} generating={false} wander={{ on: false, toggle: () => {} }} />
 }
 
 const render = (artists: CardArtist[], decided?: Map<string, string>) =>
@@ -51,7 +45,6 @@ describe("FeedSnap server render", () => {
     const bar = html.slice(html.indexOf('class="ev-m-triage"'))
     expect(bar).toContain('aria-label="Tell flipside what you think of Yin Yin"')
     for (const label of ["Less", "Skip", "More"]) expect(bar).toContain(`<span>${label}</span>`)
-    expect(html).toContain("<strong>3</strong><span class=\"ev-m-count-of\"> of 3</span> left")
   })
 
   it("only the first artwork loads eagerly; an artist with no image gets the letter panel", () => {
@@ -76,7 +69,6 @@ describe("FeedSnap server render", () => {
     expect(html).toContain("You’ve heard all 3.")
     expect(html).toContain("Load more artists")
     expect(html).toMatch(/class="ev-m-triage"[^>]*data-hidden="true"[^>]*inert=""/)
-    expect(html).toContain("<strong>0</strong><span class=\"ev-m-count-of\"> of 3</span> left")
   })
 })
 

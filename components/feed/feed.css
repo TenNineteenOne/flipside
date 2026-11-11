@@ -82,8 +82,6 @@
 }
 .ev-feed .ev-queue-title { font-size: 26px; letter-spacing: -0.025em; line-height: 1.15; }
 .ev-feed .ev-progress { display: flex; align-items: center; gap: 16px; min-width: 0; }
-.ev-feed .ev-progress-text { flex: none; font-size: 13px; line-height: 16px; color: var(--fg-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.ev-feed .ev-progress-text strong { color: var(--fg); font-weight: 600; }
 /* One row of flexible segments for any count (--n): 2–9px wide, gaps shrink to 0 past ~80 artists. */
 .ev-feed .ev-strip {
   display: flex; justify-content: flex-end; flex: 0 1 320px; min-width: 0; margin-left: auto; overflow: hidden;
@@ -398,9 +396,7 @@ body:has(.ev-skel-m) .shell-top-slot:empty::before { content: ""; width: 76px; h
 /* ---------- Phone feed ("Snap": below 640px, or too short for tablet / desktop) and the snap card (shared with the tablet stage) ----------
    Ported from the prototype's .ev-m-* rules (design-lab: app/lab/evolved/evolved.css). */
 
-/* Top bar: "N of M left" (ShellSlot "top") and the strip (ShellSlot "topSub", 10px tall). */
-.ev-feed.ev-m-count { margin-left: auto; font-size: 13px; color: var(--fg-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.ev-feed.ev-m-count strong { color: var(--fg); font-weight: 600; }
+/* Top bar (ShellSlot "top") and the strip (ShellSlot "topSub", 10px tall). */
 .ev-feed.ev-m-strip { display: flex; gap: 2px; padding: 0 4px 0 0; height: 10px; align-items: center; }
 .ev-feed.ev-m-strip .ev-seg { flex: 1; width: auto; height: 4px; }
 .ev-feed.ev-m-strip .ev-seg[data-v="passed"], .ev-feed.ev-m-strip .ev-seg[data-v="dismissed"] { transform: none; }
@@ -739,7 +735,6 @@ body:has(.ev-snap) [data-sonner-toaster][data-y-position="top"] {
 .ev-feed.ev-m-topbar { padding-left: 8px; }
 @media (width < 400px) { .ev-feed.ev-m-topbar { gap: 8px; } }
 /* Below 400px the switch + Load more leave no room for "of M": show "N left" */
-@media (width < 400px) { .ev-feed .ev-m-count-of { display: none; } }
 /* Header Load more: a 40px icon button on phones, icon + "Load more" from 600px wide. */
 .ev-feed .ev-btn.ev-m-more { flex: none; min-height: 40px; min-width: 40px; padding: 0; gap: 6px; font-size: 14px; }
 .ev-feed .ev-m-more-text { display: none; }

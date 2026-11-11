@@ -189,7 +189,6 @@ export function TopBarProgress({ triage, wander, onLoadMore, generating }: {
             <Plus size={18} strokeWidth={2} aria-hidden />
             <span className="ev-m-more-text" aria-hidden>{generating ? "Generating…" : "Load more"}</span>
           </button>
-          <SnapCount triage={triage} />
         </span>
       </ShellSlot>
       <ShellSlot name="topSub">
@@ -245,11 +244,3 @@ export function TriageBar({ triage }: { triage: FeedTriage }) {
   )
 }
 
-/** "N of M left" for the phone top bar. */
-export function SnapCount({ triage }: { triage: Pick<FeedTriage, "remaining" | "total"> }) {
-  return (
-    <span className="ev-feed ev-m-count">
-      <strong>{triage.remaining}</strong><span className="ev-m-count-of"> of {triage.total}</span> left
-    </span>
-  )
-}

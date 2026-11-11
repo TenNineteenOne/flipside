@@ -22,7 +22,6 @@ export function FeedSkeleton() {
             </div>
             {/* the real progress block's structure, so the header's height matches at every width */}
             <div className="ev-progress">
-              <span className="ev-progress-text"><span className="fs-skeleton" style={{ display: "inline-block", width: 84, height: 12, verticalAlign: "middle" }} /></span>
               <ol className="ev-strip" style={{ "--n": SEGS.length } as React.CSSProperties}>
                 {SEGS.map((i) => <li key={i} className="ev-seg" />)}
               </ol>

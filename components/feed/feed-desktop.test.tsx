@@ -53,7 +53,7 @@ describe("FeedDesktop server render", () => {
     expect(focus).toContain("Yin Yin")
     expect(focus).not.toContain("Altın Gün")
     for (const label of ["Less like this", "Dismiss", "More like this"]) expect(html).toContain(label)
-    expect(html).toMatch(/<strong>3<\/strong> of 3 left/)
+    expect(html).toContain('aria-label="3 of 3 left"')
     expect(html).toMatch(/aria-label="Select Yin Yin" aria-current="true"/)
     // "Load more artists" is always at the end of the queue column, not only in the end state.
     const queue = html.slice(html.indexOf('class="ev-queue"'), html.indexOf('class="ev-focus"'))
@@ -94,7 +94,7 @@ describe("FeedDesktop server render", () => {
     expect(html).not.toContain("Tomorrow")
     expect(html).toContain("Load more artists")
     expect(html).toMatch(/<a[^>]*href="\/saved"[^>]*>Review saved<\/a>/)
-    expect(html).toContain("<strong>0</strong> of 3 left")
+    expect(html).toContain('aria-label="0 of 3 left"')
   })
 })
 
