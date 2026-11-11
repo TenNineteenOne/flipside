@@ -134,7 +134,9 @@ export async function GET(req: NextRequest) {
         id: `lf:${c.mbid ?? norm}`,
         name: c.name,
         genres: [],
-        imageUrl: c.imageUrl,
+        // Last.fm only serves its generic star placeholder for artists, and CSP img-src
+        // blocks its CDN anyway (rendered as a broken image), so show the blank tile.
+        imageUrl: null,
         popularity: 0,
         needsResolve: true,
         mbid: c.mbid,
