@@ -213,12 +213,33 @@ function FocusCard({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
         </div>
       </div>
 
-      <div className="ev-card-actions">
-        <button type="button" className="ev-btn ev-btn-play" onClick={() => triage.togglePlay(a)} aria-pressed={playing} disabled={!canPlay} title={canPlay ? "Play / pause (Space)" : undefined}>
-          {canPlay && (playing ? <Pause size={18} fill="currentColor" strokeWidth={0} aria-hidden /> : <Play size={18} fill="currentColor" strokeWidth={0} aria-hidden />)}
-          {loading ? "Loading tracks…" : !canPlay ? "No preview available" : playing ? "Pause" : "Play preview"}
-        </button>
+      {playable.length > 0 ? (
+        <section className="ev-tracks" aria-label="Previews">
+          <ol>
+            {playable.map((t, i) => {
+              const current = triage.isCurrentTrack(a, t)
+              const on = current && playing
+              const dur = formatDuration(t.durationMs)
+              return (
+                <li key={t.id}>
+                  <button type="button" className="ev-track" style={{ "--c": chips[i] } as CSSProperties} data-current={current || undefined} onClick={() => triage.playTrack(a, i)} aria-label={`${on ? "Pause" : "Play"} ${t.name}`}>
+                    <span className="ev-track-n" aria-hidden>
+                      {on ? <Pause size={13} fill="currentColor" strokeWidth={0} /> : <Play size={13} fill="currentColor" strokeWidth={0} />}
+                    </span>
+                    <span className="ev-track-name">{t.name}<span className="ev-track-album">{t.albumName}</span></span>
+                    {dur && <span className="ev-track-dur">{dur}</span>}
+                    {current && <span className="ev-track-bar" aria-hidden><span style={{ transform: `scaleX(${progress})` }} /></span>}
+                  </button>
+                </li>
+              )
+            })}
+          </ol>
+        </section>
+      ) : (
+        <p className="ev-tracks-empty">{loading ? "Loading tracks…" : "No preview available"}</p>
+      )}
 
+      <div className="ev-card-actions">
         <div className="ev-triage" role="group" aria-label="Tell flipside what you think">
           <button type="button" className="ev-tri" onClick={() => judge("thumbs_down")} title="Less like this (X)">
             <ThumbsDown size={16} strokeWidth={1.75} aria-hidden /><span>Less like this</span>
@@ -245,31 +266,6 @@ function FocusCard({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
           </button>
         </div>
       </div>
-
-      {playable.length > 0 && (
-        <section className="ev-tracks" aria-label="Previews">
-          <h3 className="ev-tracks-title">Previews</h3>
-          <ol>
-            {playable.map((t, i) => {
-              const current = triage.isCurrentTrack(a, t)
-              const on = current && playing
-              const dur = formatDuration(t.durationMs)
-              return (
-                <li key={t.id}>
-                  <button type="button" className="ev-track" style={{ "--c": chips[i] } as CSSProperties} data-current={current || undefined} onClick={() => triage.playTrack(a, i)} aria-label={`${on ? "Pause" : "Play"} ${t.name}`}>
-                    <span className="ev-track-n" aria-hidden>
-                      {on ? <Pause size={13} fill="currentColor" strokeWidth={0} /> : <Play size={13} fill="currentColor" strokeWidth={0} />}
-                    </span>
-                    <span className="ev-track-name">{t.name}<span className="ev-track-album">{t.albumName}</span></span>
-                    {dur && <span className="ev-track-dur">{dur}</span>}
-                    {current && <span className="ev-track-bar" aria-hidden><span style={{ transform: `scaleX(${progress})` }} /></span>}
-                  </button>
-                </li>
-              )
-            })}
-          </ol>
-        </section>
-      )}
     </article>
   )
 }

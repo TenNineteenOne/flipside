@@ -172,40 +172,27 @@
 .ev-feed .ev-focus { grid-area: focus; display: flex; flex-direction: column; min-height: 0; background: var(--panel); border-left: 1px solid var(--line); }
 .ev-feed .ev-focus-scroll { flex: 1; min-height: 0; overflow-y: auto; }
 .ev-feed .ev-card {
-  display: flex; flex-direction: column; gap: 22px; padding: 24px 24px 28px; min-height: 100%;
+  display: flex; flex-direction: column; gap: 16px; padding: 24px 24px 28px; min-height: 100%;
   /* tint from the artist's own colour, flat and fading out (not a glow) */
   background: linear-gradient(to bottom, color-mix(in oklch, var(--a-dark) 42%, var(--panel)) 0, var(--panel) 420px);
 }
 .ev-feed .ev-card-hero { display: flex; flex-direction: column; gap: 18px; }
-/* Height-aware: on tall windows the art stacks above the name, sized so the actions AND the three
-   previews stay above the fold. 690px is the rest of the pane (padding, name block, action rows,
-   previews) plus the docked player, measured at 686px in a 1470x763 window. */
-.ev-feed .ev-card-art { width: max(96px, min(100%, 44vh, 100vh - 690px)); height: auto; aspect-ratio: 1; object-fit: cover; border-radius: 12px; box-shadow: 0 18px 40px -18px color-mix(in oklch, var(--a-dark) 80%, black); }
-/* Backstop for any window height, zoom level or player state: the action rows pin to the bottom of
-   the pane instead of scrolling out of view. */
-.ev-feed .ev-card-actions { position: sticky; bottom: 0; z-index: 1; margin-inline: -24px; padding: 8px 24px; background: var(--panel); }
+/* Height-aware: the art stays the hero but shrinks just enough that the three previews and the
+   triage row stay above the fold (Save/Open/Share may sit just below). 490px is the rest of the pane
+   plus the docked player, measured in a 1470x763 window. */
+.ev-feed .ev-card-art { width: max(160px, min(100%, 52vh, 100vh - 490px)); height: auto; aspect-ratio: 1; object-fit: cover; border-radius: 12px; box-shadow: 0 18px 40px -18px color-mix(in oklch, var(--a-dark) 80%, black); }
 .ev-feed .ev-card-art.ev-letter { font-size: min(40cqw, 16vh); }
 .ev-feed .ev-card-hero { container-type: inline-size; }
 .ev-feed .ev-card-name { font-size: 32px; line-height: 1.05; letter-spacing: -0.03em; }
 .ev-feed .ev-card-genres { margin-top: 6px; color: var(--fg-2); font-size: 14px; }
 .ev-feed .ev-card-why { margin-top: 12px; font-size: 15px; color: var(--fg-2); }
 .ev-feed .ev-card-why strong { color: var(--fg); font-weight: 600; }
-/* Up to 1000px tall (most laptops) a stacked square would be tiny, so the art sits beside the name. */
-@media (max-height: 1000px) {
-  .ev-feed .ev-card-hero { flex-direction: row; align-items: flex-start; gap: 18px; }
-  .ev-feed .ev-card-art { width: min(200px, 42%); flex-shrink: 0; }
-  .ev-feed .ev-card-name { font-size: 26px; overflow-wrap: anywhere; }
-}
 .ev-feed .ev-card-pop { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 13px; color: var(--fg-3); }
 
 .ev-feed .ev-card-actions { display: flex; flex-direction: column; gap: 10px; container-type: inline-size; }
 @container (width < 361px) {
   .ev-feed .ev-tri { padding: 0 6px; gap: 5px; font-size: 13px; }
 }
-.ev-feed .ev-btn-play { width: 100%; min-height: 50px; background: var(--fg); color: oklch(0.16 0.01 293); border-radius: 11px; font-size: 16px; }
-.ev-feed .ev-btn-play:hover:not(:disabled) { background: white; }
-.ev-feed .ev-btn-play[aria-pressed="true"] { background: var(--a-light); }
-.ev-feed .ev-btn-play:disabled { cursor: default; background: var(--raise); color: var(--fg-3); }
 .ev-feed .ev-triage { display: flex; gap: 6px; }
 
 .ev-feed .ev-card { animation: ev-feed-in 220ms var(--ease); }
@@ -249,10 +236,10 @@
 .ev-feed .ev-sec[aria-pressed="true"] { color: var(--violet-ink); }
 
 /* track list */
-.ev-feed .ev-tracks-title { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; color: var(--fg-3); padding: 0 8px 6px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
 /* Same look as the phone card's chips: a tint, a bold edge and a play circle in the track's own colour
    (`--c`, set inline from chipColors in lib/color-utils.ts). Playing = white ring. */
-.ev-feed .ev-tracks ol { display: flex; flex-direction: column; gap: 6px; }
+.ev-feed .ev-tracks ol { display: flex; flex-direction: column; gap: 4px; }
+.ev-feed .ev-tracks-empty { font-size: 14px; color: var(--fg-3); }
 .ev-feed .ev-track {
   --c: oklch(0.7 0.14 230);
   position: relative; display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 6px 12px 6px 8px; border-radius: 10px; text-align: left; overflow: hidden;
@@ -698,7 +685,7 @@ body:has(.ev-snap) [data-sonner-toaster][data-y-position="top"] {
   .ev-feed .ev-meter, .ev-feed .ev-chal-track { border: 1px solid CanvasText; }
   .ev-feed .ev-meter > span, .ev-feed .ev-chal-track > span { forced-color-adjust: none; background: CanvasText; }
   /* Background-only controls get a visible edge. */
-  .ev-feed .ev-m-tri, .ev-feed .ev-m-chip, .ev-feed .ev-btn-play { border: 1px solid ButtonText; }
+  .ev-feed .ev-m-tri, .ev-feed .ev-m-chip { border: 1px solid ButtonText; }
 }
 
 /* Safari before 16.2 has no color-mix(): artist shades fall back to the artist colour itself and the
