@@ -98,7 +98,7 @@ export async function GET(req: NextRequest) {
 
   if (isSearchRateLimited(session.user.id)) {
     console.log(`[onboard-search] self-rate-limited userId=${session.user.id}`)
-    return apiError("Too many searches — slow down for a moment", 429)
+    return apiError("Too many searches. Slow down for a moment.", 429)
   }
 
   const query = req.nextUrl.searchParams.get("q")

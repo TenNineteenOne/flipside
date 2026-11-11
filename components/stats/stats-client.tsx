@@ -54,7 +54,7 @@ function TopGenres({ genres }: { genres: { genre: string; count: number }[] }) {
         <h2 id={headingId} className="st-h2">Top genres</h2>
       </div>
       {genres.length === 0 ? (
-        <p className="st-empty">Like some artists to see your top genres</p>
+        <p className="st-empty">No likes yet.</p>
       ) : (
         <ol className="st-genres">
           {genres.map(({ genre, count }, i) => (
@@ -141,13 +141,15 @@ function TasteProfileView({
       </div>
 
       {items.length === 0 ? (
-        <p className="st-empty">Save or like some artists to see where they fall on the popularity scale.</p>
+        <p className="st-empty">Nothing saved or liked yet.</p>
       ) : (
         <>
           <figure className="st-fig">
             <figcaption id={captionId} className="st-caption">
-              Each mark is an artist you saved or liked, placed by popularity from 0 (barely known) to 100
-              (mainstream). Half of yours score {mid} or less.
+              Median popularity: {mid}
+              <span className="sr-only">
+                . Each mark is an artist you saved or liked, placed by popularity from 0 (barely known) to 100 (mainstream).
+              </span>
             </figcaption>
             <div className="st-plot">
               <svg
@@ -241,11 +243,9 @@ export function StatsClient({
     <div className="st shell-wide">
       <header className="st-head">
         <h1 className="st-title">Stats</h1>
-        <p className="st-sub">Your discovery journey</p>
         {nothingDecided && (
           <p className="st-lead">
-            Your top genres and taste profile fill in as you decide on artists. Like or save a few in
-            the <Link href="/feed">feed</Link> and come back.
+            Nothing here yet. Like or save a few artists in the <Link href="/feed">feed</Link>.
           </p>
         )}
       </header>

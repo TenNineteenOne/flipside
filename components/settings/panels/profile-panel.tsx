@@ -39,9 +39,6 @@ export function ProfilePanel({ userSeed }: ProfilePanelProps) {
             }}
           />
         </div>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 15, fontWeight: 700 }}>Your profile</div>
-        </div>
       </div>
     </div>
   )

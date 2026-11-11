@@ -42,7 +42,7 @@ function namesMatch(clientName: string, mbName: string): boolean {
  */
 export const POST = withAuthedCsrfRoute(async ({ userId, request }) => {
   if (isRateLimited(userId)) {
-    return apiError("Too many lookups — slow down for a moment", 429)
+    return apiError("Too many lookups. Slow down for a moment.", 429)
   }
 
   let body: { name?: unknown; mbid?: unknown } | null

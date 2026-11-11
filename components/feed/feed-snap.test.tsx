@@ -7,7 +7,7 @@ import { AudioProvider } from "@/lib/audio-context"
 import { useFeedTriage } from "@/lib/hooks/use-feed-triage"
 import { counts } from "@/lib/feed/triage-queue"
 import type { CardArtist } from "@/lib/cards/card-artist"
-import { FeedSnap, SnapCount } from "./feed-snap"
+import { FeedSnap } from "./feed-snap"
 import { ChallengeSlot, type ChallengePayload } from "./challenge-strip"
 
 function artist(id: string, name: string, imageUrl: string | null = `https://is1-ssl.mzstatic.com/${id}.jpg`): CardArtist {
@@ -29,13 +29,7 @@ function Snap({ artists, decided }: { artists: CardArtist[]; decided?: Map<strin
   const triage = decided
     ? { ...t, signals: decided, selectedId: null, selected: null, remaining: artists.filter((a) => !decided.has(a.id)).length, counts: counts(t.ids, decided) }
     : t
-  return (
-    <>
-      <FeedSnap triage={triage} onLoadMore={() => {}} generating={false} wander={{ on: false, toggle: () => {} }} />
-      {/* The count is portalled into the shell top bar, which a server render has no slot for. */}
-      <SnapCount triage={triage} />
-    </>
-  )
+  return <FeedSnap triage={triage} onLoadMore={() => {}} generating={false} wander={{ on: false, toggle: () => {} }} />
 }
 
 const render = (artists: CardArtist[], decided?: Map<string, string>) =>
@@ -44,14 +38,21 @@ const render = (artists: CardArtist[], decided?: Map<string, string>) =>
 describe("FeedSnap server render", () => {
   const artists = [artist("a", "Yin Yin"), artist("b", "Altın Gün"), artist("c", "Glass Beams", null)]
 
-  it("renders every artist as a page in order, the triage bar for the first, and the count", () => {
+  it("renders every artist as a page in order; each card holds art with the name, why, the six actions and its tracks note", () => {
     const html = render(artists)
     const pages = [...html.matchAll(/<section class="ev-m-page" data-id="(\w)" aria-label="([^"]+)"/g)].map((m) => m[2])
     expect(pages).toEqual(["Yin Yin", "Altın Gün", "Glass Beams"])
-    const bar = html.slice(html.indexOf('class="ev-m-triage"'))
-    expect(bar).toContain('aria-label="Tell flipside what you think of Yin Yin"')
-    for (const label of ["Less like this", "Dismiss", "More like this"]) expect(bar).toContain(`<span>${label}</span>`)
-    expect(html).toContain("<strong>3</strong><span class=\"ev-m-count-of\"> of 3</span> left")
+    expect(html).not.toContain("ev-m-triage")
+    const card = html.slice(html.indexOf('data-id="a"'), html.indexOf('data-id="b"'))
+    // name and genres over the artwork's lower edge, no play ring
+    expect(card).toMatch(/class="ev-m-art">.*?<div class="ev-m-title"><h2 class="ev-m-name">Yin Yin<\/h2><p class="ev-m-genres">dub · kraut<\/p><\/div>/)
+    expect(card).not.toContain("ev-m-play")
+    const order = ["ev-m-art", "ev-m-why", "ev-card-actions", "ev-tracks-empty"].map((c) => card.indexOf(`class="${c}"`))
+    expect(order.every((at, i) => at > -1 && (i === 0 || at > order[i - 1]))).toBe(true)
+    const actions = card.slice(card.indexOf('class="ev-card-actions"'))
+    for (const [name, label] of [["Less like this", "Less"], ["Skip this artist", "Skip"], ["More like this", "More"], ["Save for later", "Save"], ["Open in Spotify", "Spotify"], ["Share", "Share"]])
+      expect(actions).toMatch(new RegExp(`aria-label="${name}"[^>]*>.*?<span>${label}</span>`))
+    expect(card).toContain('<p class="ev-tracks-empty">Loading tracks…</p>')
   })
 
   it("only the first artwork loads eagerly; an artist with no image gets the letter panel", () => {
@@ -70,13 +71,10 @@ describe("FeedSnap server render", () => {
     expect(html).toMatch(/data-v="liked"[\s\S]*class="ev-m-liked"[^>]*>.*?Liked</)
     expect(html).toMatch(/class="ev-m-judged">.*?Less like this</)
     expect(html).toMatch(/class="ev-m-judged">.*?Dismissed</)
-    // A second copy beside the name, shown instead of the artwork's by feed.css on sideways (landscape) cards.
-    expect(html).toMatch(/class="ev-m-name">Yin Yin<\/h2><span class="ev-m-liked ev-m-badge-side">/)
-    expect(html).toMatch(/class="ev-m-judged ev-m-badge-side">.*?Dismissed</)
+    // The liked card's own More button reads as pressed.
+    expect(html).toMatch(/aria-pressed="true" aria-label="Liked"[^>]*>.*?<span>Liked<\/span>/)
     expect(html).toContain("You’ve heard all 3.")
     expect(html).toContain("Load more artists")
-    expect(html).toMatch(/class="ev-m-triage"[^>]*data-hidden="true"[^>]*inert=""/)
-    expect(html).toContain("<strong>0</strong><span class=\"ev-m-count-of\"> of 3</span> left")
   })
 })
 

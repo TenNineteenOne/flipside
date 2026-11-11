@@ -109,9 +109,7 @@ export default function SignInPage({
             <Wordmark />
           </div>
           <div className="serif" style={{ fontSize: 22, color: "var(--text-primary)", lineHeight: 1.3 }}>
-            {isNew ? "Pick a username." : "Welcome back."}
-            <br />
-            {isNew ? <>That&rsquo;s it.</> : "Enter your username."}
+            {isNew ? "Pick a name" : "Sign in"}
           </div>
         </div>
 
@@ -147,7 +145,7 @@ export default function SignInPage({
           >
             <div style={{ fontSize: 12, lineHeight: 1.6, color: "var(--text-muted)" }}>
               <span style={{ color: "var(--accent)", fontWeight: 700 }}>No recovery.</span>
-              {" "}Your username is your only key. If you forget it, your account is gone — there is no email, no password reset, and no way to recover it.
+              {" "}Your username is your only key. Forget it and the account is gone.
             </div>
           </div>
         )}
@@ -232,24 +230,10 @@ export default function SignInPage({
             style={{ height: 48, fontSize: 15 }}
           >
             {isNew
-              ? (loading ? "Creating account…" : "Create account →")
-              : (loading ? "Signing in…" : "Sign in →")}
+              ? (loading ? "Creating account…" : "Create account")
+              : (loading ? "Signing in…" : "Sign in")}
           </button>
         </form>
-
-        {/* Footer */}
-        <div
-          className="mono"
-          style={{
-            marginTop: 24,
-            textAlign: "center",
-            fontSize: 10.5,
-            color: "var(--text-faint)",
-            lineHeight: 1.6,
-          }}
-        >
-          no email · no password · no listening history
-        </div>
       </div>
     </div>
   )

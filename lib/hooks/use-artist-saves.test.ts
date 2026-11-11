@@ -59,11 +59,11 @@ describe("buildSaveFetchInit", () => {
 // Test 5 (default messages): covers default error message strings
 describe("DEFAULT_SAVES_MESSAGES", () => {
   it("has the correct default saveFailed message", () => {
-    expect(DEFAULT_SAVES_MESSAGES.saveFailed).toBe("Couldn't save — try again")
+    expect(DEFAULT_SAVES_MESSAGES.saveFailed).toBe("Couldn't save. Try again.")
   })
 
   it("has the correct default unsaveFailed message", () => {
-    expect(DEFAULT_SAVES_MESSAGES.unsaveFailed).toBe("Couldn't unsave — try again")
+    expect(DEFAULT_SAVES_MESSAGES.unsaveFailed).toBe("Couldn't unsave. Try again.")
   })
 })
 
@@ -121,7 +121,7 @@ describe("POST failure path", () => {
     }
 
     expect(threw).toBe(true)
-    expect(toast.error).toHaveBeenCalledWith("Couldn't save — try again")
+    expect(toast.error).toHaveBeenCalledWith("Couldn't save. Try again.")
   })
 
   // Test 5: custom messages used when provided
@@ -160,7 +160,7 @@ describe("DELETE failure path", () => {
     }
 
     expect(threw).toBe(true)
-    expect(toast.error).toHaveBeenCalledWith("Couldn't unsave — try again")
+    expect(toast.error).toHaveBeenCalledWith("Couldn't unsave. Try again.")
   })
 
   // Test 5: custom messages used when provided

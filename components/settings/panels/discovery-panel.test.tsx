@@ -41,7 +41,7 @@ describe("DiscoveryPanel", () => {
     expect(html).toContain(">Balanced<")
     expect(html).toContain("How close to your taste?")
     expect(html).toMatch(/role="switch" aria-checked="true" aria-label="Wander farther" aria-describedby="[^"]+"/)
-    expect(html).toContain("About half of each new batch comes from outside your usual genres. Also on Feed.")
+    expect(html).toContain("About half of each batch comes from outside your usual genres.")
     for (const gone of ["Popularity curve", "Extra obscure", "Deep discovery", "Regenerate", "hide if played"]) expect(html).not.toContain(gone)
   })
 })

@@ -77,15 +77,6 @@ export async function postGenerate(fetchImpl: typeof fetch = fetch, url = GENERA
   }
 }
 
-/** Toast copy when the server widened its filters for this batch; null when it didn't. */
-export function softenedFiltersMessage(body: GenerateBody): string | null {
-  const s = body.softenedFilters
-  if (!s) return null
-  if (s.coldStart) return "Widened the search for this batch — falling back to starter picks."
-  if (s.playThreshold) return "Widened the search for this batch — loosening the familiarity cap."
-  return null
-}
-
 /**
  * Feed-loader decision: refresh the page, poll for an in-flight run, or show an error.
  * A thrown POST (status 0) polls too: iOS kills in-flight fetches when the tab
@@ -105,7 +96,7 @@ export function loaderAction(r: GenerateResult): { action: "refresh" } | { actio
     case "empty":
       return {
         action: "error",
-        message: "No new artists found. Your listening history may be filtering everything out — try raising your play threshold in Settings.",
+        message: "No new artists found. Try raising your play threshold in Settings.",
       }
     default:
       return {
@@ -214,13 +205,8 @@ export function createFeedGeneration({
         const r = await postGenerate(fetchImpl)
         // A released run (the page unmounted) stays quiet: its toast would
         // land on whatever page the user navigated to.
-        if (!silent && id === runId) {
-          if (r.ok) {
-            const soft = softenedFiltersMessage(r.body)
-            if (soft) toast(soft)
-          } else if (r.kind !== "unauthorized") {
-            toast.error(r.error ?? "Generation failed")
-          }
+        if (!silent && id === runId && !r.ok && r.kind !== "unauthorized") {
+          toast.error(r.error ?? "Generation failed")
         }
         return r
       } finally {

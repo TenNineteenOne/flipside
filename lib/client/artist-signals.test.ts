@@ -51,7 +51,7 @@ describe("feedback: optimistic before queue", () => {
     calls[0].resolve(false)
     await flush()
     expect(sig()).toBe("thumbs_down") // not rolled back under the pending tap
-    expect(toast.error).toHaveBeenCalledWith("Couldn't save feedback — try again")
+    expect(toast.error).toHaveBeenCalledWith("Couldn't save feedback. Try again.")
     calls[1].resolve(true)
     await t2
     expect(sig()).toBe("thumbs_down")
@@ -79,7 +79,7 @@ describe("feedback: optimistic before queue", () => {
     calls[1].resolve(false)
     await t2
     expect(sig()).toBeUndefined()
-    expect(toast.error).toHaveBeenCalledWith("Couldn't undo — try again")
+    expect(toast.error).toHaveBeenCalledWith("Couldn't undo. Try again.")
   })
 
 
@@ -105,7 +105,7 @@ describe("feedback: confirmed ops (History undo/unblock)", () => {
     calls[1].resolve(false)
     expect(await undo).toBe(false)
     expect(sig()).toBe("thumbs_down")
-    expect(toast.error).toHaveBeenCalledWith("Couldn't undo — try again")
+    expect(toast.error).toHaveBeenCalledWith("Couldn't undo. Try again.")
 
     const undo2 = c.removeSignal("a")
     await flush()
@@ -178,7 +178,7 @@ describe("feedback: restore (feed undo)", () => {
     await drain(calls, false)
     expect(await p).toBe(false)
     expect(sig()).toBe("thumbs_down")
-    expect(toast.error).toHaveBeenCalledWith("Couldn't undo — try again")
+    expect(toast.error).toHaveBeenCalledWith("Couldn't undo. Try again.")
   })
 
   it("skip → thumbs: once the DELETE succeeded, a failed POST still counts as undone (no rollback, no toast)", async () => {
@@ -203,7 +203,7 @@ describe("feedback: restore (feed undo)", () => {
     expect(await p).toBe(false)
     expect(sig()).toBe("skip")
     expect(calls).toHaveLength(1)
-    expect(toast.error).toHaveBeenCalledWith("Couldn't undo — try again")
+    expect(toast.error).toHaveBeenCalledWith("Couldn't undo. Try again.")
   })
 
   it("undo after a failed (rolled back) decision sends nothing", async () => {
@@ -240,7 +240,7 @@ describe("saves", () => {
     calls[1].resolve(false)
     await t2
     expect(saved()).toBe(false)
-    expect(toast.error.mock.calls.map((x) => x[0])).toEqual(["Couldn't save — try again", "Couldn't unsave — try again"])
+    expect(toast.error.mock.calls.map((x) => x[0])).toEqual(["Couldn't save. Try again.", "Couldn't unsave. Try again."])
   })
 
   it("unsave of an initially-saved artist rolls back on failure", async () => {

@@ -1,6 +1,6 @@
 import { ImageResponse } from "next/og"
 
-export const alt = "Flipside — music discovery, without the strings."
+export const alt = "Flipside: great music is waiting to find you."
 export const size = { width: 1200, height: 630 }
 export const contentType = "image/png"
 
@@ -55,17 +55,8 @@ export default function OpengraphImage() {
             maxWidth: 980,
           }}
         >
-          <span>Music discovery,</span>
-          <span>without the strings.</span>
-        </div>
-        <div
-          style={{
-            marginTop: 32,
-            fontSize: 28,
-            color: "rgba(245,245,245,0.6)",
-          }}
-        >
-          Find artists you&rsquo;ll love — on your terms.
+          <span>Great music is</span>
+          <span>waiting to find you.</span>
         </div>
       </div>
     ),

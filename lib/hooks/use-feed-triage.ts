@@ -6,7 +6,6 @@ import { Undo2 } from "lucide-react"
 import { useAudio } from "@/lib/audio-context"
 import { artworkFor } from "@/lib/feed/artwork"
 import { decide, type Plan } from "@/lib/feed/decision"
-import { whyText } from "@/lib/feed/card-copy"
 import { counts, firstUndecided, reconcileSelection, remaining, step, visibleQueue, type Signal } from "@/lib/feed/triage-queue"
 import { tuning } from "@/lib/feed/tuning"
 import { shouldHandOver } from "@/lib/feed/hand-over"
@@ -54,8 +53,8 @@ export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatfor
   // Same error copy the feed has always passed.
   const { signals, setSignal, restore } = useArtistFeedback({
     errorMessages: {
-      undoFailed: "Couldn't undo — try again",
-      saveFailed: "Couldn't save feedback — try again",
+      undoFailed: "Couldn't undo. Try again.",
+      saveFailed: "Couldn't save feedback. Try again.",
     },
   })
   const { savedIds, toggleSave } = useArtistSaves()
@@ -236,8 +235,8 @@ export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatfor
       const url = getShareableArtistLink(musicPlatform, linkRef(a))
       if (navigator.share) {
         try {
-          const why = whyText(a.why)
-          await navigator.share({ title: `${a.name} on flipside`, text: why ? `${why}. Have a listen:` : undefined, url })
+          // Just the link: the messaging app's preview card names the artist; the sender adds their own words.
+          await navigator.share({ url })
           return
         } catch (e) {
           if (e instanceof DOMException && e.name === "AbortError") return

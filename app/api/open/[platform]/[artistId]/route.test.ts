@@ -62,7 +62,7 @@ describe("GET /api/open/[platform]/[artistId]", () => {
     for (let i = 0; i < 30; i++) expect((await call("apple_music", ID, "")).status).toBe(302)
     const res = await call("apple_music", ID, "")
     expect(res.status).toBe(429)
-    expect(await res.json()).toEqual({ error: "Too many requests — slow down for a moment" })
+    expect(await res.json()).toEqual({ error: "Too many requests. Slow down for a moment." })
     vi.mocked(safeAuth).mockResolvedValue({ user: { id: "u-other" } } as Awaited<ReturnType<typeof safeAuth>>)
     expect((await call("apple_music", ID, "")).status).toBe(302)
   })

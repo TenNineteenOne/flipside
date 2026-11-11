@@ -99,18 +99,14 @@ describe("createFeedGeneration.requestMore", () => {
     expect(gen.generating).toBe(false)
   })
 
-  it("Load more (not silent): softened toast on 200, raw server error on 429, nothing on 401", async () => {
+  it("Load more (not silent): no toast on a softened 200, raw server error on 429, nothing on 401", async () => {
     const toast = makeToast()
     const fetchImpl = vi.fn()
     const gen = createFeedGeneration({ fetchImpl, toast })
 
     fetchImpl.mockResolvedValueOnce(res(200, { count: 4, softenedFilters: { coldStart: true } }))
     await gen.requestMore()
-    expect(toast).toHaveBeenCalledWith("Widened the search for this batch — falling back to starter picks.")
-
-    fetchImpl.mockResolvedValueOnce(res(200, { count: 4, softenedFilters: { playThreshold: true } }))
-    await gen.requestMore()
-    expect(toast).toHaveBeenLastCalledWith("Widened the search for this batch — loosening the familiarity cap.")
+    expect(toast).not.toHaveBeenCalled()
 
     fetchImpl.mockResolvedValueOnce(res(429, COOLDOWN))
     await gen.requestMore()

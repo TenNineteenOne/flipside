@@ -64,12 +64,6 @@ export function SettingsForm({
       <div>
         <div className="page-head">
           <h1>Settings</h1>
-          <span className="sub">
-            <span className="serif" style={{ fontSize: 15, color: "var(--text-secondary)" }}>
-              Your preferences, politely tuned.
-            </span>
-            <span style={{ display: "block", marginTop: 4 }}>no email · no password</span>
-          </span>
         </div>
 
         <div className="col gap-16" style={{ marginTop: 8 }}>

@@ -4,7 +4,7 @@ import "./feed.css"
 import { useEffect, useRef } from "react"
 import { Heart, X } from "lucide-react"
 import { Art, artistVar, EndState, LoadMore, type Wander } from "@/components/feed/feed-parts"
-import { PlayerBar, TopBarProgress, TriageBar } from "@/components/feed/feed-snap"
+import { PlayerBar, TopBarProgress } from "@/components/feed/feed-snap"
 import { SnapCard } from "@/components/feed/snap-card"
 import { artworkFor } from "@/lib/feed/artwork"
 import { nextUndecided } from "@/lib/feed/triage-queue"
@@ -28,8 +28,8 @@ interface FeedTabletProps {
 
 /**
  * Tablet feed, 640–899px wide and at least 680px tall (PRD #182 "Breakpoints"; the prototype's `card` view):
- * the selected artist's card (swipeable, not in a scroller) with the triage bar
- * under it, beside a 280px "Up next" list of every loaded artist in feed order.
+ * the selected artist's card (swipeable, not in a scroller, with its own actions),
+ * beside a 280px "Up next" list of every loaded artist in feed order.
  * The end state takes the card's place when nothing is left. Presentation only.
  */
 export function FeedTablet({ triage, onLoadMore, generating, wander, challenge, onShown }: FeedTabletProps) {
@@ -70,7 +70,6 @@ export function FeedTablet({ triage, onLoadMore, generating, wander, challenge, 
       </main>
 
       <PlayerBar triage={triage} />
-      <TriageBar triage={triage} />
 
       <nav className="ev-m-rail-wrap" aria-labelledby="ev-upnext">
         <h2 id="ev-upnext" className="ev-m-rail-title">Up next</h2>

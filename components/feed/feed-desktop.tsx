@@ -1,20 +1,14 @@
 "use client"
 
 import "./feed.css"
-import { useEffect, useRef, type CSSProperties } from "react"
-import { Bookmark, Heart, Pause, Play, Share2, ThumbsDown, X } from "lucide-react"
-import { PlatformIcon } from "@/components/platform-icon"
+import { useEffect, useRef } from "react"
+import { Bookmark, Heart, Pause, Play } from "lucide-react"
 import { MiniPlayer } from "@/components/player/mini-player"
-import { Art, artistVar, EndState, LoadMore, type Wander } from "@/components/feed/feed-parts"
-import { WanderNote } from "@/components/feed/wander-switch"
+import { Art, artistVar, CardActions, EndState, LoadMore, TrackList, type Wander } from "@/components/feed/feed-parts"
 import { QueueColumns } from "@/components/feed/feed-skeleton"
-import { Kbd } from "@/components/feed/feed-shortcuts"
 import { ShellSlot } from "@/components/shell/shell-context"
-import { useAudio } from "@/lib/audio-context"
-import { chipColors, resolveArtistColor } from "@/lib/color-utils"
 import { artworkFor } from "@/lib/feed/artwork"
-import { formatDuration, listSeparator, popularityLabel, whyParts, whyText } from "@/lib/feed/card-copy"
-import { PLATFORM_META } from "@/lib/music-links"
+import { listSeparator, whyParts, whyText } from "@/lib/feed/card-copy"
 import { useArtistTracks } from "@/lib/hooks/use-artist-tracks"
 import { useLeaving } from "@/lib/hooks/use-leaving"
 import { useReducedMotion } from "@/lib/hooks/use-reduced-motion"
@@ -82,10 +76,8 @@ export function FeedDesktop({ triage, onLoadMore, generating, wander, challenge,
         <header ref={headRef} className="ev-queue-head">
           <div>
             <h1 id="ev-queue-title" className="ev-queue-title">Today&rsquo;s flipside</h1>
-            <p className="ev-queue-sub">{total} artists you&rsquo;ve never played, picked from what you told us.</p>
           </div>
           <div className="ev-progress" aria-label={`${remaining} of ${total} left`}>
-            <span className="ev-progress-text"><strong>{remaining}</strong> of {total} left</span>
             <ol className="ev-strip" aria-hidden style={{ "--n": triage.ids.length } as React.CSSProperties}>
               {triage.ids.map((id) => (
                 <li key={id} className="ev-seg" data-v={VERDICT[signals.get(id) ?? ""] ?? "none"} data-sel={id === selectedId || undefined} />
@@ -95,7 +87,6 @@ export function FeedDesktop({ triage, onLoadMore, generating, wander, challenge,
           <div className="ev-wander-bar">
             <div className="ev-wander-chal">{challenge}</div>
             <div className="ev-wander-ctl"><LoadMore onLoadMore={onLoadMore} generating={generating} wander={wander} label="Load more" primary /></div>
-            <WanderNote on={wander.on} />
           </div>
         </header>
 
@@ -156,7 +147,7 @@ export function FeedDesktop({ triage, onLoadMore, generating, wander, challenge,
             )
           })}
         </ul>
-        {visible.length > 0 && remaining === 0 && <p className="ev-queue-foot">Queue clear. These are the ones you kept.</p>}
+        {visible.length > 0 && remaining === 0 && <p className="ev-queue-foot">Queue clear.</p>}
         <div className="ev-queue-more"><LoadMore onLoadMore={onLoadMore} generating={generating} wander={wander} /></div>
       </main>
 
@@ -182,103 +173,37 @@ function FocusCard({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
     if (a.topTracks.length === 0 && tracks.length > 0) addTracks(a.id, tracks)
   }, [a.id, a.topTracks.length, tracks, addTracks])
 
-  const liked = triage.signals.get(a.id) === "thumbs_up"
-  const playing = triage.isPlaying(a)
   const canPlay = tracks.some((t) => t.previewUrl)
   const loading = !canPlay && isFetching
   const why = whyParts(a.why)
   const art = artworkFor({ imageUrl: a.imageUrl, topTracks: tracks })
-  const { progress } = useAudio()
-  const playable = tracks.filter((t) => t.previewUrl).slice(0, 3)
-  const chips = chipColors(resolveArtistColor(a.artistColor, a.name))
-  const saved = triage.savedIds.has(a.id)
-  const platform = PLATFORM_META[triage.musicPlatform]
-  const judge = (signal: "thumbs_up" | "thumbs_down" | "skip") => triage.judge(a.id, signal, { toggle: true, advance: true })
 
   return (
     <article className="ev-card" style={artistVar(a)}>
       <div className="ev-card-hero">
-        <Art a={a} src={art} size={600} className="ev-card-art" alt={`${tracks[0]?.albumName || a.name} cover art`} eager priority />
-        <div className="ev-card-id">
-          <h2 className="ev-card-name">{a.name}</h2>
-          {a.genres.length > 0 && <p className="ev-card-genres">{a.genres.join(" · ")}</p>}
-          {why && (
-            <p className="ev-card-why" data-far={why.far}>
-              {why.lead}
-              {why.names.length > 0
-                ? why.names.map((n, i) => <span key={n}>{listSeparator(i, why.names.length)}<strong>{n}</strong></span>)
-                : why.genres.join(", ")}
-            </p>
-          )}
-          <p className="ev-card-pop">
-            <span className="ev-meter" aria-hidden><span style={{ width: `${a.popularity}%` }} /></span>
-            {popularityLabel(a.popularity)} · popularity {a.popularity}
+        <div className="ev-card-art-wrap">
+          <Art a={a} src={art} size={600} className="ev-card-art" alt={`${tracks[0]?.albumName || a.name} cover art`} eager priority />
+          <div className="ev-card-title">
+            <h2 className="ev-card-name">{a.name}</h2>
+            {a.genres.length > 0 && <p className="ev-card-genres">{a.genres.join(" · ")}</p>}
+          </div>
+        </div>
+        {why && (
+          <p className="ev-card-why" data-far={why.far}>
+            {why.lead}
+            {why.names.length > 0
+              ? why.names.map((n, i) => <span key={n}>{listSeparator(i, why.names.length)}<strong>{n}</strong></span>)
+              : why.genres.join(", ")}
           </p>
-        </div>
+        )}
       </div>
 
-      <div className="ev-card-actions">
-        <button type="button" className="ev-btn ev-btn-play" onClick={() => triage.togglePlay(a)} aria-pressed={playing} disabled={!canPlay}>
-          {canPlay && (playing ? <Pause size={18} fill="currentColor" strokeWidth={0} aria-hidden /> : <Play size={18} fill="currentColor" strokeWidth={0} aria-hidden />)}
-          {loading ? "Loading tracks…" : !canPlay ? "No preview available" : playing ? "Pause" : "Play preview"}
-          {canPlay && <Kbd>Space</Kbd>}
-        </button>
+      <CardActions a={a} triage={triage} />
 
-        <div className="ev-triage" role="group" aria-label="Tell flipside what you think">
-          <button type="button" className="ev-tri" onClick={() => judge("thumbs_down")}>
-            <ThumbsDown size={16} strokeWidth={1.75} aria-hidden /><span>Less like this</span>
-          </button>
-          <button type="button" className="ev-tri" onClick={() => judge("skip")}>
-            <X size={16} strokeWidth={1.75} aria-hidden /><span>Dismiss</span>
-          </button>
-          <button type="button" className="ev-tri ev-tri-like" onClick={() => judge("thumbs_up")} aria-pressed={liked}>
-            <Heart size={16} strokeWidth={1.75} fill={liked ? "currentColor" : "none"} aria-hidden />
-            <span>{liked ? "Liked" : "More like this"}</span>
-          </button>
-        </div>
-
-        <p className="ev-hints" aria-hidden>
-          <span><Kbd>X</Kbd>less</span><span><Kbd>D</Kbd>dismiss</span><span><Kbd>L</Kbd>more</span>
-          <span><Kbd>B</Kbd>save</span><span><Kbd>O</Kbd>open</span><span><Kbd>J</Kbd><Kbd>K</Kbd>move</span>
-        </p>
-
-        <div className="ev-secondary">
-          <button type="button" className="ev-sec" onClick={() => triage.save(a)} aria-pressed={saved} title="Save for later (B)">
-            <Bookmark size={16} strokeWidth={1.75} fill={saved ? "currentColor" : "none"} aria-hidden />
-            <span>{saved ? "Saved" : "Save"}</span>
-          </button>
-          <a className="ev-sec" href={triage.artistLink(a)} target="_blank" rel="noopener noreferrer" aria-label={`Open in ${platform.label}`} title={`Open in ${platform.label} (O)`}>
-            <PlatformIcon platform={triage.musicPlatform} size={16} /><span>{platform.label}</span>
-          </a>
-          <button type="button" className="ev-sec" onClick={() => void triage.share(a)} title="Share (S)">
-            <Share2 size={16} strokeWidth={1.75} aria-hidden /><span>Share</span>
-          </button>
-        </div>
-      </div>
-
-      {playable.length > 0 && (
-        <section className="ev-tracks" aria-label="Previews">
-          <h3 className="ev-tracks-title">Previews <span>30 seconds each</span></h3>
-          <ol>
-            {playable.map((t, i) => {
-              const current = triage.isCurrentTrack(a, t)
-              const on = current && playing
-              const dur = formatDuration(t.durationMs)
-              return (
-                <li key={t.id}>
-                  <button type="button" className="ev-track" style={{ "--c": chips[i] } as CSSProperties} data-current={current || undefined} onClick={() => triage.playTrack(a, i)} aria-label={`${on ? "Pause" : "Play"} ${t.name}`}>
-                    <span className="ev-track-n" aria-hidden>
-                      {on ? <Pause size={13} fill="currentColor" strokeWidth={0} /> : <Play size={13} fill="currentColor" strokeWidth={0} />}
-                    </span>
-                    <span className="ev-track-name">{t.name}<span className="ev-track-album">{t.albumName}</span></span>
-                    {dur && <span className="ev-track-dur">{dur}</span>}
-                    {current && <span className="ev-track-bar" aria-hidden><span style={{ transform: `scaleX(${progress})` }} /></span>}
-                  </button>
-                </li>
-              )
-            })}
-          </ol>
-        </section>
+      {canPlay ? (
+        <TrackList a={a} triage={triage} tracks={tracks} />
+      ) : (
+        <p className="ev-tracks-empty">{loading ? "Loading tracks…" : "No preview available"}</p>
       )}
     </article>
   )

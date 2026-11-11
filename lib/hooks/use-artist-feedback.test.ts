@@ -76,11 +76,11 @@ describe("buildFeedbackDeleteUrl", () => {
 // Test 8: default error messages used when not provided
 describe("DEFAULT_FEEDBACK_MESSAGES", () => {
   it("has the correct default undoFailed message", () => {
-    expect(DEFAULT_FEEDBACK_MESSAGES.undoFailed).toBe("Couldn't undo — try again")
+    expect(DEFAULT_FEEDBACK_MESSAGES.undoFailed).toBe("Couldn't undo. Try again.")
   })
 
   it("has the correct default saveFailed message", () => {
-    expect(DEFAULT_FEEDBACK_MESSAGES.saveFailed).toBe("Couldn't save feedback — try again")
+    expect(DEFAULT_FEEDBACK_MESSAGES.saveFailed).toBe("Couldn't save feedback. Try again.")
   })
 })
 
@@ -154,7 +154,7 @@ describe("POST failure path", () => {
     }
 
     expect(threw).toBe(true)
-    expect(toast.error).toHaveBeenCalledWith("Couldn't save feedback — try again")
+    expect(toast.error).toHaveBeenCalledWith("Couldn't save feedback. Try again.")
   })
 
   // Test 7: custom error messages used when provided
@@ -192,7 +192,7 @@ describe("DELETE failure path", () => {
     }
 
     expect(threw).toBe(true)
-    expect(toast.error).toHaveBeenCalledWith("Couldn't undo — try again")
+    expect(toast.error).toHaveBeenCalledWith("Couldn't undo. Try again.")
   })
 
   // Test 7: custom undoFailed message when provided

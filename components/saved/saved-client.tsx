@@ -26,12 +26,11 @@ export interface SavedArtistRow {
 
 interface SavedClientProps {
   artists: SavedArtistRow[]
-  hasLastfm: boolean
   musicPlatform: MusicPlatform
 }
 
 
-export function SavedClient({ artists, hasLastfm, musicPlatform }: SavedClientProps) {
+export function SavedClient({ artists, musicPlatform }: SavedClientProps) {
   // Everything rendered on this page starts saved — the hook's optimistic
   // toggle + rollback + per-artist queue replaces the old removedIds state.
   const { savedIds, toggleSave } = useArtistSaves({
@@ -44,12 +43,7 @@ export function SavedClient({ artists, hasLastfm, musicPlatform }: SavedClientPr
     <div>
       <div className="page-head">
         <h1>Saved</h1>
-        <span className="sub">
-          <span className="serif" style={{ fontSize: 15, color: "var(--text-secondary)" }}>
-            A quiet list of sounds you want to remember.
-          </span>
-          <span style={{ display: "block", marginTop: 4 }}>{visible.length} artists</span>
-        </span>
+        <span className="sub">{visible.length} artists</span>
       </div>
 
       {visible.length === 0 ? (
@@ -62,7 +56,7 @@ export function SavedClient({ artists, hasLastfm, musicPlatform }: SavedClientPr
         >
           <Bookmark size={32} style={{ margin: "0 auto 12px", display: "block", opacity: 0.4 }} />
           <div style={{ fontSize: 14 }}>
-            Bookmark artists from your feed to keep them here.
+            Nothing saved yet.
           </div>
           <div style={{ marginTop: 16 }}>
             <a
@@ -73,15 +67,6 @@ export function SavedClient({ artists, hasLastfm, musicPlatform }: SavedClientPr
               Go to your feed
             </a>
           </div>
-          {!hasLastfm && (
-            <div style={{ fontSize: 12, marginTop: 14, lineHeight: 1.5 }}>
-              Connect Last.fm in{" "}
-              <a href="/settings" style={{ color: "var(--accent)" }}>
-                Settings
-              </a>{" "}
-              to seed the engine with your listening history.
-            </div>
-          )}
         </div>
       ) : (
         <div

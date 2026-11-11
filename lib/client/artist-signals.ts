@@ -98,8 +98,8 @@ export interface ToastErrorLike {
 // ─── Feedback ────────────────────────────────────────────────────────────────
 
 export const DEFAULT_FEEDBACK_MESSAGES = {
-  undoFailed: "Couldn't undo — try again",
-  saveFailed: "Couldn't save feedback — try again",
+  undoFailed: "Couldn't undo. Try again.",
+  saveFailed: "Couldn't save feedback. Try again.",
 } as const
 
 /** Build the DELETE URL for an undo operation. */
@@ -245,8 +245,8 @@ export function createArtistFeedback({
 // ─── Saves ───────────────────────────────────────────────────────────────────
 
 export const DEFAULT_SAVES_MESSAGES = {
-  saveFailed: "Couldn't save — try again",
-  unsaveFailed: "Couldn't unsave — try again",
+  saveFailed: "Couldn't save. Try again.",
+  unsaveFailed: "Couldn't unsave. Try again.",
 } as const
 
 /** Fetch options for a save (POST) or unsave (DELETE) of /api/saves. */

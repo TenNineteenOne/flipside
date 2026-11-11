@@ -2,7 +2,7 @@
 
 import "./feed.css"
 import { useCallback, useEffect, useRef } from "react"
-import { Heart, Plus, ThumbsDown, X } from "lucide-react"
+import { Plus } from "lucide-react"
 import { EndState, type Wander } from "@/components/feed/feed-parts"
 import { WanderSwitch, wanderButton } from "@/components/feed/wander-switch"
 import { SnapCard } from "@/components/feed/snap-card"
@@ -20,8 +20,8 @@ const END = "__end"
 /**
  * Phone feed ("Snap", PRD #182; below 640px, and any viewport too short for the tablet or
  * desktop layout, see feed-client.tsx): a vertical scroller with one
- * full-height page per loaded artist (decided ones included, in feed order),
- * the three-button triage bar, and "N of M left" + strip in the shell top bar.
+ * full-height page per loaded artist (decided ones included, in feed order; each
+ * card carries its own actions), and the segment strip in the shell top bar.
  * The page at least 60% in view is the selected artist; any other selection
  * change (a decision's advance, J/K, undo, an append after the end) scrolls
  * its page into view. When nothing is left, a final page holds the end state.
@@ -139,7 +139,7 @@ export function FeedSnap({ triage, onLoadMore, generating, wander, challenge, on
 
   return (
     <div className="ev-feed ev-snap">
-      <TopBarProgress triage={triage} wander={wander} onLoadMore={onLoadMore} generating={generating} />
+      <TopBarProgress triage={triage} wander={wander} onLoadMore={onLoadMore} generating={generating} controls={false} />
       {challenge}
 
       <main className="ev-m-snap" ref={scrollerRef} aria-label="Artists">
@@ -159,7 +159,6 @@ export function FeedSnap({ triage, onLoadMore, generating, wander, challenge, on
       </main>
 
       <PlayerBar triage={triage} />
-      <TriageBar triage={triage} />
     </div>
   )
 }
@@ -167,13 +166,25 @@ export function FeedSnap({ triage, onLoadMore, generating, wander, challenge, on
 /* ---- pieces shared by the phone (Snap) and tablet feeds ---- */
 
 /**
- * Wander farther + Load more + "N of M left" in the shell top bar, and the segment strip as its
- * second row. Load more is an icon button on phones ("Load more" text from 600px wide); rainbow
- * while Wander farther is on; aria-disabled (focus stays) while generating, like LoadMore.
+ * The segment strip in the shell top bar. Phones (`controls={false}`): the strip alone, between the
+ * wordmark and the avatar. Tablets: Wander farther + Load more in the bar, the strip as its second
+ * row. Load more is an icon button below 600px wide ("Load more" text from 600px); rainbow while
+ * Wander farther is on; aria-disabled (focus stays) while generating, like LoadMore.
  */
-export function TopBarProgress({ triage, wander, onLoadMore, generating }: {
+export function TopBarProgress({ triage, wander, onLoadMore, generating, controls = true }: {
   triage: FeedTriage; wander: Wander; onLoadMore: () => void; generating: boolean
+  /** Phones pass false: their header is the wordmark, the strip and the avatar; Load more and Wander
+   *  farther live in the end state (and Wander in Settings). */
+  controls?: boolean
 }) {
+  const strip = (
+    <ol className="ev-feed ev-m-strip" aria-hidden>
+      {triage.ids.map((id) => (
+        <li key={id} className="ev-seg" data-v={VERDICT[triage.signals.get(id) ?? ""] ?? "none"} data-sel={id === triage.selectedId || undefined} />
+      ))}
+    </ol>
+  )
+  if (!controls) return <ShellSlot name="top">{strip}</ShellSlot>
   return (
     <>
       <ShellSlot name="top">
@@ -189,16 +200,9 @@ export function TopBarProgress({ triage, wander, onLoadMore, generating }: {
             <Plus size={18} strokeWidth={2} aria-hidden />
             <span className="ev-m-more-text" aria-hidden>{generating ? "Generating…" : "Load more"}</span>
           </button>
-          <SnapCount triage={triage} />
         </span>
       </ShellSlot>
-      <ShellSlot name="topSub">
-        <ol className="ev-feed ev-m-strip" aria-hidden>
-          {triage.ids.map((id) => (
-            <li key={id} className="ev-seg" data-v={VERDICT[triage.signals.get(id) ?? ""] ?? "none"} data-sel={id === triage.selectedId || undefined} />
-          ))}
-        </ol>
-      </ShellSlot>
+      <ShellSlot name="topSub">{strip}</ShellSlot>
     </>
   )
 }
@@ -211,45 +215,4 @@ export function PlayerBar({ triage }: { triage: FeedTriage }) {
   useSuppressFloatingPlayer()
   const show = !!useAudio().currentTrack && triage.nowPlayingArtist?.id !== triage.selectedId
   return show ? <div className="ev-m-mini"><MiniPlayer docked /></div> : null
-}
-
-/**
- * The three triage buttons for the selected artist. Hidden (not removed) and inert when
- * nothing is selected (end of queue), so the layout around it never changes height.
- */
-export function TriageBar({ triage }: { triage: FeedTriage }) {
-  const { selected } = triage
-  const liked = !!selected && triage.signals.get(selected.id) === "thumbs_up"
-  const judge = (signal: "thumbs_up" | "thumbs_down" | "skip") => {
-    if (selected) triage.judge(selected.id, signal, { toggle: true, advance: true })
-  }
-  return (
-    <div
-      className="ev-m-triage"
-      role="group"
-      aria-label={selected ? `Tell flipside what you think of ${selected.name}` : "Tell flipside what you think"}
-      data-hidden={!selected || undefined}
-      inert={!selected}
-    >
-      <button type="button" className="ev-m-tri" onClick={() => judge("thumbs_down")}>
-        <ThumbsDown size={22} strokeWidth={1.75} aria-hidden /><span>Less like this</span>
-      </button>
-      <button type="button" className="ev-m-tri" onClick={() => judge("skip")}>
-        <X size={22} strokeWidth={1.75} aria-hidden /><span>Dismiss</span>
-      </button>
-      <button type="button" className="ev-m-tri ev-m-tri-like" onClick={() => judge("thumbs_up")} aria-pressed={liked}>
-        <Heart size={22} strokeWidth={1.75} fill={liked ? "currentColor" : "none"} aria-hidden />
-        <span>{liked ? "Liked" : "More like this"}</span>
-      </button>
-    </div>
-  )
-}
-
-/** "N of M left" for the phone top bar. */
-export function SnapCount({ triage }: { triage: Pick<FeedTriage, "remaining" | "total"> }) {
-  return (
-    <span className="ev-feed ev-m-count">
-      <strong>{triage.remaining}</strong><span className="ev-m-count-of"> of {triage.total}</span> left
-    </span>
-  )
 }

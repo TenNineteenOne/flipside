@@ -52,7 +52,7 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
     username = decryptUsername(storedUsername)
   } catch (err) {
     console.error(`[history/accumulate] ${source} decrypt failed userId=${userId} err="${err instanceof Error ? err.message : err}"`)
-    return apiError(`${source === "lastfm" ? "Last.fm" : "stats.fm"} sync failed — verify your username in settings`, 500)
+    return apiError(`${source === "lastfm" ? "Last.fm" : "stats.fm"} sync failed. Check your username in Settings.`, 500)
   }
   if (!username) {
     return apiError(`No ${source === "lastfm" ? "Last.fm" : "stats.fm"} account connected`, 400)
