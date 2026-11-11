@@ -28,7 +28,7 @@ export default function LandingPage() {
         </Link>
         <nav className="ev-site-nav">
           <Link href="/sign-in" className="ev-link">Sign in</Link>
-          <Link href={SIGN_UP} className="ev-btn ev-btn-primary ev-btn-sm">Pick a name</Link>
+          <Link href={SIGN_UP} className="ev-btn ev-btn-primary ev-btn-sm">Start listening</Link>
         </nav>
       </header>
 
@@ -37,7 +37,7 @@ export default function LandingPage() {
           <h1 className="ev-hero-title">Great music is waiting to find&nbsp;you.</h1>
           <div className="ev-hero-cta">
             <Link href={SIGN_UP} className="ev-btn ev-btn-primary ev-btn-lg">
-              Pick a name
+              Start listening
             </Link>
           </div>
         </div>
