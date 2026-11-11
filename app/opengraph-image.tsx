@@ -1,6 +1,6 @@
 import { ImageResponse } from "next/og"
 
-export const alt = "Flipside — music discovery that only asks for a name."
+export const alt = "Flipside: great music is waiting to find you."
 export const size = { width: 1200, height: 630 }
 export const contentType = "image/png"
 
@@ -55,8 +55,8 @@ export default function OpengraphImage() {
             maxWidth: 980,
           }}
         >
-          <span>Music discovery that</span>
-          <span>only asks for a name.</span>
+          <span>Great music is</span>
+          <span>waiting to find you.</span>
         </div>
       </div>
     ),

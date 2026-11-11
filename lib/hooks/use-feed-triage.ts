@@ -54,8 +54,8 @@ export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatfor
   // Same error copy the feed has always passed.
   const { signals, setSignal, restore } = useArtistFeedback({
     errorMessages: {
-      undoFailed: "Couldn't undo — try again",
-      saveFailed: "Couldn't save feedback — try again",
+      undoFailed: "Couldn't undo. Try again.",
+      saveFailed: "Couldn't save feedback. Try again.",
     },
   })
   const { savedIds, toggleSave } = useArtistSaves()

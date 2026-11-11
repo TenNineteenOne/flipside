@@ -21,7 +21,7 @@ export const GET = withAuthedRoute(async (
   { params }: { params: Promise<{ platform: string; artistId: string }> }
 ) => {
   if (isRateLimited(userId)) {
-    return apiError("Too many requests — slow down for a moment", 429)
+    return apiError("Too many requests. Slow down for a moment.", 429)
   }
   const { platform, artistId } = await params
 

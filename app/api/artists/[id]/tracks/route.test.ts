@@ -24,6 +24,6 @@ describe("GET /api/artists/[id]/tracks rate limit (#175 F8)", () => {
     for (let i = 0; i < 120; i++) expect((await call()).status).toBe(200)
     const res = await call()
     expect(res.status).toBe(429)
-    expect(await res.json()).toEqual({ error: "Too many requests — slow down for a moment" })
+    expect(await res.json()).toEqual({ error: "Too many requests. Slow down for a moment." })
   })
 })

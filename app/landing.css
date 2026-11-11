@@ -67,7 +67,6 @@
 
 .ev-landing .ev-hero { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); gap: 64px; align-items: center; padding: 48px 0 112px; }
 .ev-landing .ev-hero-title { font-size: clamp(2.5rem, 5.4vw, 4.75rem); line-height: 1; letter-spacing: -0.038em; font-weight: 650; max-width: 11ch; }
-.ev-landing .ev-hero-lede { margin-top: 24px; max-width: 46ch; font-size: 18px; line-height: 1.55; color: var(--fg-2); }
 .ev-landing .ev-hero-cta { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; margin-top: 36px; }
 
 .ev-landing .ev-stack { position: relative; width: 100%; max-width: 420px; justify-self: end; }
@@ -111,7 +110,6 @@
 .ev-landing .ev-stack-triage .ev-tri { background: rgba(0, 0, 0, 0.25); }
 .ev-landing .ev-stack-triage .ev-tri:hover { background: rgba(0, 0, 0, 0.4); }
 
-.ev-landing .ev-section-title { font-size: clamp(1.75rem, 3vw, 2.5rem); letter-spacing: -0.03em; line-height: 1.1; }
 .ev-landing .ev-how { padding: 96px 0 40px; border-top: 1px solid var(--line); }
 .ev-landing .ev-step { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); gap: 48px; align-items: center; padding: 36px 0; border-top: 1px solid var(--line); }
 .ev-landing .ev-step-copy h3 { display: flex; align-items: baseline; gap: 14px; font-size: 24px; letter-spacing: -0.02em; line-height: 1.2; }
@@ -138,14 +136,6 @@
 .ev-landing .ev-frag-q-text span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ev-landing .ev-frag-q-genre { font-size: 13px; color: var(--a-light); white-space: nowrap; }
 
-.ev-landing .ev-promise { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 64px; align-items: center; margin-top: 72px; padding: 56px; border-radius: 20px; background: var(--rail); border: 1px solid var(--line); }
-.ev-landing .ev-form { display: flex; flex-direction: column; gap: 8px; }
-.ev-landing .ev-form-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 52px; padding: 0 16px; border-radius: 10px; font-size: 15px; }
-.ev-landing .ev-form-row-off { border: 1px dashed var(--line-strong); color: var(--fg-3); }
-.ev-landing .ev-form-row-off > span:first-child { text-decoration: line-through; text-decoration-color: color-mix(in oklch, var(--fg-3) 70%, transparent); }
-.ev-landing .ev-form-tag { font: 400 11px/1 var(--font-mono); color: var(--fg-3); white-space: nowrap; }
-.ev-landing .ev-form-row-on { margin-top: 8px; border: 1px solid var(--violet); background: var(--bg); box-shadow: 0 0 0 3px var(--violet-wash); color: var(--fg-3); }
-.ev-landing .ev-form-val { color: var(--fg); font-weight: 600; }
 
 .ev-landing .ev-site-foot { display: flex; align-items: center; gap: 24px; padding: 28px 0 40px; border-top: 1px solid var(--line); color: var(--fg-3); font-size: 14px; }
 .ev-landing .ev-site-foot nav { margin-left: auto; display: flex; gap: 12px; }
@@ -160,7 +150,6 @@
   .ev-landing .ev-hero-title { order: 1; }
   .ev-landing .ev-hero-cta { order: 2; margin-top: 2px; }
   .ev-landing .ev-stack { order: 3; justify-self: center; width: 100%; max-width: 420px; margin-top: 26px; }
-  .ev-landing .ev-hero-lede { order: 4; font-size: 16px; margin-top: 4px; }
   .ev-landing .ev-hero-cta .ev-btn { width: 100%; }
   .ev-landing .ev-hero-title { font-size: 2.375rem; }
   .ev-landing .ev-stack-behind { aspect-ratio: 16 / 11; }
@@ -171,7 +160,6 @@
   .ev-landing .ev-frag-name { grid-template-columns: 1fr; }
   .ev-landing .ev-frag-tri .ev-tri { font-size: 12px; padding: 0 6px; gap: 5px; }
   .ev-landing .ev-frag-q-genre { display: none; }
-  .ev-landing .ev-promise { grid-template-columns: 1fr; gap: 32px; padding: 28px 20px; margin-top: 40px; }
   .ev-landing .ev-site-foot { flex-wrap: wrap; gap: 12px 20px; }
 }
 
@@ -181,13 +169,11 @@
   .ev-landing .ev-hero { grid-template-columns: minmax(0, 1fr) minmax(0, 320px); gap: 36px; align-items: center; padding: 40px 0 88px; }
   .ev-landing .ev-hero-copy { display: block; }
   .ev-landing .ev-hero-title { font-size: 2.875rem; }
-  .ev-landing .ev-hero-lede { margin-top: 18px; }
   .ev-landing .ev-hero-cta { margin-top: 28px; }
   .ev-landing .ev-hero-cta .ev-btn { width: auto; }
   .ev-landing .ev-stack { margin-top: 24px; }
   .ev-landing .ev-stack-behind, .ev-landing .ev-stack-media { aspect-ratio: 1; }
   .ev-landing .ev-step { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); gap: 32px; }
-  .ev-landing .ev-promise { grid-template-columns: 1fr 1fr; gap: 32px; padding: 36px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

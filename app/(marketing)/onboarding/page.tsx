@@ -123,7 +123,7 @@ export default function OnboardingPage() {
 
       const results = await Promise.all(promises)
       if (results.includes(false)) {
-        toast.error("Some settings couldn't be saved — you can update them later")
+        toast.error("Some settings couldn't be saved. You can update them later.")
       }
 
       // Kick off recommendation generation now (non-awaited) so it overlaps with
@@ -137,7 +137,7 @@ export default function OnboardingPage() {
 
       router.push("/feed")
     } catch {
-      toast.error("Something went wrong — please try again")
+      toast.error("Something went wrong. Try again.")
       setSaving(false)
     }
   }

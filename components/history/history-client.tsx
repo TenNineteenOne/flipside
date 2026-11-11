@@ -362,7 +362,7 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
                         <button
                           onClick={() => handleUndo(entry.artist_id, entry.signal)}
                           disabled={isUndoing}
-                          title={entry.signal === "dismissed" ? "Unblock — allow in feed again" : "Undo — return to feed"}
+                          title={entry.signal === "dismissed" ? "Allow in feed again" : "Return to feed"}
                           style={{
                             width: 32, height: 32, borderRadius: 8,
                             background: "transparent", border: 0, cursor: "pointer",
