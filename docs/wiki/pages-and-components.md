@@ -1,6 +1,6 @@
 ---
 title: Pages, Components & Client Data Flow
-updated: 2026-11-10
+updated: 2026-11-11
 related: [[api-routes]], [[generation-engine]], [[settings-and-discovery]]
 ---
 
@@ -190,7 +190,9 @@ triage buttons, track chips, Play preview, the landing's primary buttons) a 1px 
   short for the tablet or desktop layout (phones in landscape at any width, browser zoom): a fixed column between
   the shell top bar and tab bar (the page body does not scroll): the weekly challenge line, a vertical
   scroller with mandatory snapping, one full-height page per loaded artist (decided ones included,
-  feed order) plus a final end page (`EndState`, "Load more artists") once nothing is undecided, a
+  feed order) plus a final end page (`EndState`, "Load more artists") that is always there, so Load
+  more is reachable with artists still unrated (it then reads "N not rated yet." with "Rate the rest",
+  which jumps to the first unrated; scrolling onto it holds via the hook's `END_PAGE` selection), a
   small player bar (the docked `MiniPlayer`) only while the loaded track is not the artist on
   screen. There is no separate triage bar: each card carries its own actions. On phones
   (`controls={false}`) `TopBarProgress` puts only the segment strip in `<ShellSlot name="top">`,

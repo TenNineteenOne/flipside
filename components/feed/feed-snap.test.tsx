@@ -76,6 +76,15 @@ describe("FeedSnap server render", () => {
     expect(html).toContain("You’ve heard all 3.")
     expect(html).toContain("Load more artists")
   })
+
+  it("the end page with Load more is there even while artists are unrated", () => {
+    const html = render(artists, new Map([["a", "thumbs_up"]]))
+    const pages = [...html.matchAll(/<section class="ev-m-page" data-id="([^"]+)"/g)].map((m) => m[1])
+    expect(pages).toEqual(["a", "b", "c", "__end"])
+    expect(html).toContain("2 not rated yet.")
+    expect(html).toContain("Rate the rest")
+    expect(html).toContain("Load more artists")
+  })
 })
 
 const settled = <T,>(value: T) => Object.assign(Promise.resolve(value), { status: "fulfilled", value })
