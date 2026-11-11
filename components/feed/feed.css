@@ -181,6 +181,9 @@
    pane's other content (padding, name block, action rows) plus the docked player, measured at 449px
    with headroom for a two-line genre or "because" line. */
 .ev-feed .ev-card-art { width: max(96px, min(100%, 44vh, 100vh - 470px)); height: auto; aspect-ratio: 1; object-fit: cover; border-radius: 12px; box-shadow: 0 18px 40px -18px color-mix(in oklch, var(--a-dark) 80%, black); }
+/* Backstop for any window height, zoom level or player state: the action rows pin to the bottom of
+   the pane instead of scrolling out of view; the art, name and previews scroll behind them. */
+.ev-feed .ev-card-actions { position: sticky; bottom: 0; z-index: 1; margin-inline: -24px; padding: 12px 24px; background: var(--panel); }
 /* Short windows: a stacked thumbnail would be tiny, so the art moves beside the name instead. */
 @media (max-height: 720px) {
   .ev-feed .ev-card-hero { flex-direction: row; align-items: flex-start; gap: 16px; }
