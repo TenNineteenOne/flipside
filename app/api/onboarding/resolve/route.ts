@@ -3,7 +3,7 @@ import { createServiceClient } from "@/lib/supabase/server"
 import { createWindowLimiter } from "@/lib/rate-limiter"
 import { isValidSpotifyId } from "@/lib/spotify-ids"
 import { ArtistIdentity, stringSimilarity, SIMILARITY_THRESHOLD } from "@/lib/artist-identity"
-import { resolveArtistExternalIds } from "@/lib/artist-identity/musicbrainz"
+import { resolveArtistExternalIds, searchArtistMbid } from "@/lib/artist-identity/musicbrainz"
 import { withAuthedCsrfRoute } from "@/lib/api/with-authed-route"
 
 // Resolution is low-volume (only when a user SELECTS a Last.fm-only suggestion,
@@ -63,9 +63,11 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }) => {
 
   // Through the artist-identity doorway: an unambiguous `artists` name hit is
   // returned as-is; otherwise (unknown OR ambiguous name) the lookup runs
-  // MusicBrainz url-rels by mbid (keyless; 1-req/s limited internally). The
+  // MusicBrainz url-rels by mbid (keyless; 1-req/s limited internally), searching MB by
+  // name for the mbid when Last.fm had none. The
   // url-rel's Spotify id is the evidence that picks/mints the right row — the
-  // Last.fm mbid itself is only a hint. No mbid / no Spotify rel → 404.
+  // Last.fm mbid itself is only a hint. No mbid (even after an MB name
+  // search) / no Spotify rel → 404.
   //
   // Catalog-poisoning guard (#175 F9): a miss can MINT a shared `artists` row,
   // so the minted name is MusicBrainz's canonical name for the mbid, never the
@@ -75,7 +77,9 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }) => {
   const identity = new ArtistIdentity(createServiceClient())
   const resolved = (
     await identity.resolve([name], async () => {
-      if (!mbid) return null
+      // Last.fm often has no mbid (e.g. "Umphrey's McGee"): find it by MB name search.
+      const id = mbid ?? (await searchArtistMbid(name))
+      if (!id) return null
       // ponytail: captures the MB artist `name` from the same url-rels response
       // via the fetchImpl seam; upgrade path: have resolveArtistExternalIds
       // (lib/artist-identity) return the canonical name itself.
@@ -88,7 +92,7 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }) => {
         } catch { /* non-JSON: fetchArtistRelations reports it */ }
         return res
       }
-      const { spotifyId } = await resolveArtistExternalIds(mbid, { fetchImpl: captureName })
+      const { spotifyId } = await resolveArtistExternalIds(id, { fetchImpl: captureName })
       if (!spotifyId || !isValidSpotifyId(spotifyId) || !mbName) return null
       if (!namesMatch(name, mbName)) {
         console.log(`[onboard-resolve] name-mismatch name="${name}" mb="${mbName}" mbid=${mbid}`)

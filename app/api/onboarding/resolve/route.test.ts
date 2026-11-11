@@ -65,4 +65,19 @@ describe("POST /api/onboarding/resolve mint name", () => {
     expect(res.status).toBe(404)
     expect(db.tables.artists).toHaveLength(0)
   })
+
+  it("with no Last.fm mbid, finds one by MB name search and resolves", async () => {
+    const mb = "Umphrey’s McGee" // MB's curly apostrophe vs the client's straight one
+    vi.stubGlobal("fetch", vi.fn(async (url: string) =>
+      String(url).includes("/artist/?query=")
+        ? new Response(JSON.stringify({ artists: [{ id: MBID, name: mb, score: 100 }] }))
+        : mbResponse(mb)))
+    const res = await POST(new Request("https://flipside.test/api/onboarding/resolve", {
+      method: "POST",
+      headers: { origin: "https://flipside.test", host: "flipside.test" },
+      body: JSON.stringify({ name: "Umphrey's McGee", mbid: null }),
+    }))
+    expect(res.status).toBe(200)
+    expect(db.tables.artists[0]).toMatchObject({ spotify_id: SPOTIFY, name: mb })
+  })
 })
