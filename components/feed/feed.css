@@ -188,7 +188,7 @@
 
 /* Layout M: the art is an edge-to-edge banner with the name over its lower edge. Its height leaves
    room for the reason, the icon row and three full-size previews: 350px is everything else in the
-   pane plus the docked player, measured in a 1470x763 window. */
+   pane plus the docked player, measured in a 1470x707 window (11px spare). */
 .ev-feed .ev-card[data-layout="m"] .ev-card-art-wrap { margin: -24px -24px 0; }
 .ev-feed .ev-card[data-layout="m"] .ev-card-art { width: 100%; height: clamp(220px, 100vh - 350px, 560px); aspect-ratio: auto; border-radius: 0; box-shadow: none; }
 .ev-feed .ev-card[data-layout="m"] .ev-card-title {
@@ -197,7 +197,7 @@
 }
 
 /* Layout L: square art, name below it, the reason tucked under the genres and compact previews.
-   415px is the rest of the pane plus the docked player at 1470x763. */
+   415px is the rest of the pane plus the docked player (23px spare at 1470x707). */
 .ev-feed .ev-card[data-layout="l"] .ev-card-hero { gap: 6px; }
 .ev-feed .ev-card[data-layout="l"] .ev-card-art { width: max(160px, min(100%, 56vh, 100vh - 415px)); height: auto; aspect-ratio: 1; }
 .ev-feed .ev-card[data-layout="l"] .ev-card-why { font-size: 14px; }
