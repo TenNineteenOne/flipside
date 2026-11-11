@@ -176,24 +176,53 @@
   /* tint from the artist's own colour, flat and fading out (not a glow) */
   background: linear-gradient(to bottom, color-mix(in oklch, var(--a-dark) 42%, var(--panel)) 0, var(--panel) 420px);
 }
-.ev-feed .ev-card-hero { display: flex; flex-direction: column; gap: 18px; }
-/* Height-aware: the art stays the hero but shrinks just enough that the three previews and the
-   triage row stay above the fold (Save/Open/Share may sit just below). 490px is the rest of the pane
-   plus the docked player, measured in a 1470x763 window. */
-.ev-feed .ev-card-art { width: max(160px, min(100%, 52vh, 100vh - 490px)); height: auto; aspect-ratio: 1; object-fit: cover; border-radius: 12px; box-shadow: 0 18px 40px -18px color-mix(in oklch, var(--a-dark) 80%, black); }
+.ev-feed .ev-card { position: relative; }
+.ev-feed .ev-card-hero { display: flex; flex-direction: column; gap: 12px; container-type: inline-size; }
+.ev-feed .ev-card-art-wrap { position: relative; display: flex; flex-direction: column; gap: 14px; }
+.ev-feed .ev-card-art { display: block; object-fit: cover; border-radius: 12px; box-shadow: 0 18px 40px -18px color-mix(in oklch, var(--a-dark) 80%, black); }
 .ev-feed .ev-card-art.ev-letter { font-size: min(40cqw, 16vh); }
-.ev-feed .ev-card-hero { container-type: inline-size; }
-.ev-feed .ev-card-name { font-size: 32px; line-height: 1.05; letter-spacing: -0.03em; }
+.ev-feed .ev-card-name { font-size: 30px; line-height: 1.05; letter-spacing: -0.03em; overflow-wrap: anywhere; }
 .ev-feed .ev-card-genres { margin-top: 6px; color: var(--fg-2); font-size: 14px; }
-.ev-feed .ev-card-why { margin-top: 12px; font-size: 15px; color: var(--fg-2); }
+.ev-feed .ev-card-why { font-size: 15px; color: var(--fg-2); }
 .ev-feed .ev-card-why strong { color: var(--fg); font-weight: 600; }
-.ev-feed .ev-card-pop { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 13px; color: var(--fg-3); }
 
-.ev-feed .ev-card-actions { display: flex; flex-direction: column; gap: 10px; container-type: inline-size; }
-@container (width < 361px) {
-  .ev-feed .ev-tri { padding: 0 6px; gap: 5px; font-size: 13px; }
+/* Layout M: the art is an edge-to-edge banner with the name over its lower edge. Its height leaves
+   room for the reason, the icon row and three full-size previews: 350px is everything else in the
+   pane plus the docked player, measured in a 1470x763 window. */
+.ev-feed .ev-card[data-layout="m"] .ev-card-art-wrap { margin: -24px -24px 0; }
+.ev-feed .ev-card[data-layout="m"] .ev-card-art { width: 100%; height: clamp(220px, 100vh - 350px, 560px); aspect-ratio: auto; border-radius: 0; box-shadow: none; }
+.ev-feed .ev-card[data-layout="m"] .ev-card-title {
+  position: absolute; inset: auto 0 0 0; padding: 64px 24px 16px;
+  background: linear-gradient(to top, color-mix(in oklch, var(--panel) 92%, transparent), transparent);
 }
-.ev-feed .ev-triage { display: flex; gap: 6px; }
+
+/* Layout L: square art, name below it, the reason tucked under the genres and compact previews.
+   415px is the rest of the pane plus the docked player at 1470x763. */
+.ev-feed .ev-card[data-layout="l"] .ev-card-hero { gap: 6px; }
+.ev-feed .ev-card[data-layout="l"] .ev-card-art { width: max(160px, min(100%, 56vh, 100vh - 415px)); height: auto; aspect-ratio: 1; }
+.ev-feed .ev-card[data-layout="l"] .ev-card-why { font-size: 14px; }
+.ev-feed .ev-card[data-layout="l"] .ev-track { min-height: 40px; padding-block: 4px; }
+.ev-feed .ev-card[data-layout="l"] .ev-track-album { display: none; }
+
+/* icon row: triage on the left, Save / Open / Share on the right */
+.ev-feed .ev-card-actions { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.ev-feed .ev-triage, .ev-feed .ev-secondary { display: flex; gap: 6px; }
+.ev-feed .ev-secondary { gap: 2px; }
+.ev-feed .ev-ib {
+  display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; background: var(--raise); color: var(--fg-2);
+  transition: background-color 120ms var(--ease), color 120ms var(--ease);
+}
+.ev-feed .ev-ib:hover { background: color-mix(in oklch, var(--raise), white 8%); color: var(--fg); }
+.ev-feed .ev-ib:active { transform: scale(0.95); }
+.ev-feed .ev-ib-like { color: var(--violet-ink); }
+.ev-feed .ev-ib-like[aria-pressed="true"] { background: var(--violet-fill); color: #fff; }
+.ev-feed .ev-ib-quiet { background: none; }
+.ev-feed .ev-ib-quiet[aria-pressed="true"] { color: var(--violet-ink); }
+
+/* dev-only switch between layouts M and L (FocusCard, SHOW_LAYOUT_TOGGLE) */
+.ev-feed .ev-layout-toggle { position: absolute; top: 10px; right: 10px; z-index: 3; display: flex; padding: 2px; border-radius: 8px; background: rgba(0, 0, 0, 0.6); }
+.ev-feed .ev-layout-toggle button { width: 28px; height: 24px; border-radius: 6px; font: 600 12px/1 var(--font-sans); color: var(--fg-2); }
+.ev-feed .ev-layout-toggle button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
 
 .ev-feed .ev-card { animation: ev-feed-in 220ms var(--ease); }
 /* Entrance moves only; it never starts transparent. */
@@ -225,15 +254,6 @@
 .ev-feed .ev-sheet-row dd { display: flex; gap: 4px; margin: 0; }
 .ev-feed .ev-sheet-row .ev-kbd { font-size: 11px; height: 22px; min-width: 22px; color: var(--fg-2); }
 .ev-feed .ev-sheet-note { margin-top: 12px; font-size: 13px; color: var(--fg-3); }
-
-/* secondary actions */
-.ev-feed .ev-secondary { display: flex; gap: 4px; }
-.ev-feed .ev-sec {
-  display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: 1; min-height: 44px; border-radius: 8px;
-  font-size: 13px; color: var(--fg-2); text-decoration: none; transition: background-color 120ms var(--ease), color 120ms var(--ease);
-}
-.ev-feed .ev-sec:hover { background: var(--raise); color: var(--fg); }
-.ev-feed .ev-sec[aria-pressed="true"] { color: var(--violet-ink); }
 
 /* track list */
 /* Same look as the phone card's chips: a tint, a bold edge and a play circle in the track's own colour

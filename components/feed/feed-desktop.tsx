@@ -1,7 +1,7 @@
 "use client"
 
 import "./feed.css"
-import { useEffect, useRef, type CSSProperties } from "react"
+import { useEffect, useRef, useState, type CSSProperties } from "react"
 import { Bookmark, Heart, Pause, Play, Share2, ThumbsDown, X } from "lucide-react"
 import { PlatformIcon } from "@/components/platform-icon"
 import { MiniPlayer } from "@/components/player/mini-player"
@@ -11,7 +11,7 @@ import { ShellSlot } from "@/components/shell/shell-context"
 import { useAudio } from "@/lib/audio-context"
 import { chipColors, resolveArtistColor } from "@/lib/color-utils"
 import { artworkFor } from "@/lib/feed/artwork"
-import { formatDuration, listSeparator, popularityLabel, whyParts, whyText } from "@/lib/feed/card-copy"
+import { formatDuration, listSeparator, whyParts, whyText } from "@/lib/feed/card-copy"
 import { PLATFORM_META } from "@/lib/music-links"
 import { useArtistTracks } from "@/lib/hooks/use-artist-tracks"
 import { useLeaving } from "@/lib/hooks/use-leaving"
@@ -170,6 +170,26 @@ export function FeedDesktop({ triage, onLoadMore, generating, wander, challenge,
   )
 }
 
+/** Two candidate panel layouts: "m" (banner art, name over it) and "l" (square art, name below).
+ * The toggle shows outside production only, while Flux picks one; the choice persists per browser. */
+type PanelLayout = "m" | "l"
+const SHOW_LAYOUT_TOGGLE = process.env.NODE_ENV !== "production"
+const LAYOUT_KEY = "flipside.panelLayout"
+function usePanelLayout(): [PanelLayout, (l: PanelLayout) => void] {
+  const [layout, setState] = useState<PanelLayout>("m")
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(LAYOUT_KEY)
+      if (saved === "m" || saved === "l") setState(saved)
+    } catch { /* storage blocked: keep the default */ }
+  }, [])
+  const set = (l: PanelLayout) => {
+    setState(l)
+    try { localStorage.setItem(LAYOUT_KEY, l) } catch { /* storage blocked: choice lasts this page only */ }
+  }
+  return [layout, set]
+}
+
 function FocusCard({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
   // Artists that arrived without tracks fetch them here, as the old card did (selected artist only).
   const { tracks, isFetching } = useArtistTracks({ artistId: a.id, artistName: a.name, initialTracks: a.topTracks })
@@ -190,26 +210,57 @@ function FocusCard({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
   const saved = triage.savedIds.has(a.id)
   const platform = PLATFORM_META[triage.musicPlatform]
   const judge = (signal: "thumbs_up" | "thumbs_down" | "skip") => triage.judge(a.id, signal, { toggle: true, advance: true })
+  const [layout, setLayout] = usePanelLayout()
 
   return (
-    <article className="ev-card" style={artistVar(a)}>
+    <article className="ev-card" style={artistVar(a)} data-layout={layout}>
+      {SHOW_LAYOUT_TOGGLE && (
+        <div className="ev-layout-toggle" role="group" aria-label="Panel layout (dev only)">
+          {(["m", "l"] as const).map((k) => (
+            <button key={k} type="button" aria-pressed={layout === k} onClick={() => setLayout(k)}>{k.toUpperCase()}</button>
+          ))}
+        </div>
+      )}
       <div className="ev-card-hero">
-        <Art a={a} src={art} size={600} className="ev-card-art" alt={`${tracks[0]?.albumName || a.name} cover art`} eager priority />
-        <div className="ev-card-id">
-          <h2 className="ev-card-name">{a.name}</h2>
-          {a.genres.length > 0 && <p className="ev-card-genres">{a.genres.join(" · ")}</p>}
-          {why && (
-            <p className="ev-card-why" data-far={why.far}>
-              {why.lead}
-              {why.names.length > 0
-                ? why.names.map((n, i) => <span key={n}>{listSeparator(i, why.names.length)}<strong>{n}</strong></span>)
-                : why.genres.join(", ")}
-            </p>
-          )}
-          <p className="ev-card-pop">
-            <span className="ev-meter" aria-hidden><span style={{ width: `${a.popularity}%` }} /></span>
-            {popularityLabel(a.popularity)} · popularity {a.popularity}
+        <div className="ev-card-art-wrap">
+          <Art a={a} src={art} size={600} className="ev-card-art" alt={`${tracks[0]?.albumName || a.name} cover art`} eager priority />
+          <div className="ev-card-title">
+            <h2 className="ev-card-name">{a.name}</h2>
+            {a.genres.length > 0 && <p className="ev-card-genres">{a.genres.join(" · ")}</p>}
+          </div>
+        </div>
+        {why && (
+          <p className="ev-card-why" data-far={why.far}>
+            {why.lead}
+            {why.names.length > 0
+              ? why.names.map((n, i) => <span key={n}>{listSeparator(i, why.names.length)}<strong>{n}</strong></span>)
+              : why.genres.join(", ")}
           </p>
+        )}
+      </div>
+
+      <div className="ev-card-actions">
+        <div className="ev-triage" role="group" aria-label="Tell flipside what you think">
+          <button type="button" className="ev-ib" onClick={() => judge("thumbs_down")} aria-label="Less like this" title="Less like this (X)">
+            <ThumbsDown size={18} strokeWidth={1.75} aria-hidden />
+          </button>
+          <button type="button" className="ev-ib" onClick={() => judge("skip")} aria-label="Dismiss" title="Dismiss (D)">
+            <X size={18} strokeWidth={1.75} aria-hidden />
+          </button>
+          <button type="button" className="ev-ib ev-ib-like" onClick={() => judge("thumbs_up")} aria-pressed={liked} aria-label={liked ? "Liked" : "More like this"} title="More like this (L)">
+            <Heart size={18} strokeWidth={1.75} fill={liked ? "currentColor" : "none"} aria-hidden />
+          </button>
+        </div>
+        <div className="ev-secondary">
+          <button type="button" className="ev-ib ev-ib-quiet" onClick={() => triage.save(a)} aria-pressed={saved} aria-label={saved ? "Saved" : "Save for later"} title="Save for later (B)">
+            <Bookmark size={18} strokeWidth={1.75} fill={saved ? "currentColor" : "none"} aria-hidden />
+          </button>
+          <a className="ev-ib ev-ib-quiet" href={triage.artistLink(a)} target="_blank" rel="noopener noreferrer" aria-label={`Open in ${platform.label}`} title={`Open in ${platform.label} (O)`}>
+            <PlatformIcon platform={triage.musicPlatform} size={18} />
+          </a>
+          <button type="button" className="ev-ib ev-ib-quiet" onClick={() => void triage.share(a)} aria-label="Share" title="Share (S)">
+            <Share2 size={18} strokeWidth={1.75} aria-hidden />
+          </button>
         </div>
       </div>
 
@@ -238,34 +289,6 @@ function FocusCard({ a, triage }: { a: CardArtist; triage: FeedTriage }) {
       ) : (
         <p className="ev-tracks-empty">{loading ? "Loading tracks…" : "No preview available"}</p>
       )}
-
-      <div className="ev-card-actions">
-        <div className="ev-triage" role="group" aria-label="Tell flipside what you think">
-          <button type="button" className="ev-tri" onClick={() => judge("thumbs_down")} title="Less like this (X)">
-            <ThumbsDown size={16} strokeWidth={1.75} aria-hidden /><span>Less like this</span>
-          </button>
-          <button type="button" className="ev-tri" onClick={() => judge("skip")} title="Dismiss (D)">
-            <X size={16} strokeWidth={1.75} aria-hidden /><span>Dismiss</span>
-          </button>
-          <button type="button" className="ev-tri ev-tri-like" onClick={() => judge("thumbs_up")} aria-pressed={liked} title="More like this (L)">
-            <Heart size={16} strokeWidth={1.75} fill={liked ? "currentColor" : "none"} aria-hidden />
-            <span>{liked ? "Liked" : "More like this"}</span>
-          </button>
-        </div>
-
-        <div className="ev-secondary">
-          <button type="button" className="ev-sec" onClick={() => triage.save(a)} aria-pressed={saved} title="Save for later (B)">
-            <Bookmark size={16} strokeWidth={1.75} fill={saved ? "currentColor" : "none"} aria-hidden />
-            <span>{saved ? "Saved" : "Save"}</span>
-          </button>
-          <a className="ev-sec" href={triage.artistLink(a)} target="_blank" rel="noopener noreferrer" aria-label={`Open in ${platform.label}`} title={`Open in ${platform.label} (O)`}>
-            <PlatformIcon platform={triage.musicPlatform} size={16} /><span>{platform.label}</span>
-          </a>
-          <button type="button" className="ev-sec" onClick={() => void triage.share(a)} title="Share (S)">
-            <Share2 size={16} strokeWidth={1.75} aria-hidden /><span>Share</span>
-          </button>
-        </div>
-      </div>
     </article>
   )
 }
