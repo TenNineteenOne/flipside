@@ -29,7 +29,7 @@ describe("patchSettings", () => {
     })
     vi.stubGlobal("fetch", mockFetch)
 
-    await expect(patchSettings({ adventurous: true })).rejects.toThrow("quota exceeded")
+    await expect(patchSettings({ fameLevel: 1 })).rejects.toThrow("quota exceeded")
   })
 
   it("throws generic message when error body is empty", async () => {
@@ -39,17 +39,17 @@ describe("patchSettings", () => {
     })
     vi.stubGlobal("fetch", mockFetch)
 
-    await expect(patchSettings({ adventurous: true })).rejects.toThrow("Failed to save")
+    await expect(patchSettings({ fameLevel: 1 })).rejects.toThrow("Failed to save")
   })
 
   it("rejects with SettingsSaveError carrying the status; network errors pass through", async () => {
-    const err = await patchSettings({ adventurous: true }, {
+    const err = await patchSettings({ fameLevel: 1 }, {
       fetchImpl: vi.fn().mockResolvedValue({ ok: false, status: 400, json: () => Promise.resolve({ error: "bad" }) }),
     }).catch((e) => e)
     expect(err).toBeInstanceOf(SettingsSaveError)
     expect(err).toMatchObject({ message: "bad", status: 400 })
 
-    const net = await patchSettings({ adventurous: true }, { fetchImpl: vi.fn().mockRejectedValue(new TypeError("offline")) }).catch((e) => e)
+    const net = await patchSettings({ fameLevel: 1 }, { fetchImpl: vi.fn().mockRejectedValue(new TypeError("offline")) }).catch((e) => e)
     expect(net).not.toBeInstanceOf(SettingsSaveError)
   })
 

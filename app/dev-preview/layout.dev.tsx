@@ -18,7 +18,7 @@ export default function DevPreviewLayout({ children }: { children: React.ReactNo
     <NavigationProgressProvider>
       <FetchStub />
       <AudioProvider>
-        <AppShell userSeed={PREVIEW_USER_SEED} initialAdventurous={false} pathPrefix="/dev-preview">
+        <AppShell userSeed={PREVIEW_USER_SEED} pathPrefix="/dev-preview">
           <div className="app-col">{children}</div>
         </AppShell>
         <MiniPlayer />

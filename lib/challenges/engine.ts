@@ -6,7 +6,7 @@
  * encodes the qualifying feedback signal (prefix before `_`) so the
  * rpc_increment_challenge_progress RPC can match:
  *   thumbs_up_*  → counted on thumbs-up
- *   any_*        → counted on any positive feedback (reserved; unused for now)
+ *   save_*       → counted on a new save (POST /api/saves)
  *
  * Week boundary: Monday 00:00 UTC. We compute it via ISO-style `date_trunc`
  * in SQL and mirror it in TS with getISOWeekStart().
@@ -83,6 +83,23 @@ export const CHALLENGE_TEMPLATES: ChallengeTemplate[] = [
     target: 7,
     applicableFor: () => true,
   },
+  ...[
+    ['thumbs_up_three', 'Warm-up', 'Thumbs-up 3 artists', 3],
+    ['thumbs_up_four', 'Fab four', 'Thumbs-up 4 artists', 4],
+    ['thumbs_up_ten', 'Ten out of ten', 'Thumbs-up 10 artists', 10],
+    ['thumbs_up_twelve', 'Dozen deep', 'Thumbs-up 12 artists', 12],
+    ['save_two', 'Pocket pair', 'Save 2 different artists', 2],
+    ['save_three', 'Triple stash', 'Save 3 different artists', 3],
+    ['save_four', 'Keepers', 'Save 4 different artists', 4],
+    ['save_five', 'Crate digger', 'Save 5 different artists', 5],
+    ['save_eight', 'Full shelf', 'Save 8 different artists', 8],
+  ].map(([key, title, description, target]) => ({
+    key: key as string,
+    title: title as string,
+    description: description as string,
+    target: target as number,
+    applicableFor: () => true,
+  })),
 ]
 
 /**
@@ -97,24 +114,24 @@ export function getISOWeekStart(now: Date = new Date()): string {
   return d.toISOString().slice(0, 10)
 }
 
-const ANY_THUMB_TEMPLATES = new Set(["thumbs_up_any", "thumbs_up_deep"])
+// Only templates the RPC credits honestly: thumbs_up_* counts any thumbs-up, save_* any new save.
+// Rail-specific thumbs_up_* templates stay out (the RPC can't tell rails apart).
+// Order interleaves thumbs/save so neighbours differ in kind too.
+const ROTATING_KEYS = [
+  'thumbs_up_any', 'save_three', 'thumbs_up_deep', 'save_two', 'thumbs_up_three', 'save_five',
+  'thumbs_up_ten', 'save_four', 'thumbs_up_four', 'save_eight', 'thumbs_up_twelve',
+]
 
 /**
- * This week's template: one of the applicable templates, picked by a hash of
- * the week start (#175). Varies week to week, stable within a week (reloads,
- * and the feedback route's pre-RPC ensure, pick the same one).
+ * This week's template: ROTATING_KEYS indexed by weeks since 1970-01-05 (a Monday).
+ * Consecutive weeks never repeat, and the pick is stable within a week (reloads and
+ * the feedback/saves routes' pre-RPC ensure agree).
  */
 export function pickWeeklyTemplate(ctx: ChallengeApplicabilityCtx, weekStart: string): ChallengeTemplate {
-  // ponytail: rotate only templates the RPC credits honestly. rpc_increment_challenge_progress
-  // matches the `thumbs_up_` prefix, so rail-specific templates would count ANY thumbs-up.
-  // Re-enable them once the RPC receives rail context (needs a migration).
-  const applicable = CHALLENGE_TEMPLATES.filter(
-    (t) => ANY_THUMB_TEMPLATES.has(t.key) && t.applicableFor(ctx),
-  )
-  if (applicable.length === 0) return CHALLENGE_TEMPLATES[0]
-  let h = 0
-  for (const ch of weekStart) h = (Math.imul(h, 31) + ch.charCodeAt(0)) >>> 0
-  return applicable[h % applicable.length]
+  const pool = ROTATING_KEYS.map((k) => CHALLENGE_TEMPLATES.find((t) => t.key === k)!).filter((t) => t.applicableFor(ctx))
+  if (pool.length === 0) return CHALLENGE_TEMPLATES[0]
+  const week = Math.round((Date.parse(weekStart) / 86400000 - 4) / 7)
+  return pool[((week % pool.length) + pool.length) % pool.length]
 }
 
 /**

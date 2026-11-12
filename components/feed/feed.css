@@ -646,9 +646,9 @@ body:has(.ev-snap) [data-sonner-toaster][data-y-position="top"] {
   .ev-feed .ev-m-verdict-more { background: rgba(139, 92, 246, 0.42); }
 }
 
-/* ---------- Wander farther (#205): switches beside Load more, rainbow buttons, far-pick why-line ----------
-   The switch itself is in wander.css (shared with Settings). */
-/* Desktop header row: the weekly challenge (left, ellipsizes) beside Load more + switch (right). A narrow
+/* ---------- Header Load more + far-pick why-line (Wander farther is always on) ---------- */
+:root { --wander-rainbow: linear-gradient(135deg, #f5b047 0%, #ec6fb5 42%, #7dd9c6 78%, #a8c7fa 100%); }
+/* Desktop header row: the weekly challenge (left, ellipsizes) beside Load more (right). A narrow
    queue (<560px) gives the challenge its own line above the controls. */
 .ev-feed .ev-wander-bar { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 24px; }
 .ev-feed .ev-wander-chal { grid-area: 1 / 1 / 2 / 3; min-width: 0; }
@@ -663,17 +663,15 @@ body:has(.ev-snap) [data-sonner-toaster][data-y-position="top"] {
 .ev-feed .ev-queue-more { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 .ev-feed .ev-m-rail > li.ev-m-rail-more { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 .ev-feed .ev-end-actions { align-items: center; }
-.ev-feed .ev-btn.wander-btn-on { background: var(--wander-rainbow); border-color: transparent; color: oklch(0.16 0.01 293); }
-.ev-feed .ev-btn.wander-btn-on:hover:not([aria-disabled="true"]) { background: var(--wander-rainbow); filter: brightness(1.06); }
-/* Phone / tablet top bar: the switch, then "N of M left". */
-.ev-feed.ev-m-topbar { display: flex; align-items: center; justify-content: flex-end; gap: 12px; min-width: 0; margin-left: auto; }
-/* padding-left keeps the switch off the wordmark; the tighter gap below 400px pays for it */
-.ev-feed.ev-m-topbar { padding-left: 8px; }
-@media (width < 400px) { .ev-feed.ev-m-topbar { gap: 8px; } }
-/* Below 400px the switch + Load more leave no room for "of M": show "N left" */
+/* Phone / tablet top bar. Phones: the strip fills the row, the regenerate icon sits before the avatar. */
+.ev-feed.ev-m-topbar { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; margin-left: auto; padding-left: 8px; }
+.ev-feed.ev-m-topbar[data-phone] { flex: 1; margin-left: 0; padding-left: 4px; }
 /* Header Load more: a 40px icon button on phones, icon + "Load more" from 600px wide. */
 .ev-feed .ev-btn.ev-m-more { flex: none; min-height: 40px; min-width: 40px; padding: 0; gap: 6px; font-size: 14px; }
 .ev-feed .ev-m-more-text { display: none; }
+.ev-feed .ev-m-more[aria-disabled="true"] svg { animation: ev-spin 900ms linear infinite; }
+@keyframes ev-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .ev-feed .ev-m-more[aria-disabled="true"] svg { animation: none; } }
 @media (width >= 600px) {
   .ev-feed .ev-btn.ev-m-more { padding: 0 14px 0 10px; }
   .ev-feed .ev-m-more-text { display: inline; }

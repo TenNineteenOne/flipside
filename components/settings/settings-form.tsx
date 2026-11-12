@@ -15,7 +15,6 @@ interface SettingsFormProps {
   initialLastfmUsername: string | null
   initialStatsfmUsername: string | null
   initialLastfmArtistCount: number
-  initialAdventurous: boolean
   initialSelectedGenres: string[]
   initialSeedArtists: SpotifyArtist[]
   initialMusicPlatform: MusicPlatform
@@ -27,7 +26,6 @@ export function SettingsForm({
   initialLastfmUsername,
   initialStatsfmUsername,
   initialLastfmArtistCount,
-  initialAdventurous,
   initialSelectedGenres,
   initialSeedArtists,
   initialMusicPlatform,
@@ -70,7 +68,7 @@ export function SettingsForm({
           <ProfilePanel userSeed={userSeed} />
 
           {/* Discovery changes apply to the next batch; nothing is rebuilt (#205). */}
-          <DiscoveryPanel initialFameLevel={initialFameLevel} initialAdventurous={initialAdventurous} />
+          <DiscoveryPanel initialFameLevel={initialFameLevel} />
 
           <SeedsPanel
             initialSelectedGenres={initialSelectedGenres}

@@ -14,7 +14,6 @@ import { PLATFORM_META } from "@/lib/music-links"
 import type { FeedTriage } from "@/lib/hooks/use-feed-triage"
 import { firstUndecided } from "@/lib/feed/triage-queue"
 import type { CardArtist } from "@/lib/cards/card-artist"
-import { WanderSwitch, wanderButton } from "@/components/feed/wander-switch"
 
 // Pieces shared by the desktop, tablet and phone feeds, kept out of feed-desktop.tsx so the
 // tablet and phone layout chunks don't carry the desktop layout.
@@ -48,15 +47,8 @@ export function Art({ a, src, size, className, alt = "", eager = false, priority
   )
 }
 
-/** Wander farther (users.adventurous): one value for every switch in a layout, owned by FeedClient. */
-export interface Wander {
-  on: boolean
-  /** Saves the setting only; the next Load more uses it. */
-  toggle: () => void
-}
-
 /** Focus pane when nothing is left to decide (PRD "End of queue"). */
-export function EndState({ triage, onLoadMore, generating, wander }: { triage: FeedTriage; onLoadMore: () => void; generating: boolean; wander: Wander }) {
+export function EndState({ triage, onLoadMore, generating }: { triage: FeedTriage; onLoadMore: () => void; generating: boolean }) {
   const { counts, total, visible, signals, remaining, ids, select } = triage
   const liked = visible.filter((a) => signals.get(a.id) === "thumbs_up").slice(0, 4)
   return (
@@ -71,7 +63,7 @@ export function EndState({ triage, onLoadMore, generating, wander }: { triage: F
         {counts.liked} liked, {counts.passed} less like this, {counts.dismissed} dismissed.
       </p>
       <div className="ev-end-actions">
-        <LoadMore onLoadMore={onLoadMore} generating={generating} wander={wander} primary />
+        <LoadMore onLoadMore={onLoadMore} generating={generating} primary />
         {remaining > 0
           ? <button type="button" className="ev-btn ev-btn-ghost" onClick={() => select(firstUndecided(ids, signals))}>Rate the rest</button>
           : <Link className="ev-btn ev-btn-ghost" href="/saved">Review saved</Link>}
@@ -81,26 +73,22 @@ export function EndState({ triage, onLoadMore, generating, wander }: { triage: F
 }
 
 /**
- * "Load more artists" with the Wander farther switch beside it: the end state's primary button, and always
- * available at the end of the queue / Up next list (the queue header uses a shorter `label`). Rainbow while
- * Wander farther is on. While generating it is aria-disabled (not disabled), so keyboard focus stays on it;
- * clicks are ignored.
+ * "Load more artists": the end state's primary button, and always available at the end of the queue /
+ * Up next list (the queue header uses a shorter `label`). While generating it is aria-disabled (not
+ * disabled), so keyboard focus stays on it; clicks are ignored.
  */
-export function LoadMore({ onLoadMore, generating, wander, primary = false, label = "Load more artists" }: {
-  onLoadMore: () => void; generating: boolean; wander: Wander; primary?: boolean; label?: string
+export function LoadMore({ onLoadMore, generating, primary = false, label = "Load more artists" }: {
+  onLoadMore: () => void; generating: boolean; primary?: boolean; label?: string
 }) {
   return (
-    <>
-      <button
-        type="button"
-        className={`ev-btn ${primary ? "ev-btn-primary" : "ev-btn-ghost"}${wanderButton(wander.on)}`}
-        onClick={generating ? undefined : onLoadMore}
-        aria-disabled={generating || undefined}
-      >
-        {generating ? "Generating…" : label}
-      </button>
-      <WanderSwitch on={wander.on} onToggle={wander.toggle} />
-    </>
+    <button
+      type="button"
+      className={`ev-btn ${primary ? "ev-btn-primary" : "ev-btn-ghost"}`}
+      onClick={generating ? undefined : onLoadMore}
+      aria-disabled={generating || undefined}
+    >
+      {generating ? "Generating…" : label}
+    </button>
   )
 }
 

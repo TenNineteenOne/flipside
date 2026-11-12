@@ -3,6 +3,7 @@ import { apiError, dbError } from "@/lib/errors"
 import { isValidArtistId, isValidSpotifyId } from "@/lib/spotify-ids"
 import { onTasteChanged } from "@/lib/taste-change"
 import { withAuthedJsonRoute } from "@/lib/api/with-authed-route"
+import { ensureCurrentChallenge, getISOWeekStart } from "@/lib/challenges/engine"
 
 export const POST = withAuthedJsonRoute(async ({ userId, body: rawBody }) => {
   const { artistId, spotifyTrackId } = rawBody as { artistId?: string; spotifyTrackId?: string }
@@ -39,6 +40,14 @@ export const POST = withAuthedJsonRoute(async ({ userId, body: rawBody }) => {
     }
   }
 
+  // Only a brand-new row counts toward the weekly challenge (re-saves don't).
+  const { data: existingSave } = await supabase
+    .from("saves")
+    .select("artist_id")
+    .eq("user_id", userId)
+    .eq("artist_id", artistId)
+    .maybeSingle()
+
   // Upsert the artist bookmark (idempotent — unique on user_id + artist_id)
   const { error: saveError } = await supabase
     .from("saves")
@@ -53,6 +62,22 @@ export const POST = withAuthedJsonRoute(async ({ userId, body: rawBody }) => {
     )
 
   if (saveError) return dbError(saveError, "saves/upsert")
+
+  if (!existingSave) {
+    // The progress RPC no-ops without this week's row, so assign it first. Best-effort.
+    try {
+      await ensureCurrentChallenge(supabase, userId)
+      const { error: rpcError } = await supabase.rpc("rpc_increment_challenge_progress", {
+        p_user_id: userId,
+        p_week_start: getISOWeekStart(),
+        p_signal: "save",
+        p_increment: 1,
+      })
+      if (rpcError) console.error(`[saves] challenge-progress err=${rpcError.message}`)
+    } catch (err) {
+      console.error("[saves] challenge credit failed", err instanceof Error ? err.message : err)
+    }
+  }
 
   // A save is a taste signal (see lib/taste-change). Awaited so the serverless
   // function doesn't terminate mid-write after the response is sent.

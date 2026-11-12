@@ -8,7 +8,6 @@ import { signOut } from "next-auth/react"
 import { BarChart3, Bookmark, Clock, Keyboard, LogOut, Music2, Settings } from "lucide-react"
 import { IdenticonAvatar } from "@/components/ui/identicon-avatar"
 import { NavLinkStatus } from "@/components/nav/navigation-progress"
-import { useAdventurousMode } from "@/lib/hooks/use-adventurous-mode"
 import { ShellContext, type ShellApi } from "./shell-context"
 import { Wordmark } from "./wordmark"
 
@@ -31,7 +30,6 @@ export const isCurrent = (pathname: string, href: string) =>
 
 interface AppShellProps {
   userSeed: string
-  initialAdventurous: boolean
   /** Dev preview only: strip this prefix before matching the current section (/dev-preview/feed → Feed). */
   pathPrefix?: string
   children: ReactNode
@@ -42,10 +40,9 @@ interface AppShellProps {
  * top bar (wordmark + avatar menu) and a bottom tab bar. Which one shows is
  * pure CSS, so the server render is the same at every width.
  */
-export function AppShell({ userSeed, initialAdventurous, pathPrefix, children }: AppShellProps) {
+export function AppShell({ userSeed, pathPrefix, children }: AppShellProps) {
   const rawPath = usePathname()
   const pathname = pathPrefix && rawPath.startsWith(pathPrefix) ? rawPath.slice(pathPrefix.length) : rawPath
-  const { adventurous } = useAdventurousMode(initialAdventurous)
   const menuRef = useRef<HTMLDivElement>(null)
   const avatarRef = useRef<HTMLButtonElement>(null)
   // The avatar menu is open for the path it was opened on, so a route change closes it.
@@ -113,7 +110,7 @@ export function AppShell({ userSeed, initialAdventurous, pathPrefix, children }:
 
   return (
     <ShellContext.Provider value={api}>
-      <div className={`shell${adventurous ? " adventurous" : ""}`}>
+      <div className="shell">
         <div className="shell-rail">
           <Link href="/feed" className="shell-rail-brand" aria-label="flipside, go to Feed" title="flipside">
             <Wordmark />

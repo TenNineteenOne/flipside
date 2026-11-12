@@ -11,8 +11,6 @@ export interface SettingsPatch {
   lastfmUsername?: string
   statsfmUsername?: string
   selectedGenres?: string[]
-  /** "Wander farther". */
-  adventurous?: boolean
   preferredMusicPlatform?: MusicPlatform
   onboardingCompleted?: boolean
 }

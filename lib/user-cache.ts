@@ -14,7 +14,7 @@ import { createServiceClient } from "@/lib/supabase/server"
  * Callers should handle null the same way they would a missing row.
  */
 const USER_COLUMNS =
-  "id, adventurous, onboarding_completed_at, lastfm_username, statsfm_username, preferred_music_platform, fame_level, selected_genres"
+  "id, onboarding_completed_at, lastfm_username, statsfm_username, preferred_music_platform, fame_level, selected_genres"
 
 export const getCachedUser = cache(async (userId: string) => {
   const supabase = createServiceClient()

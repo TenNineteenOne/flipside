@@ -82,7 +82,6 @@ export default async function FeedPage() {
     <FeedClient
       recommendations={cards}
       musicPlatform={musicPlatform}
-      initialAdventurous={!!user.adventurous}
       initialLayout={guessFeedLayout(await headers())}
       challengePromise={challengePromise}
     />

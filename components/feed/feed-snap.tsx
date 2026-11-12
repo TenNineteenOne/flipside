@@ -2,9 +2,8 @@
 
 import "./feed.css"
 import { useCallback, useEffect, useRef } from "react"
-import { Plus } from "lucide-react"
-import { EndState, type Wander } from "@/components/feed/feed-parts"
-import { WanderSwitch, wanderButton } from "@/components/feed/wander-switch"
+import { RefreshCw } from "lucide-react"
+import { EndState } from "@/components/feed/feed-parts"
 import { SnapCard } from "@/components/feed/snap-card"
 import { MiniPlayer, useSuppressFloatingPlayer } from "@/components/player/mini-player"
 import { ShellSlot } from "@/components/shell/shell-context"
@@ -31,15 +30,13 @@ interface FeedSnapProps {
   /** "Load more artists" on the end page, and its in-flight state. */
   onLoadMore: () => void
   generating: boolean
-  /** Wander farther: the top-bar switch and the one beside Load more on the end page. */
-  wander: Wander
   /** The weekly challenge strip (FeedClient's Suspense slot), shown under the header. */
   challenge?: React.ReactNode
   /** Called once this layout is mounted (FeedClient enables the keyboard shortcuts then). */
   onShown?: (layout: "phone" | "tablet" | "desktop") => void
 }
 
-export function FeedSnap({ triage, onLoadMore, generating, wander, challenge, onShown }: FeedSnapProps) {
+export function FeedSnap({ triage, onLoadMore, generating, challenge, onShown }: FeedSnapProps) {
   useEffect(() => onShown?.("phone"), [onShown])
   const { ids, selectedId } = triage
   /** The page that should be in view: the selected artist, else the end page (always last, so Load more is always reachable). */
@@ -138,7 +135,7 @@ export function FeedSnap({ triage, onLoadMore, generating, wander, challenge, on
 
   return (
     <div className="ev-feed ev-snap">
-      <TopBarProgress triage={triage} wander={wander} onLoadMore={onLoadMore} generating={generating} controls={false} />
+      <TopBarProgress triage={triage} onLoadMore={onLoadMore} generating={generating} phone />
       {challenge}
 
       <section className="ev-m-snap" ref={scrollerRef} aria-label="Artists">
@@ -151,7 +148,7 @@ export function FeedSnap({ triage, onLoadMore, generating, wander, challenge, on
           )
         })}
         <section className="ev-m-page" data-id={END} aria-label="End of today's artists">
-          <EndState triage={triage} onLoadMore={onLoadMore} generating={generating} wander={wander} />
+          <EndState triage={triage} onLoadMore={onLoadMore} generating={generating} />
         </section>
       </section>
 
@@ -163,16 +160,13 @@ export function FeedSnap({ triage, onLoadMore, generating, wander, challenge, on
 /* ---- pieces shared by the phone (Snap) and tablet feeds ---- */
 
 /**
- * The segment strip in the shell top bar. Phones (`controls={false}`): the strip alone, between the
- * wordmark and the avatar. Tablets: Wander farther + Load more in the bar, the strip as its second
- * row. Load more is an icon button below 600px wide ("Load more" text from 600px); rainbow while
- * Wander farther is on; aria-disabled (focus stays) while generating, like LoadMore.
+ * The segment strip and Load more in the shell top bar. Phones: wordmark, strip, Load more, avatar in
+ * one row. Tablets: Load more in the bar, the strip as its second row. Load more is a regenerate icon
+ * below 600px wide ("Load more" text from 600px); aria-disabled (focus stays) while generating, like
+ * LoadMore, with the icon spinning.
  */
-export function TopBarProgress({ triage, wander, onLoadMore, generating, controls = true }: {
-  triage: FeedTriage; wander: Wander; onLoadMore: () => void; generating: boolean
-  /** Phones pass false: their header is the wordmark, the strip and the avatar; Load more and Wander
-   *  farther live in the end state (and Wander in Settings). */
-  controls?: boolean
+export function TopBarProgress({ triage, onLoadMore, generating, phone = false }: {
+  triage: FeedTriage; onLoadMore: () => void; generating: boolean; phone?: boolean
 }) {
   const strip = (
     <ol className="ev-feed ev-m-strip" aria-hidden>
@@ -181,24 +175,22 @@ export function TopBarProgress({ triage, wander, onLoadMore, generating, control
       ))}
     </ol>
   )
-  if (!controls) return <ShellSlot name="top">{strip}</ShellSlot>
+  const more = (
+    <button
+      type="button"
+      className="ev-btn ev-btn-ghost ev-m-more"
+      onClick={generating ? undefined : onLoadMore}
+      aria-disabled={generating || undefined}
+      aria-label={generating ? "Generating…" : "Load more artists"}
+    >
+      <RefreshCw size={18} strokeWidth={2} aria-hidden />
+      <span className="ev-m-more-text" aria-hidden>{generating ? "Generating…" : "Load more"}</span>
+    </button>
+  )
+  if (phone) return <ShellSlot name="top"><span className="ev-feed ev-m-topbar" data-phone>{strip}{more}</span></ShellSlot>
   return (
     <>
-      <ShellSlot name="top">
-        <span className="ev-feed ev-m-topbar">
-          <WanderSwitch on={wander.on} onToggle={wander.toggle} compact />
-          <button
-            type="button"
-            className={`ev-btn ev-btn-ghost ev-m-more${wanderButton(wander.on)}`}
-            onClick={generating ? undefined : onLoadMore}
-            aria-disabled={generating || undefined}
-            aria-label={generating ? "Generating…" : "Load more artists"}
-          >
-            <Plus size={18} strokeWidth={2} aria-hidden />
-            <span className="ev-m-more-text" aria-hidden>{generating ? "Generating…" : "Load more"}</span>
-          </button>
-        </span>
-      </ShellSlot>
+      <ShellSlot name="top"><span className="ev-feed ev-m-topbar">{more}</span></ShellSlot>
       <ShellSlot name="topSub">{strip}</ShellSlot>
     </>
   )

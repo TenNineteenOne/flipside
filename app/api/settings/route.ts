@@ -9,11 +9,11 @@ import { withAuthedJsonRoute } from "@/lib/api/with-authed-route"
 import { isFameLevel } from "@/lib/settings/fame"
 
 /**
- * Settings retired by #205 (fame_level + Wander farther replace them). A
- * patch carrying any of them is rejected whole, so a stale client finds out
- * instead of silently saving nothing.
+ * Retired settings (#205 fame_level replaced the first four; Wander farther is
+ * always on). A patch carrying any of them is rejected whole, so a
+ * stale client finds out instead of silently saving nothing.
  */
-const RETIRED_KEYS = ["playThreshold", "popularityCurve", "undergroundMode", "deepDiscovery"] as const
+const RETIRED_KEYS = ["playThreshold", "popularityCurve", "undergroundMode", "deepDiscovery", "adventurous"] as const
 
 export const PATCH = withAuthedJsonRoute(async ({ userId, body: rawBody }) => {
   const body = rawBody as {
@@ -21,7 +21,6 @@ export const PATCH = withAuthedJsonRoute(async ({ userId, body: rawBody }) => {
     lastfmUsername?: string
     statsfmUsername?: string
     selectedGenres?: string[]
-    adventurous?: boolean
     preferredMusicPlatform?: string
     onboardingCompleted?: boolean
   }
@@ -61,11 +60,6 @@ export const PATCH = withAuthedJsonRoute(async ({ userId, body: rawBody }) => {
     update.selected_genres = body.selectedGenres.filter((g) => typeof g === "string" && g.length <= 80)
   }
 
-  if (body.adventurous !== undefined) {
-    if (typeof body.adventurous !== "boolean") return apiError("adventurous must be a boolean", 400)
-    update.adventurous = body.adventurous
-  }
-
   if (body.preferredMusicPlatform !== undefined) {
     if (!isMusicPlatform(body.preferredMusicPlatform)) {
       return apiError("Invalid preferredMusicPlatform", 400)
@@ -95,7 +89,7 @@ export const PATCH = withAuthedJsonRoute(async ({ userId, body: rawBody }) => {
   revalidatePath("/settings")
 
   // A genre-filter change wipes the unseen Feed queue; every other setting
-  // (fame, Wander farther) applies to the next batch only (lib/taste-change).
+  // (fame) applies to the next batch only (lib/taste-change).
   await onTasteChanged(supabase, userId, {
     kind: "settings",
     fields: Object.keys(body).filter((k) => body[k as keyof typeof body] !== undefined),

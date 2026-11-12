@@ -64,8 +64,7 @@ triage buttons, track chips, Play preview, the landing's primary buttons) a 1px 
   `aria-expanded`, rendered only while open, focus moves in on open, closes on Escape (focus back
   to the button), outside pointer down, Tab out, item activation and route change, arrow keys move
   between items) and a four-item bottom tab bar (Feed, History, Saved, Stats). Which shows is CSS only.
-  `aria-current="page"` when the path equals a link or starts with it plus `/`. Adventurous
-  mode (`useAdventurousMode`) draws a solid 2px `--violet` line on the rail edge / on the phone tab bar's top edge.
+  `aria-current="page"` when the path equals a link or starts with it plus `/`.
   Pages hook in via `components/shell/shell-context.tsx`: `useShellBadge(href, n)` (nav count),
   `useShellShortcuts(fn)` (shows the rail's Shortcuts button), `<ShellSlot name="top"|"topSub"|"rail">` (topSub: an optional full-width second row under the phone top bar, hidden when empty)
   (portal into the top bar / under the rail nav). The rail shows at ≥900px wide and ≥540px tall,
@@ -111,11 +110,10 @@ triage buttons, track chips, Play preview, the landing's primary buttons) a 1px 
 - **`ChallengeStrip`** (`components/feed/challenge-strip.tsx`, styles `.ev-chal*` in `feed.css`;
   moved from the removed Explore page, #205) — the weekly challenge as one line ("**Weekly
   challenge** · like 5 artists this week": a fixed lead, not the template title, which the payload
-  no longer carries; a visually hidden ":" for screen readers), a mono `2/5`
-  count (check mark once completed) and a thin `--wander-rainbow` bar; `aria-label="Weekly
+  no longer carries; rotates over 11 templates, `thumbs_up_*` and `save_*`, see `lib/challenges/engine.ts`; a visually hidden ":" for screen readers), a mono `2/5`
+  count (check mark once completed) and a thin `--wander-rainbow` bar (defined in `feed.css`; `wander.css` is gone); `aria-label="Weekly
   challenge"`. Desktop: a light line (text, count, 3px bar; no panel) in the queue header's Load more row
-  (`.ev-wander-chal`, left of Load more + the switch; the Wander note sits right-aligned under the
-  controls); below a 560px queue container it takes its own line above the controls. Tablet: a
+  (`.ev-wander-chal`, left of Load more); below a 560px queue container it takes its own line above the controls. Tablet: a
   full-width line in its own grid row (`.ev-t-chal`). Phone: a 36px line inside `.ev-snap` under
   the top bar (the scroller shrinks, so `--ev-snap-top` is unchanged; hidden below 480px tall); the text
   ellipsizes, the count never does. Progress is incremented server-side by `POST /api/feedback`
@@ -147,9 +145,7 @@ triage buttons, track chips, Play preview, the landing's primary buttons) a 1px 
   artist lacks does nothing), and `tuning` (`lib/feed/tuning.ts`, genres deduped
   case-insensitively, liked wins over passed). Tracks fetched on demand by the focus pane are
   registered with `addTracks`.
-- **Phone top bar** (`TopBarProgress` in `feed-snap.tsx`, `controls={false}` on phones): wordmark and
-  avatar only, plus the segment strip row. Load more and Wander farther live in the end state
-  (`EndState` → `LoadMore` with the switch) and Settings; the tablet keeps them in its top bar.
+- **Phone top bar** (`TopBarProgress` in `feed-snap.tsx`, `phone` prop on phones): wordmark, avatar and the regenerate button, plus the segment strip row. Phones show a regenerate icon button (lucide `RefreshCw`, `TopBarProgress` `phone` prop, spins while generating unless reduced-motion) in the shell top bar between the segment strip and the avatar; `EndState` keeps its `LoadMore`; the tablet keeps its header button.
 - **Focus pane (desktop)**: banner art (height `clamp(220px, 100vh - 362px, 560px)`) with the name
   and genres over its lower edge, the "Because you like" line, one row of six even icon columns with
   one-word labels (Less, Skip, More, Save, the Open-in app, Share; full phrases in `aria-label`/`title`),
@@ -195,12 +191,10 @@ triage buttons, track chips, Play preview, the landing's primary buttons) a 1px 
   which jumps to the first unrated; scrolling onto it holds via the hook's `END_PAGE` selection), a
   small player bar (the docked `MiniPlayer`) only while the loaded track is not the artist on
   screen. There is no separate triage bar: each card carries its own actions. On phones
-  (`controls={false}`) `TopBarProgress` puts only the segment strip in `<ShellSlot name="top">`,
-  between the wordmark and the avatar (`flex: 1`), and leaves `topSub` empty, so the top bar is one
-  56px row (`--ev-snap-top` = top bar + safe area + 1px border). On tablets it fills `<ShellSlot name="top">` with the
-  Wander farther switch (label "Wander" below 440px, track only below 360px; accessible name
-  always "Wander farther"), a header Load more (a 40px icon button with the accessible name
-  "Load more artists", icon + "Load more" from 600px; rainbow while Wander farther is on;
+  (`phone` prop) `TopBarProgress` puts the segment strip (`flex: 1`) and the regenerate icon button in `<ShellSlot name="top">`,
+  between the wordmark and the avatar, and leaves `topSub` empty, so the top bar is one
+  56px row (`--ev-snap-top` = top bar + safe area + 1px border). On tablets it fills `<ShellSlot name="top">` with a header Load more (a 40px icon button with the accessible name
+  "Load more artists", icon + "Load more" from 600px; spins while generating;
   `aria-disabled` and named "Generating…" while generating), and the segment
   strip goes in `<ShellSlot name="topSub">`. Measured in the dev preview, the bar fits at 320px
   with two-digit counts (5px spare); a three-digit count at 320px would crowd the wordmark. An `IntersectionObserver` (scroller root, threshold 0.6)
@@ -286,7 +280,6 @@ triage buttons, track chips, Play preview, the landing's primary buttons) a 1px 
 | `useArtistTracks` | tracks | `GET /api/artists/:id/tracks?name=` (only if no baked tracks); `isFetching` is derived (true from the first render until the request settles) |
 | `useArtistFeedback` | `Map<id,signal>` | POST/DELETE `/api/feedback`, DELETE `/api/dismiss`. Controller `lib/client/artist-signals.ts`: optimistic at tap time, per-artist serialized, falls back to last confirmed value when the last queued call fails. `restore(id, previous)` (feed Undo) is optimistic too and picks the request(s) from the visible → previous transition (see the comment in the controller; skip → thumbs is DELETE dismiss then a best-effort POST, done once the DELETE succeeds) |
 | `useArtistSaves` | `Set<id>` | POST/DELETE `/api/saves`; same artist-signal controller |
-| `useAdventurousMode` | bool | `localStorage` + cross-tab sync + `patchSettings` |
 | `useFeedGeneration` | generating | the only `POST /api/recommendations/generate` caller with a guard (`lib/client/feed-generation.ts`): `requestMore` (feed top-up / Load more). `release()` (unmount) reports generating=false and silences the abandoned run; the feed skips `router.refresh()` after unmount. Loader/onboarding use its `postGenerate` + `classifyGenerate` |
 
 ## Playback & "Open in platform"

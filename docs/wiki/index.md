@@ -20,8 +20,8 @@ links into the subsystem you care about.
 flipside is a **music-discovery app** (Next.js 16, App Router, React 19, Supabase).
 You log in with **just a username** — there is no Spotify login. It builds one
 personalized discovery surface, the **Feed** ("For You"): a scored, diversity-capped stack
-of artist cards. A **Wander farther** switch fills about half of each new batch from outside
-your usual genres. (Explore, the old rails page, was folded into Feed on 2026-11-10, #205;
+of artist cards. Every batch is always "Wander farther": about half of it comes from outside
+your usual genres (no setting). (Explore, the old rails page, was folded into Feed on 2026-11-10, #205;
 `/explore` redirects to `/feed`.)
 
 Recommendations are grown by walking the **Last.fm** artist-similarity graph from your
@@ -108,7 +108,7 @@ graph TD
 | [[api-routes]] | The HTTP surface: every route, auth, inputs, what it calls |
 | [[pages-and-components]] | Screens, shared components, client hooks, playback + "open in platform" UX |
 | [[genre-system]] | The 4-level genre tree, normalization, adjacency scoring, build scripts |
-| [[settings-and-discovery]] | Discovery settings model (How famous? slider, Wander farther) |
+| [[settings-and-discovery]] | Discovery settings model (How famous? slider; Wander farther is always on) |
 | [[infra-and-ops]] | next.config/CSP, middleware, cron, color extraction, scripts |
 | [[spotify-dependency]] | **The analysis**: exactly what Spotify is used for and how replaceable it is |
 
@@ -117,7 +117,7 @@ graph TD
 | Module | What it owns |
 |---|---|
 | `recommendation/engine.ts` | Feed orchestration ([[generation-engine]]) |
-| `recommendation/far-picks.ts` | the Wander farther far pool (ported from Explore's discovery rails) |
+| `recommendation/far-picks.ts` | the always-on far pool (ported from Explore's discovery rails) |
 | `recommendation/playable-candidates.ts` | name → confirmed-playable pipeline (primary pool, bleed, far pool); `livePlayablePorts` |
 | `recommendation/preview-store.ts` | `PreviewStore`, sole owner of `artist_tracks_cache` |
 | `recommendation/exclusions.ts` | the one "never show this artist" policy |

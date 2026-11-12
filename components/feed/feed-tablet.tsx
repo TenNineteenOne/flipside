@@ -3,7 +3,7 @@
 import "./feed.css"
 import { useEffect, useRef } from "react"
 import { Heart, X } from "lucide-react"
-import { Art, artistVar, EndState, LoadMore, type Wander } from "@/components/feed/feed-parts"
+import { Art, artistVar, EndState, LoadMore } from "@/components/feed/feed-parts"
 import { PlayerBar, TopBarProgress } from "@/components/feed/feed-snap"
 import { SnapCard } from "@/components/feed/snap-card"
 import { artworkFor } from "@/lib/feed/artwork"
@@ -18,8 +18,6 @@ interface FeedTabletProps {
   /** "Load more artists" in the end state, and its in-flight state. */
   onLoadMore: () => void
   generating: boolean
-  /** Wander farther: the top-bar switch and the ones beside each Load more. */
-  wander: Wander
   /** The weekly challenge strip (FeedClient's Suspense slot), shown under the header. */
   challenge?: React.ReactNode
   /** Called once this layout is mounted (FeedClient enables the keyboard shortcuts then). */
@@ -32,7 +30,7 @@ interface FeedTabletProps {
  * beside a 280px "Up next" list of every loaded artist in feed order.
  * The end state takes the card's place when nothing is left. Presentation only.
  */
-export function FeedTablet({ triage, onLoadMore, generating, wander, challenge, onShown }: FeedTabletProps) {
+export function FeedTablet({ triage, onLoadMore, generating, challenge, onShown }: FeedTabletProps) {
   useEffect(() => onShown?.("tablet"), [onShown])
   const { selected, selectedId, signals } = triage
   const next = selectedId ? triage.byId.get(nextUndecided(triage.ids, signals, selectedId) ?? "") : undefined
@@ -51,7 +49,7 @@ export function FeedTablet({ triage, onLoadMore, generating, wander, challenge, 
 
   return (
     <div className="ev-feed ev-snap ev-tablet">
-      <TopBarProgress triage={triage} wander={wander} onLoadMore={onLoadMore} generating={generating} />
+      <TopBarProgress triage={triage} onLoadMore={onLoadMore} generating={generating} />
       {challenge && <div className="ev-t-chal">{challenge}</div>}
 
       <section className="ev-m-stage" aria-label="Selected artist">
@@ -65,7 +63,7 @@ export function FeedTablet({ triage, onLoadMore, generating, wander, challenge, 
             <SnapCard key={selected.id} a={selected} triage={triage} eager enter />
           </div>
         ) : (
-          <EndState triage={triage} onLoadMore={onLoadMore} generating={generating} wander={wander} />
+          <EndState triage={triage} onLoadMore={onLoadMore} generating={generating} />
         )}
       </section>
 
@@ -96,7 +94,7 @@ export function FeedTablet({ triage, onLoadMore, generating, wander, challenge, 
               </li>
             )
           })}
-          <li className="ev-m-rail-more"><LoadMore onLoadMore={onLoadMore} generating={generating} wander={wander} /></li>
+          <li className="ev-m-rail-more"><LoadMore onLoadMore={onLoadMore} generating={generating} /></li>
         </ol>
       </nav>
     </div>

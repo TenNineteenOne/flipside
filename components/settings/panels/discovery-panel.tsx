@@ -2,8 +2,6 @@
 
 import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
-import { WanderSwitch } from "@/components/feed/wander-switch"
-import { useAdventurousMode } from "@/lib/hooks/use-adventurous-mode"
 import { patchSettings } from "@/lib/settings/patch-settings"
 import { FAME_LEVELS, MAX_FAME_LEVEL } from "@/lib/settings/fame"
 
@@ -45,12 +43,11 @@ export function createFameWriter(
 export const FAME_SAVE_DEBOUNCE_MS = 400
 
 /**
- * Discovery settings (#205, option I): "How famous?" (a 5-stop slider) and "How close to your taste?"
- * (the Wander farther switch, also on Feed). Both apply to the next batch only.
+ * Discovery settings (#205, option I): "How famous?", a 5-stop slider. Applies to the next batch only.
+ * Wander farther is always on, so it has no switch.
  */
-export function DiscoveryPanel({ initialFameLevel, initialAdventurous }: { initialFameLevel: number; initialAdventurous: boolean }) {
+export function DiscoveryPanel({ initialFameLevel }: { initialFameLevel: number }) {
   const [fame, setFame] = useState(initialFameLevel)
-  const { adventurous, setAdventurous } = useAdventurousMode(initialAdventurous)
   const pct = (fame / MAX_FAME_LEVEL) * 100
   const [write] = useState(() => createFameWriter(initialFameLevel, setFame))
   const pending = useRef<{ timer: ReturnType<typeof setTimeout>; value: number } | null>(null)
@@ -109,17 +106,6 @@ export function DiscoveryPanel({ initialFameLevel, initialAdventurous }: { initi
             <span>underground</span>
             <span>anything</span>
           </div>
-        </div>
-
-        <div className="divider" />
-
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>How close to your taste?</div>
-          <WanderSwitch
-            on={adventurous}
-            onToggle={() => setAdventurous(!adventurous).catch(() => toast.error("Failed to save Wander farther"))}
-            caption="About half of each batch comes from outside your usual genres."
-          />
         </div>
       </div>
     </div>

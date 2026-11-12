@@ -61,7 +61,6 @@ export default async function SettingsPage() {
       initialLastfmUsername={lastfmUsername}
       initialStatsfmUsername={statsfmUsername}
       initialLastfmArtistCount={lastfmArtistCount}
-      initialAdventurous={user?.adventurous ?? false}
       initialSelectedGenres={(user?.selected_genres as string[] | null) ?? []}
       initialSeedArtists={seedArtists}
       initialMusicPlatform={

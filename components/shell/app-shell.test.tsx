@@ -10,7 +10,7 @@ import { AppShell } from "./app-shell"
 function render(path: string) {
   pathname = path
   return renderToString(
-    <AppShell userSeed="seed" initialAdventurous={false}>
+    <AppShell userSeed="seed">
       <p>page body</p>
     </AppShell>,
   )
@@ -47,7 +47,7 @@ describe("AppShell server render", () => {
   it("pathPrefix (dev preview) is stripped before matching the current section", () => {
     pathname = "/dev-preview/feed"
     const html = renderToString(
-      <AppShell userSeed="seed" initialAdventurous={false} pathPrefix="/dev-preview"><p /></AppShell>,
+      <AppShell userSeed="seed" pathPrefix="/dev-preview"><p /></AppShell>,
     )
     const current = (block(html, 'class="shell-nav"', "nav").match(LINK) ?? []).filter((a) => a.includes('aria-current="page"'))
     expect(current).toEqual([expect.stringContaining('href="/feed"')])

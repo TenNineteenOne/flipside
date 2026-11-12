@@ -26,12 +26,11 @@ export default async function AppLayout({
   const userRow = await getCachedUser(session.user.id)
   // Stale JWT, row gone (deleted account): every (app) page needs the row. The proxy lets ?reauth=1 through.
   if (!userRow) redirect("/sign-in?reauth=1")
-  const initialAdventurous = !!userRow.adventurous
 
   return (
     <NavigationProgressProvider>
       <AudioProvider>
-        <AppShell userSeed={userSeed} initialAdventurous={initialAdventurous}>
+        <AppShell userSeed={userSeed}>
           <div className="app-col">{children}</div>
         </AppShell>
         <MiniPlayer />

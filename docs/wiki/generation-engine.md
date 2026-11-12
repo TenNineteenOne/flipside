@@ -9,7 +9,7 @@ related: [[music-providers]], [[external-apis]], [[genre-system]], [[data-model]
 The Feed ("For You") pipeline. Entry point: `buildRecommendations(input)` in
 `lib/recommendation/engine.ts` (the core). The Explore page (and its rails engine) was
 folded into Feed and removed on 2026-11-10 (#205); its two discovery rails live on as the
-Wander farther far pool (step 10).
+far pool (step 10; always on).
 
 ## Pipeline (in order)
 
@@ -33,9 +33,10 @@ Wander farther far pool (step 10).
 3. **First-hop similarity** (`runPipeline`) — each seed →
    `lastfm.similarArtists` → **Last.fm `artist.getSimilar`** (7-day cached; one batched
    `lastfm_cache` read for all seeds, and one for the 2nd-hop names, via `lastfm.prefetch`).
-   Optional 2nd hop (`runDeepHop`) when **Wander farther** (`users.adventurous`) is on — the
-   route passes `deepDiscovery = adventurous` (#205; `deep_discovery` is retired).
-   Under Wander farther the **far-pool fetch** (`startFarFetch` → `far-picks.ts`) is started
+   2nd hop (`runDeepHop`) always (Wander farther is always on): the
+   route passes `deepDiscovery: true, adventurous: true` for everyone and no longer reads
+   `users.adventurous` (`deep_discovery` is retired).
+   The **far-pool fetch** (`startFarFetch` → `far-picks.ts`) is started
    once per build right after seed gathering, so it overlaps the first hop; see step 10.
 4. **Round-robin ordering** (`buildRoundRobinNames`, `tailFirst=true`) — interleave
    candidates across seeds, lowest-match-first, so no mainstream seed floods the blocking
@@ -74,8 +75,9 @@ Wander farther far pool (step 10).
    per-seed (8%) penalties.
 10. **Exploration budget** (`augmentWithAdjacent`) — replace the lowest-scored picks past the
     top few (skipped when a `genre` filter is active):
-    - **Wander farther off:** 4 slots from position 5, close-genre adjacent bleed only.
-    - **Wander farther on:** 10 slots from position 3, filled from the **far pool** first,
+    - Wander farther is always on (the route never passes `adventurous: false`; the
+      4-slot close-bleed-only branch below is only reachable by direct engine callers/tests).
+    - **Wander farther on (the route's mode):** 10 slots from position 3, filled from the **far pool** first,
       adjacent bleed covering any shortfall. The far pool (`lib/recommendation/far-picks.ts`)
       is the retired Explore page's Uncharted Territory + Curveballs logic, ported into Feed: 4 anchors the
       user hasn't touched (selected genres / listened genres via `artists`) and 4 leaves
@@ -143,7 +145,7 @@ Wander farther far pool (step 10).
 | `cluster-cap.ts` | 25% per-genre diversity cap |
 | `scoring` (in engine) | `k^popularity` tier multiplier + relevance |
 | `window.ts` | weekly-stable seeds: `cacheWindowSeed`, `seededShuffle`, `sampleLikes` |
-| `far-picks.ts` | the Wander farther far pool: outside-anchor + leftfield tag pickers, `fetchFarNames` (≤8 tag lookups), `loadListenedGenres` |
+| `far-picks.ts` | the always-on far pool: outside-anchor + leftfield tag pickers, `fetchFarNames` (≤8 tag lookups), `loadListenedGenres` |
 | `gen-timing.ts` (+ `lib/metrics/api-call-counter.ts`) | instrumentation (`[gen-timing]` logs; `far=` far fetch wall-clock (so far, on a timeout) and `farWait=` bleed-step start until the far pool was ready or the wait budget ran out (`farTimeout=1`), when Wander farther ran; `bleedTimeout=1` when the adjacent pool missed the same budget) |
 
 Outside this folder: Last.fm calls go through `lib/lastfm` (one adapter), name → uuid
@@ -182,8 +184,8 @@ through `lib/artist-identity` (with `lastfm-lookup.ts` = `lastfmResolve`, `build
 
 - `FIRST_BATCH_TARGET = 8` is hardcoded; not per-user settable.
 - `chain-walker.ts` (speculative multi-hop BFS) was deleted 2026-07-11 — it had zero callers.
-- Toggling Wander farther changes the **next batch only**: `adventurous` no longer wipes the
-  unseen queue (`lib/taste-change.ts`), and neither does `fameLevel`; only `selectedGenres` does.
+- Wander farther is no longer toggleable. Neither `adventurous` nor `fameLevel` wipes the
+  unseen queue (`lib/taste-change.ts`); only `selectedGenres` does.
 - Last.fm tags hyphenated in flipside's tree (e.g. `dutch-black-metal`) may return 0 from
   Last.fm; `lastfm.tagTopArtists` retries with spaces (a second sequential call) — this was
   the old Explore leftfield-rail latency cause, and why the far pool caps tag lookups at 8.

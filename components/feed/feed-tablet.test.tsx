@@ -26,7 +26,7 @@ function Tablet({ artists, decided, selectedId }: { artists: CardArtist[]; decid
     remaining: artists.filter((a) => !signals.has(a.id)).length,
     counts: counts(t.ids, signals),
   }
-  return <FeedTablet triage={triage} onLoadMore={() => {}} generating={false} wander={{ on: false, toggle: () => {} }} />
+  return <FeedTablet triage={triage} onLoadMore={() => {}} generating={false} />
 }
 
 const render = (props: Parameters<typeof Tablet>[0]) =>
@@ -52,7 +52,7 @@ describe("FeedTablet server render", () => {
     expect(html).toContain("class=\"ev-m-thumb-badge\"")
     expect(html).toContain("class=\"ev-m-thumb-x\"")
     // "Load more artists" is always the last item of Up next.
-    expect(html).toMatch(/<li class="ev-m-rail-more"><button type="button" class="ev-btn ev-btn-ghost">Load more artists<\/button><button type="button" role="switch"[^>]*>[\s\S]*?<\/button><\/li><\/ol>/)
+    expect(html).toMatch(/<li class="ev-m-rail-more"><button type="button" class="ev-btn ev-btn-ghost">Load more artists<\/button><\/li><\/ol>/)
   })
 
   it("the end state takes the card's place when nothing is left", () => {

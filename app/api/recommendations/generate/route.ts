@@ -146,14 +146,14 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
         .is("seen_at", null)
         .gt("expires_at", new Date().toISOString())
 
-  // #205: fame_level is the one popularity setting; Wander farther
-  // (adventurous) also turns on the 2nd similarity hop; the play threshold is
-  // a fixed constant (users.play_threshold / popularity_curve /
-  // underground_mode / deep_discovery are retired, kept one release for rollback).
+  // #205: fame_level is the one popularity setting; the play threshold is a
+  // fixed constant. Wander farther (far pool + 2nd similarity hop) is always on
+  // (users.adventurous, play_threshold / popularity_curve /
+  // underground_mode / deep_discovery are retired, kept for rollback).
   const [{ data: user, error: userError }, queueCount] = await Promise.all([
     supabase
       .from("users")
-      .select("id, fame_level, adventurous")
+      .select("id, fame_level")
       .eq("id", userId)
       .maybeSingle(),
     queueCountPromise,
@@ -162,7 +162,6 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
   if (userError || !user) return apiError("User not found", 404)
 
   const { popularityCurve, undergroundMode } = fameToEngine(user.fame_level)
-  const adventurous = !!user.adventurous
 
   if (queueCount) {
     const { count, error: countErr } = queueCount
@@ -226,8 +225,8 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
       popularityCurve,
       genre,
       undergroundMode,
-      deepDiscovery: adventurous,
-      adventurous,
+      deepDiscovery: true,
+      adventurous: true,
     })
     // Snapshot before logging — after() work runs after this point and is excluded.
     const apiCalls = snapshotCalls()

@@ -6,8 +6,8 @@ related: [[generation-engine]], [[settings-and-discovery]], [[infra-and-ops]]
 
 # Genre System
 
-flipside's genre taxonomy drives seeds, adjacency bleed, the cluster cap, and the Wander
-farther far pool. Tree in `data/genres.json`; logic in `lib/genre/`.
+flipside's genre taxonomy drives seeds, adjacency bleed, the cluster cap, and the far
+pool (always-on Wander farther). Tree in `data/genres.json`; logic in `lib/genre/`.
 
 ## The tree (4 levels)
 

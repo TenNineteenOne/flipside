@@ -39,7 +39,7 @@ describe("PATCH /api/settings type guards", () => {
   })
 })
 
-describe("PATCH /api/settings fame level + Wander farther (#205)", () => {
+describe("PATCH /api/settings fame level (#205)", () => {
   it.each([0, 4])("fameLevel %i → 200, saved as fame_level", async (v) => {
     const res = await call({ fameLevel: v })
     expect(res.status).toBe(200)
@@ -52,19 +52,13 @@ describe("PATCH /api/settings fame level + Wander farther (#205)", () => {
     expect(await res.json()).toEqual({ error: "fameLevel must be an integer between 0 and 4" })
   })
 
-  it("adventurous saves a boolean; non-booleans → 400", async () => {
-    expect((await call({ adventurous: true })).status).toBe(200)
-    expect(db.tables.users[0].adventurous).toBe(true)
-    expect((await call({ adventurous: "yes" })).status).toBe(400)
-  })
-
-  it.each(["playThreshold", "popularityCurve", "undergroundMode", "deepDiscovery"])(
+  it.each(["playThreshold", "popularityCurve", "undergroundMode", "deepDiscovery", "adventurous"])(
     "retired key %s rejects the whole patch → 400",
     async (key) => {
-      const res = await call({ adventurous: true, [key]: 1 })
+      const res = await call({ fameLevel: 1, [key]: true })
       expect(res.status).toBe(400)
       expect(await res.json()).toEqual({ error: `${key} is no longer a setting` })
-      expect(db.tables.users[0].adventurous).toBeUndefined()
+      expect(db.tables.users[0].fame_level).toBeUndefined()
     },
   )
 })
@@ -72,6 +66,6 @@ describe("PATCH /api/settings fame level + Wander farther (#205)", () => {
 describe("PATCH /api/settings deleted account", () => {
   it("401s instead of reporting success when the users row is gone", async () => {
     db = createRouteFakeDb({ users: [] })
-    expect((await call({ adventurous: true })).status).toBe(401)
+    expect((await call({ fameLevel: 1 })).status).toBe(401)
   })
 })

@@ -103,19 +103,6 @@
 }
 .shell-user { display: flex; align-items: center; gap: 10px; padding: 8px 10px; }
 
-/* Adventurous mode: a 2px four-colour line on the rail's inner edge. */
-.shell.adventurous .shell-rail { border-right-color: transparent; }
-.shell.adventurous .shell-rail::after {
-  content: "";
-  position: fixed;
-  top: 0;
-  bottom: 0;
-  left: calc(var(--rail-w) - 2px);
-  width: 2px;
-  background: var(--violet);
-  pointer-events: none;
-}
-
 /* 900–1099px: icons only (only applies while the rail shows). */
 @media (width < 1100px) {
   .shell { --rail-w: 64px; }
@@ -218,19 +205,6 @@
     padding-bottom: var(--safe-b);
     background: var(--rail);
     border-top: 1px solid var(--line);
-  }
-  /* Wander farther on: the violet line sits on the tab bar's top edge, separating the feed from the
-     navigation the way the desktop rail's inner-edge line does. */
-  .shell.adventurous .shell-tabs { border-top-color: transparent; }
-  .shell.adventurous .shell-tabs::after {
-    content: "";
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: -1px;
-    height: 2px;
-    background: var(--violet);
-    pointer-events: none;
   }
   .shell-tab {
     position: relative;

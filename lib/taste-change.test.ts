@@ -10,7 +10,7 @@ describe("invalidationFor (policy table)", () => {
     ["seed add / remove", { kind: "seeds" }, { feed: false }],
     ["settings: selectedGenres", { kind: "settings", fields: ["selectedGenres"] }, { feed: true }],
     ["settings: fameLevel (next batch only, #205)", { kind: "settings", fields: ["fameLevel"] }, { feed: false }],
-    ["settings: adventurous (next batch only, #205)", { kind: "settings", fields: ["adventurous"] }, { feed: false }],
+    ["settings: fameLevel (next batch only, #205)", { kind: "settings", fields: ["fameLevel"] }, { feed: false }],
     ["settings: usernames/platform", { kind: "settings", fields: ["lastfmUsername", "preferredMusicPlatform"] }, { feed: false }],
   ]
   it.each(cases)("%s", (_label, change, expected) => {
@@ -39,10 +39,10 @@ describe("onTasteChanged", () => {
     expect(queries.filter((q) => q.table === "users")).toHaveLength(0)
   })
 
-  it("fame, adventurous and non-settings changes leave the Feed queue alone (#205)", async () => {
+  it("fame and non-settings changes leave the Feed queue alone (#205)", async () => {
     const { client, tables } = createFakeSupabase(rows())
     await onTasteChanged(client, "u1", { kind: "settings", fields: ["fameLevel"] })
-    await onTasteChanged(client, "u1", { kind: "settings", fields: ["adventurous"] })
+    await onTasteChanged(client, "u1", { kind: "settings", fields: ["fameLevel"] })
     await onTasteChanged(client, "u1", { kind: "save" })
     expect(tables.recommendation_cache).toHaveLength(3)
   })

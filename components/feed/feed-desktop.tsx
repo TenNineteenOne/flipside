@@ -4,7 +4,7 @@ import "./feed.css"
 import { useEffect, useRef } from "react"
 import { Bookmark, Heart, Pause, Play } from "lucide-react"
 import { MiniPlayer } from "@/components/player/mini-player"
-import { Art, artistVar, CardActions, EndState, LoadMore, TrackList, type Wander } from "@/components/feed/feed-parts"
+import { Art, artistVar, CardActions, EndState, LoadMore, TrackList } from "@/components/feed/feed-parts"
 import { QueueColumns } from "@/components/feed/feed-skeleton"
 import { ShellSlot } from "@/components/shell/shell-context"
 import { artworkFor } from "@/lib/feed/artwork"
@@ -28,15 +28,13 @@ interface FeedDesktopProps {
   /** "Load more artists" (FeedClient's generate-more flow) and its in-flight state. */
   onLoadMore: () => void
   generating: boolean
-  /** Wander farther: the switches beside each Load more. */
-  wander: Wander
   /** The weekly challenge strip (FeedClient's Suspense slot), shown in the header's Load more row. */
   challenge?: React.ReactNode
   /** Called once this layout is mounted (FeedClient enables the keyboard shortcuts then). */
   onShown?: (layout: "phone" | "tablet" | "desktop") => void
 }
 
-export function FeedDesktop({ triage, onLoadMore, generating, wander, challenge, onShown }: FeedDesktopProps) {
+export function FeedDesktop({ triage, onLoadMore, generating, challenge, onShown }: FeedDesktopProps) {
   useEffect(() => onShown?.("desktop"), [onShown])
   const { visible, selected, selectedId, signals, remaining, total, tuning } = triage
   // Passed/dismissed rows fade and slide out (feed.css, .ev-row[data-leaving]); the list then closes up.
@@ -86,7 +84,7 @@ export function FeedDesktop({ triage, onLoadMore, generating, wander, challenge,
           </div>
           <div className="ev-wander-bar">
             <div className="ev-wander-chal">{challenge}</div>
-            <div className="ev-wander-ctl"><LoadMore onLoadMore={onLoadMore} generating={generating} wander={wander} label="Load more" primary /></div>
+            <div className="ev-wander-ctl"><LoadMore onLoadMore={onLoadMore} generating={generating} label="Load more" primary /></div>
           </div>
         </header>
 
@@ -148,7 +146,7 @@ export function FeedDesktop({ triage, onLoadMore, generating, wander, challenge,
           })}
         </ul>
         {visible.length > 0 && remaining === 0 && <p className="ev-queue-foot">Queue clear.</p>}
-        <div className="ev-queue-more"><LoadMore onLoadMore={onLoadMore} generating={generating} wander={wander} /></div>
+        <div className="ev-queue-more"><LoadMore onLoadMore={onLoadMore} generating={generating} /></div>
       </section>
 
       <section className="ev-focus" aria-label="Selected artist">
@@ -158,7 +156,7 @@ export function FeedDesktop({ triage, onLoadMore, generating, wander, challenge,
           {selected ? (
             <FocusCard key={selected.id} a={selected} triage={triage} />
           ) : (
-            <EndState triage={triage} onLoadMore={onLoadMore} generating={generating} wander={wander} />
+            <EndState triage={triage} onLoadMore={onLoadMore} generating={generating} />
           )}
         </div>
         <MiniPlayer docked />

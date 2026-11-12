@@ -12,12 +12,25 @@ const ctx: ChallengeApplicabilityCtx = { touchedAnchors: new Set(), totalAnchors
 const weekOf = (i: number) => getISOWeekStart(new Date(Date.UTC(2026, 0, 5 + 7 * i)))
 
 describe("pickWeeklyTemplate (#175 rotation)", () => {
-  it("is stable within a week and rotates across weeks", () => {
+  it("is stable within a week, never repeats consecutively, and cycles the whole rotating set", () => {
     const week = weekOf(0)
     expect(pickWeeklyTemplate(ctx, week)).toBe(pickWeeklyTemplate(ctx, week))
-    const keys = new Set(Array.from({ length: 12 }, (_, i) => pickWeeklyTemplate(ctx, weekOf(i)).key))
-    // Only the any-thumb templates rotate until the RPC gets rail context.
-    expect(keys).toEqual(new Set(["thumbs_up_any", "thumbs_up_deep"]))
+    const picks = Array.from({ length: 30 }, (_, i) => pickWeeklyTemplate(ctx, weekOf(i)).key)
+    picks.slice(1).forEach((k, i) => expect(k).not.toBe(picks[i]))
+    const keys = new Set(picks)
+    expect(keys.size).toBeGreaterThanOrEqual(10)
+    for (const k of keys) {
+      // credited by the RPC's prefix match, and never a rail-specific template
+      expect(/^(thumbs_up|save)_/.test(k)).toBe(true)
+      expect(["thumbs_up_new_anchor", "thumbs_up_wildcards", "thumbs_up_adjacent", "thumbs_up_wildcard_seed"]).not.toContain(k)
+    }
+    expect(keys.has("thumbs_up_any") && keys.has("thumbs_up_deep")).toBe(true)
+    expect([...keys].some((k) => k.startsWith("save_"))).toBe(true)
+  })
+
+  it("template keys are unique", () => {
+    const all = CHALLENGE_TEMPLATES.map((t) => t.key)
+    expect(new Set(all).size).toBe(all.length)
   })
 
   it("only picks applicable templates", () => {

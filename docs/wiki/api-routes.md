@@ -41,7 +41,7 @@ before its 401) and the GETs owned elsewhere (`/api/history`, `/api/recommendati
 
 Which caches each taste change invalidates is decided in one place: `lib/taste-change.ts`
 (`onTasteChanged` / `invalidationFor`). Today only a settings change to `selectedGenres`
-wipes anything (the user's unseen Feed rows); `fameLevel`, `adventurous`, thumbs, saves, undismiss and seed
+wipes anything (the user's unseen Feed rows); `fameLevel`, thumbs, saves, undismiss and seed
 changes reach the next batch through the engine's normal reads. A `skip` is not a taste change.
 The `/api/explore/*` routes were removed with the Explore page (2026-11-10, #205).
 
@@ -50,7 +50,7 @@ The `/api/explore/*` routes were removed with the Explore page (2026-11-10, #205
 | `/api/feedback` | POST | thumbs-up first ensures this week's `user_challenges` row (`ensureCurrentChallenge`) so the RPC can credit it; `rpc_record_feedback`. A `railKey` from an old Explore client is ignored |
 | `/api/feedback/[artistId]` | DELETE | `rpc_delete_feedback` (undo thumbs), 204 |
 | `/api/dismiss/[artistId]` | DELETE | `rpc_clear_dismiss`, 204 |
-| `/api/saves` | POST/DELETE | upsert/delete `saves`; response keeps `playlistId: null` (the Spotify-playlist branch was removed in #175) |
+| `/api/saves` | POST/DELETE | upsert/delete `saves`; POST first ensures this week's challenge row (`ensureCurrentChallenge`) and credits a `save_*` challenge via `rpc_increment_challenge_progress(p_signal 'save')` only when the save row didn't exist before; response keeps `playlistId: null` (the Spotify-playlist branch was removed in #175) |
 | `/api/history` | GET | paginated seen recs + feedback/saves join |
 | `/api/history/accumulate` | POST | 15-min cooldown; sync Last.fm or stats.fm history into `listened_artists` |
 
@@ -61,7 +61,7 @@ The `/api/explore/*` routes were removed with the Explore page (2026-11-10, #205
 | `/api/onboarding/search` | GET | **Spotify search** (client-creds), 120/min per user; **falls back to `artist_search_cache` ILIKE on 429** (`degraded:true`) |
 | `/api/onboarding/resolve` | POST | resolves a Last.fm-sourced onboarding suggestion to the internal artist uuid: `artists`-table exact-name doorway lookup first, MusicBrainz mbid url-rels fallback → mint under MB's canonical name (client name must match it at ≥0.8 similarity after folding diacritics, else 404; the check is skipped when exactly one name has Latin letters, e.g. "BTS" vs "방탄소년단"); 404 when unresolvable; 30/min per-user in-memory rate limit |
 | `/api/onboarding/seeds` | POST | upsert `seed_artists` (3–200 per request; existing + new ≤ 200 total, same check as settings) |
-| `/api/settings` | PATCH | validate + encrypt usernames + update `users` (401 if no row was updated: deleted account); a changed Last.fm / stats.fm username clears that source's sync cooldown; `selectedGenres` change → unseen-feed wipe; `fameLevel` / `adventurous` → nothing (next batch only) |
+| `/api/settings` | PATCH | validate + encrypt usernames + update `users` (401 if no row was updated: deleted account); a changed Last.fm / stats.fm username clears that source's sync cooldown; `selectedGenres` change → unseen-feed wipe; `fameLevel` → nothing (next batch only); `adventurous` → 400 (`"adventurous is no longer a setting"`, retired) |
 | `/api/settings/seed-artists` | GET/POST/DELETE | manage seeds |
 | `/api/account` | DELETE | delete user (cascade) + sign out |
 

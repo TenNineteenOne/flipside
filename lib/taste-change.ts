@@ -27,8 +27,8 @@ export interface Invalidation {
 }
 
 // Settings that wipe the unseen Feed queue. Only the genre filter does
-// (pre-#205 behaviour); "How famous?" (fameLevel) and Wander farther
-// (adventurous) change the NEXT batch only, never the queued cards (#205).
+// (pre-#205 behaviour); "How famous?" (fameLevel) changes the NEXT
+// batch only, never the queued cards (#205).
 const FEED_SETTINGS = ["selectedGenres"]
 
 /** The invalidation policy: which caches a taste change makes stale. Pure. */

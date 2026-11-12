@@ -63,14 +63,11 @@ describe("DiscoveryPanel", () => {
     expect(patchSettings).toHaveBeenCalledTimes(2)
   })
 
-  it("shows the 5-stop How famous? slider and the Wander farther switch; the old knobs are gone", () => {
-    const html = renderToString(<DiscoveryPanel initialFameLevel={2} initialAdventurous />).replaceAll("<!-- -->", "")
+  it("shows the 5-stop How famous? slider; Wander farther and the old knobs are gone", () => {
+    const html = renderToString(<DiscoveryPanel initialFameLevel={2} />).replaceAll("<!-- -->", "")
     expect(html).toContain("How famous?")
     expect(html).toMatch(/type="range"[^>]*min="0" max="4" step="1"[^>]*aria-valuetext="Balanced"/)
     expect(html).toContain(">Balanced<")
-    expect(html).toContain("How close to your taste?")
-    expect(html).toMatch(/role="switch" aria-checked="true" aria-label="Wander farther" aria-describedby="[^"]+"/)
-    expect(html).toContain("About half of each batch comes from outside your usual genres.")
-    for (const gone of ["Popularity curve", "Extra obscure", "Deep discovery", "Regenerate", "hide if played"]) expect(html).not.toContain(gone)
+    for (const gone of ["Wander", "How close to your taste?", 'role="switch"', "Popularity curve", "Extra obscure", "Deep discovery", "Regenerate", "hide if played"]) expect(html).not.toContain(gone)
   })
 })

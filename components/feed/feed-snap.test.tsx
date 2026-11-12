@@ -29,7 +29,7 @@ function Snap({ artists, decided }: { artists: CardArtist[]; decided?: Map<strin
   const triage = decided
     ? { ...t, signals: decided, selectedId: null, selected: null, remaining: artists.filter((a) => !decided.has(a.id)).length, counts: counts(t.ids, decided) }
     : t
-  return <FeedSnap triage={triage} onLoadMore={() => {}} generating={false} wander={{ on: false, toggle: () => {} }} />
+  return <FeedSnap triage={triage} onLoadMore={() => {}} generating={false} />
 }
 
 const render = (artists: CardArtist[], decided?: Map<string, string>) =>
@@ -99,7 +99,7 @@ describe("FeedSnap weekly challenge", () => {
     ).replaceAll("<!-- -->", "")
   function Phone({ challenge }: { challenge: React.ReactNode }) {
     const triage = useFeedTriage([artist("a", "Yin Yin")], "spotify")
-    return <FeedSnap triage={triage} onLoadMore={() => {}} generating={false} wander={{ on: false, toggle: () => {} }} challenge={challenge} />
+    return <FeedSnap triage={triage} onLoadMore={() => {}} generating={false} challenge={challenge} />
   }
 
   it("shows the strip as one line above the scroller, with no cold-start line", () => {
