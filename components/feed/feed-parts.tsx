@@ -12,6 +12,7 @@ import { chipColors, readableTextOn, resolveArtistColor } from "@/lib/color-util
 import { formatDuration } from "@/lib/feed/card-copy"
 import { PLATFORM_META } from "@/lib/music-links"
 import type { FeedTriage } from "@/lib/hooks/use-feed-triage"
+import { firstUndecided } from "@/lib/feed/triage-queue"
 import type { CardArtist } from "@/lib/cards/card-artist"
 import { WanderSwitch, wanderButton } from "@/components/feed/wander-switch"
 
@@ -56,7 +57,7 @@ export interface Wander {
 
 /** Focus pane when nothing is left to decide (PRD "End of queue"). */
 export function EndState({ triage, onLoadMore, generating, wander }: { triage: FeedTriage; onLoadMore: () => void; generating: boolean; wander: Wander }) {
-  const { counts, total, visible, signals } = triage
+  const { counts, total, visible, signals, remaining, ids, select } = triage
   const liked = visible.filter((a) => signals.get(a.id) === "thumbs_up").slice(0, 4)
   return (
     <div className="ev-end">
@@ -65,13 +66,15 @@ export function EndState({ triage, onLoadMore, generating, wander }: { triage: F
           {liked.map((a) => <Art key={a.id} a={a} src={artworkFor(a)} size={96} className="ev-end-img" />)}
         </div>
       )}
-      <h2 className="ev-end-title">You&rsquo;ve heard all {total}.</h2>
+      <h2 className="ev-end-title">{remaining > 0 ? `${remaining} not rated yet.` : <>You&rsquo;ve heard all {total}.</>}</h2>
       <p className="ev-end-body">
         {counts.liked} liked, {counts.passed} less like this, {counts.dismissed} dismissed.
       </p>
       <div className="ev-end-actions">
         <LoadMore onLoadMore={onLoadMore} generating={generating} wander={wander} primary />
-        <Link className="ev-btn ev-btn-ghost" href="/saved">Review saved</Link>
+        {remaining > 0
+          ? <button type="button" className="ev-btn ev-btn-ghost" onClick={() => select(firstUndecided(ids, signals))}>Rate the rest</button>
+          : <Link className="ev-btn ev-btn-ghost" href="/saved">Review saved</Link>}
       </div>
     </div>
   )

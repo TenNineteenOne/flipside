@@ -8,6 +8,8 @@ import { artworkFor } from "@/lib/feed/artwork"
 import { decide, type Plan } from "@/lib/feed/decision"
 import { counts, firstUndecided, reconcileSelection, remaining, step, visibleQueue, type Signal } from "@/lib/feed/triage-queue"
 import { tuning } from "@/lib/feed/tuning"
+
+const END_PAGE = "__end"
 import { shouldHandOver } from "@/lib/feed/hand-over"
 import { activationStamp, isDoubleActivation } from "@/lib/feed/double-activation"
 import { isCurrentTrack as isCurrent, nowPlayingArtistId } from "@/lib/feed/now-playing"
@@ -64,7 +66,8 @@ export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatfor
   const [chosenId, setSelectedId] = useState<string | null>(() => firstUndecided(ids, signals))
   // Derived, not synced: appends keep the selection; at the end of the queue (null)
   // the first newly arrived undecided artist is selected.
-  const selectedId = reconcileSelection(ids, signals, chosenId)
+  // END_PAGE: the phone end page is in view; it holds even while artists are unrated (no snap back).
+  const selectedId = chosenId === END_PAGE ? null : reconcileSelection(ids, signals, chosenId)
   const [lastPlan, setLastPlan] = useState<Plan | null>(null)
 
   // Tracks fetched on demand (useArtistTracks) for artists that arrived without any.
@@ -270,7 +273,7 @@ export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatfor
    */
   const becomeCurrent = useCallback(
     (id: string | null) => {
-      setSelectedId(id)
+      setSelectedId(id ?? END_PAGE)
       const a = id ? byId.get(id) : undefined
       if (a && shouldHandOver(a.id, audio.isPlaying, nowPlayingArtist?.id ?? null)) playArtist(a)
     },

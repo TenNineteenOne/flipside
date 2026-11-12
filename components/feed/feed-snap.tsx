@@ -42,9 +42,8 @@ interface FeedSnapProps {
 export function FeedSnap({ triage, onLoadMore, generating, wander, challenge, onShown }: FeedSnapProps) {
   useEffect(() => onShown?.("phone"), [onShown])
   const { ids, selectedId } = triage
-  const ended = triage.remaining === 0
-  /** The page that should be in view: the selected artist, else the end page. */
-  const key = selectedId ?? (ended ? END : null)
+  /** The page that should be in view: the selected artist, else the end page (always last, so Load more is always reachable). */
+  const key = selectedId ?? END
   const scrollerRef = useRef<HTMLDivElement>(null)
   const ioRef = useRef<IntersectionObserver | null>(null)
   /** Selection the observer just reported (no scroll needed for it). */
@@ -102,7 +101,7 @@ export function FeedSnap({ triage, onLoadMore, generating, wander, challenge, on
   // Observe every page, including appended ones and the end page (observing a page twice is a no-op).
   useEffect(() => {
     scrollerRef.current?.querySelectorAll<HTMLElement>("[data-id]").forEach((el) => ioRef.current?.observe(el))
-  }, [ids, ended])
+  }, [ids])
 
   useEffect(() => {
     const root = scrollerRef.current
@@ -151,11 +150,9 @@ export function FeedSnap({ triage, onLoadMore, generating, wander, challenge, on
             </section>
           )
         })}
-        {ended && (
-          <section className="ev-m-page" data-id={END} aria-label="End of today's artists">
-            <EndState triage={triage} onLoadMore={onLoadMore} generating={generating} wander={wander} />
-          </section>
-        )}
+        <section className="ev-m-page" data-id={END} aria-label="End of today's artists">
+          <EndState triage={triage} onLoadMore={onLoadMore} generating={generating} wander={wander} />
+        </section>
       </main>
 
       <PlayerBar triage={triage} />
