@@ -72,19 +72,20 @@ function DockedPlayer() {
 function FloatingPlayer() {
   const audio = useAudio()
   const { pause, resume, stop } = audio
-  const audioProgress = useAudioProgress()
   const suppressed = useSyncExternalStore(subscribeSuppressed, () => suppressors > 0, () => false)
   const open = !!audio.currentTrack && !suppressed
+  // Only an open pill re-renders on playback ticks; a closing one draws an empty bar.
+  const progress = useAudioProgress(open)
 
   // The pill slides up from below the screen and leaves the same way, fading (globals.css,
   // .mini-player-pill). It stays mounted until its exit animation ends, showing what it showed
   // when it was closed (stop() clears the track), and comes back if reopened meanwhile.
   const [present, setPresent] = useState(open)
   if (open && !present) setPresent(true)
-  const live = { currentTrack: audio.currentTrack, artistName: audio.artistName, artistColor: audio.artistColor, isPlaying: audio.isPlaying, progress: audioProgress }
+  const live = { currentTrack: audio.currentTrack, artistName: audio.artistName, artistColor: audio.artistColor, isPlaying: audio.isPlaying }
   const [held, setHeld] = useState(live)
   if (open && (Object.keys(live) as (keyof typeof live)[]).some((k) => live[k] !== held[k])) setHeld(live)
-  const { currentTrack, artistName, artistColor, isPlaying, progress } = open ? live : held
+  const { currentTrack, artistName, artistColor, isPlaying } = open ? live : held
 
   const dynamicColor = artistColor && /^#[0-9a-fA-F]{6}$/.test(artistColor) ? artistColor : "#8b5cf6"
 

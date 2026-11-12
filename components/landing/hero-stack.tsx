@@ -62,6 +62,9 @@ export function HeroStack() {
     setI(i + 1)
     const n = STACK[(i + 1) % STACK.length]
     if (playing) audio.play(toTrack(n, 0), n.name, n.imageUrl, n.color)
+    // The stack repeats: a paused track left loaded would make the repeat of its card look
+    // already played (owns matches by track id), so it is unloaded when the stack wraps.
+    else if (audio.currentTrack && (i + 1) % STACK.length === 0) audio.stop()
   }
 
   return (

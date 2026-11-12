@@ -1,6 +1,6 @@
 ---
 title: Data Model (Supabase)
-updated: 2026-11-10
+updated: 2026-11-12
 related: [[auth-and-session]], [[generation-engine]], [[api-routes]]
 ---
 
@@ -44,7 +44,9 @@ farther"),
 `preferred_music_platform` (`spotify`|`apple_music`|`youtube_music`),
 `selected_genres` (text[]), encrypted `lastfm_username`/`statsfm_username`, and cooldown
 timestamps (`last_generated_at`, `last_accumulated_lastfm_at`,
-`last_accumulated_statsfm_at`, `onboarding_completed_at`). See [[settings-and-discovery]].
+`last_accumulated_statsfm_at`, `onboarding_completed_at`). A settings PATCH that changes a
+Last.fm / stats.fm username nulls that source's `last_accumulated_*_at` (its
+`listened_artists` rows are kept). See [[settings-and-discovery]].
 Retired by 0042 but kept one release for rollback (never read or written by the app):
 `play_threshold` (reset to 5 for all rows), `popularity_curve`, `underground_mode`,
 `deep_discovery`.

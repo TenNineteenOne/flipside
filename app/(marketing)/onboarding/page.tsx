@@ -90,7 +90,7 @@ export default function OnboardingPage() {
       // reflect the user's selection on the very first feed view. Default is
       // Spotify so the value is never unexpected if the user didn't touch it.
       settingsPayload.preferredMusicPlatform = musicPlatform
-      // Stamp completion so the next /api/onboarding/check doesn't bounce the
+      // Stamp completion so /feed's onboarding-resume check doesn't bounce the
       // user back here. Applies to both the normal flow and explicit skip.
       settingsPayload.onboardingCompleted = true
       if (!skip && lastfmUsername.trim()) settingsPayload.lastfmUsername = lastfmUsername.trim()
@@ -135,7 +135,8 @@ export default function OnboardingPage() {
       // postGenerate never throws; the result is deliberately ignored.
       void postGenerate()
 
-      router.push("/feed")
+      // replace: Back must not reopen onboarding (its layout would bounce it to /feed anyway).
+      router.replace("/feed")
     } catch {
       toast.error("Something went wrong. Try again.")
       setSaving(false)

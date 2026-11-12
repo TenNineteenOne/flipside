@@ -54,7 +54,7 @@ export function FeedTablet({ triage, onLoadMore, generating, wander, challenge, 
       <TopBarProgress triage={triage} wander={wander} onLoadMore={onLoadMore} generating={generating} />
       {challenge && <div className="ev-t-chal">{challenge}</div>}
 
-      <main className="ev-m-stage" aria-label="Selected artist">
+      <section className="ev-m-stage" aria-label="Selected artist">
         {selected ? (
           <div className="ev-m-deck">
             {next && (
@@ -67,7 +67,7 @@ export function FeedTablet({ triage, onLoadMore, generating, wander, challenge, 
         ) : (
           <EndState triage={triage} onLoadMore={onLoadMore} generating={generating} wander={wander} />
         )}
-      </main>
+      </section>
 
       <PlayerBar triage={triage} />
 

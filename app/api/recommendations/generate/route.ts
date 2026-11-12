@@ -96,10 +96,16 @@ async function runColorExtraction(
     await pLimit(colorTasks, 5)
   }
 
+  // Only rows whose stored colour differs: re-writing every unseen row each
+  // generate was ~60 UPDATEs, each replacing artist_data with this pass's
+  // snapshot (which can clobber a concurrent writeScored re-write).
+  // shortcut: still a whole-object artist_data write for changed rows; a JSONB
+  // merge would need an RPC — add one if the race shows up.
   await Promise.all(
     cachedRecs.map(async (r) => {
       const color = colorMap.get(r.artist_id)
       if (!color) return
+      if ((r.artist_data as { artist_color?: string } | null)?.artist_color === color) return
       await supabase
         .from("recommendation_cache")
         .update({ artist_data: { ...(r.artist_data as object), artist_color: color } })
@@ -241,6 +247,7 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
           far: metrics.farMs,
           farWait: metrics.farWaitMs,
           farTimeout: metrics.farTimedOut ? 1 : undefined,
+          bleedTimeout: metrics.bleedTimedOut ? 1 : undefined,
         }).filter((e): e is [string, number] => e[1] !== undefined),
       ),
       totalMs: Date.now() - genStart,

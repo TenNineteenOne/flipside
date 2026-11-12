@@ -4,10 +4,10 @@ import { useEffect } from "react"
 
 export default function GlobalError({
   error,
-  reset,
+  retry,
 }: {
   error: Error & { digest?: string }
-  reset: () => void
+  retry: () => void
 }) {
   useEffect(() => {
     console.log(`[error-boundary] global err="${error.message}" digest=${error.digest ?? "none"}`)
@@ -19,7 +19,7 @@ export default function GlobalError({
         <h2 className="text-lg font-semibold">Something went wrong</h2>
         <p className="max-w-md text-sm opacity-80 break-words">{error.message}</p>
         <button
-          onClick={reset}
+          onClick={() => retry()}
           className="rounded-md bg-white px-4 py-2 text-sm font-medium text-black transition-opacity hover:opacity-90"
         >
           Try again

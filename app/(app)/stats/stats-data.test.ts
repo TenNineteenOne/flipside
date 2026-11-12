@@ -22,7 +22,7 @@ describe("loadStats", () => {
     expect(s.savedArtists).toEqual([{ name: "Gamma", popularity: 70 }])
     expect(s.likedArtists.sort((a, b) => a.name.localeCompare(b.name))).toEqual([
       { name: "Alpha", popularity: 30 },
-      { name: "Beta", popularity: 0 },
+      { name: "Beta", popularity: null },
     ])
   })
 
@@ -53,5 +53,15 @@ describe("loadStats", () => {
     expect(s.likedArtists).toHaveLength(n)
     expect(s.topGenres).toEqual([{ genre: "g", count: n }])
     expect(db.log.filter((l) => l.table === "artists")).toHaveLength(3)
+  })
+})
+
+describe("loadStats errors", () => {
+  it.each(["feedback", "saves", "artists", "recommendation_cache"])("throws when the %s read fails instead of undercounting", async (table) => {
+    const db = createRouteFakeDb(
+      { artists: [art("a1", "Alpha", ["indie"])], feedback: [fb("a1", "thumbs_up")], saves: [{ id: "s1", user_id: "u1", artist_id: "a1" }], recommendation_cache: [] },
+      { [table]: "*" },
+    )
+    await expect(loadStats(db.client, "u1")).rejects.toThrow(/read failed/)
   })
 })

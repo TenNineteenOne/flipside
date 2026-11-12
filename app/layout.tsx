@@ -22,7 +22,12 @@ const mono = Martian_Mono({
   preload: false,
 });
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://127.0.0.1:3000"
+// NEXT_PUBLIC_APP_URL is optional, so Vercel's production host comes before localhost (og:image URLs).
+const APP_URL =
+  process.env.NEXT_PUBLIC_APP_URL ||
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+    : "http://127.0.0.1:3000")
 
 export const viewport: Viewport = {
   width: "device-width",

@@ -8,9 +8,8 @@ export default function HistoryLoading() {
       <div
         style={{
           display: "flex",
-          gap: 8,
-          marginTop: 12,
-          marginBottom: 16,
+          gap: 6,
+          marginBottom: 20,
           flexWrap: "wrap",
         }}
       >
@@ -18,7 +17,7 @@ export default function HistoryLoading() {
           <span
             key={i}
             className="fs-skeleton"
-            style={{ width: w, height: 30, borderRadius: 999 }}
+            style={{ width: w, height: 32, borderRadius: 999 }}
           />
         ))}
       </div>

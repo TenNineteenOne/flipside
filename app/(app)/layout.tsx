@@ -24,7 +24,9 @@ export default async function AppLayout({
   preconnect("https://audio-ssl.itunes.apple.com")
 
   const userRow = await getCachedUser(session.user.id)
-  const initialAdventurous = !!userRow?.adventurous
+  // Stale JWT, row gone (deleted account): every (app) page needs the row. The proxy lets ?reauth=1 through.
+  if (!userRow) redirect("/sign-in?reauth=1")
+  const initialAdventurous = !!userRow.adventurous
 
   return (
     <NavigationProgressProvider>

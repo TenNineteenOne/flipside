@@ -5,33 +5,49 @@ const patchSettings = vi.fn<(p: unknown) => Promise<void>>(async () => {})
 vi.mock("@/lib/settings/patch-settings", () => ({ patchSettings: (p: unknown) => patchSettings(p) }))
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { error: vi.fn() }) }))
 
-import { DiscoveryPanel, saveFameLevel } from "./discovery-panel"
+import { DiscoveryPanel, createFameWriter } from "./discovery-panel"
 
 describe("DiscoveryPanel", () => {
   beforeEach(() => patchSettings.mockReset())
 
-  it("saves a changed fame stop as fameLevel and remembers it", async () => {
-    const saved = { current: 2 }
-    await saveFameLevel(3, saved, vi.fn())
+  it("saves a changed fame stop as fameLevel", async () => {
+    const write = createFameWriter(2, vi.fn())
+    await write(3)
     expect(patchSettings).toHaveBeenCalledWith({ fameLevel: 3 })
-    expect(saved.current).toBe(3)
   })
 
-  it("a pointerup / keyup that didn't move the slider sends no PATCH", async () => {
-    const saved = { current: 2 }
-    await saveFameLevel(2, saved, vi.fn())
-    await saveFameLevel(3, saved, vi.fn())
-    await saveFameLevel(3, saved, vi.fn()) // e.g. a Tab keyup after the move
+  it("a value equal to the last requested one sends no PATCH", async () => {
+    const write = createFameWriter(2, vi.fn())
+    await write(2)
+    await write(3)
+    await write(3)
     expect(patchSettings).toHaveBeenCalledTimes(1)
   })
 
-  it("a failed save rolls the slider back to the last saved stop", async () => {
-    patchSettings.mockRejectedValueOnce(new Error("nope"))
-    const saved = { current: 2 }
+  it("saves run in call order: a slow older PATCH finishes before the newer one starts", async () => {
+    const order: string[] = []
+    let release!: () => void
+    patchSettings.mockImplementationOnce(async (p) => { order.push(`start ${JSON.stringify(p)}`); await new Promise<void>((r) => { release = r }); order.push("end 1") })
+    patchSettings.mockImplementationOnce(async (p) => { order.push(`start ${JSON.stringify(p)}`) })
+    const write = createFameWriter(2, vi.fn())
+    void write(1)
+    const last = write(4)
+    await Promise.resolve()
+    release()
+    await last
+    expect(order).toEqual(['start {"fameLevel":1}', "end 1", 'start {"fameLevel":4}'])
+  })
+
+  it("a failed newest save rolls back to the last confirmed stop; an older failure doesn't", async () => {
     const rollback = vi.fn()
-    await saveFameLevel(0, saved, rollback)
-    expect(rollback).toHaveBeenCalledWith(2)
-    expect(saved.current).toBe(2)
+    const write = createFameWriter(2, rollback)
+    patchSettings.mockRejectedValueOnce(new Error("nope"))
+    void write(0)
+    await write(3)
+    expect(rollback).not.toHaveBeenCalled()
+    patchSettings.mockRejectedValueOnce(new Error("nope"))
+    await write(1)
+    expect(rollback).toHaveBeenCalledWith(3)
   })
 
   it("shows the 5-stop How famous? slider and the Wander farther switch; the old knobs are gone", () => {

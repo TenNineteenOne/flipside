@@ -860,3 +860,71 @@ describe("buildRecommendations — exclusion rows read once per build (perf)", (
     expect(listenedReads).toHaveLength(1)
   })
 })
+
+describe("buildRecommendations — bleed + far pools respect seeds and the genre cap", () => {
+  it("a picked seed surfacing in the adjacent or far pool is never recommended back", async () => {
+    seed({
+      users: [{ id: "u1", selected_genres: ["indie-rock"] }],
+      seed_artists: [{ user_id: "u1", name: "PickA" }],
+    })
+    lf.similars.set("PickA", similarRefs(Array.from({ length: 10 }, (_, i) => `Base${i}`)))
+    // Every adjacent / far tag offers the picked seed (the user's own genre
+    // yields nothing, so these names never become seeds themselves).
+    lf.tags = (tag) => (tag === "indie-rock" ? [] : ["PickA", `Other-${tag}`])
+
+    const result = await buildRecommendations({ ...baseInput(), adventurous: true })
+    await result.finish()
+
+    const names = cacheRows().map((r) => r.artist_data?.name.toLowerCase())
+    expect(cacheRows().some((r) => r.source === "adjacent_bleed")).toBe(true) // the pools did run
+    expect(cacheRows().some((r) => r.source === "far_pool")).toBe(true)
+    expect(names).not.toContain("picka")
+  })
+
+  it("the 25% cap holds after the bleed merge (bleed picks sharing one genre are swapped out)", async () => {
+    seed({
+      users: [{ id: "u1", selected_genres: ["indie-rock"] }],
+      seed_artists: [{ user_id: "u1", name: "SeedA" }],
+    })
+    // 30 base candidates, each its own genre; 12 bleed candidates all "dg".
+    const baseNames = Array.from({ length: 30 }, (_, i) => `Base${i}`)
+    lf.similars.set("SeedA", similarRefs(baseNames))
+    baseNames.forEach((n, i) => lf.enrichment.set(n.toLowerCase(), { genres: [`g${i}`], popularity: 30 }))
+    const bleedNames = Array.from({ length: 12 }, (_, i) => `Dg${i}`)
+    bleedNames.forEach((n) => lf.enrichment.set(n.toLowerCase(), { genres: ["dg"], popularity: 30 }))
+    const { adjacentGenres } = await import("@/lib/genre/adjacency")
+    for (const tag of adjacentGenres("indie-rock", "close")) tagArtists.set(tag, bleedNames)
+
+    const result = await buildRecommendations({ ...baseInput(), adventurous: true })
+    await result.finish()
+
+    const rows = cacheRows()
+    expect(rows.some((r) => r.artist_data.genres[0] === "dg")).toBe(true)
+    expect(rows.filter((r) => r.artist_data.genres[0] === "dg").length).toBeLessThanOrEqual(Math.ceil(rows.length * 0.25))
+  })
+})
+
+describe("buildRecommendations — re-queued rows are not new (count)", () => {
+  it("a build that only re-writes already-queued unseen rows counts 0 and softens; F-C still refreshes the row", async () => {
+    const queuedId = "f0000000-0000-4000-8000-000000000031"
+    const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString()
+    const future = new Date(Date.now() + 86400_000).toISOString()
+    seed({
+      seed_artists: [{ user_id: "u1", name: "SeedA" }],
+      artists: [artistsRow(queuedId, "Queued")],
+      recommendation_cache: [
+        { id: "c1", user_id: "u1", artist_id: queuedId, seen_at: null, skip_at: null, created_at: fiveDaysAgo, expires_at: future },
+      ],
+    })
+    lf.similars.set("SeedA", similarRefs(["Queued"]))
+
+    const result = await buildRecommendations(baseInput())
+    await result.finish()
+
+    expect(result.count).toBe(0)
+    expect(result.softenedFilters?.playThreshold).toBe(true)
+    const row = cacheRows().find((r) => r.artist_id === queuedId)!
+    expect(row.seen_at).toBeNull()
+    expect(new Date(row.created_at).getTime()).toBeGreaterThan(Date.now() - 3 * 24 * 60 * 60 * 1000)
+  })
+})

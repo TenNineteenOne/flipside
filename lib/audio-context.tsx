@@ -40,9 +40,32 @@ export function useAudioProgress(active = true) {
   return useSyncExternalStore(store.subscribe, active ? store.get : zero, zero)
 }
 
+/**
+ * At most one `report` per `ms`: the first tick reports at once, ticks inside the window are
+ * folded into one trailing report when it closes, so the last value (a pause) is never dropped.
+ */
+export function createThrottle(report: () => void, ms: number) {
+  let timer: ReturnType<typeof setTimeout> | null = null
+  let trailing = false
+  const cancel = () => {
+    if (timer) clearTimeout(timer)
+    timer = null
+    trailing = false
+  }
+  const tick = () => {
+    if (timer) { trailing = true; return }
+    report()
+    timer = setTimeout(() => {
+      timer = null
+      if (trailing) { trailing = false; tick() }
+    }, ms)
+  }
+  return { tick, cancel }
+}
+
 export function AudioProvider({ children }: { children: ReactNode }) {
   const audioRef = useRef<HTMLAudioElement | null>(null)
-  const throttleRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const throttleRef = useRef<ReturnType<typeof createThrottle> | null>(null)
   const [state, setState] = useState<AudioState>({
     currentTrack: null,
     artistName: "",
@@ -65,6 +88,7 @@ export function AudioProvider({ children }: { children: ReactNode }) {
   const play = useCallback((track: Track, artistName: string, artistImageUrl: string | null, artistColor?: string | null) => {
     if (!track.previewUrl) return
 
+    throttleRef.current?.cancel()
     if (audioRef.current) {
       audioRef.current.pause()
       audioRef.current.src = ""
@@ -73,15 +97,17 @@ export function AudioProvider({ children }: { children: ReactNode }) {
     const audio = new Audio(track.previewUrl)
     audioRef.current = audio
 
-    audio.ontimeupdate = () => {
-      if (throttleRef.current) return
-      throttleRef.current = setTimeout(() => {
-        throttleRef.current = null
-      }, 250)
+    // Every handler ignores an element a newer play()/stop() has superseded (its pause and
+    // src reset still fire events), so it never writes progress or state for the new track.
+    const throttle = createThrottle(() => {
+      if (audioRef.current !== audio) return
       const dur = audio.duration
       if (!dur || isNaN(dur)) return
-      const p = Math.max(0, Math.min(1, audio.currentTime / dur))
-      setProgress(p)
+      setProgress(Math.max(0, Math.min(1, audio.currentTime / dur)))
+    }, 250)
+    throttleRef.current = throttle
+    audio.ontimeupdate = () => {
+      if (audioRef.current === audio) throttle.tick()
     }
 
     // play() can reject (e.g. expired preview URL) after we've already set
@@ -93,6 +119,8 @@ export function AudioProvider({ children }: { children: ReactNode }) {
       setState(prev => ({ ...prev, isPlaying: false }))
     })
     audio.onended = () => {
+      if (audioRef.current !== audio) return
+      throttle.cancel()
       setProgress(1)
       setState(prev => ({ ...prev, isPlaying: false }))
     }
@@ -121,15 +149,20 @@ export function AudioProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const stop = useCallback(() => {
-    audioRef.current?.pause()
+    throttleRef.current?.cancel()
+    const audio = audioRef.current
     audioRef.current = null
+    if (audio) {
+      audio.pause()
+      audio.src = ""
+    }
     setProgress(0)
     setState({ currentTrack: null, artistName: "", artistImageUrl: null, artistColor: null, isPlaying: false })
   }, [setProgress])
 
   useEffect(() => {
     return () => {
-      if (throttleRef.current) clearTimeout(throttleRef.current)
+      throttleRef.current?.cancel()
       if (audioRef.current) {
         audioRef.current.pause()
         audioRef.current.src = ""

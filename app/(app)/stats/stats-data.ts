@@ -12,8 +12,8 @@ export interface StatsData {
   totalLikes: number
   totalDislikes: number
   topGenres: { genre: string; count: number }[]
-  savedArtists: { name: string; popularity: number }[]
-  likedArtists: { name: string; popularity: number }[]
+  savedArtists: { name: string; popularity: number | null }[]
+  likedArtists: { name: string; popularity: number | null }[]
 }
 
 /**
@@ -62,6 +62,10 @@ export async function loadStats(supabase: SupabaseClient, userId: string): Promi
     ids("saves"),
   ])
 
+  // A failed read must not render as a smaller number: throw to the (app) error boundary.
+  const failed = [seenRows, feedbackRows, likesResult, dislikesResult, likedRows, savedRows].find((r) => r.error)
+  if (failed?.error) throw new Error(`[stats] read failed: ${failed.error.message}`)
+
   const savedIds = new Set(savedRows.data.map((r) => r.artist_id))
   const likedIds = new Set(likedRows.data.map((r) => r.artist_id))
   const discovered = new Set([...seenRows.data, ...feedbackRows.data, ...savedRows.data].map((r) => r.artist_id))
@@ -74,7 +78,7 @@ export async function loadStats(supabase: SupabaseClient, userId: string): Promi
     chunks.map((chunk) => supabase.from("artists").select("id, name, genres, popularity").in("id", chunk)),
   )
   for (const { data, error } of reads) {
-    if (error) console.error(`[stats] artists-read-fail err=${error.message}`)
+    if (error) throw new Error(`[stats] artists read failed: ${error.message}`)
     for (const a of data ?? []) artists.set(a.id, a)
   }
 
@@ -96,7 +100,7 @@ export async function loadStats(supabase: SupabaseClient, userId: string): Promi
   for (const id of allIds) {
     const a = artists.get(id)
     if (!a?.name) continue
-    const item = { name: a.name, popularity: typeof a.popularity === "number" ? a.popularity : 0 }
+    const item = { name: a.name, popularity: typeof a.popularity === "number" ? a.popularity : null }
     if (savedIds.has(id)) savedArtists.push(item)
     else likedArtists.push(item)
   }

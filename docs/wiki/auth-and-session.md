@@ -1,6 +1,6 @@
 ---
 title: Auth & Session
-updated: 2026-11-10
+updated: 2026-11-12
 related: [[data-model]], [[api-routes]], [[infra-and-ops]]
 ---
 
@@ -76,7 +76,7 @@ Idempotent (already-encrypted passes through). One-time backfill:
   row is gone (otherwise `/feed` → `/sign-in` → `/feed` would loop).
 - **Onboarding resume**: `/feed` (server) redirects to `/onboarding` while the user has no
   `onboarding_completed_at`, no Last.fm username and no seed artists (the
-  `/api/onboarding/check` rule). Onboarding's PATCH stamps `onboarding_completed_at`
+  rule lives only in `app/(app)/feed/page.tsx`). Onboarding's PATCH stamps `onboarding_completed_at`
   (Skip too), so finishing lands on the feed. Sign-in relies on this: it always navigates to `/feed`.
 - **API wrappers** (`lib/api/with-authed-route.ts`): three factories —
   `withAuthedRoute` (session only), `withAuthedCsrfRoute` (+CSRF), `withAuthedJsonRoute`
@@ -97,4 +97,11 @@ Idempotent (already-encrypted passes through). One-time backfill:
 ## Account deletion
 
 `DELETE /api/account` deletes the `users` row (cascades to all child tables) then signs
-out. See [[api-routes]].
+out. Another device's JWT stays valid until it expires; `PATCH /api/settings` answers 401
+when its update touches no row, and pages redirect to `/sign-in?reauth=1`.
+
+## Sign-out
+
+Client `signOut()` (`next-auth/react`) POSTs to NextAuth's own `/api/auth/signout`
+(csrfToken-checked, returns JSON `{url}`). There is no custom signout or signin route:
+a custom one returned a 307 the client couldn't parse, so sign-out never navigated. See [[api-routes]].

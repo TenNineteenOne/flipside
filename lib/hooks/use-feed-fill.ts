@@ -75,7 +75,7 @@ export interface CreateFeedFillControllerOpts<R extends FeedRec> {
  *
  * Stops when:
  *   - shown count ≥ target (targetCount, or the restart()-extended target)
- *   - 3 consecutive polls added nothing new (idle)
+ *   - 3 consecutive polls added nothing new or failed with a non-ok status (idle)
  *   - 60s hard ceiling elapsed (measured from start, or from the last restart()),
  *     after one final poll
  *   - stop() is called (e.g. on unmount)
@@ -99,13 +99,17 @@ export function createFeedFillController<R extends FeedRec>({
   // Resolves true to stop: target reached, or idle.
   const poller = createPoller({
     intervalMs: POLL_INTERVAL_MS,
-    async check() {
+    async check(isLive) {
       if (shownCount >= target) return true
 
       const res = await fetchImpl("/api/recommendations")
-      if (!res.ok) return false
+      // A superseded (restart) or stopped run must not touch the shared counters or append.
+      if (!isLive()) return false
+      // A non-ok answer (e.g. 401 after the session expired) is an idle poll, not a free retry.
+      if (!res.ok) return ++idleCount >= MAX_IDLE_POLLS
 
       const data = (await res.json().catch(() => ({}))) as { recommendations?: R[] }
+      if (!isLive()) return false
       const newRecs = selectNewPlayable(seenIds, data.recommendations ?? []) as R[]
 
       if (newRecs.length === 0) return ++idleCount >= MAX_IDLE_POLLS

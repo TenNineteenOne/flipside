@@ -621,7 +621,7 @@ describe("augmentWithAdjacent", () => {
       popularityCurve: 0.95,
       fetchTagArtists,
       resolveArtists,
-      adjacentPool: Promise.resolve({
+      adjacentPool: () => Promise.resolve({
         resolved: new Map([
           [base[7].artist.name, mkArtist("id_dupe", 30, "indie-pop")],
           ["adjX", mkArtist("id_adjX", 30, "indie-pop")],
@@ -801,5 +801,26 @@ describe("runWithSoftening cascade order", () => {
     expect(calls).toHaveLength(3)
     expect(result.count).toBe(0)
     expect(result.softenedFilters).toEqual({ playThreshold: true, coldStart: true })
+  })
+})
+
+describe("augmentWithAdjacent — stored score keeps the merge positions", () => {
+  it("caps every pick just below the protected top picks, keeping the picks' order", async () => {
+    // Low base scores: raw bleed scores (~0.3) would sort above every base pick.
+    const base = Array.from({ length: 20 }, (_, i) => scored(`base${i}`, 0.2 - i * 0.001, [`Seed${i}`], "indie-rock"))
+    const result = await augmentWithAdjacent(base, {
+      userGenres: ["indie-rock"],
+      popularityCurve: 0.95,
+      adjacentPool: () => Promise.resolve({
+        resolved: new Map([["a", mkArtist("id_a", 10, "x")], ["b", mkArtist("id_b", 40, "x")]]),
+        nameToTag: new Map(),
+      }),
+    })
+    const picks = result.filter((r) => r.source === "adjacent_bleed")
+    expect(picks).toHaveLength(2)
+    const protectedMin = Math.min(...base.slice(0, 5).map((b) => b.score))
+    for (const p of picks) expect(p.score).toBeLessThan(protectedMin)
+    // a (pop 10) out-scored b (pop 40) raw, and still does once capped.
+    expect(picks.find((p) => p.artist.id === "id_a")!.score).toBeGreaterThan(picks.find((p) => p.artist.id === "id_b")!.score)
   })
 })

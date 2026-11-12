@@ -36,8 +36,8 @@ export default async function FeedPage() {
   }
 
   // Resume onboarding: the proxy sends a signed-in "/" here, so this is the
-  // only way back for someone who signed up and left before finishing. Same
-  // rule as /api/onboarding/check; the onboarding PATCH stamps
+  // only way back for someone who signed up and left before finishing. The
+  // onboarding PATCH stamps
   // onboarding_completed_at (even on Skip), so finishing can't loop back.
   if (!user.onboarding_completed_at && !user.lastfm_username) {
     const { count } = await supabase

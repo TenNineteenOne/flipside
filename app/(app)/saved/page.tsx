@@ -3,8 +3,20 @@ import { safeAuth } from "@/lib/auth"
 import { createServiceClient } from "@/lib/supabase/server"
 import { getCachedUser } from "@/lib/user-cache"
 import { SavedClient, type SavedArtistRow } from "@/components/saved/saved-client"
-import { liftArtistColor } from "@/lib/cards/card-artist"
+import { readAllRows } from "@/lib/recommendation/exclusions"
 import { DEFAULT_MUSIC_PLATFORM, isMusicPlatform, type MusicPlatform } from "@/lib/music-links"
+
+/** PostgREST encodes `.in()` into the URL: keep id lists well under the 414 limit (as /stats). */
+const IN_CHUNK = 500
+
+type ArtistMeta = {
+  id: string
+  spotify_id: string | null
+  name: string
+  genres: string[] | null
+  image_url: string | null
+  artist_color: string | null
+}
 
 export default async function SavedPage() {
   const session = await safeAuth()
@@ -15,67 +27,52 @@ export default async function SavedPage() {
   const userId = session.user.id
   const supabase = createServiceClient()
 
-  // Saves only need the session id: fetch them alongside the user row.
-  const [user, { data: saveRows }] = await Promise.all([
+  // Saves only need the session id: fetch them (every page: PostgREST caps a
+  // read at 1000 rows) alongside the user row. Ordered by id for keyset paging,
+  // re-sorted newest first below.
+  const [user, saves] = await Promise.all([
     getCachedUser(userId),
-    supabase
-      .from("saves")
-      .select("artist_id, spotify_track_id, artist_name, created_at")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false }),
+    readAllRows<{ id: string; artist_id: string; artist_name: string | null; created_at: string }>(() =>
+      supabase.from("saves").select("id, artist_id, artist_name, created_at").eq("user_id", userId),
+    ),
   ])
 
   if (!user) redirect("/sign-in?reauth=1") // stale JWT, row gone: the proxy lets this through
+  if (saves.error) throw new Error(`[saved-page] saves read failed: ${saves.error.message}`)
 
   const musicPlatform: MusicPlatform = isMusicPlatform(user.preferred_music_platform)
     ? user.preferred_music_platform
     : DEFAULT_MUSIC_PLATFORM
 
-  const artistIds = (saveRows ?? []).map((r: { artist_id: string }) => r.artist_id)
+  const saveRows = saves.data.sort((a, b) => b.created_at.localeCompare(a.created_at))
 
-  // Name fallback map from saves table (populated since migration 0003)
-  const savedNameMap = new Map<string, string>(
-    (saveRows ?? [])
-      .filter((r: { artist_name?: string }) => r.artist_name)
-      .map((r: { artist_id: string; artist_name: string }) => [r.artist_id, r.artist_name])
+  // Metadata from `artists` by id (#175, as /stats): recommendation_cache rows are
+  // hard-deleted by the cron after ~33 days, which stripped art from older saves.
+  // saves.artist_id references artists(id), so every save has a row.
+  const artistsById = new Map<string, ArtistMeta>()
+  const ids = saveRows.map((r) => r.artist_id)
+  const reads = await Promise.all(
+    Array.from({ length: Math.ceil(ids.length / IN_CHUNK) }, (_, i) =>
+      supabase
+        .from("artists")
+        .select("id, spotify_id, name, genres, image_url, artist_color")
+        .in("id", ids.slice(i * IN_CHUNK, (i + 1) * IN_CHUNK)),
+    ),
   )
-
-  // Fetch richer artist data from recommendation_cache (best-effort). Only
-  // the artist_data keys read below are selected; the full blob is large.
-  // A null artist_data yields all-null fields, which the ?? fallbacks treat
-  // the same as a missing row.
-  const cacheMap = new Map<string, Record<string, unknown>>()
-  if (artistIds.length > 0) {
-    const { data: cacheRows } = await supabase
-      .from("recommendation_cache")
-      .select(
-        "artist_id, name:artist_data->name, spotifyId:artist_data->spotifyId, genres:artist_data->genres, imageUrl:artist_data->imageUrl, artist_color:artist_data->artist_color"
-      )
-      .eq("user_id", user.id)
-      .in("artist_id", artistIds)
-
-    for (const row of cacheRows ?? []) {
-      cacheMap.set(row.artist_id, row)
-    }
+  for (const { data, error } of reads) {
+    if (error) throw new Error(`[saved-page] artists read failed: ${error.message}`)
+    for (const a of (data ?? []) as ArtistMeta[]) artistsById.set(a.id, a)
   }
 
-  // Build artist rows for the Artists tab
-  const artists: SavedArtistRow[] = (saveRows ?? []).map((row: { artist_id: string }) => {
-    const artistId = row.artist_id
-    const cached = cacheMap.get(artistId) as {
-      name?: string;
-      spotifyId?: string | null;
-      genres?: string[];
-      imageUrl?: string;
-    } | undefined
-
+  const artists: SavedArtistRow[] = saveRows.map((row) => {
+    const a = artistsById.get(row.artist_id)
     return {
-      artistId,
-      spotifyId: cached?.spotifyId ?? null,
-      name: cached?.name ?? savedNameMap.get(artistId) ?? artistId,
-      genres: cached?.genres ?? [],
-      imageUrl: cached?.imageUrl ?? null,
-      artistColor: liftArtistColor(cached),
+      artistId: row.artist_id,
+      spotifyId: a?.spotify_id ?? null,
+      name: a?.name ?? row.artist_name ?? row.artist_id,
+      genres: a?.genres ?? [],
+      imageUrl: a?.image_url ?? null,
+      artistColor: a?.artist_color ?? null,
     }
   })
 

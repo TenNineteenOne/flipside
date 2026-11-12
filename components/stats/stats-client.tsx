@@ -7,7 +7,8 @@ import { useId, useMemo, useState } from "react"
 
 interface SavedArtist {
   name: string
-  popularity: number
+  /** null = unknown; listed in the table, left out of the scatter and median. */
+  popularity: number | null
 }
 
 interface StatsClientProps {
@@ -96,7 +97,7 @@ function median(values: number[]): number {
   return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2)
 }
 
-type TasteItem = { name: string; popularity: number; kind: TasteKind }
+type TasteItem = { name: string; popularity: number | null; kind: TasteKind }
 
 const TICKS = [0, 20, 40, 60, 80, 100]
 
@@ -122,11 +123,14 @@ function TasteProfileView({
   }, [savedArtists, likedArtists])
 
   const sorted = useMemo(
-    () => [...items].sort((a, b) => (sortDesc ? b.popularity - a.popularity : a.popularity - b.popularity)),
+    // Unknown popularity sorts last either way.
+    () => [...items].sort((a, b) =>
+      a.popularity === null ? 1 : b.popularity === null ? -1 : sortDesc ? b.popularity - a.popularity : a.popularity - b.popularity),
     [items, sortDesc]
   )
 
-  const mid = items.length > 0 ? median(items.map((a) => a.popularity)) : 0
+  const known = useMemo(() => items.filter((a): a is TasteItem & { popularity: number } => a.popularity !== null), [items])
+  const mid = known.length > 0 ? median(known.map((a) => a.popularity)) : 0
 
   return (
     <section className="st-panel" aria-labelledby={headingId}>
@@ -163,7 +167,7 @@ function TasteProfileView({
                   ))}
                 </g>
                 <line className="st-axis" x1="0" x2="100%" y1="100%" y2="100%" />
-                {items.map((a) => (
+                {known.map((a) => (
                   <circle
                     key={`${a.kind}-${a.name}`}
                     className={`st-dot-${a.kind}`}
@@ -215,8 +219,8 @@ function TasteProfileView({
                       {KIND_LABEL[a.kind]}
                     </span>
                   </span>
-                  <span className="st-row-pop st-n" role="cell" title={popularityTier(a.popularity)}>
-                    {a.popularity}
+                  <span className="st-row-pop st-n" role="cell" title={a.popularity === null ? "Unknown" : popularityTier(a.popularity)}>
+                    {a.popularity ?? "–"}
                   </span>
                 </div>
               ))}

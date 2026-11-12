@@ -44,7 +44,7 @@ export function FeedSnap({ triage, onLoadMore, generating, wander, challenge, on
   const { ids, selectedId } = triage
   /** The page that should be in view: the selected artist, else the end page (always last, so Load more is always reachable). */
   const key = selectedId ?? END
-  const scrollerRef = useRef<HTMLDivElement>(null)
+  const scrollerRef = useRef<HTMLElement>(null)
   const ioRef = useRef<IntersectionObserver | null>(null)
   /** Selection the observer just reported (no scroll needed for it). */
   const fromScroll = useRef<string | null>(null)
@@ -141,7 +141,7 @@ export function FeedSnap({ triage, onLoadMore, generating, wander, challenge, on
       <TopBarProgress triage={triage} wander={wander} onLoadMore={onLoadMore} generating={generating} controls={false} />
       {challenge}
 
-      <main className="ev-m-snap" ref={scrollerRef} aria-label="Artists">
+      <section className="ev-m-snap" ref={scrollerRef} aria-label="Artists">
         {ids.map((id, i) => {
           const a = triage.byId.get(id)!
           return (
@@ -153,7 +153,7 @@ export function FeedSnap({ triage, onLoadMore, generating, wander, challenge, on
         <section className="ev-m-page" data-id={END} aria-label="End of today's artists">
           <EndState triage={triage} onLoadMore={onLoadMore} generating={generating} wander={wander} />
         </section>
-      </main>
+      </section>
 
       <PlayerBar triage={triage} />
     </div>

@@ -1,6 +1,6 @@
 ---
 title: Music Providers & Resilience
-updated: 2026-11-10
+updated: 2026-11-12
 related: [[external-apis]], [[generation-engine]], [[spotify-dependency]], [[api-routes]]
 ---
 
@@ -52,8 +52,8 @@ in-process in-flight dedup), `limit.ts` (`runLastfm`), `types.ts` (`SimilarArtis
 
 Doorway wiring lives in `lib/artist-identity/lastfm-lookup.ts`: `lastfmResolve` (getInfo as
 the name resolver), `buildEnrichArtist` (undefined without a key, so callers feature-detect),
-`mergeEnrichment`, and `pickBestMatch`/`searchAndMatchArtist` (search match guard; no
-production caller today).
+and `mergeEnrichment` (the uncalled `pickBestMatch`/`searchAndMatchArtist` search guard was
+deleted 2026-11-12).
 
 ## Spotify — `lib/music-provider/spotify.ts` (client-credentials only)
 

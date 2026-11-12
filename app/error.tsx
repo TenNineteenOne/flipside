@@ -5,10 +5,10 @@ import { RefreshCw } from "lucide-react"
 
 export default function AppError({
   error,
-  reset,
+  retry,
 }: {
   error: Error & { digest?: string }
-  reset: () => void
+  retry: () => void
 }) {
   useEffect(() => {
     console.log(`[error-boundary] app err="${error.message}" digest=${error.digest ?? "none"}`)
@@ -19,7 +19,7 @@ export default function AppError({
       <h2 className="text-lg font-semibold text-foreground">Something went wrong</h2>
       <p className="max-w-md text-sm text-muted-foreground break-words">{error.message}</p>
       <button
-        onClick={reset}
+        onClick={() => retry()}
         className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
       >
         <RefreshCw className="size-4" />

@@ -72,7 +72,7 @@ export function FeedDesktop({ triage, onLoadMore, generating, wander, challenge,
           </section>
         </ShellSlot>
       )}
-      <main className="ev-queue" aria-labelledby="ev-queue-title">
+      <section className="ev-queue" aria-labelledby="ev-queue-title">
         <header ref={headRef} className="ev-queue-head">
           <div>
             <h1 id="ev-queue-title" className="ev-queue-title">Today&rsquo;s flipside</h1>
@@ -149,9 +149,11 @@ export function FeedDesktop({ triage, onLoadMore, generating, wander, challenge,
         </ul>
         {visible.length > 0 && remaining === 0 && <p className="ev-queue-foot">Queue clear.</p>}
         <div className="ev-queue-more"><LoadMore onLoadMore={onLoadMore} generating={generating} wander={wander} /></div>
-      </main>
+      </section>
 
-      <section className="ev-focus" aria-live="polite" aria-label="Selected artist">
+      <section className="ev-focus" aria-label="Selected artist">
+        {/* Announce only the newly selected artist, not the whole card and player. */}
+        <p className="sr-only" aria-live="polite">{selected?.name ?? ""}</p>
         <div className="ev-focus-scroll">
           {selected ? (
             <FocusCard key={selected.id} a={selected} triage={triage} />

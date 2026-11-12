@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import { WanderSwitch } from "@/components/feed/wander-switch"
 import { useAdventurousMode } from "@/lib/hooks/use-adventurous-mode"
@@ -8,25 +8,35 @@ import { patchSettings } from "@/lib/settings/patch-settings"
 import { FAME_LEVELS, MAX_FAME_LEVEL } from "@/lib/settings/fame"
 
 /**
- * Save "How famous?" (users.fame_level) when `next` differs from the last saved stop, so a
- * click or key that didn't move the slider sends nothing. On failure the slider rolls back to
- * the last saved stop. Applies to the next batch; nothing on screen is rebuilt.
+ * Writer for "How famous?" (users.fame_level). A value equal to the last requested one sends
+ * nothing. Saves run one at a time in call order, so an older PATCH can never land after a newer
+ * one. Only the newest save rolls back on failure, to the last stop the server confirmed.
  */
-export async function saveFameLevel(next: number, saved: { current: number }, rollback: (stop: number) => void): Promise<void> {
-  const prev = saved.current
-  if (next === prev) return
-  saved.current = next
-  try {
-    await patchSettings({ fameLevel: next })
-  } catch {
-    // A newer save owns the slider now; only the latest one rolls back.
-    if (saved.current === next) {
-      saved.current = prev
-      rollback(prev)
-    }
-    toast.error("Failed to save How famous?")
+export function createFameWriter(initial: number, rollback: (stop: number) => void): (next: number) => Promise<void> {
+  let requested = initial
+  let confirmed = initial
+  let latest = 0
+  let chain: Promise<void> = Promise.resolve()
+  return (next) => {
+    if (next === requested) return chain
+    requested = next
+    const id = ++latest
+    chain = chain.then(() => patchSettings({ fameLevel: next })).then(
+      () => { confirmed = next },
+      () => {
+        if (id === latest) {
+          requested = confirmed
+          rollback(confirmed)
+        }
+        toast.error("Failed to save How famous?")
+      },
+    )
+    return chain
   }
 }
+
+/** Quiet time after the last slider change before it is saved (drags, arrow-key runs, screen-reader swipes). */
+export const FAME_SAVE_DEBOUNCE_MS = 400
 
 /**
  * Discovery settings (#205, option I): "How famous?" (a 5-stop slider) and "How close to your taste?"
@@ -36,8 +46,25 @@ export function DiscoveryPanel({ initialFameLevel, initialAdventurous }: { initi
   const [fame, setFame] = useState(initialFameLevel)
   const { adventurous, setAdventurous } = useAdventurousMode(initialAdventurous)
   const pct = (fame / MAX_FAME_LEVEL) * 100
-  const saved = useRef(initialFameLevel)
-  const save = () => void saveFameLevel(fame, saved, setFame)
+  const [write] = useState(() => createFameWriter(initialFameLevel, setFame))
+  // Saved from onChange (debounced), so every input method counts, including assistive tech that
+  // changes the value without key or pointer events. Leaving the page sends a pending change at once.
+  const pending = useRef<{ timer: ReturnType<typeof setTimeout>; value: number } | null>(null)
+  const flush = () => {
+    const p = pending.current
+    if (!p) return
+    clearTimeout(p.timer)
+    pending.current = null
+    void write(p.value)
+  }
+  const change = (value: number) => {
+    setFame(value)
+    if (pending.current) clearTimeout(pending.current.timer)
+    pending.current = { value, timer: setTimeout(flush, FAME_SAVE_DEBOUNCE_MS) }
+  }
+  const flushRef = useRef(flush)
+  useEffect(() => { flushRef.current = flush })
+  useEffect(() => () => flushRef.current(), [])
 
   return (
     <div>
@@ -55,9 +82,8 @@ export function DiscoveryPanel({ initialFameLevel, initialAdventurous }: { initi
             step={1}
             value={fame}
             aria-valuetext={FAME_LEVELS[fame]}
-            onChange={(e) => setFame(Number(e.target.value))}
-            onPointerUp={save}
-            onKeyUp={save}
+            onChange={(e) => change(Number(e.target.value))}
+            onBlur={flush}
             style={{ background: `linear-gradient(to right, var(--accent) ${pct}%, rgba(255,255,255,0.10) ${pct}%)` }}
           />
           <div

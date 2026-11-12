@@ -78,11 +78,3 @@ export function applyClusterCap<T>(
   }
   return { swaps, topShare: topCount / picks.length, topGenre }
 }
-
-/** Default genre accessor: primary genre with `unknown` fallback. Treats
- * empty-string genre as missing so metadata-poor artists don't form their
- * own bucket. */
-export function primaryGenreOf<T extends { genres?: string[] }>(a: T): string {
-  const g = a.genres?.[0]
-  return g && g.length > 0 ? g : 'unknown'
-}

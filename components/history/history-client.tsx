@@ -160,7 +160,12 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
     return c
   }, [shown])
 
-  const groups = useMemo(() => groupByPeriod(filtered), [filtered])
+  // Period labels read the clock, so the server render and hydration use one unlabelled group
+  // (nbsp keeps the label's height) and the real periods arrive once mounted.
+  const groups = useMemo(
+    () => (mounted ? groupByPeriod(filtered) : filtered.length ? [{ label: "\u00a0", items: filtered }] : []),
+    [filtered, mounted],
+  )
 
   async function handleUndo(artistId: string, signal: string) {
     setUndoingIds((prev) => new Set(prev).add(artistId))
@@ -231,7 +236,8 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
                   className="mono"
                   style={{ fontSize: 10, color: active ? "var(--text-primary)" : "var(--text-faint)" }}
                 >
-                  {count}
+                  {/* Counts cover loaded rows only: "+" while older pages remain unloaded. */}
+                  {count}{hasMore && "+"}
                 </span>
               )}
             </button>
@@ -379,13 +385,14 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
               </div>
             </div>
           ))}
-          {hasMore && (
-            <div style={{ display: "flex", justifyContent: "center", padding: "16px 0" }}>
-              <button className="btn" onClick={handleLoadMore} disabled={isLoadingMore}>
-                {isLoadingMore ? "Loading…" : "Load more"}
-              </button>
-            </div>
-          )}
+        </div>
+      )}
+      {/* Outside the empty branch: a filter with no loaded matches can still have older ones. */}
+      {hasMore && (
+        <div style={{ display: "flex", justifyContent: "center", padding: "16px 0" }}>
+          <button className="btn" onClick={handleLoadMore} disabled={isLoadingMore}>
+            {isLoadingMore ? "Loading…" : "Load more"}
+          </button>
         </div>
       )}
     </div>

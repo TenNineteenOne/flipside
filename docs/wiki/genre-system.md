@@ -1,6 +1,6 @@
 ---
 title: Genre System
-updated: 2026-11-10
+updated: 2026-11-12
 related: [[generation-engine]], [[settings-and-discovery]], [[infra-and-ops]]
 ---
 
@@ -53,8 +53,7 @@ against the full tree.
   (the far pool's leftfield source — `lib/recommendation/far-picks.ts`).
 
 Used by `augmentWithAdjacent` (Feed bleed), the far pool's outside-anchor and leftfield
-pickers (`far-picks.ts`), and
-`primaryGenreOf` for the cluster cap (see [[generation-engine]]).
+pickers (`far-picks.ts`); the cluster cap keys on `genres[0]` (see [[generation-engine]]).
 
 ## Build & maintenance scripts (`scripts/`)
 

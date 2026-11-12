@@ -81,16 +81,29 @@ export function LibraryEditor({ initialGenreTags, initialSeedArtists, flat = fal
     return () => aborter.abort()
   }, [orphanCount, initialGenreNodes])
 
+  // Leaving Settings inside the debounce window sends the pending save now (keepalive, so the
+  // navigation doesn't cancel it) instead of dropping it. A save already in flight is left to land.
+  const pendingGenres = useRef<GenreNode[] | null>(null)
   useEffect(() => {
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current)
+      const next = pendingGenres.current
+      if (!next) return
+      pendingGenres.current = null
       saveAborter.current?.abort()
+      void patchSettings(
+        { selectedGenres: next.map((g) => g.lastfmTag) },
+        { fetchImpl: (url, init) => fetch(url, { ...init, keepalive: true }) },
+      ).catch(() => toast.error("Couldn't save genres"))
     }
   }, [])
 
   function scheduleGenreSave(next: GenreNode[]) {
     if (saveTimer.current) clearTimeout(saveTimer.current)
+    pendingGenres.current = next
     saveTimer.current = setTimeout(async () => {
+      saveTimer.current = null
+      pendingGenres.current = null
       saveAborter.current?.abort()
       const aborter = new AbortController()
       saveAborter.current = aborter
@@ -131,7 +144,8 @@ export function LibraryEditor({ initialGenreTags, initialSeedArtists, flat = fal
   }
 
   async function removeArtist(id: string) {
-    const prev = artists
+    const removed = artists.find((a) => a.id === id)
+    if (!removed) return
     setArtists((cur) => cur.filter((a) => a.id !== id))
     try {
       const res = await fetch(`/api/settings/seed-artists?id=${encodeURIComponent(id)}`, {
@@ -139,7 +153,8 @@ export function LibraryEditor({ initialGenreTags, initialSeedArtists, flat = fal
       })
       if (!res.ok) throw new Error("remove failed")
     } catch {
-      setArtists(prev)
+      // Put back only this artist: a snapshot of the whole list would drop adds made meanwhile.
+      setArtists((cur) => (cur.some((a) => a.id === id) ? cur : [...cur, removed]))
       toast.error("Couldn't remove artist")
     }
   }

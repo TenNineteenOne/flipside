@@ -1,6 +1,6 @@
 ---
 title: API Routes
-updated: 2026-11-10
+updated: 2026-11-12
 related: [[generation-engine]], [[music-providers]], [[auth-and-session]], [[data-model]]
 ---
 
@@ -61,8 +61,7 @@ The `/api/explore/*` routes were removed with the Explore page (2026-11-10, #205
 | `/api/onboarding/search` | GET | **Spotify search** (client-creds), 120/min per user; **falls back to `artist_search_cache` ILIKE on 429** (`degraded:true`) |
 | `/api/onboarding/resolve` | POST | resolves a Last.fm-sourced onboarding suggestion to the internal artist uuid: `artists`-table exact-name doorway lookup first, MusicBrainz mbid url-rels fallback → mint under MB's canonical name (client name must match it at ≥0.8 similarity after folding diacritics, else 404; the check is skipped when exactly one name has Latin letters, e.g. "BTS" vs "방탄소년단"); 404 when unresolvable; 30/min per-user in-memory rate limit |
 | `/api/onboarding/seeds` | POST | upsert `seed_artists` (3–200 per request; existing + new ≤ 200 total, same check as settings) |
-| `/api/onboarding/check` | GET | `{needsOnboarding}` |
-| `/api/settings` | PATCH | validate + encrypt usernames + update `users`; `selectedGenres` change → unseen-feed wipe; `fameLevel` / `adventurous` → nothing (next batch only) |
+| `/api/settings` | PATCH | validate + encrypt usernames + update `users` (401 if no row was updated: deleted account); a changed Last.fm / stats.fm username clears that source's sync cooldown; `selectedGenres` change → unseen-feed wipe; `fameLevel` / `adventurous` → nothing (next batch only) |
 | `/api/settings/seed-artists` | GET/POST/DELETE | manage seeds |
 | `/api/account` | DELETE | delete user (cascade) + sign out |
 

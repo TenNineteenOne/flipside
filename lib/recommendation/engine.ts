@@ -306,16 +306,21 @@ export interface AugmentAdjacentOpts {
   adaptiveBroadening?: boolean
   popularityCurve: number
   undergroundMode?: boolean
-  fetchTagArtists: (tag: string) => Promise<string[]>
-  /** Resolve names → artists, keyed by input name, with the user's exclusions already applied. */
-  resolveArtists: (names: string[]) => Promise<Map<string, Artist>>
+  /** Fallback bleed fetch, used only when `adjacentPool` is omitted. */
+  fetchTagArtists?: (tag: string) => Promise<string[]>
+  /** Resolve names → artists, keyed by input name, with the user's exclusions already applied. Fallback only. */
+  resolveArtists?: (names: string[]) => Promise<Map<string, Artist>>
   /**
    * The far pool (used only when `adventurous`): already-gated artists keyed by
    * input name (null = nothing), and each name's genre label for `why.outsideUsual`.
    */
   far?: { resolved: Promise<Map<string, Artist> | null>; labelOf: (name: string) => string | undefined }
-  /** A `fetchAdjacentPool` already in flight (started alongside the primary resolve); omitted = fetch here. */
-  adjacentPool?: Promise<AdjacentPool | null>
+  /**
+   * The adjacent pool, read only when the far pool leaves slots open (so a full
+   * far pool never waits on it). The engine hands in a `fetchAdjacentPool`
+   * already in flight, wrapped in its wait budget; omitted = fetch here.
+   */
+  adjacentPool?: () => Promise<AdjacentPool | null>
 }
 
 /** Same formula for far and adjacent picks: main-pool scoring at a fixed relevance, plus the bleed bonus. */
@@ -341,7 +346,8 @@ export interface AdjacentPool {
  * null = no adjacent tags to sample.
  */
 export async function fetchAdjacentPool(
-  opts: Pick<AugmentAdjacentOpts, 'userGenres' | 'adventurous' | 'adaptiveBroadening' | 'fetchTagArtists' | 'resolveArtists'>,
+  opts: Pick<AugmentAdjacentOpts, 'userGenres' | 'adventurous' | 'adaptiveBroadening'> &
+    Required<Pick<AugmentAdjacentOpts, 'fetchTagArtists' | 'resolveArtists'>>,
   skipNamesLc: Set<string> = new Set()
 ): Promise<AdjacentPool | null> {
   if (opts.userGenres.length === 0) return null
@@ -385,7 +391,12 @@ export async function fetchAdjacentPool(
 /** Bleed phase 2: score the pool's artists, skipping any name the base already holds. */
 async function adjacentCandidates(base: ScoredArtist[], opts: AugmentAdjacentOpts): Promise<ScoredArtist[]> {
   const baseNameLc = new Set(base.map((b) => b.artist.name.toLowerCase()))
-  const pool = await (opts.adjacentPool ?? fetchAdjacentPool(opts, baseNameLc))
+  const { fetchTagArtists, resolveArtists } = opts
+  const pool = opts.adjacentPool
+    ? await opts.adjacentPool()
+    : fetchTagArtists && resolveArtists
+      ? await fetchAdjacentPool({ ...opts, fetchTagArtists, resolveArtists }, baseNameLc)
+      : null
   if (!pool) return []
   const scored: ScoredArtist[] = []
   for (const [name, artist] of pool.resolved.entries()) {
@@ -431,16 +442,12 @@ export async function augmentWithAdjacent(
   const startPos = adventurous ? 3 : 5
   if (base.length <= startPos) return base
 
-  // Far and adjacent run concurrently: adjacent only tops up a far shortfall,
-  // but waiting for far first would put its resolve on the serial path.
-  const [farScored, adjScored] = await Promise.all([
-    far ? farCandidates(far, opts) : Promise.resolve([]),
-    opts.userGenres.length > 0 ? adjacentCandidates(base, opts) : Promise.resolve([]),
-  ])
-
+  // Far first; adjacent only tops up a far shortfall, so a full far pool never
+  // waits on it. (The engine starts both pools before this step, so reading
+  // them in turn costs no serial latency.)
   const used = new Set(base.map((b) => b.artist.id))
   const picks: ScoredArtist[] = []
-  for (const list of [farScored, adjScored]) {
+  const take = (list: ScoredArtist[]) => {
     for (const c of list.sort((a, b) => b.score - a.score)) {
       if (picks.length >= N) break
       if (used.has(c.artist.id)) continue
@@ -449,7 +456,17 @@ export async function augmentWithAdjacent(
       picks.push(c)
     }
   }
+  if (far) take(await farCandidates(far, opts))
+  if (picks.length < N && opts.userGenres.length > 0) take(await adjacentCandidates(base, opts))
   if (picks.length === 0) return base
+
+  // The feed lists rows by score, so a pick must score below the protected top
+  // picks or it would display above them. Keep the picks' own order.
+  let ceiling = Math.min(...base.slice(0, startPos).map((b) => b.score))
+  for (let i = 0; i < picks.length; i++) {
+    ceiling = Math.min(picks[i].score, ceiling - 1e-4)
+    picks[i] = { ...picks[i], score: ceiling }
+  }
 
   const mergeable = base.slice(startPos).map((item, idx) => ({
     score: item.score,
@@ -497,6 +514,8 @@ export interface RunPipelineOpts {
    * Never rejects. `ms` = the fetch's own wall-clock.
    */
   farNames?: Promise<{ names: FarName[]; ms: number }>
+  /** When the far fetch started (Date.now()), so a timed-out run can still report `farMs`. */
+  farStartedAt?: number
   /**
    * Exclusion rows read once per build and shared by every soften run (the
    * reruns differ only in play threshold, applied when deriving).
@@ -617,6 +636,8 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
     if (genre && !artist.genres.some((g) => normalizedIncludes(g, genre))) return false
     return true
   }
+  /** A picked or capped seed is never recommended back — the bleed and far pools skip round-robin's check. */
+  const notSeed = (artist: Artist) => !knownNames.has(artist.name.toLowerCase())
 
   // Far pool (#205): resolved + gated in parallel with the primary resolve, so
   // only a far fetch slower than the whole primary path can block tier 1.
@@ -630,7 +651,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
         farMs = ms
         for (const f of names) farLabels.set(f.name.toLowerCase(), f.label)
         if (names.length === 0) return null
-        return (await candidates.resolve(names.map((f) => f.name), { keep: (a) => feedKeeps(a) })).artists
+        return (await candidates.resolve(names.map((f) => f.name), { keep: (a) => feedKeeps(a) && notSeed(a) })).artists
       }).catch((err) => {
         console.error(`[engine] far_resolve_fail source=${source} err=${err instanceof Error ? err.message : err}`)
         return null
@@ -654,6 +675,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
   // fresh negative) never re-hits iTunes.
   const bleedStart = Date.now()
   let bleedMs: number | undefined
+  let bleedTimedOut = false
   const bleedPool = !genre && userGenres.length > 0
     ? fetchAdjacentPool({
         userGenres,
@@ -662,11 +684,13 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
         fetchTagArtists: (tag) => lastfm.tagTopArtists(tag),
         resolveArtists: async (names) =>
           (await candidates.resolve(names, {
-            keep: (a) => !exclusions.reason(a),
+            keep: (a) => !exclusions.reason(a) && notSeed(a),
             concurrency: RESOLVE_CONCURRENCY,
             delayMs: RESOLVE_DELAY_MS,
           })).artists,
-      }).finally(() => { bleedMs = Date.now() - bleedStart })
+      // The primary and secondary pools already resolve these names; scoring
+      // drops any the base holds anyway.
+      }, new Set(allNames.map((n) => n.toLowerCase()))).finally(() => { bleedMs = Date.now() - bleedStart })
     : null
   void bleedPool?.catch(() => {}) // a zero-top run returns before awaiting it
 
@@ -744,22 +768,6 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
 
   const baseTop = greedyPickTop(pool, 20)
 
-  // 25% cluster cap (M2) — greedyPickTop's soft penalty nudges diversity, but
-  // a high-signal user with one dominant genre can still exceed the budget.
-  // Apply a hard cap by swapping over-budget picks with the best remaining
-  // pool tail whose primary genre is under-cap.
-  const baseTopIds = new Set(baseTop.map((s) => s.artist.id))
-  const baseLeftover = pool.filter((s) => !baseTopIds.has(s.artist.id))
-  const capStats = applyClusterCap(
-    baseTop,
-    baseLeftover,
-    (s: ScoredArtist) => s.artist.genres[0] ?? 'unknown',
-  )
-  console.log(
-    `[engine] cluster-cap source=${source} swaps=${capStats.swaps} ` +
-    `topGenre=${capStats.topGenre} topShare=${capStats.topShare.toFixed(2)}`
-  )
-
   if (baseTop.length === 0) {
     console.error(
       `[engine] FAIL zero_top seeds=${capSeedNames.length} lfm=${lfmTotal} ` +
@@ -780,13 +788,16 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
       adaptiveBroadening: widenSeedCap,
       popularityCurve,
       undergroundMode,
-      fetchTagArtists: (tag) => lastfm.tagTopArtists(tag),
-      // Same pipeline: gated by the exclusions AND rehydrated, so a bleed
-      // pick with a cached preview (or a fresh negative) never re-hits iTunes.
-      resolveArtists: async (names) =>
-        (await candidates.resolve(names, { keep: (a) => !exclusions.reason(a) })).artists,
-      // Started alongside the primary resolve (above); null when there are no user genres.
-      adjacentPool: bleedPool ?? undefined,
+      // Started alongside the primary resolve (above); null when there are no
+      // user genres. Read only when the far pool leaves slots open; together the
+      // two waits stay within FAR_WAIT_BUDGET_MS of the bleed-step start.
+      adjacentPool: bleedPool
+        ? () => withinBudget(bleedPool, Math.max(0, augmentStart + FAR_WAIT_BUDGET_MS - Date.now())).then((r) => {
+            if (r !== undefined) return r
+            bleedTimedOut = true
+            return null
+          })
+        : undefined,
       far: farResolved
         ? {
             // Bleed-step start → far pool ready (≈0 when it finished during the primary resolve).
@@ -795,6 +806,8 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
               farWaitMs = Date.now() - augmentStart
               if (r !== undefined) return r
               farTimedOut = true
+              // The fetch may still be running: report its wall-clock so far.
+              if (farMs === undefined && o.farStartedAt !== undefined) farMs = Date.now() - o.farStartedAt
               return null
             }),
             labelOf: (name) => farLabels.get(name.toLowerCase()),
@@ -802,6 +815,22 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
         : undefined,
     })
   }
+
+  // 25% cluster cap (M2) — greedyPickTop's soft penalty nudges diversity, but
+  // a high-signal user with one dominant genre can still exceed the budget.
+  // Applied AFTER the bleed merge (its picks often share an adjacent tag), by
+  // swapping over-budget picks with the best remaining pool tail whose primary
+  // genre is under-cap.
+  const topIds = new Set(top.map((s) => s.artist.id))
+  const capStats = applyClusterCap(
+    top,
+    pool.filter((s) => !topIds.has(s.artist.id)),
+    (s: ScoredArtist) => s.artist.genres[0] ?? 'unknown',
+  )
+  console.log(
+    `[engine] cluster-cap source=${source} swaps=${capStats.swaps} ` +
+    `topGenre=${capStats.topGenre} topShare=${capStats.topShare.toFixed(2)}`
+  )
 
   // Backfill (#135). Preview-confirmation drops no-preview artists before the
   // pick, so a thin-signal user can land below TARGET. The secondary pool is
@@ -846,7 +875,10 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
   /**
    * Write a set of confirmed ScoredArtists to recommendation_cache, skipping
    * cooldown-ineligible rows and ids already written this run. Returns the
-   * number of rows successfully upserted.
+   * number of rows NEW to the feed: inserts plus resurfaced rows. A row that
+   * was already queued unseen is still re-written (F-C) but not counted, so a
+   * build that only re-queues what the user already has reads as empty and
+   * softens instead of reporting success with zero new cards.
    *
    * Cooldown state is read fresh from the DB for the given items. Writes:
    *   - new rows (none in the cache): an upsert carrying NO seen_at / skip_at /
@@ -931,6 +963,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
       }),
     )
     let resurfacedN = 0
+    let requeuedN = 0
     for (const [i, { data, error }] of results.entries()) {
       if (error) {
         console.error(`[engine] rewrite_error source=${source} err=${error.message}`)
@@ -938,11 +971,14 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
       }
       for (const r of data ?? []) {
         writtenIds.add(r.artist_id)
-        written++
         if (rewrites[i].seenAt) resurfacedN++
+        else requeuedN++
       }
     }
-    if (resurfacedN > 0) console.log(`[engine] resurfaced source=${source} n=${resurfacedN}`)
+    written += resurfacedN
+    if (resurfacedN > 0 || requeuedN > 0) {
+      console.log(`[engine] rewritten source=${source} resurfaced=${resurfacedN} requeued=${requeuedN}`)
+    }
     return written
   }
 
@@ -1056,6 +1092,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
       ...(farMs !== undefined ? { farMs } : {}),
       ...(farWaitMs !== undefined ? { farWaitMs } : {}),
       ...(farTimedOut ? { farTimedOut } : {}),
+      ...(bleedTimedOut ? { bleedTimedOut } : {}),
       similarMs,
       exclusionsMs,
       bleedMs,
@@ -1172,6 +1209,7 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
   const gatherMs = Date.now() - gatherStart
   const withGather = (r: BuildResult): BuildResult => ({ ...r, metrics: { ...r.metrics, gatherMs } })
   const identity = new ArtistIdentity(supabase)
+  const farStartedAt = Date.now()
   const farNames = adventurous && !genre ? startFarFetch(supabase, userId, userGenres) : undefined
 
   const makeBaseOpts = (overrides: Partial<RunPipelineOpts>): RunPipelineOpts => ({
@@ -1190,6 +1228,7 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     userGenres,
     identity,
     farNames,
+    farStartedAt,
     preloadedRows,
     ...overrides,
   })

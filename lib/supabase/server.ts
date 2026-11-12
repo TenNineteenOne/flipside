@@ -1,3 +1,4 @@
+import "server-only"
 import { createClient } from "@supabase/supabase-js";
 
 // Service-role client: server-only, no user session (auth is NextAuth's job).

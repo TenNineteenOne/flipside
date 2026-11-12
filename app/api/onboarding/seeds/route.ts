@@ -1,4 +1,4 @@
-import { apiError } from "@/lib/errors"
+import { apiError, dbError } from "@/lib/errors"
 import { createServiceClient } from "@/lib/supabase/server"
 import { validateSeedArtists } from "@/lib/seed-artist-validation"
 import { withAuthedCsrfRoute } from "@/lib/api/with-authed-route"
@@ -35,6 +35,7 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }) => {
     .upsert(rows, { onConflict: "user_id,artist_id" })
 
   if (error) {
+    if (error.code === "23503") return dbError(error, "onboarding/seeds/upsert")
     console.error("[onboarding/seeds] upsert error:", error.message)
     return apiError("Failed to save seed artists", 500)
   }

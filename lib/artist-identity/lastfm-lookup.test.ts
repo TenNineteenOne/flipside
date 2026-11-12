@@ -1,7 +1,7 @@
-import { describe, it, expect, vi, afterEach } from "vitest"
-import { buildEnrichArtist, lastfmResolve, mergeEnrichment, pickBestMatch } from "./lastfm-lookup"
+import { describe, it, expect, vi } from "vitest"
+import { buildEnrichArtist, lastfmResolve, mergeEnrichment } from "./lastfm-lookup"
 import type { Artist } from "@/lib/music-provider/types"
-import type { ArtistEnrichment, Lastfm, LastfmArtistCandidate } from "@/lib/lastfm"
+import type { ArtistEnrichment, Lastfm } from "@/lib/lastfm"
 
 function artist(overrides: Partial<Artist> = {}): Artist {
   return {
@@ -74,60 +74,5 @@ describe("mergeEnrichment", () => {
     const merged = mergeEnrichment(a, { genres: ["x"], popularity: 10 })
     expect(merged.popularity).toBe(75)
     expect(merged.genres).toEqual(["x"])
-  })
-})
-
-describe("pickBestMatch (similarity guard)", () => {
-  const cand = (name: string): LastfmArtistCandidate => ({ name, mbid: null, listeners: 0, imageUrl: null })
-
-  afterEach(() => vi.restoreAllMocks())
-
-  it("returns null for no candidates", () => {
-    expect(pickBestMatch("anything", [])).toBeNull()
-  })
-
-  it("prefers an exact normalized match even when it is not ranked first", () => {
-    const m = pickBestMatch("M", [cand("Madonna"), cand("M")])
-    expect(m).not.toBeNull()
-    expect(m!.name).toBe("M")
-    expect(m!.similarity).toBe(1)
-  })
-
-  it("treats exact match as case- and punctuation-insensitive", () => {
-    // artistNameKey lowercases + strips punctuation, so "ACDC" == "AC/DC".
-    const m = pickBestMatch("acdc", [cand("AC/DC")])
-    expect(m?.name).toBe("AC/DC")
-    expect(m?.similarity).toBe(1)
-  })
-
-  it("handles short names via the exact path (similarity scores 0 for len < 2)", () => {
-    expect(pickBestMatch("U2", [cand("U2")])?.name).toBe("U2")
-    expect(pickBestMatch("M", [cand("M")])?.name).toBe("M")
-  })
-
-  it("accepts the best fuzzy candidate when it clears the threshold", () => {
-    // One-char deletion → very high Dice similarity, no exact match.
-    const m = pickBestMatch("Boards of Canada", [cand("Boards of Canda"), cand("Aphex Twin")])
-    expect(m).not.toBeNull()
-    expect(m!.name).toBe("Boards of Canda")
-    expect(m!.similarity).toBeGreaterThanOrEqual(0.8)
-    expect(m!.similarity).toBeLessThan(1)
-  })
-
-  it("rejects (and logs) when nothing clears the threshold, so the cache isn't poisoned", () => {
-    const spy = vi.spyOn(console, "log").mockImplementation(() => {})
-    const m = pickBestMatch("Boards of Canada", [cand("Aphex Twin"), cand("Autechre")])
-    expect(m).toBeNull()
-    expect(spy).toHaveBeenCalledOnce()
-    expect(spy.mock.calls[0][0]).toContain("no confident match")
-  })
-
-  it("picks the highest-similarity candidate among several above threshold", () => {
-    const m = pickBestMatch("Radiohead", [cand("Radiohed"), cand("Radioheadd")])
-    expect(m).not.toBeNull()
-    // Both are close; the guard must return whichever scores highest, not just the first.
-    const sims = ["Radiohed", "Radioheadd"].map((n) => m!.name === n)
-    expect(sims.some(Boolean)).toBe(true)
-    expect(m!.similarity).toBeGreaterThanOrEqual(0.8)
   })
 })

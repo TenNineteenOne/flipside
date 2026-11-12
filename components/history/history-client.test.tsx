@@ -27,4 +27,18 @@ describe("#175 F12 history hydration", () => {
     expect(html).toContain("Artist a")
     expect(html).not.toMatch(/\dm ago|just now|Jan 1[45]/)
   })
+
+  it("server render has no clock-dependent period labels", () => {
+    const html = renderToString(
+      createElement(HistoryClient, { history: [entry("a", new Date().toISOString()), entry("b", "2026-01-15T03:00:00Z")] }),
+    )
+    expect(html).not.toMatch(/Today|Yesterday|Earlier this week|Older/)
+  })
+
+  it("Load more shows even when no row is loaded, and counts carry + while more remain", () => {
+    const empty = renderToString(createElement(HistoryClient, { history: [], hasMore: true }))
+    expect(empty).toContain("Load more")
+    const some = renderToString(createElement(HistoryClient, { history: [entry("a", new Date().toISOString())], hasMore: true }))
+    expect(some).toMatch(/1<!-- -->\+/)
+  })
 })

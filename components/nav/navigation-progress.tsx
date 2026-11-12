@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
 } from "react"
@@ -69,8 +70,11 @@ export function NavigationProgressProvider({
     }
   }, [])
 
+  // Stable value: a new object per render re-ran every NavLinkStatus effect, looping the bar.
+  const value = useMemo(() => ({ report }), [report])
+
   return (
-    <NavigationProgressContext.Provider value={{ report }}>
+    <NavigationProgressContext.Provider value={value}>
       <NavigationProgressBar phase={phase} />
       {children}
     </NavigationProgressContext.Provider>

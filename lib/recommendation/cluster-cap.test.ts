@@ -1,11 +1,8 @@
 import { describe, it, expect } from "vitest"
-import {
-  applyClusterCap,
-  primaryGenreOf,
-  CLUSTER_CAP_PCT,
-} from "./cluster-cap"
+import { applyClusterCap, CLUSTER_CAP_PCT } from "./cluster-cap"
 
 type A = { id: string; genres?: string[] }
+const primaryGenreOf = (t: A): string => t.genres?.[0] || "unknown"
 
 const a = (id: string, g: string): A => ({ id, genres: [g] })
 
@@ -60,7 +57,7 @@ describe("applyClusterCap", () => {
     expect(leftover.map((l) => l.id).sort()).toContain("2")
   })
 
-  it("handles missing genres via primaryGenreOf fallback", () => {
+  it("handles missing genres via an unknown fallback", () => {
     const picks = [
       { id: "1", genres: [] },
       { id: "2", genres: [] },

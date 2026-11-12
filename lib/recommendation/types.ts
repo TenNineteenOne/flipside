@@ -87,5 +87,7 @@ export interface BuildResult {
     exclusionsMs?: number
     /** Adjacent-bleed tag fetch + resolve, from its start (alongside primary) until done. */
     bleedMs?: number
+    /** True when tier 1 gave up on the adjacent pool (wait budget shared with the far pool). */
+    bleedTimedOut?: boolean
   }
 }

@@ -266,4 +266,23 @@ describe("createFeedFillController", () => {
     await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 3)
     expect(fetchImpl).toHaveBeenCalledTimes(2) // stopped
   })
+
+  it("non-ok answers count as idle polls: three 401s stop the poller", async () => {
+    const fetchImpl = vi.fn(async () => ({ ok: false, status: 401 }) as unknown as Response)
+    createFeedFillController<FeedRec>({ initialIds: [], targetCount: 10, onAppend: vi.fn(), fetchImpl })
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 6)
+    expect(fetchImpl).toHaveBeenCalledTimes(3)
+  })
+
+  it("a poll still in flight when stop() runs never appends", async () => {
+    let resolve!: (r: Response) => void
+    const fetchImpl = vi.fn(() => new Promise<Response>((r) => { resolve = r }))
+    const onAppend = vi.fn()
+    const controller = createFeedFillController<FeedRec>({ initialIds: [], targetCount: 10, onAppend, fetchImpl })
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS)
+    controller.stop() // e.g. unmount
+    resolve({ ok: true, json: async () => ({ recommendations: [playableRec("a")] }) } as unknown as Response)
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 2)
+    expect(onAppend).not.toHaveBeenCalled()
+  })
 })

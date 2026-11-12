@@ -16,7 +16,7 @@ export default function SavedLoading() {
           display: "grid",
           gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
           gap: 12,
-          marginTop: 12,
+          marginTop: 8,
         }}
       >
         {Array.from({ length: 12 }).map((_, i) => (

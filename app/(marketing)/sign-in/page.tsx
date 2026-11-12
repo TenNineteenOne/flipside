@@ -12,6 +12,7 @@ import {
   type SignInMode,
 } from "@/lib/auth-sign-in"
 import { Wordmark } from "@/components/shell/wordmark"
+import { safeFrom } from "./safe-from"
 
 function cleanUsernameInput(raw: unknown): string {
   return typeof raw === "string" ? raw.toLowerCase().replace(/[^a-z0-9._-]/g, "").slice(0, 30) : ""
@@ -31,6 +32,8 @@ export default function SignInPage({
   // The landing CTA opens ?mode=new; anything else is Existing (never create by accident).
   const params = use(searchParams)
   const initialMode = parseSignInMode(params.mode)
+  // Where the proxy sent a signed-out deep link from (?from=/settings); /feed otherwise.
+  const destination = safeFrom(params.from)
   const [mode, setMode] = useState<SignInMode>(initialMode)
   // The landing Step 1 form passes the typed name along.
   const [username, setUsername] = useState(() => cleanUsernameInput(params.username))
@@ -68,12 +71,11 @@ export default function SignInPage({
         return
       }
 
-      // Straight to /feed: its server render redirects a not-yet-onboarded
-      // user to /onboarding (same rule as /api/onboarding/check), saving a
-      // round trip before navigation.
+      // Straight to the destination (default /feed, whose server render sends a
+      // not-yet-onboarded user to /onboarding), saving a round trip.
       // replace: Back must not return to the sign-in form (the proxy bounces it anyway).
       navigating = true
-      router.replace("/feed")
+      router.replace(destination)
     } catch {
       // signIn threw (network drop, iOS backgrounding)
       setError(SIGN_IN_GENERIC_ERROR)

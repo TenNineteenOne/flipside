@@ -25,9 +25,12 @@ export const proxy = auth((req) => {
   }
 
   // Protect pages
+  // /feed (the generic entry) goes to the landing; a deeper link goes to sign-in,
+  // which returns there afterwards (sanitized by safeFrom in the sign-in page).
   if (!session && isProtectedPage) {
-    const from = encodeURIComponent(pathname)
-    return NextResponse.redirect(new URL(`/?from=${from}`, req.url))
+    if (pathname === "/feed") return NextResponse.redirect(new URL("/", req.url))
+    const from = encodeURIComponent(pathname + req.nextUrl.search)
+    return NextResponse.redirect(new URL(`/sign-in?from=${from}`, req.url))
   }
 
   // Protect API routes
