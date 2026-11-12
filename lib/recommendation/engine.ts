@@ -467,14 +467,6 @@ export async function augmentWithAdjacent(
   if (picks.length < N && opts.userGenres.length > 0) take(await adjacentCandidates(base, opts))
   if (picks.length === 0) return base
 
-  // The feed lists rows by score, so a pick must score below the protected top
-  // picks or it would display above them. Keep the picks' own order.
-  let ceiling = Math.min(...base.slice(0, startPos).map((b) => b.score))
-  for (let i = 0; i < picks.length; i++) {
-    ceiling = Math.min(picks[i].score, ceiling - 1e-4)
-    picks[i] = { ...picks[i], score: ceiling }
-  }
-
   const mergeable = base.slice(startPos).map((item, idx) => ({
     score: item.score,
     idx: idx + startPos,
@@ -482,11 +474,18 @@ export async function augmentWithAdjacent(
   mergeable.sort((a, b) => a.score - b.score)
   const toReplace = new Set(mergeable.slice(0, picks.length).map((m) => m.idx))
 
+  // The feed lists rows by score, so each pick takes at most the score of the
+  // base item it replaces, kept strictly below the row before it (never above
+  // the protected top picks): its merge position survives the feed's score sort.
+  const protectedMin = Math.min(...base.slice(0, startPos).map((b) => b.score))
   const out: ScoredArtist[] = []
   let pickIdx = 0
   for (let i = 0; i < base.length; i++) {
     if (toReplace.has(i) && pickIdx < picks.length) {
-      out.push(picks[pickIdx++])
+      const prev = out.length > 0 ? out[out.length - 1].score : Infinity
+      const cap = Math.min(base[i].score, protectedMin, prev - 1e-9)
+      const pick = picks[pickIdx++]
+      out.push(pick.score < cap ? pick : { ...pick, score: cap })
     } else {
       out.push(base[i])
     }
@@ -547,6 +546,12 @@ export interface PipelineRun {
    * write failed", not "nothing eligible", so softening must not kick in.
    */
   writeError?: boolean
+  /**
+   * Tier-1 rows already queued unseen and re-written (not in `count`). A run
+   * that only re-queues has a feed: softening must not widen the filters
+   * (cold-start even drops the underground cap) over a quick regenerate.
+   */
+  requeued?: number
 }
 
 async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
@@ -696,9 +701,10 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
             delayMs: RESOLVE_DELAY_MS,
             signal,
           })).artists,
-      // The primary and secondary pools already resolve these names; scoring
-      // drops any the base holds anyway.
-      }, new Set(allNames.map((n) => n.toLowerCase()))).finally(() => { bleedMs = Date.now() - bleedStart })
+      // The primary resolve already covers these names; scoring drops any the
+      // base holds anyway. (Not the secondary/round-robin tail: those may never
+      // reach the feed, and skipping them would thin the bleed.)
+      }, new Set(uniqueNames.map((n) => n.toLowerCase()))).finally(() => { bleedMs = Date.now() - bleedStart })
     : null
   void bleedPool?.catch(() => {}) // a zero-top run returns before awaiting it
 
@@ -774,7 +780,9 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
     JSON.stringify([...poolGenreDist.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10))
   )
 
-  const baseTop = greedyPickTop(pool, 20)
+  const TARGET = 20
+  const FIRST_BATCH_TARGET = 8
+  const baseTop = greedyPickTop(pool, TARGET)
 
   if (baseTop.length === 0) {
     console.error(
@@ -788,13 +796,18 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
 
   // The secondary resolve starts once the run has a pick (a zero-top run never
   // pays for it), so it doesn't compete with the primary resolve for the
-  // Last.fm gate. It's best-effort: confirmed/written in `runSecondary` (from
-  // `after()`), and awaited on the blocking path only by the backfill below.
-  // Gated + rehydrated by the same pipeline, so the backfill reserve and the
-  // secondary tier both arrive filtered and warm.
+  // Last.fm gate. A full pick only needs it in `runSecondary` (from `after()`),
+  // so it runs at the polite defaults. A short pick awaits it below for the
+  // backfill — on the blocking path — so it gets the blocking tuning and
+  // overlaps the bleed wait. Gated + rehydrated by the same pipeline, so the
+  // backfill reserve and the secondary tier both arrive filtered and warm.
+  const short = baseTop.length < TARGET
   const secondaryResolvePromise = secondaryNames.length === 0
     ? null
-    : candidates.resolve(secondaryNames, { keep: (a) => feedKeeps(a) })
+    : candidates.resolve(secondaryNames, {
+        keep: (a) => feedKeeps(a),
+        ...(short ? { concurrency: RESOLVE_CONCURRENCY, delayMs: RESOLVE_DELAY_MS } : {}),
+      })
 
   // Adjacent-genre bleed, phase 2: merge into the pick (positions past the
   // top relevance picks only).
@@ -856,8 +869,6 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
   // already resolving in parallel (and is itself preview-confirmed); when we're
   // short, await it and top up from its best filter-passing candidates. Only
   // pays latency in the (rare) short case; full feeds skip the await entirely.
-  const TARGET = 20
-  const FIRST_BATCH_TARGET = 8
   if (top.length < TARGET && secondaryResolvePromise) {
     const sec = await secondaryResolvePromise
     const pickedIds = new Set(top.map((t) => t.artist.id))
@@ -890,6 +901,8 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
   // avoid duplicate confirms or upserts.
   const writtenIds = new Set<string>()
   let writeError = false
+  /** Rows re-written that were already queued unseen (not counted as new). */
+  let requeued = 0
 
   /**
    * Write a set of confirmed ScoredArtists to recommendation_cache, skipping
@@ -995,6 +1008,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
       }
     }
     written += resurfacedN
+    requeued += requeuedN
     if (resurfacedN > 0 || requeuedN > 0) {
       console.log(`[engine] rewritten source=${source} resurfaced=${resurfacedN} requeued=${requeuedN}`)
     }
@@ -1099,6 +1113,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
   return {
     count: tier1Written,
     writeError, // tier-1 only: snapshotted before the background tiers run
+    requeued, // tier-1 only, likewise
     runSecondary,
     flush,
     metrics: {
@@ -1176,7 +1191,7 @@ export async function runWithSoftening(
 
   // A failed write is not an empty pool (#175 R7): softening would widen the
   // filters (cold-start even drops underground mode) for a transient DB error.
-  const done = (r: PipelineRun) => r.count > 0 || !!r.writeError
+  const done = (r: PipelineRun) => r.count > 0 || !!r.writeError || (r.requeued ?? 0) > 0
 
   const primary = await run(baseOpts)
   if (done(primary)) return composeResult(primary, runs)

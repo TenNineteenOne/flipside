@@ -10,7 +10,9 @@ export function safeFrom(raw: unknown): string {
   try {
     const url = new URL(raw, BASE)
     if (url.origin !== BASE) return "/feed"
-    return url.pathname + url.search + url.hash
+    // Dot-segment removal can rebuild "//host" ("/.//evil.com" → "//evil.com"): check the result too.
+    const out = url.pathname + url.search + url.hash
+    return out.startsWith("//") || out.startsWith("/\\") ? "/feed" : out
   } catch {
     return "/feed"
   }

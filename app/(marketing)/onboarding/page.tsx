@@ -120,9 +120,6 @@ export default function OnboardingPage() {
       // reflect the user's selection on the very first feed view. Default is
       // Spotify so the value is never unexpected if the user didn't touch it.
       settingsPayload.preferredMusicPlatform = musicPlatform
-      // Stamp completion so /feed's onboarding-resume check doesn't bounce the
-      // user back here. Applies to both the normal flow and explicit skip.
-      settingsPayload.onboardingCompleted = true
       if (!skip && lastfmUsername.trim()) settingsPayload.lastfmUsername = lastfmUsername.trim()
       if (!skip && statsfmUsername.trim()) settingsPayload.statsfmUsername = statsfmUsername.trim()
       if (!skip && selectedGenres.length > 0) {
@@ -141,8 +138,9 @@ export default function OnboardingPage() {
       }
 
       const artistsToSave = selectedArtists.slice(0, ARTIST_CAP)
+      let seedsSaved: Promise<boolean> = Promise.resolve(true)
       if (!skip && artistsToSave.length >= MIN_SEEDS) {
-        promises.push(fetch("/api/onboarding/seeds", {
+        promises.push(seedsSaved = fetch("/api/onboarding/seeds", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -152,6 +150,16 @@ export default function OnboardingPage() {
       }
 
       const results = await Promise.all(promises)
+      // Stamp completion (Skip too) only once the seeds are in: a stamped user without seeds
+      // could never get back here (the onboarding layout sends stamped users to /feed), while
+      // an unstamped one is sent back by /feed's resume check.
+      if (await seedsSaved) {
+        const stamped = await patchSettings({ onboardingCompleted: true }).then(() => true, (err) => {
+          if (err instanceof SettingsSaveError) return false
+          throw err
+        })
+        results.push(stamped)
+      }
       if (results.includes(false)) {
         toast.error("Some settings couldn't be saved. You can update them later.")
       }

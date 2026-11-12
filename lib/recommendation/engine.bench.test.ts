@@ -166,5 +166,7 @@ describe.skipIf(!process.env.BENCH)("engine cost bench", () => {
     await scenario("wander-cold", { adventurous: true }, true)
     const listened = Array.from({ length: 600 }, (_, n) => ({ id: `l${String(n).padStart(4, "0")}`, user_id: "u1", artist_id: null, lastfm_artist_name: `Artist ${n}`, play_count: 8 }))
     await scenario("soften-cold", {}, true, { listened_artists: listened })
+    // Thin signal: 70% of the similar pool already heard, so the pick is short and backfills.
+    await scenario("short-cold", {}, true, { listened_artists: listened.filter((_, n) => n % 10 < 7) })
   }, 120_000)
 })

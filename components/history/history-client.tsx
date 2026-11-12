@@ -266,8 +266,9 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
         </div>
       ) : (
         <div className="col gap-24" style={{ marginTop: 8 }}>
-          {groups.map(({ label, items }) => (
-            <div key={label}>
+          {/* Index key: the pre-mount group becomes the first period group, so its rows aren't remounted on hydration. */}
+          {groups.map(({ label, items }, i) => (
+            <div key={i}>
               <div className="eyebrow" style={{ marginBottom: 10 }}>{label}</div>
               <div
                 style={{

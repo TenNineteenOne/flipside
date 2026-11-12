@@ -69,39 +69,6 @@ describe("PATCH /api/settings fame level + Wander farther (#205)", () => {
   )
 })
 
-describe("PATCH /api/settings source username switch", () => {
-  const KEY = Buffer.alloc(32, 7).toString("base64")
-  beforeEach(async () => {
-    vi.stubEnv("USERNAME_ENCRYPTION_KEY", KEY)
-    const { resetKeyCacheForTests } = await import("@/lib/crypto/username")
-    resetKeyCacheForTests()
-  })
-
-  it("a changed Last.fm username clears the Last.fm sync cooldown only", async () => {
-    const { encryptUsername } = await import("@/lib/crypto/username")
-    db = createRouteFakeDb({ users: [{
-      id: "u1",
-      lastfm_username: encryptUsername("alice"),
-      last_accumulated_lastfm_at: "2026-11-12T00:00:00.000Z",
-      last_accumulated_statsfm_at: "2026-11-12T00:00:00.000Z",
-    }] })
-    expect((await call({ lastfmUsername: "bob" })).status).toBe(200)
-    expect(db.tables.users[0].last_accumulated_lastfm_at).toBeNull()
-    expect(db.tables.users[0].last_accumulated_statsfm_at).toBe("2026-11-12T00:00:00.000Z")
-  })
-
-  it("re-saving the same username keeps the cooldown", async () => {
-    const { encryptUsername } = await import("@/lib/crypto/username")
-    db = createRouteFakeDb({ users: [{
-      id: "u1",
-      statsfm_username: encryptUsername("alice"),
-      last_accumulated_statsfm_at: "2026-11-12T00:00:00.000Z",
-    }] })
-    expect((await call({ statsfmUsername: " alice " })).status).toBe(200)
-    expect(db.tables.users[0].last_accumulated_statsfm_at).toBe("2026-11-12T00:00:00.000Z")
-  })
-})
-
 describe("PATCH /api/settings deleted account", () => {
   it("401s instead of reporting success when the users row is gone", async () => {
     db = createRouteFakeDb({ users: [] })

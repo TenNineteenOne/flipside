@@ -905,7 +905,7 @@ describe("buildRecommendations — bleed + far pools respect seeds and the genre
 })
 
 describe("buildRecommendations — re-queued rows are not new (count)", () => {
-  it("a build that only re-writes already-queued unseen rows counts 0 and softens; F-C still refreshes the row", async () => {
+  it("a build that only re-writes already-queued unseen rows counts 0 but does NOT soften (no cold-start); F-C still refreshes the row", async () => {
     const queuedId = "f0000000-0000-4000-8000-000000000031"
     const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString()
     const future = new Date(Date.now() + 86400_000).toISOString()
@@ -922,7 +922,9 @@ describe("buildRecommendations — re-queued rows are not new (count)", () => {
     await result.finish()
 
     expect(result.count).toBe(0)
-    expect(result.softenedFilters?.playThreshold).toBe(true)
+    expect(result.softenedFilters).toBeUndefined()
+    // Neither soften step ran: only the user's seed fanned out, no cold-start seeds.
+    expect(lf.calls.similar).toEqual(["SeedA"])
     const row = cacheRows().find((r) => r.artist_id === queuedId)!
     expect(row.seen_at).toBeNull()
     expect(new Date(row.created_at).getTime()).toBeGreaterThan(Date.now() - 3 * 24 * 60 * 60 * 1000)

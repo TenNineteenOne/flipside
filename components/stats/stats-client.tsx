@@ -125,7 +125,7 @@ function TasteProfileView({
   const sorted = useMemo(
     // Unknown popularity sorts last either way.
     () => [...items].sort((a, b) =>
-      a.popularity === null ? 1 : b.popularity === null ? -1 : sortDesc ? b.popularity - a.popularity : a.popularity - b.popularity),
+      a.popularity === null ? (b.popularity === null ? 0 : 1) : b.popularity === null ? -1 : sortDesc ? b.popularity - a.popularity : a.popularity - b.popularity),
     [items, sortDesc]
   )
 

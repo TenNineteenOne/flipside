@@ -43,7 +43,10 @@ Wander farther far pool (step 10).
 5. **Pool split** (`splitResolvePools`) — first **36** names = blocking pool, next **54** =
    secondary. The secondary resolve starts only once the run has a non-empty pick (after
    step 9), so it never competes with the primary resolve for the Last.fm gate and a
-   zero-top run never pays for it; its confirm/write runs in `after()`. These caps
+   zero-top run never pays for it; its confirm/write runs in `after()`. A full pick (20)
+   resolves it at the resolver defaults (background only); a **short** pick awaits it for
+   the backfill on the blocking path, so it then gets the blocking tuning (6 workers, no
+   spacing) and overlaps the bleed wait. These caps
    (`resolve-pools.ts`) are the primary latency knob.
 6. **Resolve** (`PlayableCandidates.resolve`, `playable-candidates.ts`) — the doorway
    (`ArtistIdentity`: name-cache → Last.fm `artist.getInfo` lookup → mint), keyed by the
@@ -89,14 +92,17 @@ Wander farther far pool (step 10).
       `recommendation_cache.why` and lifted onto `CardArtist.why.outsideUsual` by
       `assembleFeedCards`. The far and adjacent fetches run concurrently.
     The adjacent bleed's tag fetch + resolve (`fetchAdjacentPool`) starts alongside step 6
-    (skipping names the primary/secondary pools already resolve) and is handed in as
+    (skipping only the primary pool's names — not the secondary/round-robin tail, which may
+    never reach the feed) and is handed in as
     `adjacentPool`. It is read only when the far pool leaves slots open, and the far and
     adjacent waits together stay within `FAR_WAIT_BUDGET_MS` of the bleed-step start; past
     that the run gets no adjacent bleed and `[gen-timing]` logs `bleedTimeout=1`.
     Both pools skip the user's picked and capped seeds (`knownNames`), like the main pool.
-    Each pick's **stored score is capped just below the lowest protected top pick** (picks
-    keep their own order): the feed lists unseen rows by score, so an uncapped bleed pick
-    (fixed relevance + bonus) would display above the top relevance picks.
+    Each pick's **stored score is capped at the score of the base item it replaces**,
+    strictly below the row before it and never above the protected top picks (picks keep
+    their own order): the feed lists unseen rows by score, so the merge positions must
+    survive that sort — an uncapped bleed pick (fixed relevance + bonus) would display
+    above the top relevance picks, and one shared cap would stack every pick in one block.
 11. **Hard cluster cap** (`applyClusterCap`, `cluster-cap.ts`) — no genre > **25%** of the
     20-item feed. Runs **after** the bleed merge, since bleed picks often share an adjacent
     tag. See [[genre-system]].
@@ -114,8 +120,9 @@ Wander farther far pool (step 10).
     `skip_at`) **resurfaces** with `seen_at: null` (owner decision D1, #175 F26). The feed
     query also skips any `skip_at` row (defense in depth). The returned count is rows **new
     to the feed** (inserts + resurfaced): an already-queued unseen row is still re-written
-    (F-C) but not counted, so a build that only re-queues what the user has softens instead
-    of reporting success with zero new cards.
+    (F-C) but not counted. A run that only re-queued rows (`PipelineRun.requeued > 0`) is
+    still **done**: it returns `count: 0` without softening, so a quick regenerate never
+    widens the filters (cold-start would drop the underground cap) on an established feed.
 14. **Return fast** — the result carries `count`, `pending`, one `finish()` continuation,
     and `metrics`.
 15. **Background** (`finish()` via `after()`) — confirm the rest of the primary pool

@@ -76,8 +76,9 @@ Idempotent (already-encrypted passes through). One-time backfill:
   row is gone (otherwise `/feed` → `/sign-in` → `/feed` would loop).
 - **Onboarding resume**: `/feed` (server) redirects to `/onboarding` while the user has no
   `onboarding_completed_at`, no Last.fm username and no seed artists (the
-  rule lives only in `app/(app)/feed/page.tsx`). Onboarding's PATCH stamps `onboarding_completed_at`
-  (Skip too), so finishing lands on the feed. Sign-in relies on this: it always navigates to `/feed`.
+  rule lives only in `app/(app)/feed/page.tsx`). Onboarding stamps `onboarding_completed_at`
+  (Skip too) with a final PATCH sent only after its seed artists saved, so finishing lands on the
+  feed, and a failed seed save leaves onboarding reachable (its layout sends stamped users to `/feed`). Sign-in relies on this: a new account always navigates to `/feed`; an existing one goes to `safeFrom(?from=)` (a same-origin path, checked again after URL normalisation; default `/feed`).
 - **API wrappers** (`lib/api/with-authed-route.ts`): three factories —
   `withAuthedRoute` (session only), `withAuthedCsrfRoute` (+CSRF), `withAuthedJsonRoute`
   (+CSRF +JSON parse), each passing `{ userId, request, supabase }`; plus `withCronRoute` for

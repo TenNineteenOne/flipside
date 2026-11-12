@@ -794,6 +794,18 @@ describe("runWithSoftening cascade order", () => {
     expect(result.softenedFilters).toBeUndefined()
   })
 
+  it("a run that only re-queued rows is done: count stays 0, no softening", async () => {
+    const calls: string[] = []
+    const run = async (opts: RunPipelineOpts): Promise<PipelineRun> => {
+      calls.push(opts.source)
+      return { count: 0, requeued: 3, runSecondary: null, flush: async () => {}, metrics: { primaryMs: 0, previewMs: 0, firstBatchMs: 0, misses: 0, retries: 0, rateLimited: false } }
+    }
+    const result = await runWithSoftening(baseOpts, { run, coldStartSeeds: coldSeeds })
+    expect(calls).toEqual(["multi_source"])
+    expect(result.count).toBe(0)
+    expect(result.softenedFilters).toBeUndefined()
+  })
+
   it("returns zero from cold-start with flags still set when nothing works", async () => {
     const { run, calls } = makeRunner([0, 0, 0])
     const result = await runWithSoftening(baseOpts, { run, coldStartSeeds: coldSeeds })
@@ -805,22 +817,28 @@ describe("runWithSoftening cascade order", () => {
 })
 
 describe("augmentWithAdjacent — stored score keeps the merge positions", () => {
-  it("caps every pick just below the protected top picks, keeping the picks' order", async () => {
+  it("caps every pick at the base item it replaces, so merge positions survive the feed's score sort", async () => {
     // Low base scores: raw bleed scores (~0.3) would sort above every base pick.
     const base = Array.from({ length: 20 }, (_, i) => scored(`base${i}`, 0.2 - i * 0.001, [`Seed${i}`], "indie-rock"))
     const result = await augmentWithAdjacent(base, {
       userGenres: ["indie-rock"],
       popularityCurve: 0.95,
+      adventurous: true, // 10 slots from position 3
       adjacentPool: () => Promise.resolve({
-        resolved: new Map([["a", mkArtist("id_a", 10, "x")], ["b", mkArtist("id_b", 40, "x")]]),
+        resolved: new Map(Array.from({ length: 10 }, (_, i) => [`n${i}`, mkArtist(`id_${i}`, 10 + i * 3, "x")] as const)),
         nameToTag: new Map(),
       }),
     })
     const picks = result.filter((r) => r.source === "adjacent_bleed")
-    expect(picks).toHaveLength(2)
+    expect(picks).toHaveLength(10)
+    // The feed orders unseen rows by score: that order must be the merge order.
+    const sorted = [...result].sort((x, y) => y.score - x.score)
+    expect(sorted.map((r) => r.artist.id)).toEqual(result.map((r) => r.artist.id))
+    // Picks land in the replaced tail slots, not as one block under the top.
+    expect(result.slice(0, 10).some((r) => r.source === "adjacent_bleed")).toBe(false)
     const protectedMin = Math.min(...base.slice(0, 5).map((b) => b.score))
     for (const p of picks) expect(p.score).toBeLessThan(protectedMin)
-    // a (pop 10) out-scored b (pop 40) raw, and still does once capped.
-    expect(picks.find((p) => p.artist.id === "id_a")!.score).toBeGreaterThan(picks.find((p) => p.artist.id === "id_b")!.score)
+    // Picks keep their own order: the least popular (best raw score) comes first.
+    expect(picks.map((p) => p.artist.id)).toEqual(Array.from({ length: 10 }, (_, i) => `id_${i}`))
   })
 })

@@ -10,29 +10,35 @@ import { FAME_LEVELS, MAX_FAME_LEVEL } from "@/lib/settings/fame"
 /**
  * Writer for "How famous?" (users.fame_level). A value equal to the last requested one sends
  * nothing. Saves run one at a time in call order, so an older PATCH can never land after a newer
- * one. Only the newest save rolls back on failure, to the last stop the server confirmed.
+ * one. Only the newest save rolls back on failure, to the last stop the server confirmed; `supersede()`
+ * marks a newer change still waiting to be sent, so an older failure leaves the slider alone.
  */
-export function createFameWriter(initial: number, rollback: (stop: number) => void): (next: number) => Promise<void> {
+export function createFameWriter(
+  initial: number,
+  rollback: (stop: number) => void,
+): ((next: number) => Promise<void>) & { supersede: () => void } {
   let requested = initial
   let confirmed = initial
   let latest = 0
   let chain: Promise<void> = Promise.resolve()
-  return (next) => {
+  const write = (next: number) => {
     if (next === requested) return chain
     requested = next
     const id = ++latest
     chain = chain.then(() => patchSettings({ fameLevel: next })).then(
       () => { confirmed = next },
       () => {
-        if (id === latest) {
-          requested = confirmed
-          rollback(confirmed)
-        }
+        // Always forget the failed request, so re-sending the same value isn't deduped away.
+        requested = confirmed
+        if (id === latest) rollback(confirmed)
         toast.error("Failed to save How famous?")
       },
     )
     return chain
   }
+  /** A newer change is coming (debounced): saves already in flight must not roll the slider back. */
+  const supersede = () => { latest++ }
+  return Object.assign(write, { supersede })
 }
 
 /** Quiet time after the last slider change before it is saved (drags, arrow-key runs, screen-reader swipes). */
@@ -47,9 +53,9 @@ export function DiscoveryPanel({ initialFameLevel, initialAdventurous }: { initi
   const { adventurous, setAdventurous } = useAdventurousMode(initialAdventurous)
   const pct = (fame / MAX_FAME_LEVEL) * 100
   const [write] = useState(() => createFameWriter(initialFameLevel, setFame))
+  const pending = useRef<{ timer: ReturnType<typeof setTimeout>; value: number } | null>(null)
   // Saved from onChange (debounced), so every input method counts, including assistive tech that
   // changes the value without key or pointer events. Leaving the page sends a pending change at once.
-  const pending = useRef<{ timer: ReturnType<typeof setTimeout>; value: number } | null>(null)
   const flush = () => {
     const p = pending.current
     if (!p) return
@@ -59,6 +65,7 @@ export function DiscoveryPanel({ initialFameLevel, initialAdventurous }: { initi
   }
   const change = (value: number) => {
     setFame(value)
+    write.supersede()
     if (pending.current) clearTimeout(pending.current.timer)
     pending.current = { value, timer: setTimeout(flush, FAME_SAVE_DEBOUNCE_MS) }
   }

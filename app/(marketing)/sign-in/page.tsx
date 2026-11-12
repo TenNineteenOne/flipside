@@ -75,7 +75,8 @@ export default function SignInPage({
       // not-yet-onboarded user to /onboarding), saving a round trip.
       // replace: Back must not return to the sign-in form (the proxy bounces it anyway).
       navigating = true
-      router.replace(destination)
+      // A new account always starts at /feed, which sends it through onboarding.
+      router.replace(isNew ? "/feed" : destination)
     } catch {
       // signIn threw (network drop, iOS backgrounding)
       setError(SIGN_IN_GENERIC_ERROR)

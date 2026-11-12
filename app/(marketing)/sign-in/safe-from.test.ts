@@ -11,5 +11,7 @@ describe("safeFrom", () => {
   it.each([
     undefined, "", "feed", "//evil.com", "/\\evil.com", "https://evil.com", "javascript:alert(1)",
     ["/settings"], "/\t/evil.com",
+    // dot segments that normalise back to a protocol-relative URL
+    "/.//evil.com", "/..//evil.com", "/%2e//evil.com", "/a/..//evil.com", "/./\\evil.com",
   ])("falls back to /feed for %j", (raw) => expect(safeFrom(raw)).toBe("/feed"))
 })

@@ -4,7 +4,7 @@ import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, apiUnauthorized, dbError } from "@/lib/errors"
 import { isMusicPlatform } from "@/lib/music-links"
 import { onTasteChanged } from "@/lib/taste-change"
-import { decryptUsername, encryptUsername } from "@/lib/crypto/username"
+import { encryptUsername } from "@/lib/crypto/username"
 import { withAuthedJsonRoute } from "@/lib/api/with-authed-route"
 import { isFameLevel } from "@/lib/settings/fame"
 
@@ -83,32 +83,6 @@ export const PATCH = withAuthedJsonRoute(async ({ userId, body: rawBody }) => {
   }
 
   const supabase = createServiceClient()
-
-  // A switched Last.fm / stats.fm account must be syncable right away: clear
-  // that source's sync cooldown when the username value actually changes.
-  // Its listened_artists rows are kept (owner decision).
-  if (update.lastfm_username !== undefined || update.statsfm_username !== undefined) {
-    const { data: current, error: readError } = await supabase
-      .from("users")
-      .select("lastfm_username, statsfm_username")
-      .eq("id", userId)
-      .maybeSingle()
-    if (readError) return dbError(readError, "settings/read-usernames")
-    if (!current) return apiUnauthorized() // JWT outlived its users row (deleted account)
-    const plain = (stored: string | null) => {
-      try {
-        return decryptUsername(stored)
-      } catch {
-        return undefined // undecryptable: treat as changed
-      }
-    }
-    if (update.lastfm_username !== undefined && plain(current.lastfm_username) !== (body.lastfmUsername?.trim() || null)) {
-      update.last_accumulated_lastfm_at = null
-    }
-    if (update.statsfm_username !== undefined && plain(current.statsfm_username) !== (body.statsfmUsername?.trim() || null)) {
-      update.last_accumulated_statsfm_at = null
-    }
-  }
 
   const { data: updated, error } = await supabase.from("users").update(update).eq("id", userId).select("id")
 

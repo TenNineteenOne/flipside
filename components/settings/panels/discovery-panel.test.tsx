@@ -50,6 +50,19 @@ describe("DiscoveryPanel", () => {
     expect(rollback).toHaveBeenCalledWith(3)
   })
 
+  it("a failure while a newer change is pending (supersede) doesn't roll back, and the same value can be re-sent", async () => {
+    const rollback = vi.fn()
+    const write = createFameWriter(1, rollback)
+    patchSettings.mockRejectedValueOnce(new Error("nope"))
+    const first = write(3)
+    write.supersede() // user still dragging; the next value is debounced
+    await first
+    expect(rollback).not.toHaveBeenCalled()
+    await write(3) // the pending value happens to equal the failed one: still sent
+    expect(patchSettings).toHaveBeenLastCalledWith({ fameLevel: 3 })
+    expect(patchSettings).toHaveBeenCalledTimes(2)
+  })
+
   it("shows the 5-stop How famous? slider and the Wander farther switch; the old knobs are gone", () => {
     const html = renderToString(<DiscoveryPanel initialFameLevel={2} initialAdventurous />).replaceAll("<!-- -->", "")
     expect(html).toContain("How famous?")

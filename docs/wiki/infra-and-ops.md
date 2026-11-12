@@ -1,6 +1,6 @@
 ---
 title: Infra & Ops
-updated: 2026-11-10
+updated: 2026-11-12
 related: [[auth-and-session]], [[api-routes]], [[data-model]]
 ---
 
@@ -20,8 +20,8 @@ auto-deploys `main`).
   `X-Frame-Options: DENY`, strict `Referrer-Policy`, HSTS (prod).
 
 ## Middleware — `proxy.ts`
-Wraps NextAuth `auth()`. Authenticated `/` → `/feed`; unauthenticated protected pages →
-`/?from=…` (401 for APIs). `/api/cron/*` and `/api/auth/*` are exempt. See
+Wraps NextAuth `auth()`. Authenticated `/` → `/feed`; unauthenticated `/feed` → `/`, other
+protected pages → `/sign-in?from=<path>` (401 for APIs). `/api/cron/*` and `/api/auth/*` are exempt. See
 [[auth-and-session]].
 
 ## Cron — `vercel.json`
