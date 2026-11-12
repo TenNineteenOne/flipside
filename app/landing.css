@@ -118,11 +118,11 @@
 .ev-landing .ev-frag { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); padding: 20px; }
 .ev-landing .ev-frag-name { display: grid; grid-template-columns: 1fr auto; gap: 10px 12px; align-items: center; max-width: 520px; }
 .ev-landing .ev-frag-label { grid-column: 1 / -1; font-size: 13px; color: var(--fg-3); }
-.ev-landing .ev-frag-field { display: flex; align-items: center; height: 48px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--violet); background: var(--bg); font-size: 17px; box-shadow: 0 0 0 3px var(--violet-wash); }
-.ev-landing .ev-caret { width: 2px; height: 20px; margin-left: 1px; background: var(--violet-ink); animation: ev-blink 1s steps(1) infinite; }
-@keyframes ev-blink { 50% { opacity: 0; } }
-.ev-landing .ev-frag-ok { margin-left: auto; font-size: 12px; color: var(--fg-3); }
-.ev-landing .ev-frag-btn { display: inline-flex; align-items: center; height: 48px; padding: 0 18px; border-radius: 10px; background: var(--violet-fill); color: #fff; font-weight: 600; }
+.ev-landing .ev-frag-field { display: flex; align-items: center; height: 48px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); font-size: 17px; }
+.ev-landing .ev-frag-field:focus-within { border-color: var(--violet); box-shadow: 0 0 0 3px var(--violet-wash); }
+.ev-landing .ev-frag-field input { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; background: transparent; color: inherit; font: inherit; }
+.ev-landing .ev-frag-btn { display: inline-flex; align-items: center; justify-content: center; height: 48px; padding: 0 18px; border: 0; border-radius: 10px; background: var(--violet-fill); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+.ev-landing .ev-frag-signin { grid-column: 1 / -1; justify-self: start; padding: 0; border: 0; background: none; font: inherit; font-size: 13px; cursor: pointer; }
 .ev-landing .ev-frag-tune { display: flex; flex-direction: column; gap: 16px; max-width: 520px; }
 .ev-landing .ev-frag-tri { display: flex; gap: 6px; }
 .ev-landing .ev-frag-tunerows { display: flex; flex-direction: column; gap: 6px; }
@@ -178,7 +178,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .ev-landing *, .ev-landing *::before, .ev-landing *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
-  .ev-landing .ev-caret { animation: none; }
   /* The thrown card still fades (no slide or turn); the new card just appears. */
   .ev-landing .ev-stack-leaving { animation-name: ev-stack-fade; animation-duration: 0.25s !important; }
 }

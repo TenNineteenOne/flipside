@@ -7,6 +7,7 @@ import { whyText } from "@/lib/feed/card-copy"
 import { artworkAt } from "@/lib/feed/artwork"
 import { artistVars, landingSample } from "@/lib/landing/sample"
 import { HeroStack } from "@/components/landing/hero-stack"
+import { USERNAME_RULE } from "@/lib/auth-sign-in"
 import "./landing.css"
 
 const SIGN_UP = "/sign-in?mode=new"
@@ -51,14 +52,28 @@ export default function LandingPage() {
           <div className="ev-step-copy">
             <h3><span className="ev-step-n">1</span>Username</h3>
           </div>
-          <div className="ev-frag ev-frag-name" role="img" aria-label="A sign-up box with a single name field filled in as lowtide">
-            <span className="ev-frag-label">Your name on flipside</span>
+          {/* A real form: hands the name to /sign-in, which keeps the no-recovery acknowledgment. */}
+          <form action="/sign-in" className="ev-frag ev-frag-name">
+            <label htmlFor="landing-username" className="ev-frag-label">Your name on flipside</label>
             <div className="ev-frag-field">
-              <span>lowtide</span><span className="ev-caret" />
-              <span className="ev-frag-ok">available</span>
+              <input
+                id="landing-username"
+                name="username"
+                type="text"
+                placeholder="lowtide"
+                autoComplete="username"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                maxLength={30}
+                pattern="[A-Za-z0-9._\-]{2,30}"
+                title={USERNAME_RULE}
+                required
+              />
             </div>
-            <span className="ev-frag-btn">Start listening</span>
-          </div>
+            <button type="submit" name="mode" value="new" className="ev-frag-btn">Start listening</button>
+            <button type="submit" name="mode" value="existing" className="ev-link ev-frag-signin">Sign in</button>
+          </form>
         </div>
 
         <div className="ev-step">

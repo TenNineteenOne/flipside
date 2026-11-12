@@ -13,6 +13,10 @@ import {
 } from "@/lib/auth-sign-in"
 import { Wordmark } from "@/components/shell/wordmark"
 
+function cleanUsernameInput(raw: unknown): string {
+  return typeof raw === "string" ? raw.toLowerCase().replace(/[^a-z0-9._-]/g, "").slice(0, 30) : ""
+}
+
 const MODES: { mode: SignInMode; label: string }[] = [
   { mode: "existing", label: "Existing account" },
   { mode: "new", label: "New account" },
@@ -25,9 +29,11 @@ export default function SignInPage({
 }) {
   const router = useRouter()
   // The landing CTA opens ?mode=new; anything else is Existing (never create by accident).
-  const initialMode = parseSignInMode(use(searchParams).mode)
+  const params = use(searchParams)
+  const initialMode = parseSignInMode(params.mode)
   const [mode, setMode] = useState<SignInMode>(initialMode)
-  const [username, setUsername] = useState("")
+  // The landing Step 1 form passes the typed name along.
+  const [username, setUsername] = useState(() => cleanUsernameInput(params.username))
   const [agreed, setAgreed] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -160,7 +166,7 @@ export default function SignInPage({
               type="text"
               placeholder="your-username"
               value={username}
-              onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, "").slice(0, 30))}
+              onChange={(e) => setUsername(cleanUsernameInput(e.target.value))}
               autoComplete="username"
               autoCapitalize="none"
               autoCorrect="off"
