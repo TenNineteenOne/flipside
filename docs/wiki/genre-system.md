@@ -38,10 +38,15 @@ five in-memory indexes (`leafByKey`, `tagToAnchors`, `tagToClusters`, `clusterTo
 `anchorToClusters`). `adjacency.ts` binds it once to the full `data/genres.json` for server code.
 The client genre picker (onboarding + Settings) binds it to **`data/genres-picker.json`**
 instead: the same tree with only `id`, `label`, `lastfmTag`, `children` and leaf `x`/`y`
-(`slimGenreTree`, `lib/genre/picker-data.ts`; 765 kB vs 3.3 MB, ~132 kB gzip vs ~256 kB in the
-bundle). Regenerate it with `npm run build:genres-picker` whenever `genres.json` changes;
-`lib/genre/picker-data.test.ts` fails while they differ and checks the picker data and adjacency
-against the full tree.
+(`slimGenreTree`, `lib/genre/picker-data.ts`), stored in a compact lossless encoding
+(`encodePickerTree` / `decodePickerTree`, same file): `{ t, x, y }`, where a leaf whose id is
+`sp:` + its tag is just the tag (or `[tag, label]` when the label is not the tag with `-` as
+spaces), every other node is `[id, label, lastfmTag, children]`, and leaf coordinates sit in the
+`x` / `y` arrays in depth-first order. 210 kB raw, ~66 kB gzip (was 765 kB / 132 kB as plain
+objects; the full tree is 3.3 MB). The picker module decodes it once at import; only the lazily
+loaded picker chunk carries it. Regenerate it with `npm run build:genres-picker` whenever
+`genres.json` changes; `lib/genre/picker-data.test.ts` fails while they differ and checks the
+round trip, the picker data and adjacency against the full tree.
 
 - `adjacencyScore(a,b)` was deleted 2026-07-11 — it had no production callers. The
   pairwise-scoring implementation (continuous distance + tiered fallback) lives in git

@@ -1,17 +1,36 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import dynamic from "next/dynamic"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Music, ChevronDown, ChevronUp } from "lucide-react"
 import type { GenreNode } from "@/lib/types"
-import { GenrePicker } from "@/components/onboarding/genre-picker"
 import { ArtistSearch, type SpotifyArtist } from "@/components/onboarding/artist-search"
 import { PlatformPicker } from "@/components/settings/platform-picker"
 import { DEFAULT_MUSIC_PLATFORM, type MusicPlatform } from "@/lib/music-links"
 import { postGenerate } from "@/lib/client/feed-generation"
 import { MAX_SELECTED_GENRES, patchSettings, SettingsSaveError, type SettingsPatch, LASTFM_USERNAME_RE, STATSFM_USERNAME_RE } from "@/lib/settings/patch-settings"
 import { Wordmark } from "@/components/shell/wordmark"
+
+// Split out of the first load: the picker carries the genre tree (data/genres-picker.json), the
+// bulk of this page's JS otherwise. Fetched once the browser is idle, or when the Genres card opens
+// first. The import() stays inside dynamic() (as in feed-client.tsx) and the loader is kept by
+// reference for the preload, so both fetch the same chunk.
+let loadGenrePicker: () => Promise<unknown> = () => Promise.resolve()
+const keep = <T,>(load: () => Promise<T>) => ((loadGenrePicker = load), load)
+const GenrePicker = dynamic(
+  keep(() => import("@/components/onboarding/genre-picker").then((m) => m.GenrePicker)),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="col gap-10" aria-busy="true">
+        <div className="fs-skeleton" style={{ height: 36, borderRadius: 8 }} />
+        <div className="fs-skeleton" style={{ height: 36, borderRadius: 8 }} />
+      </div>
+    ),
+  },
+)
 
 const ARTIST_CAP = 200
 const GENRE_CAP = MAX_SELECTED_GENRES
@@ -23,6 +42,17 @@ const MIN_SEEDS = 3
 export default function OnboardingPage() {
   const router = useRouter()
   const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    const preload = () => void loadGenrePicker().catch(() => {})
+    // Safari before 18 has no requestIdleCallback.
+    if (typeof requestIdleCallback !== "function") {
+      const t = window.setTimeout(preload, 2000)
+      return () => clearTimeout(t)
+    }
+    const id = requestIdleCallback(preload, { timeout: 5000 })
+    return () => cancelIdleCallback(id)
+  }, [])
 
   // Active paths (can expand multiple)
   const [openPaths, setOpenPaths] = useState<Set<string>>(new Set())

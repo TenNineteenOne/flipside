@@ -1,6 +1,6 @@
 ---
 title: External APIs
-updated: 2026-11-10
+updated: 2026-11-12
 related: [[music-providers]], [[spotify-dependency]], [[generation-engine]], [[api-routes]]
 ---
 
@@ -12,7 +12,7 @@ are in [[music-providers]]; the replaceability analysis is in [[spotify-dependen
 ## Last.fm — the recommendation brain
 Auth: `LASTFM_API_KEY` (public read-only, no OAuth). Every call goes through the one
 adapter, `lib/lastfm` (`lastfm.*`): key, timeouts, the `runLastfm` gate (12 concurrent,
-~20 req/s), the Supabase `lastfm_cache` read-through and per-endpoint counters. See
+~20 req/s, 200 burst), the Supabase `lastfm_cache` read-through (with a batched prefetch) and per-endpoint counters. See
 [[music-providers]].
 
 | Endpoint | Used for | Adapter op → callers |

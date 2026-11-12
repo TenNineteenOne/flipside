@@ -7,7 +7,7 @@
  * doesn't become the new single point of failure now that #149 caching shifted
  * load onto it:
  *
- *   1. Token bucket (runaway-guard ceiling: ~20 req/s sustained, ~50 burst) — caps
+ *   1. Token bucket (runaway-guard ceiling: ~20 req/s sustained, ~200 burst) — caps
  *      the sustained OUTBOUND request rate. This is the new control added in #150.
  *   2. Concurrency cap (≤12 in-flight) — caps simultaneous open sockets, so a
  *      slow endpoint can't accumulate unbounded in-flight requests. (Earlier
@@ -41,8 +41,16 @@ export { TokenBucket } from "@/lib/limiter"
  * base grows and 5-minute averages rise (and as #151 pre-warm cuts live calls).
  */
 const RATE_PER_SEC = 20
-/** Bucket capacity — the largest instantaneous burst allowed before throttling. */
-const BUCKET_CAPACITY = 50
+/**
+ * Bucket capacity — the largest burst allowed before throttling. Sized to one
+ * cold generation's blocking window (~130–190 live calls: seeds' similars +
+ * the primary, bleed and far getInfo resolves, 2026-11-12 bench). At 50 the
+ * bucket throttled every cold build to 20/s mid-resolve, which pushed the
+ * adjacent bleed past its wait budget (no bleed picks at all). Last.fm's limit
+ * is a 5-minute AVERAGE (~5/s ≈ 1500 calls), so a 200-call burst stays inside
+ * it; the 12-wide concurrency cap and the 20/s sustained rate are unchanged.
+ */
+const BUCKET_CAPACITY = 200
 /** Max simultaneous in-flight Last.fm fetches. */
 const MAX_CONCURRENCY = 12
 

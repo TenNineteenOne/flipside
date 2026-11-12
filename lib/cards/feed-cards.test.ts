@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { assembleFeedCards } from "./feed-cards"
+import { assembleFeedCards, loadFeedCards } from "./feed-cards"
 import { liftArtistColor } from "./card-artist"
 import { resolveArtistColor, stringToVibrantHex } from "@/lib/color-utils"
 import type { Track } from "@/lib/music-provider/types"
@@ -66,6 +66,27 @@ describe("assembleFeedCards", () => {
     )
     expect(far.why.outsideUsual).toBe("dutch black metal")
     expect(plain.why).not.toHaveProperty("outsideUsual")
+  })
+})
+
+describe("loadFeedCards", () => {
+  it("reads the tracks cache only for rows without baked previews", async () => {
+    const asked: string[][] = []
+    const client = {
+      from: () => ({
+        select: () => ({
+          in: async (_c: string, ids: string[]) => {
+            asked.push(ids)
+            return { data: ids.map((artist_id) => ({ artist_id, tracks: [track(`${artist_id}c`)] })) }
+          },
+        }),
+      }),
+    } as unknown as Parameters<typeof loadFeedCards>[0]
+    expect(await loadFeedCards(client, [row("a"), row("b")])).toHaveLength(2)
+    expect(asked).toEqual([])
+    const cards = await loadFeedCards(client, [row("a"), row("b", { topTracks: [] })])
+    expect(asked).toEqual([["b"]])
+    expect(cards.find((c) => c.id === "b")?.topTracks[0].id).toBe("bc")
   })
 })
 

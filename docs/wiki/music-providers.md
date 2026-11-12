@@ -47,7 +47,10 @@ covers key-missing, timeouts, gate/counters and cache read-through with fakes. I
 tests swap the whole adapter for `lib/recommendation/__fixtures__/fake-lastfm.ts`.
 
 Supporting files: `cache.ts` (Supabase `lastfm_cache`: 7-day positive, 12h negative,
-in-process in-flight dedup), `limit.ts` (`runLastfm`), `types.ts` (`SimilarArtistRef`,
+in-process in-flight dedup; `prefetchCacheRows` / `lastfm.prefetch(kind, names)` reads many
+getInfo or getSimilar rows in one SELECT, each consumed by that key's next read within 60 s —
+the Feed uses it for every resolve batch's misses and for the seeds' / 2nd-hop similars),
+`limit.ts` (`runLastfm`), `types.ts` (`SimilarArtistRef`,
 `ArtistEnrichment`, `LastfmArtistCandidate`).
 
 Doorway wiring lives in `lib/artist-identity/lastfm-lookup.ts`: `lastfmResolve` (getInfo as
@@ -87,7 +90,7 @@ on breaker-open / failure, `[]` on zero matches (callers must distinguish).
 | `itunesBreaker` | instance in `itunes.ts` | threshold 5, 60s; trips on 403/429/timeout; returns `null` so callers fall back to Spotify. |
 | `createLimiter` | `lib/limiter.ts` | the generic gate (token bucket / min interval / concurrency) behind both limiters below. |
 | iTunes gate | `itunes-limit.ts` | max 5 concurrent, 50ms min spacing. |
-| `runLastfm` | `lib/lastfm/limit.ts` | ~20 req/s bucket (50 burst), max 12 concurrent. |
+| `runLastfm` | `lib/lastfm/limit.ts` | ~20 req/s bucket (200 burst — one cold generation's blocking window; 50 throttled every cold build, 2026-11-12), max 12 concurrent. The Feed's blocking resolves add no per-worker delay on top. |
 | MusicBrainz limiter | `lib/artist-identity/musicbrainz.ts` (`createMbLimiter`) | 1 req/s for the #159 backfill. |
 | `api-call-counter.ts` | `lib/metrics/` | measurement only (iTunes / Spotify / Last.fm per endpoint), not a throttle. |
 | `rate-limiter.ts` | — | **login** IP rate-limit (unrelated to music APIs). |

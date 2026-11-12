@@ -56,6 +56,13 @@ export interface ResolveDeps {
    */
   liveCalls?: () => number
   sleep?: (ms: number) => Promise<void>
+  /**
+   * Batch read-ahead for the misses' lookups (e.g. one lastfm_cache SELECT for
+   * every getInfo key) before the workers start. Best-effort.
+   */
+  prefetch?: (names: string[]) => Promise<void>
+  /** Once aborted, workers take no further names (a discarded soften run's pools). */
+  signal?: AbortSignal
 }
 
 export interface ResolveResult {
@@ -125,6 +132,7 @@ export async function resolveArtistsByName(
     }
   }
   result.cacheMisses = misses.length
+  if (misses.length > 0 && deps.prefetch) await deps.prefetch(misses).catch(() => {})
 
   // Shared budget across workers; reserved synchronously before each sleep
   // so concurrent workers see the updated value and don't double-spend.
@@ -137,7 +145,7 @@ export async function resolveArtistsByName(
     let firstSuccessfulSearch = true
     let delayNext = false
 
-    while (queue.length > 0) {
+    while (queue.length > 0 && !deps.signal?.aborted) {
       const name = queue.shift()
       if (name === undefined) return
 

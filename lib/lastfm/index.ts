@@ -25,6 +25,7 @@ import {
   cachedArtistSearch,
   cachedSimilarArtistNames,
   cachedTagArtistNames,
+  prefetchCacheRows,
   type CacheStore,
 } from "./cache"
 import { runLastfm } from "./limit"
@@ -139,6 +140,12 @@ export interface Lastfm {
    * not-found, a transient failure (not cached) or a missing key (no cache read).
    */
   artistInfo(name: string): Promise<ArtistEnrichment | null>
+  /**
+   * Read the cache rows for many getInfo / getSimilar names in one round trip,
+   * so the per-name calls that follow skip their own cache SELECT. Best-effort,
+   * never throws; no network call.
+   */
+  prefetch(kind: "getInfo" | "similar", names: string[]): Promise<void>
   /** artist.search candidates, cached (7d; empties 12h). Blank query → []. Transient failure → []. */
   searchArtists(query: string, limit?: number): Promise<LastfmArtistCandidate[]>
   /**
@@ -301,6 +308,11 @@ export function createLastfm(deps: LastfmDeps = {}): Lastfm {
       const key = apiKey()
       if (!key) return null
       return cachedArtistEnrichment(name, () => infoRaw(name, key), cache)
+    },
+
+    prefetch: async (kind, names) => {
+      if (!apiKey()) return // both read-throughs skip the cache without a key
+      await prefetchCacheRows(kind, names, cache)
     },
 
     searchArtists: async (query, limit = SEARCH_LIMIT) => {

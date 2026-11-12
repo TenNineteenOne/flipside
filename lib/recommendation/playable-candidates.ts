@@ -24,11 +24,14 @@ import { buildEnrichArtist, lastfmResolve } from "@/lib/artist-identity/lastfm-l
 import { searchTracksByArtist } from "@/lib/music-provider/itunes"
 import { getSpotifyTopTracks } from "@/lib/music-provider/spotify"
 import { snapshotCalls } from "@/lib/metrics/api-call-counter"
+import { lastfm } from "@/lib/lastfm"
 
 /** The outbound ports: Last.fm name lookup/enrichment, iTunes, Spotify top-tracks. */
 export interface PlayablePorts {
   searchArtists: ResolveDeps["searchArtists"]
   enrichArtist?: ResolveDeps["enrichArtist"]
+  /** Batch cache read-ahead for a resolve's lookups (no network). */
+  prefetch?: ResolveDeps["prefetch"]
   /** Live-lookup counter: lets the resolver skip its polite delay on cache hits. */
   liveCalls?: ResolveDeps["liveCalls"]
   searchItunes: ConfirmPreviewDeps["searchItunes"]
@@ -45,6 +48,7 @@ export function livePlayablePorts(accessToken: string): PlayablePorts {
   return {
     searchArtists: (name) => lastfmResolve(name),
     enrichArtist: buildEnrichArtist(),
+    prefetch: (names) => lastfm.prefetch("getInfo", names),
     // Both lookup ports are Last.fm getInfo; its counter ticks only on live calls.
     liveCalls: () => snapshotCalls().lastfm.getInfo,
     searchItunes: (name) => searchTracksByArtist(name, "US", 5),
@@ -61,6 +65,8 @@ export interface ResolveOpts {
   /** Resolver tuning (defaults: resolve-candidates' own). */
   concurrency?: number
   delayMs?: number
+  /** Abort = stop resolving further names (the run was discarded). */
+  signal?: AbortSignal
 }
 
 export class PlayableCandidates {
@@ -94,12 +100,14 @@ export class PlayableCandidates {
       concurrency: opts.concurrency,
       delayMs: opts.delayMs,
       liveCalls: this.ports.liveCalls,
+      prefetch: this.ports.prefetch,
+      signal: opts.signal,
     })
     const keep = opts.keep ?? (() => true)
     const artists = new Map([...stats.resolved].filter(([, a]) => keep(a)))
     // Warm positives skip iTunes entirely; fresh confirmed-empty negatives
     // short-circuit (dropped without a re-query).
-    await this.previews.rehydrate([...artists.values()].map((artist) => ({ artist })))
+    if (!opts.signal?.aborted) await this.previews.rehydrate([...artists.values()].map((artist) => ({ artist })))
     return { artists, stats }
   }
 

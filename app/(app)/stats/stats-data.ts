@@ -29,45 +29,33 @@ export interface StatsData {
  * rows.
  */
 export async function loadStats(supabase: SupabaseClient, userId: string): Promise<StatsData> {
-  const ids = (table: "recommendation_cache" | "feedback" | "saves", seenOnly = false) =>
+  const ids = (table: "recommendation_cache" | "saves", seenOnly = false) =>
     readAllRows<{ id: string; artist_id: string }>(() => {
       let q = supabase.from(table).select("id, artist_id").eq("user_id", userId)
       if (seenOnly) q = q.not("seen_at", "is", null)
       return q
     })
 
-  const [seenRows, feedbackRows, likesResult, dislikesResult, likedRows, savedRows] = await Promise.all([
+  // One feedback read (every row, incl. un-thumbed) feeds Discovered, the
+  // like/dislike counts and the liked ids, instead of four separate reads.
+  const [seenRows, feedbackRows, savedRows] = await Promise.all([
     ids("recommendation_cache", true),
-    ids("feedback"),
-    supabase
-      .from("feedback")
-      .select("*", { count: "exact", head: true })
-      .eq("user_id", userId)
-      .eq("signal", "thumbs_up")
-      .is("deleted_at", null),
-    supabase
-      .from("feedback")
-      .select("*", { count: "exact", head: true })
-      .eq("user_id", userId)
-      .eq("signal", "thumbs_down")
-      .is("deleted_at", null),
-    readAllRows<{ id: string; artist_id: string }>(() =>
-      supabase
-        .from("feedback")
-        .select("id, artist_id")
-        .eq("user_id", userId)
-        .eq("signal", "thumbs_up")
-        .is("deleted_at", null),
+    readAllRows<{ id: string; artist_id: string; signal: string; deleted_at: string | null }>(() =>
+      supabase.from("feedback").select("id, artist_id, signal, deleted_at").eq("user_id", userId),
     ),
     ids("saves"),
   ])
 
   // A failed read must not render as a smaller number: throw to the (app) error boundary.
-  const failed = [seenRows, feedbackRows, likesResult, dislikesResult, likedRows, savedRows].find((r) => r.error)
+  const failed = [seenRows, feedbackRows, savedRows].find((r) => r.error)
   if (failed?.error) throw new Error(`[stats] read failed: ${failed.error.message}`)
 
+  const live = feedbackRows.data.filter((r) => r.deleted_at == null)
+  const likedRows = live.filter((r) => r.signal === "thumbs_up")
+  const totalDislikes = live.filter((r) => r.signal === "thumbs_down").length
+
   const savedIds = new Set(savedRows.data.map((r) => r.artist_id))
-  const likedIds = new Set(likedRows.data.map((r) => r.artist_id))
+  const likedIds = new Set(likedRows.map((r) => r.artist_id))
   const discovered = new Set([...seenRows.data, ...feedbackRows.data, ...savedRows.data].map((r) => r.artist_id))
 
   const artists = new Map<string, { name: string; genres: string[] | null; popularity: number | null }>()
@@ -108,8 +96,8 @@ export async function loadStats(supabase: SupabaseClient, userId: string): Promi
   return {
     totalDiscovered: discovered.size,
     totalSaves: savedRows.data.length,
-    totalLikes: likesResult.count ?? 0,
-    totalDislikes: dislikesResult.count ?? 0,
+    totalLikes: likedRows.length,
+    totalDislikes,
     topGenres,
     savedArtists,
     likedArtists,

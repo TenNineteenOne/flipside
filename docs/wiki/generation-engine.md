@@ -25,11 +25,14 @@ Wander farther far pool (step 10).
 2. **Soften gate** (`runWithSoftening`) — if the run returns `count=0`, retry with
    `playThreshold+5`, then fall back to `sampleColdStartSeeds()` from
    `data/cold-start-seeds.json`. A tier-1 *write error* (`PipelineRun.writeError`) is not an
-   empty pool and never softens (#175 R7). Every run of one build shares one
+   empty pool and never softens (#175 R7). A zero-top run aborts its own far and bleed
+   resolves (an `AbortSignal` the resolver checks between names) so they stop competing
+   with the next run for the Last.fm gate and the DB. Every run of one build shares one
    `ArtistIdentity`, so a discarded run's still-running secondary resolve can't race the next
    run into duplicate mints (#175 F-E).
 3. **First-hop similarity** (`runPipeline`) — each seed →
-   `lastfm.similarArtists` → **Last.fm `artist.getSimilar`** (7-day cached).
+   `lastfm.similarArtists` → **Last.fm `artist.getSimilar`** (7-day cached; one batched
+   `lastfm_cache` read for all seeds, and one for the 2nd-hop names, via `lastfm.prefetch`).
    Optional 2nd hop (`runDeepHop`) when **Wander farther** (`users.adventurous`) is on — the
    route passes `deepDiscovery = adventurous` (#205; `deep_discovery` is retired).
    Under Wander farther the **far-pool fetch** (`startFarFetch` → `far-picks.ts`) is started
@@ -38,12 +41,17 @@ Wander farther far pool (step 10).
    candidates across seeds, lowest-match-first, so no mainstream seed floods the blocking
    slots.
 5. **Pool split** (`splitResolvePools`) — first **36** names = blocking pool, next **54** =
-   secondary (resolved later in `after()`). These caps (`resolve-pools.ts`) are the primary
-   latency knob.
+   secondary. The secondary resolve starts only once the run has a non-empty pick (after
+   step 9), so it never competes with the primary resolve for the Last.fm gate and a
+   zero-top run never pays for it; its confirm/write runs in `after()`. These caps
+   (`resolve-pools.ts`) are the primary latency knob.
 6. **Resolve** (`PlayableCandidates.resolve`, `playable-candidates.ts`) — the doorway
    (`ArtistIdentity`: name-cache → Last.fm `artist.getInfo` lookup → mint), keyed by the
-   input name. Concurrency 6, 125ms spacing for the blocking pool (and the bleed); the
-   spacing is skipped after a name whose getInfo came from cache (no live call). The resolved artist carries
+   input name. Concurrency 6 and **no per-worker spacing** for the blocking pool, the bleed
+   and the far pool (the Last.fm gate — 12 in flight, 20/s, 200 burst — is the one pacing
+   control; the old 125 ms spacing cost ~1.3 s per cold build). The background secondary
+   resolve keeps the resolver defaults (4 workers, 200 ms). Before the workers start, one
+   batched `lastfm_cache` read covers every miss's getInfo (`lastfm.prefetch`). The resolved artist carries
    its roster row's `spotify_id` and (when set) popularity — a name landing on a homonym's
    Spotify row keeps the Spotify fallback and scores on the row's popularity (#175 F-F).
 7. **Filter** (the `keep` gate, before rehydrate/confirm) — `Exclusions`
@@ -51,8 +59,10 @@ Wander farther far pool (step 10).
    #205; `users.play_threshold` is retired) by id or name key, thumbs-up
    or saved — Feed only, they never come back (D1, #175 F-B) — and the 7-day seen /
    dismissed cooldown), popularity>50 at fame level 0 ("Underground only"), optional genre filter.
-   Exclusions start loading before the first hop; listened + thumbs-down rows are read once
-   per build (`preloadExclusionRows`) and shared by every soften run.
+   Exclusions start loading before the seed gather: every exclusion read (listened,
+   thumbs-down, cooldown seen/skipped, thumbs-up, saves) runs once per build
+   (`preloadExclusionRows`) and is shared by every soften run; the gather reuses the same
+   thumbs-up read.
    Then **rehydrate** from `artist_tracks_cache` via `PreviewStore`.
 8. **Score** (`scoreCandidate` / `tierMultiplier`) —
    `k^popularity × 0.8 + seedRelevance × 0.2 − adventurousPenalty`, where `k` comes from
@@ -156,6 +166,12 @@ through `lib/artist-identity` (with `lastfm-lookup.ts` = `lastfmResolve`, `build
   `finish()` in `after()`.
 
 ## Gotchas worth knowing
+
+- **Cost bench:** `BENCH=1 npx vitest run lib/recommendation/engine.bench` drives a whole
+  build with the real Last.fm adapter (cache + gate) over 80 ms fake calls and 30 ms fake DB
+  queries, and prints live calls / DB round trips / tier-1 wall-clock per scenario. Most
+  remaining DB round trips on a cold build are the doorway's per-miss by-name SELECT +
+  INSERT; batching them needs a unique index on name-only `artists` rows (D2, #168).
 
 - `FIRST_BATCH_TARGET = 8` is hardcoded; not per-user settable.
 - `chain-walker.ts` (speculative multi-hop BFS) was deleted 2026-07-11 — it had zero callers.

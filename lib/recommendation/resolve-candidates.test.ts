@@ -451,3 +451,24 @@ describe("resolveArtistsByName", () => {
     })
   })
 })
+
+describe("resolveArtistsByName — prefetch + abort", () => {
+  it("prefetches every miss once before searching, and stops taking names once aborted", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {})
+    const prefetch = vi.fn(async () => {})
+    const ctrl = new AbortController()
+    const search = vi.fn(async (name: string): Promise<Artist[] | RateLimited> => {
+      ctrl.abort() // the run is discarded after the first lookup
+      return [artist(`id-${name}`, name)]
+    })
+    const r = await resolveArtistsByName(["Hit", "A", "B", "C"], {
+      ...makeDeps({ search, cache: new Map([["hit", artist("id-hit", "Hit")]]) }),
+      concurrency: 1,
+      prefetch,
+      signal: ctrl.signal,
+    })
+    expect(prefetch).toHaveBeenCalledExactlyOnceWith(["A", "B", "C"])
+    expect(search).toHaveBeenCalledTimes(1)
+    expect([...r.resolved.keys()]).toEqual(["Hit", "A"])
+  })
+})

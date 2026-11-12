@@ -110,6 +110,11 @@ type QueryRows<T> = PromiseLike<{ data: T[] | null }>
 export interface PreloadedRows {
   listened?: QueryRows<{ artist_id: string | null; play_count?: number | null; lastfm_artist_name?: string | null }>
   thumbsDown?: QueryRows<{ artist_id: string }>
+  /** Cooldown rows (seen within 7 days of the preload, and skipped); thumbs-up + saves (used when `policy.liked`). */
+  seen?: QueryRows<{ artist_id: string }>
+  skipped?: QueryRows<{ artist_id: string }>
+  thumbsUp?: QueryRows<{ artist_id: string }>
+  saved?: QueryRows<{ artist_id: string }>
 }
 
 export async function loadExclusions(
@@ -119,28 +124,14 @@ export async function loadExclusions(
   now: Date = new Date(),
   preloaded: PreloadedRows = {},
 ): Promise<Exclusions> {
-  const cooldownStart = new Date(now.getTime() - COOLDOWN_DAYS * DAY_MS).toISOString()
   const none = Promise.resolve({ data: [] as { artist_id: string }[] })
   const [listened, thumbsDown, seen, skipped, thumbsUp, saved] = await Promise.all([
     preloaded.listened ?? readListened(supabase, userId),
     preloaded.thumbsDown ?? readFeedbackIds(supabase, userId, "thumbs_down"),
-    readAllRows<{ id: string; artist_id: string }>(() =>
-      supabase
-        .from("recommendation_cache")
-        .select("id, artist_id")
-        .eq("user_id", userId)
-        .not("seen_at", "is", null)
-        .gte("seen_at", cooldownStart),
-    ),
-    readAllRows<{ id: string; artist_id: string }>(() =>
-      supabase.from("recommendation_cache").select("id, artist_id").eq("user_id", userId).not("skip_at", "is", null),
-    ),
-    policy.liked ? readFeedbackIds(supabase, userId, "thumbs_up") : none,
-    policy.liked
-      ? readAllRows<{ id: string; artist_id: string }>(() =>
-          supabase.from("saves").select("id, artist_id").eq("user_id", userId),
-        )
-      : none,
+    preloaded.seen ?? readSeen(supabase, userId, now),
+    preloaded.skipped ?? readSkipped(supabase, userId),
+    policy.liked ? (preloaded.thumbsUp ?? readFeedbackIds(supabase, userId, "thumbs_up")) : none,
+    policy.liked ? (preloaded.saved ?? readSaved(supabase, userId)) : none,
   ])
 
   const listenedIds = new Set<string>()
@@ -168,15 +159,48 @@ export async function loadExclusions(
 }
 
 /**
- * Start the policy-independent reads (every listened row + active thumbs-down)
- * once, to share across several `loadExclusions` calls via `preloaded` — e.g.
- * the Feed's softening reruns, which differ only in play threshold.
+ * Start every policy-independent read once (listened, thumbs-down, the cooldown
+ * rows as of `now`, thumbs-up, saves), to share across several
+ * `loadExclusions` calls via `preloaded` — e.g. the Feed's softening reruns,
+ * which differ only in play threshold — and with the seed gather (thumbs-up).
  */
 export function preloadExclusionRows(
   supabase: Pick<SupabaseClient, "from">,
   userId: string,
-): Required<PreloadedRows> {
-  return { listened: readListened(supabase, userId), thumbsDown: readFeedbackIds(supabase, userId, "thumbs_down") }
+  now: Date = new Date(),
+): Required<PreloadedRows> & { thumbsUp: ReturnType<typeof readFeedbackIds> } {
+  return {
+    listened: readListened(supabase, userId),
+    thumbsDown: readFeedbackIds(supabase, userId, "thumbs_down"),
+    seen: readSeen(supabase, userId, now),
+    skipped: readSkipped(supabase, userId),
+    thumbsUp: readFeedbackIds(supabase, userId, "thumbs_up"),
+    saved: readSaved(supabase, userId),
+  }
+}
+
+function readSeen(supabase: Pick<SupabaseClient, "from">, userId: string, now: Date) {
+  const cooldownStart = new Date(now.getTime() - COOLDOWN_DAYS * DAY_MS).toISOString()
+  return readAllRows<{ id: string; artist_id: string }>(() =>
+    supabase
+      .from("recommendation_cache")
+      .select("id, artist_id")
+      .eq("user_id", userId)
+      .not("seen_at", "is", null)
+      .gte("seen_at", cooldownStart),
+  )
+}
+
+function readSkipped(supabase: Pick<SupabaseClient, "from">, userId: string) {
+  return readAllRows<{ id: string; artist_id: string }>(() =>
+    supabase.from("recommendation_cache").select("id, artist_id").eq("user_id", userId).not("skip_at", "is", null),
+  )
+}
+
+function readSaved(supabase: Pick<SupabaseClient, "from">, userId: string) {
+  return readAllRows<{ id: string; artist_id: string }>(() =>
+    supabase.from("saves").select("id, artist_id").eq("user_id", userId),
+  )
 }
 
 function readListened(supabase: Pick<SupabaseClient, "from">, userId: string) {

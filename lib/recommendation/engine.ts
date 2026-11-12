@@ -36,13 +36,16 @@ export function withinBudget<T>(p: Promise<T>, ms: number): Promise<T | undefine
 }
 
 /**
- * Resolver tuning (safe-C). Conservative bump over the resolver defaults
- * (concurrency 4 / delay 200ms). The resolver has 429 backoff with a budget,
- * so over-tuning degrades to slower, never empty. Validate the measured 429
- * rate via the [gen-timing] rl/retries fields before going higher.
+ * Resolver tuning for the blocking resolves (primary, bleed, far). No
+ * per-worker delay: every lookup is a Last.fm getInfo behind the shared
+ * Last.fm gate (12 in flight, 20/s, 200 burst — lib/lastfm/limit.ts), which is
+ * the one pacing control. The old 125 ms spacing (a Spotify-era 429 guard)
+ * added ~1.3 s to a cold build (2026-11-12 bench). A Last.fm throttle surfaces
+ * as a getInfo failure (uncached, name dropped), not as `rl`/`retries`.
+ * The background secondary resolve keeps the resolver defaults (4 / 200 ms).
  */
 const RESOLVE_CONCURRENCY = 6
-const RESOLVE_DELAY_MS = 125
+const RESOLVE_DELAY_MS = 0
 
 /**
  * Return the popularity-tier multiplier for a Spotify popularity value (0–100).
@@ -60,7 +63,9 @@ type SupabaseClient = ReturnType<typeof createServiceClient>
 
 async function gatherSeedContext(
   userId: string,
-  supabase: SupabaseClient
+  supabase: SupabaseClient,
+  /** The build's preloaded thumbs-up read (shared with the exclusions). */
+  thumbsUp: ReturnType<typeof readFeedbackIds>,
 ): Promise<{ seedNames: string[]; pinnedSeeds: string[]; userGenres: string[] }> {
   const [dbSeeds, thumbsUpRows, userRow] = await Promise.all([
     supabase
@@ -72,7 +77,7 @@ async function gatherSeedContext(
     // Fetch the full thumbs-up set; sampling is applied below via
     // sampleLikes() so the Feed draws a stable 10 random likes within a
     // cache window. See docs/prd-diversity-overhaul.md (M1).
-    readFeedbackIds(supabase, userId, 'thumbs_up').then(({ data }) =>
+    thumbsUp.then(({ data }) =>
       data.map((r) => r.artist_id).filter(Boolean)
     ),
 
@@ -184,15 +189,17 @@ export function buildRoundRobinNames(
 export async function runDeepHop(
   firstHop: { seed: string; items: SimilarArtistRef[] }[],
   fetchSimilar: (name: string) => Promise<SimilarArtistRef[]>,
-  hopsPerSeed = 3
+  hopsPerSeed = 3,
+  /** Batch cache read-ahead for every hop name. Best-effort. */
+  prefetch?: (names: string[]) => Promise<void>,
 ): Promise<{ seed: string; items: SimilarArtistRef[] }[]> {
   const bySeed = new Map<string, SimilarArtistRef[]>()
   for (const { seed, items } of firstHop) bySeed.set(seed, [...items])
 
+  const hopsOf = (items: SimilarArtistRef[]) => [...items].sort((a, b) => a.match - b.match).slice(0, hopsPerSeed)
+  await prefetch?.(firstHop.flatMap(({ items }) => hopsOf(items).map((i) => i.name))).catch(() => {})
   const tasks = firstHop.flatMap(({ seed, items }) =>
-    [...items]
-      .sort((a, b) => a.match - b.match)
-      .slice(0, hopsPerSeed)
+    hopsOf(items)
       .map(async (niche) => ({
         parentSeed: seed,
         hopItems: await fetchSimilar(niche.name),
@@ -554,6 +561,10 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
   // once by finish() (in after()) so a single batch-upsert covers all three phases.
   const candidates = new PlayableCandidates(supabase, livePlayablePorts(accessToken), o.identity)
   const flush = () => candidates.flush()
+  // A zero-top run is discarded by softening: abort its far/bleed resolves so
+  // they stop competing with the next run for the Last.fm gate and the DB.
+  const discard = new AbortController()
+  const signal = discard.signal
 
   const widenSeedCap = userGenres.length >= ADAPTIVE_BROADEN_THRESHOLD
   const seedCap = widenSeedCap ? 15 : 10
@@ -580,6 +591,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
   void exclusionsPromise.catch(() => {}) // an early-failing run never awaits it
 
   const similarStart = Date.now()
+  await lastfm.prefetch('similar', capSeedNames) // one cache SELECT for every seed
   const firstHop = await Promise.all(
     capSeedNames.map(async (name) => ({
       seed: name,
@@ -588,7 +600,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
   )
 
   const lfmRefResults = deepDiscovery
-    ? await runDeepHop(firstHop, (n) => lastfm.similarArtists(n))
+    ? await runDeepHop(firstHop, (n) => lastfm.similarArtists(n), 3, (names) => lastfm.prefetch('similar', names))
     : firstHop
   const similarMs = Date.now() - similarStart
 
@@ -651,22 +663,17 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
         farMs = ms
         for (const f of names) farLabels.set(f.name.toLowerCase(), f.label)
         if (names.length === 0) return null
-        return (await candidates.resolve(names.map((f) => f.name), { keep: (a) => feedKeeps(a) && notSeed(a) })).artists
+        return (await candidates.resolve(names.map((f) => f.name), {
+          keep: (a) => feedKeeps(a) && notSeed(a),
+          concurrency: RESOLVE_CONCURRENCY,
+          delayMs: RESOLVE_DELAY_MS,
+          signal,
+        })).artists
       }).catch((err) => {
         console.error(`[engine] far_resolve_fail source=${source} err=${err instanceof Error ? err.message : err}`)
         return null
       })
     : null
-  // Fire the secondary resolution in parallel with primary. It's still best-
-  // effort and its confirm/write happens later in `runSecondary` (from an
-  // `after()` block), but the Last.fm round-trips overlap with the primary
-  // resolve instead of waiting for it to finish first. Gated + rehydrated by
-  // the same pipeline, so the backfill reserve and the secondary tier both
-  // arrive filtered and warm.
-  const secondaryResolvePromise = secondaryNames.length === 0
-    ? null
-    : candidates.resolve(secondaryNames, { keep: (a) => feedKeeps(a) })
-
   // Adjacent-genre bleed, phase 1 (tag fetch + resolve), runs alongside the
   // primary resolve: it needs only the user's genres and the exclusions.
   // Skipped when the user has filtered to one genre (?genre=X) — we respect
@@ -687,6 +694,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
             keep: (a) => !exclusions.reason(a) && notSeed(a),
             concurrency: RESOLVE_CONCURRENCY,
             delayMs: RESOLVE_DELAY_MS,
+            signal,
           })).artists,
       // The primary and secondary pools already resolve these names; scoring
       // drops any the base holds anyway.
@@ -774,8 +782,19 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
       `uniq=${uniqueNames.length} ok=${resolved.searchOk} fail=${resolved.searchFail} ` +
       `filtListened=${filtListenedIds.size} cands=${candsCount} source=${source}`
     )
+    discard.abort()
     return { count: 0, runSecondary: null, flush, metrics: { primaryMs: Date.now() - primaryStart, previewMs, firstBatchMs: 0, misses: resolved.cacheMisses, retries: resolved.searchRetries, rateLimited: resolved.rateLimited, similarMs, exclusionsMs } }
   }
+
+  // The secondary resolve starts once the run has a pick (a zero-top run never
+  // pays for it), so it doesn't compete with the primary resolve for the
+  // Last.fm gate. It's best-effort: confirmed/written in `runSecondary` (from
+  // `after()`), and awaited on the blocking path only by the backfill below.
+  // Gated + rehydrated by the same pipeline, so the backfill reserve and the
+  // secondary tier both arrive filtered and warm.
+  const secondaryResolvePromise = secondaryNames.length === 0
+    ? null
+    : candidates.resolve(secondaryNames, { keep: (a) => feedKeeps(a) })
 
   // Adjacent-genre bleed, phase 2: merge into the pick (positions past the
   // top relevance picks only).
@@ -1205,7 +1224,7 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
   const preloadedRows = preloadExclusionRows(supabase, userId)
   for (const rows of Object.values(preloadedRows)) void Promise.resolve(rows).catch(() => {}) // awaited by the runs
   const gatherStart = Date.now()
-  const { seedNames, pinnedSeeds, userGenres } = await gatherSeedContext(userId, supabase)
+  const { seedNames, pinnedSeeds, userGenres } = await gatherSeedContext(userId, supabase, preloadedRows.thumbsUp)
   const gatherMs = Date.now() - gatherStart
   const withGather = (r: BuildResult): BuildResult => ({ ...r, metrics: { ...r.metrics, gatherMs } })
   const identity = new ArtistIdentity(supabase)

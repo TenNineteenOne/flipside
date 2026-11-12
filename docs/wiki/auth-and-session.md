@@ -87,7 +87,9 @@ Idempotent (already-encrypted passes through). One-time backfill:
   `NEXT_PUBLIC_APP_URL`, `VERCEL_URL`, `VERCEL_PROJECT_PRODUCTION_URL`). **Fails closed**
   in production when no origins configured.
 - **Request-scoped user cache** (`lib/user-cache.ts`): `getCachedUser(userId)` is
-  `React.cache()`-wrapped so the `users` row is fetched once per render pass.
+  `React.cache()`-wrapped so the `users` row is fetched once per render pass (layout and page
+  render concurrently and share it). It selects only the columns its callers read
+  (`USER_COLUMNS`); a new caller needing another column adds it there.
 
 ## Supabase clients (`lib/supabase/`)
 

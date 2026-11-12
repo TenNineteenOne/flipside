@@ -831,7 +831,7 @@ describe("buildRecommendations — adjacent bleed resolve (perf)", () => {
     await result.finish()
 
     expect(opts.bleed).toEqual(opts.primary)
-    expect(opts.primary).toEqual({ concurrency: 6, delayMs: 125 })
+    expect(opts.primary).toEqual({ concurrency: 6, delayMs: 0 })
     expect(events.indexOf("start:bleed")).toBeGreaterThan(-1)
     expect(events.indexOf("start:bleed")).toBeLessThan(events.indexOf("end:primary"))
     expect(cacheRows().some((r) => r.source === "adjacent_bleed")).toBe(true)

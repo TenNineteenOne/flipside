@@ -10,7 +10,7 @@ export const GET = withAuthedRoute(async ({ userId }) => {
   const supabase = createServiceClient()
   const { data, error } = await supabase
     .from("seed_artists")
-    .select("artist_id, name, image_url, added_at")
+    .select("artist_id, name, image_url")
     .eq("user_id", userId)
     .order("added_at", { ascending: true })
 

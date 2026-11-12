@@ -98,6 +98,11 @@ export async function loadFeedCards(
 ): Promise<CardArtist[]> {
   const renderable = rows.filter(isRenderableRow)
   if (renderable.length === 0) return []
-  const tracksByArtistId = await new PreviewStore(supabase).readForDisplay(renderable.map((r) => r.artist_id))
+  // Only legacy rows without baked previews consult the tracks cache; when every
+  // row is baked (#134) readForDisplay([]) skips the query entirely.
+  const legacyIds = renderable
+    .filter((r) => !((r.artist_data as ArtistDataRow).topTracks?.length))
+    .map((r) => r.artist_id)
+  const tracksByArtistId = await new PreviewStore(supabase).readForDisplay(legacyIds)
   return assembleFeedCards(renderable, tracksByArtistId)
 }

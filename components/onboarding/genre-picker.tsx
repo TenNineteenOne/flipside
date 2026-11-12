@@ -2,13 +2,16 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { ChevronDown, ChevronUp, Search, X } from "lucide-react"
-// The slim tree (lib/genre/picker-data.ts): the full data/genres.json is 3.3 MB and stays server-side.
+// The slim tree in its compact encoding (lib/genre/picker-data.ts): the full data/genres.json is 3.3 MB
+// and stays server-side. Every importer loads this module lazily (next/dynamic), so the data never
+// reaches a route's first-load JS.
 import genreData from "@/data/genres-picker.json"
+import { decodePickerTree, type PickerData } from "@/lib/genre/picker-data"
 import type { GenreNode } from "@/lib/types"
 import { normalizeGenre } from "@/lib/genre/normalize"
 import { createGenreGraph } from "@/lib/genre/genre-graph"
 
-export const ALL_GENRES: GenreNode[] = (genreData as { nodes: GenreNode[] }).nodes
+export const ALL_GENRES: GenreNode[] = decodePickerTree(genreData as PickerData)
 const { adjacentGenres } = createGenreGraph(ALL_GENRES)
 
 function countSelectedInTree(node: GenreNode, selectedIds: Set<string>): number {

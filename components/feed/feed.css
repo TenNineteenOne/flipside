@@ -26,7 +26,7 @@
 .ev-feed .ev-card-name, .ev-feed .ev-card-genres, .ev-feed .ev-card-why, .ev-feed .ev-m-name, .ev-feed .ev-m-why,
 .ev-feed .ev-row-name, .ev-feed .ev-m-thumb-text, .ev-feed .ev-end-title, .ev-feed .ev-end-body, .ev-feed .ev-player-text,
 [data-sonner-toast].ev-toast { overflow-wrap: anywhere; }
-.ev-feed .ev-card-hero, .ev-feed .ev-card-id, .ev-feed .ev-tuning, .ev-feed .ev-tune-group { min-width: 0; }
+.ev-feed .ev-card-hero, .ev-feed .ev-tuning, .ev-feed .ev-tune-group { min-width: 0; }
 .ev-feed :focus-visible { outline: 2px solid var(--violet-ink); outline-offset: 2px; border-radius: 6px; }
 
 .ev-feed .ev-btn {

@@ -3,12 +3,12 @@ import full from "@/data/genres.json"
 import slim from "@/data/genres-picker.json"
 import type { GenreNode } from "@/lib/types"
 import { createGenreGraph } from "./genre-graph"
-import { slimGenreTree } from "./picker-data"
+import { decodePickerTree, encodePickerTree, slimGenreTree, type PickerData } from "./picker-data"
 import { ALL_GENRES } from "@/components/onboarding/genre-picker"
 import { buildTagLookup } from "@/components/settings/library-editor"
 
 const FULL = (full as { nodes: GenreNode[] }).nodes
-const SLIM = (slim as { nodes: GenreNode[] }).nodes
+const SLIM = decodePickerTree(slim as PickerData)
 
 function* walk(nodes: GenreNode[], anchor?: GenreNode): Generator<{ node: GenreNode; anchor: GenreNode }> {
   for (const n of nodes) {
@@ -19,11 +19,15 @@ function* walk(nodes: GenreNode[], anchor?: GenreNode): Generator<{ node: GenreN
 
 describe("data/genres-picker.json", () => {
   it("is in sync with data/genres.json (run `npm run build:genres-picker`)", () => {
+    expect(slim).toEqual(encodePickerTree(slimGenreTree(FULL)))
+  })
+
+  it("decodes to exactly the slim tree", () => {
     expect(SLIM).toEqual(slimGenreTree(FULL))
   })
 
   it("is what the genre picker ships", () => {
-    expect(ALL_GENRES).toBe(SLIM)
+    expect(ALL_GENRES).toEqual(SLIM)
   })
 
   it("keeps every field the picker and the graph read, node for node", () => {

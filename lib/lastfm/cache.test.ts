@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest"
 import {
   cachedArtistEnrichment,
   cachedArtistSearch,
+  prefetchCacheRows,
   type CacheStore,
 } from "./cache"
 import type { ArtistEnrichment } from "./types"
@@ -202,5 +203,35 @@ describe("cache writes are write-behind", () => {
     await new Promise((r) => setTimeout(r, 0))
     expect(spy).toHaveBeenCalledWith(expect.stringContaining("[lfm-cache] write failed kind=search err=db down"))
     spy.mockRestore()
+  })
+})
+
+describe("prefetchCacheRows", () => {
+  it("one readMany serves each prefetched key's next read; later reads go to the store", async () => {
+    const store = memStore()
+    store.rows.set("getInfo:a", { payload: { genres: ["jazz"], popularity: 40 }, fetched_at: new Date().toISOString() })
+    const readMany = vi.fn(async (kind: string, keys: string[]) =>
+      new Map(keys.flatMap((k) => { const r = store.rows.get(`${kind}:${k}`); return r ? [[k, r] as const] : [] })),
+    )
+    const read = vi.spyOn(store, "read")
+    const s: CacheStore = { ...store, read: store.read.bind(store), readMany }
+    await prefetchCacheRows("getInfo", ["A", "B"], s)
+    expect(readMany).toHaveBeenCalledExactlyOnceWith("getInfo", ["a", "b"])
+
+    const fetchFn = vi.fn(async (): Promise<ArtistEnrichment | null> => ({ genres: ["rock"], popularity: 10 }))
+    expect(await cachedArtistEnrichment("A", fetchFn, s)).toEqual({ genres: ["jazz"], popularity: 40 }) // prefetched hit
+    expect(await cachedArtistEnrichment("B", fetchFn, s)).toEqual({ genres: ["rock"], popularity: 10 }) // prefetched miss → live
+    expect(read).not.toHaveBeenCalled()
+    await cachedArtistEnrichment("A", fetchFn, s) // consumed: a normal read now
+    expect(read).toHaveBeenCalledTimes(1)
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+  })
+
+  it("a failed readMany leaves the per-key reads as before", async () => {
+    const store = memStore()
+    const s: CacheStore = { ...store, read: vi.fn(store.read), readMany: async () => { throw new Error("db down") } }
+    await prefetchCacheRows("similar", ["X", "Y"], s)
+    await cachedArtistEnrichment("X", async () => null, s)
+    expect(s.read).toHaveBeenCalledTimes(1)
   })
 })

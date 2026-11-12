@@ -26,6 +26,8 @@ interface CacheRow {
 export interface CacheStore {
   read(kind: Kind, key: string): Promise<CacheRow | null>
   write(kind: Kind, key: string, payload: unknown): Promise<void>
+  /** Many keys of one kind in one round trip (absent keys omitted). Optional: without it, prefetch is a no-op. */
+  readMany?(kind: Kind, keys: string[]): Promise<Map<string, CacheRow>>
 }
 
 async function readCacheRow(kind: Kind, key: string): Promise<CacheRow | null> {
@@ -58,10 +60,75 @@ async function writeCacheRow(kind: Kind, key: string, payload: unknown): Promise
   }
 }
 
+/** PostgREST encodes `.in()` into the URL; names are short, but keep chunks modest. */
+const READ_MANY_CHUNK = 100
+
+async function readCacheRows(kind: Kind, keys: string[]): Promise<Map<string, CacheRow>> {
+  const out = new Map<string, CacheRow>()
+  const supabase = createServiceClient()
+  for (let i = 0; i < keys.length; i += READ_MANY_CHUNK) {
+    const { data, error } = await supabase
+      .from('lastfm_cache')
+      .select('key, payload, fetched_at')
+      .eq('kind', kind)
+      .in('key', keys.slice(i, i + READ_MANY_CHUNK))
+    if (error) throw new Error(error.message)
+    for (const r of (data ?? []) as Array<CacheRow & { key: string }>) out.set(r.key, r)
+  }
+  return out
+}
+
 // Default durable store: the shared Supabase `lastfm_cache` table.
 const supabaseStore: CacheStore = {
   read: readCacheRow,
   write: writeCacheRow,
+  readMany: readCacheRows,
+}
+
+// Rows read ahead by `prefetchCacheRows`, per store: each is consumed by the
+// next read of its key, and only within PREFETCH_TTL_MS (stale entries are
+// swept on the next prefetch, so abandoned ones can't pile up).
+const PREFETCH_TTL_MS = 60_000
+const prefetched = new WeakMap<CacheStore, Map<string, { row: CacheRow | null; at: number }>>()
+
+/**
+ * Read many cache rows of one kind in ONE round trip ahead of the per-key
+ * read-throughs (a resolve batch's getInfo misses, a build's seed similars).
+ * Each later read of a prefetched key skips its own SELECT. Best-effort: a
+ * failed prefetch leaves the per-key reads to run as before. `keys` are names;
+ * they are lowercased like the read-throughs' cache keys.
+ */
+export async function prefetchCacheRows(
+  kind: 'getInfo' | 'similar',
+  keys: string[],
+  store: CacheStore = supabaseStore,
+): Promise<void> {
+  if (!store.readMany) return
+  let memo = prefetched.get(store)
+  if (!memo) prefetched.set(store, (memo = new Map()))
+  const now = Date.now()
+  for (const [k, v] of memo) if (now - v.at >= PREFETCH_TTL_MS) memo.delete(k)
+  const want = [...new Set(keys.map((k) => k.toLowerCase()))].filter((k) => !memo.has(`${kind}|${k}`))
+  if (want.length < 2) return // one key: the read-through's own SELECT costs the same
+  let rows: Map<string, CacheRow>
+  try {
+    rows = await store.readMany(kind, want)
+  } catch {
+    return
+  }
+  const at = Date.now()
+  for (const k of want) memo.set(`${kind}|${k}`, { row: rows.get(k) ?? null, at })
+}
+
+/** The read-through's row: a fresh prefetched one (consumed), else the store's own read. */
+function readRow(store: CacheStore, kind: Kind, key: string): Promise<CacheRow | null> {
+  const memo = prefetched.get(store)
+  const hit = memo?.get(`${kind}|${key}`)
+  if (hit) {
+    memo!.delete(`${kind}|${key}`)
+    if (Date.now() - hit.at < PREFETCH_TTL_MS) return Promise.resolve(hit.row)
+  }
+  return store.read(kind, key)
 }
 
 /**
@@ -139,7 +206,7 @@ export async function cachedSimilarArtistNames(
   if (inflight) return inflight
 
   const promise = (async () => {
-    const row = await store.read('similar', cacheKey)
+    const row = await readRow(store, 'similar', cacheKey)
     if (row && freshWithin(row, TTL_MS) && Array.isArray(row.payload)) {
       return row.payload as SimilarArtistRef[]
     }
@@ -174,7 +241,7 @@ export async function cachedArtistEnrichment(
   if (inflight) return inflight
 
   const promise = (async () => {
-    const row = await store.read('getInfo', cacheKey)
+    const row = await readRow(store, 'getInfo', cacheKey)
     if (row) {
       const isNegative = row.payload === null
       const ttl = isNegative ? NEG_TTL_MS : TTL_MS

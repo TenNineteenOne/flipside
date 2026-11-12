@@ -49,6 +49,7 @@ export function createFakeLastfm(): FakeLastfm {
       const key = name.toLowerCase()
       return fake.enrichment.has(key) ? fake.enrichment.get(key)! : { genres: ["indie"], popularity: 30 }
     },
+    async prefetch() {},
     async searchArtists() {
       return []
     },

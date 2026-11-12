@@ -210,8 +210,10 @@ export function ensureCurrentChallenge(
       .map((r) => r.artist_id)
       .filter((id): id is string => id != null)
     const genresById = new Map<string, string[]>()
-    for (let i = 0; i < listenedIds.length; i += 200) {
-      const { data } = await supabase.from('artists').select('id, genres').in('id', listenedIds.slice(i, i + 200))
+    const chunks: string[][] = []
+    for (let i = 0; i < listenedIds.length; i += 200) chunks.push(listenedIds.slice(i, i + 200))
+    const reads = await Promise.all(chunks.map((ids) => supabase.from('artists').select('id, genres').in('id', ids)))
+    for (const { data } of reads) {
       for (const row of data ?? []) genresById.set(row.id as string, (row.genres as string[] | null) ?? [])
     }
     return buildApplicabilityCtx({

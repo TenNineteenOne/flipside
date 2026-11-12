@@ -4,7 +4,7 @@ import dynamic from "next/dynamic"
 import type { SpotifyArtist } from "@/components/onboarding/artist-search"
 
 // Client-only and split out: LibraryEditor pulls in the genre picker tree
-// (data/genres-picker.json, ~780 kB raw), which shouldn't block Settings'
+// (data/genres-picker.json, ~66 kB gzip), which shouldn't block Settings'
 // first load. It maps saved tags to nodes on mount, so it must not mount
 // before that data exists; loading the whole editor lazily keeps that true.
 const LibraryEditor = dynamic(
