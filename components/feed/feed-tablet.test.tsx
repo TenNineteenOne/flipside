@@ -51,8 +51,8 @@ describe("FeedTablet server render", () => {
     expect(rows[2]).toMatch(/aria-current="true"[^>]*aria-label="Glass Beams"/)
     expect(html).toContain("class=\"ev-m-thumb-badge\"")
     expect(html).toContain("class=\"ev-m-thumb-x\"")
-    // "Load more artists" is always the last item of Up next.
-    expect(html).toMatch(/<li class="ev-m-rail-more"><button type="button" class="ev-btn ev-btn-ghost">Load more artists<\/button><\/li><\/ol>/)
+    // "Regenerate" is always the last item of Up next.
+    expect(html).toMatch(/<li class="ev-m-rail-more"><button type="button" class="ev-btn ev-regen">Regenerate<\/button><\/li><\/ol>/)
   })
 
   it("the end state takes the card's place when nothing is left", () => {

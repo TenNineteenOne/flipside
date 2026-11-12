@@ -63,7 +63,7 @@ export function EndState({ triage, onLoadMore, generating }: { triage: FeedTriag
         {counts.liked} liked, {counts.passed} less like this, {counts.dismissed} dismissed.
       </p>
       <div className="ev-end-actions">
-        <LoadMore onLoadMore={onLoadMore} generating={generating} primary />
+        <LoadMore onLoadMore={onLoadMore} generating={generating} />
         {remaining > 0
           ? <button type="button" className="ev-btn ev-btn-ghost" onClick={() => select(firstUndecided(ids, signals))}>Rate the rest</button>
           : <Link className="ev-btn ev-btn-ghost" href="/saved">Review saved</Link>}
@@ -73,17 +73,17 @@ export function EndState({ triage, onLoadMore, generating }: { triage: FeedTriag
 }
 
 /**
- * "Load more artists": the end state's primary button, and always available at the end of the queue /
- * Up next list (the queue header uses a shorter `label`). While generating it is aria-disabled (not
- * disabled), so keyboard focus stays on it; clicks are ignored.
+ * "Regenerate" (rainbow): the end state's main button, the desktop queue header's, and always available
+ * at the end of the queue / Up next list. While generating it is aria-disabled (not disabled), so keyboard
+ * focus stays on it; clicks are ignored.
  */
-export function LoadMore({ onLoadMore, generating, primary = false, label = "Load more artists" }: {
-  onLoadMore: () => void; generating: boolean; primary?: boolean; label?: string
+export function LoadMore({ onLoadMore, generating, label = "Regenerate" }: {
+  onLoadMore: () => void; generating: boolean; label?: string
 }) {
   return (
     <button
       type="button"
-      className={`ev-btn ${primary ? "ev-btn-primary" : "ev-btn-ghost"}`}
+      className="ev-btn ev-regen"
       onClick={generating ? undefined : onLoadMore}
       aria-disabled={generating || undefined}
     >

@@ -84,7 +84,7 @@ export function FeedDesktop({ triage, onLoadMore, generating, challenge, onShown
           </div>
           <div className="ev-wander-bar">
             <div className="ev-wander-chal">{challenge}</div>
-            <div className="ev-wander-ctl"><LoadMore onLoadMore={onLoadMore} generating={generating} label="Load more" primary /></div>
+            <div className="ev-wander-ctl"><LoadMore onLoadMore={onLoadMore} generating={generating} /></div>
           </div>
         </header>
 

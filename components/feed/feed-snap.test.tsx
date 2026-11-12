@@ -74,16 +74,16 @@ describe("FeedSnap server render", () => {
     // The liked card's own More button reads as pressed.
     expect(html).toMatch(/aria-pressed="true" aria-label="Liked"[^>]*>.*?<span>Liked<\/span>/)
     expect(html).toContain("You’ve heard all 3.")
-    expect(html).toContain("Load more artists")
+    expect(html).toContain(">Regenerate</button>")
   })
 
-  it("the end page with Load more is there even while artists are unrated", () => {
+  it("the end page with Regenerate is there even while artists are unrated", () => {
     const html = render(artists, new Map([["a", "thumbs_up"]]))
     const pages = [...html.matchAll(/<section class="ev-m-page" data-id="([^"]+)"/g)].map((m) => m[1])
     expect(pages).toEqual(["a", "b", "c", "__end"])
     expect(html).toContain("2 not rated yet.")
     expect(html).toContain("Rate the rest")
-    expect(html).toContain("Load more artists")
+    expect(html).toContain(">Regenerate</button>")
   })
 })
 

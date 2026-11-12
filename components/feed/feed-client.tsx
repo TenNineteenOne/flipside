@@ -8,7 +8,9 @@ import { FeedSkeleton } from "@/components/feed/feed-skeleton"
 import { ChallengeSkeleton, ChallengeSlot, type ChallengePayload } from "@/components/feed/challenge-strip"
 import { useShellBadge } from "@/components/shell/shell-context"
 import type { MusicPlatform } from "@/lib/music-links"
-import { useFeedFill } from "@/lib/hooks/use-feed-fill"
+import { firstUndecided } from "@/lib/feed/triage-queue"
+import { isPlayable, useFeedFill } from "@/lib/hooks/use-feed-fill"
+import { localDay, readRegenSkip, RegenerateDialog, shouldConfirm, writeRegenSkip } from "@/components/feed/regenerate-dialog"
 import { useFeedGeneration } from "@/lib/hooks/use-feed-generation"
 import { useFeedTriage } from "@/lib/hooks/use-feed-triage"
 import type { CardArtist } from "@/lib/cards/card-artist"
@@ -151,6 +153,8 @@ export function FeedClient({ recommendations, musicPlatform, initialLayout = "ph
   // Selection, verdicts (feedback signals), saves and playback, shared by all
   // layouts (so resizing keeps them). Serialization and rollback live in the feedback/saves hooks.
   const triage = useFeedTriage(recs, musicPlatform)
+  const triageRef = useRef(triage)
+  useEffect(() => { triageRef.current = triage })
   const { savedIds } = triage
 
   // Saved badge in the rail / tab bar: artists saved since the feed opened.
@@ -183,19 +187,48 @@ export function FeedClient({ recommendations, musicPlatform, initialLayout = "ph
     }
   }, [mounted])
 
-  async function handleGenerateMore() {
-    const r = await generation.requestMore()
+  /**
+   * Regenerate: the server swaps the unrated queue for a fresh batch (replace mode, no queue cap;
+   * a cooldown is retried quietly). The list then becomes the server's fresh one; rated artists
+   * stay in History / Saved. If the batch isn't written yet, the rated cards stay and the poller fills in.
+   */
+  async function regenerate() {
+    const r = await generation.requestMore({ replace: true })
     if (r === null || !aliveRef.current) return
     if (r.kind === "unauthorized") {
       window.location.href = "/sign-in"
       return
     }
-    if (r.ok) {
-      // New cards land server-side; restart the poller so they surface
-      // without waiting for a hard navigation.
-      restartFeedFill()
-      router.refresh()
+    if (!r.ok) return
+    const res = await fetch("/api/recommendations").catch(() => null)
+    const data = res?.ok ? ((await res.json().catch(() => ({}))) as { recommendations?: CardArtist[] }) : {}
+    if (!aliveRef.current) return
+    const fresh = (data.recommendations ?? []).filter(isPlayable)
+    const { signals, select } = triageRef.current
+    setRecs((prev) => (fresh.length > 0 ? fresh : prev.filter((a) => signals.has(a.id))))
+    // Start the fresh batch at its top, not wherever the old selection lands in it.
+    if (fresh.length > 0) {
+      select(firstUndecided(fresh.map((a) => a.id), signals))
+      // A fresh layout mount (keyed below): a clean swap instead of the old rows animating out (desktop)
+      // or the snap scroller anchoring to the old card's new spot (phone). Keyboard focus comes back after.
+      refocusRegen.current = document.activeElement instanceof HTMLElement && document.activeElement.matches(".ev-regen")
+      setBatch((b) => b + 1)
     }
+    restartFeedFill()
+    router.refresh()
+  }
+
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [batch, setBatch] = useState(0)
+  const refocusRegen = useRef(false)
+  useEffect(() => {
+    if (!refocusRegen.current) return
+    refocusRegen.current = false
+    document.querySelector<HTMLElement>(".ev-wander-ctl .ev-regen, .ev-m-topbar .ev-regen")?.focus()
+  }, [batch])
+  function requestRegenerate() {
+    if (shouldConfirm(triage.remaining, readRegenSkip(), localDay())) setConfirmOpen(true)
+    else void regenerate()
   }
 
   const challenge = challengePromise && (
@@ -207,6 +240,16 @@ export function FeedClient({ recommendations, musicPlatform, initialLayout = "ph
   return (
     <>
       <FeedShortcuts triage={triage} enabled={shown === layout} />
+      <RegenerateDialog
+        open={confirmOpen}
+        remaining={triage.remaining}
+        onCancel={() => setConfirmOpen(false)}
+        onConfirm={(skipToday) => {
+          if (skipToday) writeRegenSkip(localDay())
+          setConfirmOpen(false)
+          void regenerate()
+        }}
+      />
       {/* Server render and hydration: where CSS hides the guessed tree (the guess doesn't match the
           viewport), the skeleton for the viewport shows in its place (feed.css, .ev-guess-skel).
           The client's first render replaces it with the right layout or that layout's loading
@@ -216,7 +259,7 @@ export function FeedClient({ recommendations, musicPlatform, initialLayout = "ph
           <FeedSkeleton />
         </div>
       )}
-      <View triage={triage} onLoadMore={handleGenerateMore} generating={isGenerating} challenge={challenge} onShown={setShown} />
+      <View key={batch} triage={triage} onLoadMore={requestRegenerate} generating={isGenerating} challenge={challenge} onShown={setShown} />
     </>
   )
 }

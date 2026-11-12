@@ -172,9 +172,9 @@ triage buttons, track chips, Play preview, the landing's primary buttons) a 1px 
   letter panel, why, popularity, Play preview, the three triage buttons, Save / Open in
   {platform} / Share, up to three preview tracks (styled like the Snap track chips: each in its own
   `chipColors` colour with a play circle), docked player; a visually hidden live region announces only the newly selected artist's name (the pane itself is not `aria-live`); the end-of-queue state with
-  counts and "Load more artists" when nothing is selected; `LoadMore` is `aria-disabled` with clicks
+  counts and "Regenerate" when nothing is selected; `LoadMore` (now labelled "Regenerate") is `aria-disabled` with clicks
   ignored while generating, never `disabled`, so keyboard focus stays on it), the weekly challenge in the header's
-  Load more row, and the rail "Tuning" block
+  Regenerate row, and the rail "Tuning" block
   via `<ShellSlot name="rail">`. No decision logic. `FeedClient` sets the Saved badge
   (`useShellBadge`) to saves made since the feed opened. `Art` (`feed-parts.tsx`) fetches Apple (`*.mzstatic.com`)
   artwork at three times its display size up to 64px (sharp thumbnails on 3x phones) and twice above
@@ -182,19 +182,27 @@ triage buttons, track chips, Play preview, the landing's primary buttons) a 1px 
   through), and the selected artist's art (focus pane, first Snap card) with
   `fetchPriority="high"`; the other thumbnails (landing queue, mini players, track strip,
   history, onboarding search) use the same helper.
+- **Regenerate** (`FeedClient.requestRegenerate`, `components/feed/regenerate-dialog.tsx`; spec
+  `docs/superpowers/specs/2026-11-12-regenerate-feed.md`): every former Load more button is a rainbow
+  "Regenerate" (`.ev-regen`). With unrated cards left, a native modal asks "Regenerate your feed?" (Cancel /
+  Yes, regenerate, "Don't ask again today" stores the local date in `localStorage` `flipside.regen-skip`);
+  with nothing unrated it runs at once. It posts generate with `?replace=true` (unseen queue wiped, no
+  60-card cap), swaps the list for `GET /api/recommendations`, selects the first undecided card and
+  remounts the layout (`key={batch}`) for a clean swap (the phone scroller starts at the top; focus returns to
+  Regenerate). Cancel has initial focus, so a stray Enter never regenerates.
 - **`FeedSnap`** (`components/feed/feed-snap.tsx`) — phones below 640px, and every viewport too
   short for the tablet or desktop layout (phones in landscape at any width, browser zoom): a fixed column between
   the shell top bar and tab bar (the page body does not scroll): the weekly challenge line, a vertical
   scroller with mandatory snapping, one full-height page per loaded artist (decided ones included,
-  feed order) plus a final end page (`EndState`, "Load more artists") that is always there, so Load
-  more is reachable with artists still unrated (it then reads "N not rated yet." with "Rate the rest",
+  feed order) plus a final end page (`EndState`, "Regenerate") that is always there, so Regenerate
+  is reachable with artists still unrated (it then reads "N not rated yet." with "Rate the rest",
   which jumps to the first unrated; scrolling onto it holds via the hook's `END_PAGE` selection), a
   small player bar (the docked `MiniPlayer`) only while the loaded track is not the artist on
   screen. There is no separate triage bar: each card carries its own actions. On phones
   (`phone` prop) `TopBarProgress` puts the segment strip (`flex: 1`) and the regenerate icon button in `<ShellSlot name="top">`,
   between the wordmark and the avatar, and leaves `topSub` empty, so the top bar is one
-  56px row (`--ev-snap-top` = top bar + safe area + 1px border). On tablets it fills `<ShellSlot name="top">` with a header Load more (a 40px icon button with the accessible name
-  "Load more artists", icon + "Load more" from 600px; spins while generating;
+  56px row (`--ev-snap-top` = top bar + safe area + 1px border). On tablets it fills `<ShellSlot name="top">` with a header Regenerate (a 40px rainbow icon button with the accessible name
+  "Regenerate", icon + "Regenerate" from 600px; spins while generating;
   `aria-disabled` and named "Generating…" while generating), and the segment
   strip goes in `<ShellSlot name="topSub">`. Measured in the dev preview, the bar fits at 320px
   with two-digit counts (5px spare); a three-digit count at 320px would crowd the wordmark. An `IntersectionObserver` (scroller root, threshold 0.6)
@@ -241,7 +249,7 @@ triage buttons, track chips, Play preview, the landing's primary buttons) a 1px 
   bar), and a 280px "Up next" list of every loaded artist
   in feed order (thumbnail, name, first genre; violet heart badge when liked, dimmed with an X when
   passed/dismissed; `aria-current` on the selected row; tap selects; scrolls on its own and keeps
-  the selected row centred; "Load more artists" is always its last item, as it is at the end of
+  the selected row centred; "Regenerate" is always its last item, as it is at the end of
   the desktop queue column). Shares `TopBarProgress` and `PlayerBar`
   with `FeedSnap`; the end state takes the card's place when nothing is left.
 - **`FeedShortcuts`** (`components/feed/feed-shortcuts.tsx`) — mounted by `FeedClient` at every
@@ -280,7 +288,7 @@ triage buttons, track chips, Play preview, the landing's primary buttons) a 1px 
 | `useArtistTracks` | tracks | `GET /api/artists/:id/tracks?name=` (only if no baked tracks); `isFetching` is derived (true from the first render until the request settles) |
 | `useArtistFeedback` | `Map<id,signal>` | POST/DELETE `/api/feedback`, DELETE `/api/dismiss`. Controller `lib/client/artist-signals.ts`: optimistic at tap time, per-artist serialized, falls back to last confirmed value when the last queued call fails. `restore(id, previous)` (feed Undo) is optimistic too and picks the request(s) from the visible → previous transition (see the comment in the controller; skip → thumbs is DELETE dismiss then a best-effort POST, done once the DELETE succeeds) |
 | `useArtistSaves` | `Set<id>` | POST/DELETE `/api/saves`; same artist-signal controller |
-| `useFeedGeneration` | generating | the only `POST /api/recommendations/generate` caller with a guard (`lib/client/feed-generation.ts`): `requestMore` (feed top-up / Load more). `release()` (unmount) reports generating=false and silences the abandoned run; the feed skips `router.refresh()` after unmount. Loader/onboarding use its `postGenerate` + `classifyGenerate` |
+| `useFeedGeneration` | generating | the only `POST /api/recommendations/generate` caller with a guard (`lib/client/feed-generation.ts`): `requestMore` (feed top-up appends; `{ replace: true }` regenerates via `?replace=true` and quietly retries a cooldown 429 every 3s for up to 35s). `release()` (unmount) reports generating=false and silences the abandoned run; the feed skips `router.refresh()` after unmount. Loader/onboarding use its `postGenerate` + `classifyGenerate` |
 
 ## Playback & "Open in platform"
 

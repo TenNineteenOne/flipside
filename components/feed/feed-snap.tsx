@@ -161,8 +161,8 @@ export function FeedSnap({ triage, onLoadMore, generating, challenge, onShown }:
 
 /**
  * The segment strip and Load more in the shell top bar. Phones: wordmark, strip, Load more, avatar in
- * one row. Tablets: Load more in the bar, the strip as its second row. Load more is a regenerate icon
- * below 600px wide ("Load more" text from 600px); aria-disabled (focus stays) while generating, like
+ * one row. Tablets: Regenerate in the bar, the strip as its second row. Load more is a regenerate icon
+ * below 600px wide ("Regenerate" text from 600px); aria-disabled (focus stays) while generating, like
  * LoadMore, with the icon spinning.
  */
 export function TopBarProgress({ triage, onLoadMore, generating, phone = false }: {
@@ -178,13 +178,13 @@ export function TopBarProgress({ triage, onLoadMore, generating, phone = false }
   const more = (
     <button
       type="button"
-      className="ev-btn ev-btn-ghost ev-m-more"
+      className="ev-btn ev-regen ev-m-more"
       onClick={generating ? undefined : onLoadMore}
       aria-disabled={generating || undefined}
-      aria-label={generating ? "Generating…" : "Load more artists"}
+      aria-label={generating ? "Generating…" : "Regenerate"}
     >
       <RefreshCw size={18} strokeWidth={2} aria-hidden />
-      <span className="ev-m-more-text" aria-hidden>{generating ? "Generating…" : "Load more"}</span>
+      <span className="ev-m-more-text" aria-hidden>{generating ? "Generating…" : "Regenerate"}</span>
     </button>
   )
   if (phone) return <ShellSlot name="top"><span className="ev-feed ev-m-topbar" data-phone>{strip}{more}</span></ShellSlot>

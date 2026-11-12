@@ -134,6 +134,33 @@ describe("createFeedGeneration.requestMore", () => {
     expect(toast.error).not.toHaveBeenCalled()
   })
 
+  it("replace: posts ?replace=true and retries a cooldown quietly until it succeeds", async () => {
+    const toast = makeToast()
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(res(429, COOLDOWN))
+      .mockResolvedValueOnce(res(429, COOLDOWN))
+      .mockResolvedValueOnce(res(200, { count: 20 }))
+    let t = 0
+    const sleep = vi.fn(async (ms: number) => { t += ms })
+    const gen = createFeedGeneration({ fetchImpl, toast, sleep, now: () => t })
+    expect((await gen.requestMore({ replace: true }))?.kind).toBe("ready")
+    expect(fetchImpl).toHaveBeenCalledTimes(3)
+    expect(fetchImpl.mock.calls[0][0]).toBe("/api/recommendations/generate?replace=true")
+    expect(sleep).toHaveBeenCalledWith(3000)
+    expect(toast.error).not.toHaveBeenCalled()
+  })
+
+  it("replace: gives up after the retry window and reports the cooldown once", async () => {
+    const toast = makeToast()
+    const fetchImpl = vi.fn(async () => res(429, COOLDOWN))
+    let t = 0
+    const gen = createFeedGeneration({ fetchImpl, toast, sleep: async (ms: number) => { t += ms }, now: () => t })
+    expect((await gen.requestMore({ replace: true }))?.kind).toBe("cooldown")
+    expect(fetchImpl.mock.calls.length).toBeGreaterThan(2)
+    expect(t).toBeGreaterThanOrEqual(35_000)
+    expect(toast.error).toHaveBeenCalledTimes(1)
+  })
+
   it("release() frees the guard and the abandoned run no longer flips generating", async () => {
     const resolvers: Array<(r: Response) => void> = []
     const fetchImpl = vi.fn(() => new Promise<Response>((r) => { resolvers.push(r) }))

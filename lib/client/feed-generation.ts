@@ -147,8 +147,15 @@ export interface ToastLike {
   success: (message: string) => void
 }
 
+/** Regenerate retries a cooldown 429 this often, until this long has passed (the server cooldown is 30s). */
+export const REGEN_RETRY_MS = 3000
+export const REGEN_RETRY_FOR_MS = 35_000
+
 export interface FeedGenerationDeps {
   fetchImpl?: typeof fetch
+  /** Injected for tests. */
+  sleep?: (ms: number) => Promise<unknown>
+  now?: () => number
   toast: ToastLike
   /** Called whenever `generating` flips. */
   onGeneratingChange?: (generating: boolean) => void
@@ -160,9 +167,11 @@ export interface FeedGeneration {
    * POST generate under the re-entry guard. Resolves null when a run was
    * already in flight. Unless `silent`, toasts: the softened-filters note on
    * 2xx, the server's error text (or "Generation failed") on failure — except
-   * 401, which the caller handles (redirect).
+   * 401, which the caller handles (redirect). `replace` regenerates: the server
+   * swaps the unseen queue for a fresh batch (no queue cap), and a cooldown 429
+   * is retried quietly for up to REGEN_RETRY_FOR_MS.
    */
-  requestMore(opts?: { silent?: boolean }): Promise<GenerateResult | null>
+  requestMore(opts?: { silent?: boolean; replace?: boolean }): Promise<GenerateResult | null>
   /**
    * Drop the guard without waiting for the in-flight run (component unmount).
    * Reports `generating` false now; the abandoned run no longer flips it when
@@ -173,6 +182,8 @@ export interface FeedGeneration {
 
 export function createFeedGeneration({
   fetchImpl = fetch,
+  sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
+  now = Date.now,
   toast,
   onGeneratingChange,
 }: FeedGenerationDeps): FeedGeneration {
@@ -198,11 +209,18 @@ export function createFeedGeneration({
       return generating
     },
 
-    async requestMore({ silent = false } = {}) {
+    async requestMore({ silent = false, replace = false } = {}) {
       const id = acquire()
       if (id === null) return null
       try {
-        const r = await postGenerate(fetchImpl)
+        const url = replace ? `${GENERATE_URL}?replace=true` : GENERATE_URL
+        let r = await postGenerate(fetchImpl, url)
+        const deadline = now() + REGEN_RETRY_FOR_MS
+        while (replace && r.kind === "cooldown" && id === runId && now() < deadline) {
+          await sleep(REGEN_RETRY_MS)
+          if (id !== runId) break
+          r = await postGenerate(fetchImpl, url)
+        }
         // A released run (the page unmounted) stays quiet: its toast would
         // land on whatever page the user navigated to.
         if (!silent && id === runId && !r.ok && r.kind !== "unauthorized") {

@@ -55,9 +55,9 @@ describe("FeedDesktop server render", () => {
     for (const label of ["Less like this", "Dismiss", "More like this"]) expect(html).toContain(label)
     expect(html).toContain('aria-label="3 of 3 left"')
     expect(html).toMatch(/aria-label="Select Yin Yin" aria-current="true"/)
-    // "Load more artists" is always at the end of the queue column, not only in the end state.
+    // "Regenerate" is always at the end of the queue column, not only in the end state.
     const queue = html.slice(html.indexOf('class="ev-queue"'), html.indexOf('class="ev-focus"'))
-    expect(queue).toMatch(/class="ev-queue-more"><button type="button" class="ev-btn ev-btn-ghost">Load more artists<\/button><\/div>/)
+    expect(queue).toMatch(/class="ev-queue-more"><button type="button" class="ev-btn ev-regen">Regenerate<\/button><\/div>/)
   })
 
   it("labels the queue columns, and each row names its genre and popularity for screen readers", () => {
@@ -92,7 +92,7 @@ describe("FeedDesktop server render", () => {
     expect(html).toContain("You’ve heard all 3.")
     expect(html).toContain("1 liked, 1 less like this, 1 dismissed.")
     expect(html).not.toContain("Tomorrow")
-    expect(html).toContain("Load more artists")
+    expect(html).toContain(">Regenerate</button>")
     expect(html).toMatch(/<a[^>]*href="\/saved"[^>]*>Review saved<\/a>/)
     expect(html).toContain('aria-label="0 of 3 left"')
   })
@@ -110,9 +110,9 @@ describe("LoadMore", () => {
 })
 
 describe("Wander farther (always on)", () => {
-  it("has no switch and no rainbow Load more anywhere", () => {
+  it("has no Wander switch anywhere", () => {
     const html = renderToString(<AudioProvider><Desktop artists={[artist("a", "Yin Yin"), artist("b", "Altın Gün")]} /></AudioProvider>)
-    for (const gone of ['role="switch"', "Wander", "wander-btn-on"]) expect(html).not.toContain(gone)
+    for (const gone of ['role="switch"', "Wander"]) expect(html).not.toContain(gone)
   })
 
   it("a far pick's why-line reads Outside your usual, marked for the teal accent", () => {
