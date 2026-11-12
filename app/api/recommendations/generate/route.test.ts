@@ -65,6 +65,26 @@ describe("POST /api/recommendations/generate queue-full gate", () => {
     expect(buildRecommendations).not.toHaveBeenCalled()
   })
 
+  it("a missing user row still answers 404 first, though the queue count now runs alongside it", async () => {
+    db = createRouteFakeDb({ users: [], recommendation_cache: queue(60, iso(Date.now() + HOUR)) })
+    const res = await call()
+    expect(res.status).toBe(404)
+    expect(buildRecommendations).not.toHaveBeenCalled()
+  })
+
+  it("logs the stage clocks it is given, skipping absent ones", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {})
+    buildRecommendations.mockResolvedValue({
+      count: 1, pending: false, finish: async () => {},
+      metrics: { firstBatchMs: 1, primaryMs: 2, previewMs: 1, misses: 0, retries: 0, rateLimited: false, gatherMs: 3, similarMs: 4, exclusionsMs: 5 },
+    })
+    db = createRouteFakeDb({ users: [{ id: "u1", last_generated_at: null }], recommendation_cache: [] })
+    expect((await call()).status).toBe(200)
+    const line = log.mock.calls.map((c) => String(c[0])).findLast((l) => l.startsWith("[gen-timing] "))
+    expect(line).toContain("firstBatch=1 primary=2 preview=1 gather=3 similar=4 exclusions=5 total=")
+    expect(line).not.toContain("bleed=")
+  })
+
   it("cooling → the cooldown 429 body is unchanged", async () => {
     db = createRouteFakeDb({ users: [{ id: "u1", last_generated_at: iso(Date.now() - 1000) }] })
     const res = await call()

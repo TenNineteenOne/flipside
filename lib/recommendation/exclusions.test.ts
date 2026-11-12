@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { createFakeSupabase, type Tables } from "./__fixtures__/fake-supabase"
-import { isEligibleForCooldown, loadExclusions, type ExclusionPolicy } from "./exclusions"
+import { isEligibleForCooldown, loadExclusions, preloadExclusionRows, type ExclusionPolicy } from "./exclusions"
 
 const NOW = new Date("2026-04-20T00:00:00Z")
 const daysAgo = (d: number) => new Date(NOW.getTime() - d * 24 * 60 * 60 * 1000).toISOString()
@@ -160,5 +160,28 @@ describe("isEligibleForCooldown", () => {
     const seen = new Date(now.getTime() - 1 * 86400_000).toISOString()
     const skip = new Date(now.getTime() - 28 * 86400_000).toISOString()
     expect(isEligibleForCooldown(seen, skip, now)).toBe(false)
+  })
+})
+
+describe("preloadExclusionRows", () => {
+  it("one preload serves several policies with the same reasons as fresh loads", async () => {
+    const fake = createFakeSupabase({
+      listened_artists: [
+        { id: "l1", user_id: "u1", artist_id: "a7", play_count: 7 },
+        { id: "l2", user_id: "u1", artist_id: null, lastfm_artist_name: "Named", play_count: 12 },
+      ],
+      feedback: [{ id: "f1", user_id: "u1", artist_id: "down", signal: "thumbs_down", deleted_at: null }],
+      recommendation_cache: [],
+    })
+    const rows = preloadExclusionRows(fake.client, "u1")
+    const probes = [a("a7"), a("x", "named"), a("down"), a("none")]
+    for (const playThreshold of [5, 10]) {
+      const policy: ExclusionPolicy = { playThreshold, nameFallback: true, liked: true }
+      const shared = await loadExclusions(fake.client, "u1", policy, NOW, rows)
+      const fresh = await loadExclusions(fake.client, "u1", policy, NOW)
+      expect(probes.map((p) => shared.reason(p))).toEqual(probes.map((p) => fresh.reason(p)))
+    }
+    // 1 preload + 2 fresh loads; the shared loads never re-read.
+    expect(fake.queries.filter((q) => q.table === "listened_artists")).toHaveLength(3)
   })
 })

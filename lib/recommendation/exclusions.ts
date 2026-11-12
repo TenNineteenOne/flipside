@@ -98,19 +98,32 @@ export async function readAllRows<T extends { id: string }>(
   }
 }
 
+type QueryRows<T> = PromiseLike<{ data: T[] | null }>
+
+/**
+ * Reads a caller already has in flight (see `preloadExclusionRows`).
+ * `listened` must hold every row with an `artist_id` (and
+ * `lastfm_artist_name` when the policy uses `nameFallback`); `thumbsDown` the
+ * user's active thumbs-down feedback — ALL rows (page with `readAllRows`).
+ * Pass promises, not builders, so each read runs once however often it's awaited.
+ */
+export interface PreloadedRows {
+  listened?: QueryRows<{ artist_id: string | null; play_count?: number | null; lastfm_artist_name?: string | null }>
+  thumbsDown?: QueryRows<{ artist_id: string }>
+}
+
 export async function loadExclusions(
   supabase: Pick<SupabaseClient, "from">,
   userId: string,
   policy: ExclusionPolicy,
   now: Date = new Date(),
+  preloaded: PreloadedRows = {},
 ): Promise<Exclusions> {
   const cooldownStart = new Date(now.getTime() - COOLDOWN_DAYS * DAY_MS).toISOString()
   const none = Promise.resolve({ data: [] as { artist_id: string }[] })
   const [listened, thumbsDown, seen, skipped, thumbsUp, saved] = await Promise.all([
-    readAllRows<{ id: string; artist_id: string | null; lastfm_artist_name: string | null; play_count: number | null }>(() =>
-      supabase.from("listened_artists").select("id, artist_id, lastfm_artist_name, play_count").eq("user_id", userId),
-    ),
-    readFeedbackIds(supabase, userId, "thumbs_down"),
+    preloaded.listened ?? readListened(supabase, userId),
+    preloaded.thumbsDown ?? readFeedbackIds(supabase, userId, "thumbs_down"),
     readAllRows<{ id: string; artist_id: string }>(() =>
       supabase
         .from("recommendation_cache")
@@ -152,6 +165,24 @@ export async function loadExclusions(
       return null
     },
   }
+}
+
+/**
+ * Start the policy-independent reads (every listened row + active thumbs-down)
+ * once, to share across several `loadExclusions` calls via `preloaded` — e.g.
+ * the Feed's softening reruns, which differ only in play threshold.
+ */
+export function preloadExclusionRows(
+  supabase: Pick<SupabaseClient, "from">,
+  userId: string,
+): Required<PreloadedRows> {
+  return { listened: readListened(supabase, userId), thumbsDown: readFeedbackIds(supabase, userId, "thumbs_down") }
+}
+
+function readListened(supabase: Pick<SupabaseClient, "from">, userId: string) {
+  return readAllRows<{ id: string; artist_id: string | null; lastfm_artist_name: string | null; play_count: number | null }>(() =>
+    supabase.from("listened_artists").select("id, artist_id, lastfm_artist_name, play_count").eq("user_id", userId),
+  )
 }
 
 /** The user's active thumbs-down / thumbs-up feedback, every row (paged). */

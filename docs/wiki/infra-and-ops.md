@@ -39,7 +39,6 @@ falls back to `#8b5cf6`). Runs in `after()` during generation; writes
 (`sanitizeHex`, `stringToVibrantHex`, `hexToRgba`).
 
 ## Small but load-bearing
-- `lib/utils.ts` → `cn()` (clsx + tailwind-merge).
 - `lib/types.ts` → `GenreNode` (shared with `data/genres.json` and [[genre-system]]).
 - `lib/errors.ts` → `apiError`, `apiUnauthorized`, `apiNotFound`, `dbError`.
 - `lib/spotify-ids.ts` → `isValidSpotifyId` (base62×22) — path-traversal defense on

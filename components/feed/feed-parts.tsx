@@ -6,7 +6,7 @@ import Link from "next/link"
 import Image from "next/image"
 import { Bookmark, Heart, Pause, Play, Share2, ThumbsDown, X } from "lucide-react"
 import { PlatformIcon } from "@/components/platform-icon"
-import { useAudio } from "@/lib/audio-context"
+import { useAudioProgress } from "@/lib/audio-context"
 import { artworkAt, artworkFor, letterFor } from "@/lib/feed/artwork"
 import { chipColors, readableTextOn, resolveArtistColor } from "@/lib/color-utils"
 import { formatDuration } from "@/lib/feed/card-copy"
@@ -143,7 +143,6 @@ export function CardActions({ a, triage }: { a: CardArtist; triage: FeedTriage }
 
 /** Up to three previews as full-width rows, each in its own colour (chipColors); the playing one shows its progress. */
 export function TrackList({ a, triage, tracks }: { a: CardArtist; triage: FeedTriage; tracks: CardArtist["topTracks"] }) {
-  const { progress } = useAudio()
   const playing = triage.isPlaying(a)
   const chips = chipColors(resolveArtistColor(a.artistColor, a.name))
   return (
@@ -161,7 +160,7 @@ export function TrackList({ a, triage, tracks }: { a: CardArtist; triage: FeedTr
                 </span>
                 <span className="ev-track-name">{t.name}<span className="ev-track-album">{t.albumName}</span></span>
                 {dur && <span className="ev-track-dur">{dur}</span>}
-                {current && <span className="ev-track-bar" aria-hidden><span style={{ transform: `scaleX(${progress})` }} /></span>}
+                {current && <TrackBar />}
               </button>
             </li>
           )
@@ -169,4 +168,10 @@ export function TrackList({ a, triage, tracks }: { a: CardArtist; triage: FeedTr
       </ol>
     </section>
   )
+}
+
+/** The playing track's progress bar; the only part of the card that re-renders on playback ticks. */
+function TrackBar() {
+  const progress = useAudioProgress()
+  return <span className="ev-track-bar" aria-hidden><span style={{ transform: `scaleX(${progress})` }} /></span>
 }

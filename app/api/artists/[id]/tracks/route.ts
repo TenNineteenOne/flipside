@@ -38,5 +38,10 @@ export const GET = withAuthedRoute(async (
     (name) => searchTracksByArtist(name, "US", 5),
   )
   if (!result) return apiError("Failed to load tracks", 500)
-  return Response.json(result.cacheMiss ? { tracks: [], cache_miss: true } : { tracks: result.tracks })
+  if (result.cacheMiss) return Response.json({ tracks: [], cache_miss: true })
+  // Browser-cache only non-empty hits: an empty list or a cache miss may fill in on retry.
+  return Response.json(
+    { tracks: result.tracks },
+    result.tracks.length > 0 ? { headers: { "Cache-Control": "private, max-age=3600" } } : undefined,
+  )
 })

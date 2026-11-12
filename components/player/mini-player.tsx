@@ -3,7 +3,7 @@
 import { useEffect, useState, useSyncExternalStore, type CSSProperties } from "react"
 import Image from "next/image"
 import { Pause, Play, X } from "lucide-react"
-import { useAudio } from "@/lib/audio-context"
+import { useAudio, useAudioProgress } from "@/lib/audio-context"
 import { readableTextOn, sanitizeHex } from "@/lib/color-utils"
 import { artworkAt, letterFor } from "@/lib/feed/artwork"
 
@@ -36,7 +36,8 @@ export function MiniPlayer({ docked = false }: { docked?: boolean }) {
 }
 
 function DockedPlayer() {
-  const { currentTrack, artistName, artistImageUrl, artistColor, isPlaying, progress, pause, resume } = useAudio()
+  const { currentTrack, artistName, artistImageUrl, artistColor, isPlaying, pause, resume } = useAudio()
+  const progress = useAudioProgress()
   useSuppressFloatingPlayer()
 
   if (!currentTrack) {
@@ -71,6 +72,7 @@ function DockedPlayer() {
 function FloatingPlayer() {
   const audio = useAudio()
   const { pause, resume, stop } = audio
+  const audioProgress = useAudioProgress()
   const suppressed = useSyncExternalStore(subscribeSuppressed, () => suppressors > 0, () => false)
   const open = !!audio.currentTrack && !suppressed
 
@@ -79,7 +81,7 @@ function FloatingPlayer() {
   // when it was closed (stop() clears the track), and comes back if reopened meanwhile.
   const [present, setPresent] = useState(open)
   if (open && !present) setPresent(true)
-  const live = { currentTrack: audio.currentTrack, artistName: audio.artistName, artistColor: audio.artistColor, isPlaying: audio.isPlaying, progress: audio.progress }
+  const live = { currentTrack: audio.currentTrack, artistName: audio.artistName, artistColor: audio.artistColor, isPlaying: audio.isPlaying, progress: audioProgress }
   const [held, setHeld] = useState(live)
   if (open && (Object.keys(live) as (keyof typeof live)[]).some((k) => live[k] !== held[k])) setHeld(live)
   const { currentTrack, artistName, artistColor, isPlaying, progress } = open ? live : held

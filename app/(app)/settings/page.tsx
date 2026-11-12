@@ -15,7 +15,21 @@ export default async function SettingsPage() {
 
   const userId = session.user.id
   const supabase = createServiceClient()
-  const user = await getCachedUser(userId)
+  // Everything below keys off the session id, so all three reads run at once.
+  // The Last.fm count is only used when the user row has a username.
+  const [user, { count: lastfmCount }, { data: seedArtistsData }] = await Promise.all([
+    getCachedUser(userId),
+    supabase
+      .from("listened_artists")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("source", "lastfm"),
+    supabase
+      .from("seed_artists")
+      .select("artist_id, name, image_url, added_at")
+      .eq("user_id", userId)
+      .order("added_at", { ascending: true }),
+  ])
 
   let lastfmUsername: string | null = null
   let statsfmUsername: string | null = null
@@ -30,21 +44,7 @@ export default async function SettingsPage() {
     console.error(`[settings-page] statsfm decrypt failed userId=${userId} err="${err instanceof Error ? err.message : err}"`)
   }
 
-  let lastfmArtistCount = 0
-  if (user?.lastfm_username) {
-    const { count } = await supabase
-      .from("listened_artists")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", userId)
-      .eq("source", "lastfm")
-    lastfmArtistCount = count ?? 0
-  }
-
-  const { data: seedArtistsData } = await supabase
-    .from("seed_artists")
-    .select("artist_id, name, image_url, added_at")
-    .eq("user_id", userId)
-    .order("added_at", { ascending: true })
+  const lastfmArtistCount = user?.lastfm_username ? (lastfmCount ?? 0) : 0
 
   const seedArtists = (seedArtistsData ?? []).map((r) => ({
     id: r.artist_id,

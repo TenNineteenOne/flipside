@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useRef, useState, useCallback, useEffect, type ReactNode } from "react"
+import { createContext, useContext, useRef, useState, useCallback, useEffect, useMemo, useSyncExternalStore, type ReactNode } from "react"
 import type { Track } from "@/lib/music-provider/types"
 
 interface AudioState {
@@ -9,7 +9,6 @@ interface AudioState {
   artistImageUrl: string | null
   artistColor: string | null
   isPlaying: boolean
-  progress: number
 }
 
 interface AudioContextValue extends AudioState {
@@ -27,6 +26,20 @@ export function useAudio() {
   return ctx
 }
 
+// Progress ticks every 250ms while playing, so it lives outside AudioContext:
+// only components that draw a progress bar subscribe, instead of every useAudio()
+// consumer (the whole feed tree) re-rendering on each tick.
+interface ProgressStore { subscribe: (l: () => void) => () => void; get: () => number }
+const ProgressContext = createContext<ProgressStore | null>(null)
+const zero = () => 0
+
+/** Playback progress 0..1. With `active` false it returns 0 and never re-renders on ticks. */
+export function useAudioProgress(active = true) {
+  const store = useContext(ProgressContext)
+  if (!store) throw new Error("useAudioProgress must be used inside AudioProvider")
+  return useSyncExternalStore(store.subscribe, active ? store.get : zero, zero)
+}
+
 export function AudioProvider({ children }: { children: ReactNode }) {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const throttleRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -36,8 +49,18 @@ export function AudioProvider({ children }: { children: ReactNode }) {
     artistImageUrl: null,
     artistColor: null,
     isPlaying: false,
-    progress: 0,
   })
+  const progressRef = useRef(0)
+  const listenersRef = useRef(new Set<() => void>())
+  const setProgress = useCallback((p: number) => {
+    if (progressRef.current === p) return
+    progressRef.current = p
+    listenersRef.current.forEach((l) => l())
+  }, [])
+  const progressStore = useMemo<ProgressStore>(() => ({
+    subscribe: (l) => { listenersRef.current.add(l); return () => { listenersRef.current.delete(l) } },
+    get: () => progressRef.current,
+  }), [])
 
   const play = useCallback((track: Track, artistName: string, artistImageUrl: string | null, artistColor?: string | null) => {
     if (!track.previewUrl) return
@@ -58,7 +81,7 @@ export function AudioProvider({ children }: { children: ReactNode }) {
       const dur = audio.duration
       if (!dur || isNaN(dur)) return
       const p = Math.max(0, Math.min(1, audio.currentTime / dur))
-      setState(prev => ({ ...prev, progress: p }))
+      setProgress(p)
     }
 
     // play() can reject (e.g. expired preview URL) after we've already set
@@ -69,14 +92,18 @@ export function AudioProvider({ children }: { children: ReactNode }) {
       if (audioRef.current !== audio) return
       setState(prev => ({ ...prev, isPlaying: false }))
     })
-    audio.onended = () => setState(prev => ({ ...prev, isPlaying: false, progress: 1 }))
+    audio.onended = () => {
+      setProgress(1)
+      setState(prev => ({ ...prev, isPlaying: false }))
+    }
     audio.onerror = () => {
       if (audioRef.current !== audio) return
       setState(prev => ({ ...prev, isPlaying: false }))
     }
 
-    setState({ currentTrack: track, artistName, artistImageUrl, artistColor: artistColor ?? null, isPlaying: true, progress: 0 })
-  }, [])
+    setProgress(0)
+    setState({ currentTrack: track, artistName, artistImageUrl, artistColor: artistColor ?? null, isPlaying: true })
+  }, [setProgress])
 
   const pause = useCallback(() => {
     audioRef.current?.pause()
@@ -96,8 +123,9 @@ export function AudioProvider({ children }: { children: ReactNode }) {
   const stop = useCallback(() => {
     audioRef.current?.pause()
     audioRef.current = null
-    setState({ currentTrack: null, artistName: "", artistImageUrl: null, artistColor: null, isPlaying: false, progress: 0 })
-  }, [])
+    setProgress(0)
+    setState({ currentTrack: null, artistName: "", artistImageUrl: null, artistColor: null, isPlaying: false })
+  }, [setProgress])
 
   useEffect(() => {
     return () => {
@@ -110,9 +138,11 @@ export function AudioProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const value = useMemo(() => ({ ...state, play, pause, resume, stop }), [state, play, pause, resume, stop])
+
   return (
-    <AudioContext.Provider value={{ ...state, play, pause, resume, stop }}>
-      {children}
+    <AudioContext.Provider value={value}>
+      <ProgressContext.Provider value={progressStore}>{children}</ProgressContext.Provider>
     </AudioContext.Provider>
   )
 }

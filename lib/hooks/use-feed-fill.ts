@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef } from "react"
+import { createPoller } from "@/lib/client/poll"
 
 // Minimal shape needed from the GET /api/recommendations response (a
 // CardArtist[] — lib/cards/card-artist.ts) without coupling to it.
@@ -33,7 +34,6 @@ const POLL_INTERVAL_MS = 2500
 const MAX_IDLE_POLLS = 3
 const HARD_CEILING_MS = 60_000
 const RESTART_TARGET_BUMP = 20
-const FINAL_GET_RETRY_MS = 1_500
 
 export interface FeedFillController {
   /**
@@ -80,7 +80,8 @@ export interface CreateFeedFillControllerOpts<R extends FeedRec> {
  *     after one final poll
  *   - stop() is called (e.g. on unmount)
  *
- * Never throws on fetch failures — skips that tick silently.
+ * Never throws on fetch failures — skips that tick silently (a thrown final
+ * GET is retried once). Mechanics live in createPoller (lib/client/poll.ts).
  *
  * Auto-starts if `initialIds.length < targetCount`.
  */
@@ -94,85 +95,32 @@ export function createFeedFillController<R extends FeedRec>({
   let shownCount = initialIds.length
   let idleCount = 0
   let target = targetCount
-  let intervalId: ReturnType<typeof setInterval> | null = null
-  let startedAt = 0
-  let stopped = true
-  let runId = 0
 
-  function stop() {
-    if (intervalId !== null) {
-      clearInterval(intervalId)
-      intervalId = null
-    }
-    stopped = true
-  }
+  // Resolves true to stop: target reached, or idle.
+  const poller = createPoller({
+    intervalMs: POLL_INTERVAL_MS,
+    async check() {
+      if (shownCount >= target) return true
+
+      const res = await fetchImpl("/api/recommendations")
+      if (!res.ok) return false
+
+      const data = (await res.json().catch(() => ({}))) as { recommendations?: R[] }
+      const newRecs = selectNewPlayable(seenIds, data.recommendations ?? []) as R[]
+
+      if (newRecs.length === 0) return ++idleCount >= MAX_IDLE_POLLS
+
+      idleCount = 0
+      for (const r of newRecs) seenIds.add(r.id)
+      shownCount += newRecs.length
+      onAppend(newRecs)
+      return shownCount >= target
+    },
+  })
 
   function start() {
-    stop()
-    stopped = false
-    startedAt = Date.now()
     idleCount = 0
-    const run = ++runId
-
-    intervalId = setInterval(async () => {
-      if (stopped) return
-
-      // Hard ceiling: still poll once more, then stop. A frozen background tab
-      // (iOS) resumes past the ceiling with zero GETs having run.
-      const finalCheck = Date.now() - startedAt >= HARD_CEILING_MS
-
-      // Already reached target
-      if (shownCount >= target) {
-        stop()
-        return
-      }
-
-      try {
-        let res: Response
-        try {
-          res = await fetchImpl("/api/recommendations")
-        } catch (err) {
-          if (!finalCheck) throw err
-          // The one final GET hit a resume network blip: retry once.
-          await new Promise((r) => setTimeout(r, FINAL_GET_RETRY_MS))
-          if (stopped || run !== runId) return
-          res = await fetchImpl("/api/recommendations")
-        }
-        if (!res.ok) return
-
-        const data = (await res.json().catch(() => ({}))) as { recommendations?: R[] }
-        const fetched: R[] = data.recommendations ?? []
-
-        const newRecs = selectNewPlayable(seenIds, fetched) as R[]
-
-        if (newRecs.length === 0) {
-          idleCount += 1
-          if (idleCount >= MAX_IDLE_POLLS) {
-            stop()
-          }
-          return
-        }
-
-        // Reset idle counter on any new recs
-        idleCount = 0
-
-        for (const r of newRecs) {
-          seenIds.add(r.id)
-        }
-        shownCount += newRecs.length
-
-        onAppend(newRecs)
-
-        // Check target after append
-        if (shownCount >= target) {
-          stop()
-        }
-      } catch {
-        // Swallow fetch/parse errors — skip this tick silently
-      } finally {
-        if (finalCheck && run === runId) stop()
-      }
-    }, POLL_INTERVAL_MS)
+    poller.start(Date.now() + HARD_CEILING_MS)
   }
 
   function restart() {
@@ -184,7 +132,7 @@ export function createFeedFillController<R extends FeedRec>({
     start()
   }
 
-  return { restart, stop }
+  return { restart, stop: poller.stop }
 }
 
 export interface UseFeedFillOpts<R extends FeedRec> {

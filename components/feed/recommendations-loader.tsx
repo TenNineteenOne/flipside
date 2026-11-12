@@ -6,7 +6,7 @@ import { Loader2, RefreshCw } from "lucide-react"
 import { loaderAction, pollRecsUntilReady, postGenerate } from "@/lib/client/feed-generation"
 
 /** Poll cadence + ceiling while a generation is in flight. */
-const POLL_INTERVAL_MS = 2500
+const POLL_INTERVAL_MS = 1000
 const POLL_MAX_MS = 30_000
 
 export function RecommendationsLoader() {

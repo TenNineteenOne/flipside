@@ -8,7 +8,7 @@ import {
   type ScoredArtist,
   type SoftenedFilters,
 } from './types'
-import { isEligibleForCooldown, loadExclusions, readFeedbackIds } from './exclusions'
+import { isEligibleForCooldown, loadExclusions, preloadExclusionRows, readFeedbackIds, type PreloadedRows } from './exclusions'
 import { PlayableCandidates, livePlayablePorts } from './playable-candidates'
 import { ArtistIdentity } from '@/lib/artist-identity'
 import { normalizedIncludes, normalizeGenre } from '@/lib/genre/normalize'
@@ -314,6 +314,8 @@ export interface AugmentAdjacentOpts {
    * input name (null = nothing), and each name's genre label for `why.outsideUsual`.
    */
   far?: { resolved: Promise<Map<string, Artist> | null>; labelOf: (name: string) => string | undefined }
+  /** A `fetchAdjacentPool` already in flight (started alongside the primary resolve); omitted = fetch here. */
+  adjacentPool?: Promise<AdjacentPool | null>
 }
 
 /** Same formula for far and adjacent picks: main-pool scoring at a fixed relevance, plus the bleed bonus. */
@@ -325,7 +327,24 @@ function bleedScore(artist: Artist, opts: AugmentAdjacentOpts): number {
   return baseScore * discoveryPenalty + ADJACENT_BLEED_BONUS - mainstreamPenalty
 }
 
-async function adjacentCandidates(base: ScoredArtist[], opts: AugmentAdjacentOpts): Promise<ScoredArtist[]> {
+/** The bleed's candidates: resolved artists keyed by input name, plus each name's first tag. */
+export interface AdjacentPool {
+  resolved: Map<string, Artist>
+  nameToTag: Map<string, string>
+}
+
+/**
+ * Bleed phase 1: sample adjacent tags, fetch their artists, resolve them. It
+ * does not depend on the base pick, so the engine starts it alongside the
+ * primary resolve and hands it in as `opts.adjacentPool`; scoring drops any
+ * name the base already holds. `skipNamesLc` only trims resolve work.
+ * null = no adjacent tags to sample.
+ */
+export async function fetchAdjacentPool(
+  opts: Pick<AugmentAdjacentOpts, 'userGenres' | 'adventurous' | 'adaptiveBroadening' | 'fetchTagArtists' | 'resolveArtists'>,
+  skipNamesLc: Set<string> = new Set()
+): Promise<AdjacentPool | null> {
+  if (opts.userGenres.length === 0) return null
   const adventurous = !!opts.adventurous
   const userGenreKeys = new Set(opts.userGenres.map((g) => normalizeGenre(g)))
   const tagSet = new Set<string>()
@@ -345,7 +364,7 @@ async function adjacentCandidates(base: ScoredArtist[], opts: AugmentAdjacentOpt
   // needs to scale with N so 10-pick Adventurous has enough surviving
   // candidates after dedup + thumbs-down + listened filters.
   const sampled = tags.slice(0, adventurous ? 10 : 5)
-  if (sampled.length === 0) return []
+  if (sampled.length === 0) return null
 
   const fetchResults = await Promise.all(
     sampled.map(async (tag) => ({ tag, names: await opts.fetchTagArtists(tag) }))
@@ -358,14 +377,20 @@ async function adjacentCandidates(base: ScoredArtist[], opts: AugmentAdjacentOpt
     }
   }
 
-  const baseNameLc = new Set(base.map((b) => b.artist.name.toLowerCase()))
-  const toResolve = [...new Set(fetchResults.flatMap((r) => r.names))].filter((n) => !baseNameLc.has(n.toLowerCase()))
-  if (toResolve.length === 0) return []
+  const toResolve = [...new Set(fetchResults.flatMap((r) => r.names))].filter((n) => !skipNamesLc.has(n.toLowerCase()))
+  const resolved = toResolve.length === 0 ? new Map<string, Artist>() : await opts.resolveArtists(toResolve)
+  return { resolved, nameToTag }
+}
 
-  const resolved = await opts.resolveArtists(toResolve)
+/** Bleed phase 2: score the pool's artists, skipping any name the base already holds. */
+async function adjacentCandidates(base: ScoredArtist[], opts: AugmentAdjacentOpts): Promise<ScoredArtist[]> {
+  const baseNameLc = new Set(base.map((b) => b.artist.name.toLowerCase()))
+  const pool = await (opts.adjacentPool ?? fetchAdjacentPool(opts, baseNameLc))
+  if (!pool) return []
   const scored: ScoredArtist[] = []
-  for (const [name, artist] of resolved.entries()) {
-    const tag = nameToTag.get(name.toLowerCase()) ?? ''
+  for (const [name, artist] of pool.resolved.entries()) {
+    if (baseNameLc.has(name.toLowerCase())) continue
+    const tag = pool.nameToTag.get(name.toLowerCase()) ?? ''
     scored.push({
       artist: { ...artist, topTracks: artist.topTracks ?? [] },
       score: bleedScore(artist, opts),
@@ -472,6 +497,11 @@ export interface RunPipelineOpts {
    * Never rejects. `ms` = the fetch's own wall-clock.
    */
   farNames?: Promise<{ names: FarName[]; ms: number }>
+  /**
+   * Exclusion rows read once per build and shared by every soften run (the
+   * reruns differ only in play threshold, applied when deriving).
+   */
+  preloadedRows?: PreloadedRows
 }
 
 /**
@@ -515,6 +545,22 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
     `adventurous=${!!adventurous} userGenres=${userGenres.length}`
   )
 
+  // The one exclusion policy (#175 D3): thumbs-down, listened over the play
+  // threshold (by id, or by name for id-less history rows), and the 7-day
+  // seen / dismissed cooldown — applied BEFORE confirm so no iTunes call is
+  // spent on an artist writeScored would discard. Depends only on the user,
+  // so it loads alongside the Last.fm hops; awaited where first needed.
+  const exclusionsStart = Date.now()
+  let exclusionsMs = 0
+  const exclusionsPromise = loadExclusions(
+    supabase, userId, { playThreshold, nameFallback: true, liked: true }, undefined, o.preloadedRows,
+  ).then((e) => {
+    exclusionsMs = Date.now() - exclusionsStart
+    return e
+  })
+  void exclusionsPromise.catch(() => {}) // an early-failing run never awaits it
+
+  const similarStart = Date.now()
   const firstHop = await Promise.all(
     capSeedNames.map(async (name) => ({
       seed: name,
@@ -525,6 +571,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
   const lfmRefResults = deepDiscovery
     ? await runDeepHop(firstHop, (n) => lastfm.similarArtists(n))
     : firstHop
+  const similarMs = Date.now() - similarStart
 
   const lfmResults = lfmRefResults.map(({ seed, items }) => ({
     seed,
@@ -553,14 +600,10 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
 
   if (uniqueNames.length === 0) {
     console.error(`[engine] FAIL no_unique seeds=${capSeedNames.length} lfm=${lfmTotal} source=${source}`)
-    return { count: 0, runSecondary: null, flush, metrics: { primaryMs: 0, previewMs: 0, firstBatchMs: 0, misses: 0, retries: 0, rateLimited: false } }
+    return { count: 0, runSecondary: null, flush, metrics: { primaryMs: 0, previewMs: 0, firstBatchMs: 0, misses: 0, retries: 0, rateLimited: false, similarMs } }
   }
 
-  // The one exclusion policy (#175 D3): thumbs-down, listened over the play
-  // threshold (by id, or by name for id-less history rows), and the 7-day
-  // seen / dismissed cooldown — applied BEFORE confirm so no iTunes call is
-  // spent on an artist writeScored would discard.
-  const exclusions = await loadExclusions(supabase, userId, { playThreshold, nameFallback: true, liked: true })
+  const exclusions = await exclusionsPromise
   // Distinct ids hidden as listened (baseline counted per id, not per name).
   const filtListenedIds = new Set<string>()
   /** Every feed candidate gate: exclusions + underground cap + genre filter. */
@@ -602,6 +645,30 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
   const secondaryResolvePromise = secondaryNames.length === 0
     ? null
     : candidates.resolve(secondaryNames, { keep: (a) => feedKeeps(a) })
+
+  // Adjacent-genre bleed, phase 1 (tag fetch + resolve), runs alongside the
+  // primary resolve: it needs only the user's genres and the exclusions.
+  // Skipped when the user has filtered to one genre (?genre=X) — we respect
+  // the explicit narrow intent. Same pipeline + tuning as the primary: gated by
+  // the exclusions AND rehydrated, so a bleed pick with a cached preview (or a
+  // fresh negative) never re-hits iTunes.
+  const bleedStart = Date.now()
+  let bleedMs: number | undefined
+  const bleedPool = !genre && userGenres.length > 0
+    ? fetchAdjacentPool({
+        userGenres,
+        adventurous,
+        adaptiveBroadening: widenSeedCap,
+        fetchTagArtists: (tag) => lastfm.tagTopArtists(tag),
+        resolveArtists: async (names) =>
+          (await candidates.resolve(names, {
+            keep: (a) => !exclusions.reason(a),
+            concurrency: RESOLVE_CONCURRENCY,
+            delayMs: RESOLVE_DELAY_MS,
+          })).artists,
+      }).finally(() => { bleedMs = Date.now() - bleedStart })
+    : null
+  void bleedPool?.catch(() => {}) // a zero-top run returns before awaiting it
 
   let previewMs = 0
   const primaryStart = Date.now()
@@ -699,11 +766,11 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
       `uniq=${uniqueNames.length} ok=${resolved.searchOk} fail=${resolved.searchFail} ` +
       `filtListened=${filtListenedIds.size} cands=${candsCount} source=${source}`
     )
-    return { count: 0, runSecondary: null, flush, metrics: { primaryMs: Date.now() - primaryStart, previewMs, firstBatchMs: 0, misses: resolved.cacheMisses, retries: resolved.searchRetries, rateLimited: resolved.rateLimited } }
+    return { count: 0, runSecondary: null, flush, metrics: { primaryMs: Date.now() - primaryStart, previewMs, firstBatchMs: 0, misses: resolved.cacheMisses, retries: resolved.searchRetries, rateLimited: resolved.rateLimited, similarMs, exclusionsMs } }
   }
 
-  // Post-pipeline adjacent-genre bleed. Skipped when the user has filtered
-  // to one genre (?genre=X) — we respect the explicit narrow intent.
+  // Adjacent-genre bleed, phase 2: merge into the pick (positions past the
+  // top relevance picks only).
   let top = baseTop
   if (!genre && (userGenres.length > 0 || farResolved)) {
     const augmentStart = Date.now()
@@ -718,6 +785,8 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
       // pick with a cached preview (or a fresh negative) never re-hits iTunes.
       resolveArtists: async (names) =>
         (await candidates.resolve(names, { keep: (a) => !exclusions.reason(a) })).artists,
+      // Started alongside the primary resolve (above); null when there are no user genres.
+      adjacentPool: bleedPool ?? undefined,
       far: farResolved
         ? {
             // Bleed-step start → far pool ready (≈0 when it finished during the primary resolve).
@@ -987,6 +1056,9 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
       ...(farMs !== undefined ? { farMs } : {}),
       ...(farWaitMs !== undefined ? { farWaitMs } : {}),
       ...(farTimedOut ? { farTimedOut } : {}),
+      similarMs,
+      exclusionsMs,
+      bleedMs,
     },
   }
 }
@@ -1092,7 +1164,13 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
   const { userId, accessToken, playThreshold, popularityCurve, genre, undergroundMode, deepDiscovery, adventurous } = input
   const supabase = createServiceClient()
 
+  // The exclusion rows every run needs, read once and alongside the gather.
+  const preloadedRows = preloadExclusionRows(supabase, userId)
+  for (const rows of Object.values(preloadedRows)) void Promise.resolve(rows).catch(() => {}) // awaited by the runs
+  const gatherStart = Date.now()
   const { seedNames, pinnedSeeds, userGenres } = await gatherSeedContext(userId, supabase)
+  const gatherMs = Date.now() - gatherStart
+  const withGather = (r: BuildResult): BuildResult => ({ ...r, metrics: { ...r.metrics, gatherMs } })
   const identity = new ArtistIdentity(supabase)
   const farNames = adventurous && !genre ? startFarFetch(supabase, userId, userGenres) : undefined
 
@@ -1112,6 +1190,7 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
     userGenres,
     identity,
     farNames,
+    preloadedRows,
     ...overrides,
   })
 
@@ -1120,16 +1199,16 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
       `[engine] start userId=${userId} seeds=${seedNames.length}${genre ? ` genre=${genre}` : ""} ` +
       `adventurous=${!!adventurous} userGenres=${userGenres.length}`
     )
-    return runWithSoftening(makeBaseOpts({}), {
+    return withGather(await runWithSoftening(makeBaseOpts({}), {
       run: runPipeline,
       coldStartSeeds: sampleColdStartSeeds,
-    })
+    }))
   }
 
   console.log(`[engine] cold_start userId=${userId}`)
   const coldSeeds = sampleColdStartSeeds()
   const run = await runPipeline(makeBaseOpts({ seedNames: coldSeeds, source: 'cold_start', userGenres: [] }))
-  return composeResult(run, [run])
+  return withGather(composeResult(run, [run]))
 }
 
 /**

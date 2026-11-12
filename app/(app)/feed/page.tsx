@@ -9,7 +9,6 @@ import { DEFAULT_MUSIC_PLATFORM, isMusicPlatform, type MusicPlatform } from "@/l
 import { getUnseenRecommendations, type UnseenRecommendation } from "@/lib/recommendation/feed-query"
 import { isRenderableRow, loadFeedCards } from "@/lib/cards/feed-cards"
 import { guessFeedLayout } from "@/lib/feed/layout-guess"
-import { fameToEngine } from "@/lib/settings/fame"
 import { ensureCurrentChallenge } from "@/lib/challenges/engine"
 import type { ChallengePayload } from "@/components/feed/challenge-strip"
 
@@ -21,6 +20,14 @@ export default async function FeedPage() {
 
   const userId = session.user.id
   const supabase = createServiceClient()
+
+  // Recs only need the session id, so they run alongside the user lookup
+  // instead of after it. Without undergroundMode the helper reads
+  // users.fame_level itself, in parallel with the cache fetch. The no-op catch
+  // keeps a rejection unhandled-free if a redirect below throws first;
+  // awaiting the promise later still rejects as before.
+  const recsPromise = getUnseenRecommendations(supabase, userId, { limit: 20 })
+  recsPromise.catch(() => {})
 
   // Look up user row (request-scoped cache — layout.tsx already fetched this)
   const user = await getCachedUser(userId)
@@ -40,15 +47,12 @@ export default async function FeedPage() {
     if ((count ?? 0) === 0) redirect("/onboarding")
   }
 
-  // Fetch cached recommendations, re-filtered by the user's current fame
-  // level (stop 0 = underground cap) so a just-changed setting is honored on first paint
+  // Cached recommendations, re-filtered by the user's current
+  // fame level (stop 0 = underground cap) so a just-toggled setting is honored on first paint
   // instead of waiting for the client poll to replace the list.
   let recs: UnseenRecommendation[]
   try {
-    recs = await getUnseenRecommendations(supabase, user.id, {
-      limit: 20,
-      undergroundMode: fameToEngine(user.fame_level).undergroundMode,
-    })
+    recs = await recsPromise
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error(`[feed-page] recs err="${message}" userId=${user.id}`)

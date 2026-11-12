@@ -19,7 +19,7 @@
  *   - vi.mock('@/lib/music-provider/itunes') → searchTracksByArtist stub
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { createFakeSupabase, type Tables, type Row } from "./__fixtures__/fake-supabase"
+import { createFakeSupabase, type FakeSupabase, type Tables, type Row } from "./__fixtures__/fake-supabase"
 import { isValidArtistId } from "@/lib/spotify-ids"
 import type { Track } from "@/lib/music-provider/types"
 import { lastfm, type SimilarArtistRef } from "@/lib/lastfm"
@@ -796,5 +796,67 @@ describe("buildRecommendations — resurface lost update (#175 R4)", () => {
     })
     const unseen = await getUnseenRecommendations(h.fake.client, "u1", { limit: 20, undergroundMode: false })
     expect(unseen.map((r) => r.artist_id)).toEqual(["a-ok"])
+  })
+})
+
+// ── Gen perf: bleed tuning + overlap, exclusion rows read once ─────────────
+describe("buildRecommendations — adjacent bleed resolve (perf)", () => {
+  it("runs with the primary resolver tuning and starts before the primary resolve finishes", async () => {
+    seed({
+      users: [{ id: "u1", selected_genres: ["indie-rock"] }],
+      seed_artists: [{ user_id: "u1", name: "SeedA" }],
+    })
+    lf.similars.set("SeedA", similarRefs(Array.from({ length: 10 }, (_, i) => `Base${i}`)))
+    const { adjacentGenres } = await import("@/lib/genre/adjacency")
+    for (const tag of adjacentGenres("indie-rock", "close")) tagArtists.set(tag, ["BleedArtist"])
+
+    const { PlayableCandidates } = await import("./playable-candidates")
+    const orig = PlayableCandidates.prototype.resolve
+    const events: string[] = []
+    const opts: Record<string, unknown> = {}
+    vi.spyOn(PlayableCandidates.prototype, "resolve").mockImplementation(async function (
+      this: InstanceType<typeof PlayableCandidates>,
+      names,
+      o = {},
+    ) {
+      const kind = names.includes("BleedArtist") ? "bleed" : names.includes("Base0") ? "primary" : "other"
+      opts[kind] = { concurrency: o.concurrency, delayMs: o.delayMs }
+      events.push(`start:${kind}`)
+      const out = await orig.call(this, names, o)
+      events.push(`end:${kind}`)
+      return out
+    })
+
+    const result = await buildRecommendations(baseInput())
+    await result.finish()
+
+    expect(opts.bleed).toEqual(opts.primary)
+    expect(opts.primary).toEqual({ concurrency: 6, delayMs: 125 })
+    expect(events.indexOf("start:bleed")).toBeGreaterThan(-1)
+    expect(events.indexOf("start:bleed")).toBeLessThan(events.indexOf("end:primary"))
+    expect(cacheRows().some((r) => r.source === "adjacent_bleed")).toBe(true)
+    expect(result.metrics.bleedMs).toEqual(expect.any(Number))
+    expect(result.metrics.gatherMs).toEqual(expect.any(Number))
+  })
+})
+
+describe("buildRecommendations — exclusion rows read once per build (perf)", () => {
+  it("a softened build reads listened rows once and still applies each run's threshold", async () => {
+    const heard = Array.from({ length: 12 }, (_, i) => `Heard${i}`)
+    seed({
+      seed_artists: [{ user_id: "u1", name: "SeedA" }],
+      // play_count 7: over threshold 5 (run 1 → empty), under 10 (soften run passes).
+      listened_artists: heard.map((n, i) => ({ id: `l${i}`, user_id: "u1", artist_id: null, lastfm_artist_name: n, play_count: 7 })),
+    })
+    lf.similars.set("SeedA", similarRefs(heard))
+
+    const result = await buildRecommendations(baseInput())
+    await result.finish()
+
+    expect(result.softenedFilters?.playThreshold).toBe(true)
+    expect(cacheRows().length).toBeGreaterThan(0)
+    expect(cacheRows().every((r) => r.source.startsWith("soften_play_threshold"))).toBe(true)
+    const listenedReads = (h.fake as FakeSupabase).queries.filter((q) => q.table === "listened_artists" && q.op === "select")
+    expect(listenedReads).toHaveLength(1)
   })
 })

@@ -23,11 +23,14 @@ import { PreviewStore, type ConfirmCollector } from "./preview-store"
 import { buildEnrichArtist, lastfmResolve } from "@/lib/artist-identity/lastfm-lookup"
 import { searchTracksByArtist } from "@/lib/music-provider/itunes"
 import { getSpotifyTopTracks } from "@/lib/music-provider/spotify"
+import { snapshotCalls } from "@/lib/metrics/api-call-counter"
 
 /** The outbound ports: Last.fm name lookup/enrichment, iTunes, Spotify top-tracks. */
 export interface PlayablePorts {
   searchArtists: ResolveDeps["searchArtists"]
   enrichArtist?: ResolveDeps["enrichArtist"]
+  /** Live-lookup counter: lets the resolver skip its polite delay on cache hits. */
+  liveCalls?: ResolveDeps["liveCalls"]
   searchItunes: ConfirmPreviewDeps["searchItunes"]
   getSpotifyTopTracks: ConfirmPreviewDeps["getSpotifyTopTracks"]
 }
@@ -42,6 +45,8 @@ export function livePlayablePorts(accessToken: string): PlayablePorts {
   return {
     searchArtists: (name) => lastfmResolve(name),
     enrichArtist: buildEnrichArtist(),
+    // Both lookup ports are Last.fm getInfo; its counter ticks only on live calls.
+    liveCalls: () => snapshotCalls().lastfm.getInfo,
     searchItunes: (name) => searchTracksByArtist(name, "US", 5),
     getSpotifyTopTracks: (spotifyId) =>
       accessToken && spotifyId
@@ -88,6 +93,7 @@ export class PlayableCandidates {
       mintArtist: (artist) => this.identity.ensure(artist),
       concurrency: opts.concurrency,
       delayMs: opts.delayMs,
+      liveCalls: this.ports.liveCalls,
     })
     const keep = opts.keep ?? (() => true)
     const artists = new Map([...stats.resolved].filter(([, a]) => keep(a)))

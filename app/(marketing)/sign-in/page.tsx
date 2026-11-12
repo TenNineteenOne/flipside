@@ -68,20 +68,12 @@ export default function SignInPage({
         return
       }
 
-      // Check if new user needs onboarding
-      let next = "/feed"
-      try {
-        const check = await fetch("/api/onboarding/check")
-        if (check.ok) {
-          const { needsOnboarding } = await check.json()
-          if (needsOnboarding) next = "/onboarding"
-        }
-      } catch {
-        // Fall through to feed on check failure (the feed page re-checks)
-      }
+      // Straight to /feed: its server render redirects a not-yet-onboarded
+      // user to /onboarding (same rule as /api/onboarding/check), saving a
+      // round trip before navigation.
       // replace: Back must not return to the sign-in form (the proxy bounces it anyway).
       navigating = true
-      router.replace(next)
+      router.replace("/feed")
     } catch {
       // signIn threw (network drop, iOS backgrounding)
       setError(SIGN_IN_GENERIC_ERROR)

@@ -178,3 +178,30 @@ describe("getHistoryPage — empty result", () => {
     expect(hasMore).toBe(false)
   })
 })
+
+describe("getHistoryPage — artist_data payload", () => {
+  it("keeps only the HistoryEntry keys and still lifts the colour", async () => {
+    const cache = [
+      row({
+        artist_data: {
+          id: "artist-1",
+          name: "Radiohead",
+          genres: ["rock"],
+          imageUrl: "https://img/x.jpg",
+          popularity: 70,
+          artist_color: "#123456",
+          topTracks: [{ id: "t1" }],
+        },
+      }),
+    ]
+    const { history } = await getHistoryPage(makeSupabase({ cache }), "user-1", { offset: 0, limit: 5 })
+    expect(history[0].artist_data).toEqual({
+      id: "artist-1",
+      name: "Radiohead",
+      genres: ["rock"],
+      imageUrl: "https://img/x.jpg",
+      popularity: 70,
+    })
+    expect(history[0].artist_color).toBe("#123456")
+  })
+})

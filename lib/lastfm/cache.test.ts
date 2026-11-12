@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, vi } from "vitest"
 import {
   cachedArtistEnrichment,
   cachedArtistSearch,
@@ -168,5 +168,39 @@ describe("cachedArtistSearch", () => {
     const second = await cachedArtistSearch("transient-search-g3", 5, fetchFn, store)
     expect(calls).toBe(2)
     expect(second).toEqual(["Artist One"])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Write-behind: the fetch path never waits on (or fails from) the cache write
+// ---------------------------------------------------------------------------
+
+describe("cache writes are write-behind", () => {
+  it("returns the fresh payload while the write is still pending, and the write lands", async () => {
+    let release!: () => void
+    const writes: string[] = []
+    const store: CacheStore = {
+      async read() { return null },
+      write: (kind, key) => new Promise<void>((r) => { release = () => { writes.push(`${kind}:${key}`); r() } }),
+    }
+    const out = await cachedArtistEnrichment("wb-artist-1", async () => ({ genres: ["dub"], popularity: 10 }), store)
+    expect(out).toEqual({ genres: ["dub"], popularity: 10 })
+    expect(writes).toEqual([]) // write issued but not awaited
+    release()
+    await Promise.resolve()
+    expect(writes).toEqual(["getInfo:wb-artist-1"])
+  })
+
+  it("a failing write is logged, not thrown", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {})
+    const store: CacheStore = {
+      async read() { return null },
+      async write() { throw new Error("db down") },
+    }
+    const out = await cachedArtistSearch("wb-query-1", 5, async () => ["x"], store)
+    expect(out).toEqual(["x"])
+    await new Promise((r) => setTimeout(r, 0))
+    expect(spy).toHaveBeenCalledWith(expect.stringContaining("[lfm-cache] write failed kind=search err=db down"))
+    spy.mockRestore()
   })
 })

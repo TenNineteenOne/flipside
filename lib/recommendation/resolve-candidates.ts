@@ -48,6 +48,13 @@ export interface ResolveDeps {
   maxAttemptsPerName?: number
   /** Number of parallel miss-resolver workers. Default 4. */
   concurrency?: number
+  /**
+   * Running count of live (non-cache) lookups, e.g. the Last.fm getInfo
+   * counter. When given, the polite delay is skipped after a name that made
+   * no live call. Process-global counts over-report (another worker's call
+   * counts), which errs toward sleeping. Absent = always delay (old behavior).
+   */
+  liveCalls?: () => number
   sleep?: (ms: number) => Promise<void>
 }
 
@@ -128,15 +135,18 @@ export async function resolveArtistsByName(
 
   async function runWorker() {
     let firstSuccessfulSearch = true
+    let delayNext = false
 
     while (queue.length > 0) {
       const name = queue.shift()
       if (name === undefined) return
 
-      // Polite delay between this worker's successful live searches.
-      if (!firstSuccessfulSearch) {
+      // Polite delay between this worker's successful live searches; a name
+      // served entirely from cache made no live call, so it earns no delay.
+      if (delayNext) {
         await sleep(delayMs)
       }
+      const liveBefore = deps.liveCalls?.()
 
       // Fire enrichment in parallel with Spotify search. The Spotify retry
       // loop below may take multiple round-trips; enrichment resolves
@@ -231,6 +241,7 @@ export async function resolveArtistsByName(
         void enrichmentPromise.catch(() => {})
         result.searchFail++
       }
+      delayNext = !firstSuccessfulSearch && (deps.liveCalls === undefined || deps.liveCalls() !== liveBefore)
     }
   }
 

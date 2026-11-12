@@ -1,6 +1,6 @@
 ---
 title: Generation Engine (Feed)
-updated: 2026-11-10
+updated: 2026-11-12
 related: [[music-providers]], [[external-apis]], [[genre-system]], [[data-model]]
 ---
 
@@ -42,7 +42,8 @@ Wander farther far pool (step 11).
    latency knob.
 6. **Resolve** (`PlayableCandidates.resolve`, `playable-candidates.ts`) — the doorway
    (`ArtistIdentity`: name-cache → Last.fm `artist.getInfo` lookup → mint), keyed by the
-   input name. Concurrency 6, 125ms spacing for the blocking pool. The resolved artist carries
+   input name. Concurrency 6, 125ms spacing for the blocking pool (and the bleed); the
+   spacing is skipped after a name whose getInfo came from cache (no live call). The resolved artist carries
    its roster row's `spotify_id` and (when set) popularity — a name landing on a homonym's
    Spotify row keeps the Spotify fallback and scores on the row's popularity (#175 F-F).
 7. **Filter** (the `keep` gate, before rehydrate/confirm) — `Exclusions`
@@ -50,6 +51,8 @@ Wander farther far pool (step 11).
    #205; `users.play_threshold` is retired) by id or name key, thumbs-up
    or saved — Feed only, they never come back (D1, #175 F-B) — and the 7-day seen /
    dismissed cooldown), popularity>50 at fame level 0 ("Underground only"), optional genre filter.
+   Exclusions start loading before the first hop; listened + thumbs-down rows are read once
+   per build (`preloadExclusionRows`) and shared by every soften run.
    Then **rehydrate** from `artist_tracks_cache` via `PreviewStore`.
 8. **Score** (`scoreCandidate` / `tierMultiplier`) —
    `k^popularity × 0.8 + seedRelevance × 0.2 − adventurousPenalty`, where `k` comes from
@@ -77,6 +80,8 @@ Wander farther far pool (step 11).
       usual: <genre>"); adjacent bleed never does. `why` is stored verbatim in
       `recommendation_cache.why` and lifted onto `CardArtist.why.outsideUsual` by
       `assembleFeedCards`. The far and adjacent fetches run concurrently.
+    The adjacent bleed's tag fetch + resolve (`fetchAdjacentPool`) starts alongside step 6
+    and is handed in as `adjacentPool`; scoring and the merge wait for the pick.
 12. **Confirm previews — Tier 1** (`PlayableCandidates.confirm` → `confirmToTarget` /
     `confirm-previews.ts`) — first 8 artists, in waves: rehydrated cache → **iTunes**
     `search?entity=song` → **Spotify `/artists/{id}/top-tracks`** fallback. Artists with no

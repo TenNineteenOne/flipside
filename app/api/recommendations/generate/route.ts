@@ -120,38 +120,46 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
   // the promise so it never becomes an unhandled rejection if unused.
   const clientTokenPromise = getSpotifyClientToken().catch(() => null)
 
+  // Replace mode: wipe unseen queue before regenerating. Powers the Settings
+  // "Generate my feed" button so newly-added anchors take immediate effect.
+  const replace = req.nextUrl.searchParams.get("replace") === "true"
+
+  // ── [SECURITY PATCH] Algorithmic Queue Capacity DoS limit ──
+  // Restricts bad actors from infinitely looping the background engine, but allows up to 60 unseen artists to queue.
+  // Counts only UNEXPIRED unseen rows — the same set the feed shows
+  // (feed-query); counting expired rows left returning users stuck at an empty
+  // feed behind a "queue full" 429. A read keyed on the authed userId, so it
+  // runs alongside the user-row read; checked BEFORE the cooldown claim so a
+  // queue-full 429 doesn't burn the 30s cooldown.
+  const queueCountPromise = replace
+    ? null
+    : supabase
+        .from("recommendation_cache")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", userId)
+        .is("seen_at", null)
+        .gt("expires_at", new Date().toISOString())
+
   // #205: fame_level is the one popularity setting; Wander farther
   // (adventurous) also turns on the 2nd similarity hop; the play threshold is
   // a fixed constant (users.play_threshold / popularity_curve /
   // underground_mode / deep_discovery are retired, kept one release for rollback).
-  const { data: user, error: userError } = await supabase
-    .from("users")
-    .select("id, fame_level, adventurous")
-    .eq("id", userId)
-    .maybeSingle()
+  const [{ data: user, error: userError }, queueCount] = await Promise.all([
+    supabase
+      .from("users")
+      .select("id, fame_level, adventurous")
+      .eq("id", userId)
+      .maybeSingle(),
+    queueCountPromise,
+  ])
 
   if (userError || !user) return apiError("User not found", 404)
 
   const { popularityCurve, undergroundMode } = fameToEngine(user.fame_level)
   const adventurous = !!user.adventurous
 
-  // Replace mode: wipe unseen queue before regenerating. Powers the Settings
-  // "Generate my feed" button so newly-added anchors take immediate effect.
-  const replace = req.nextUrl.searchParams.get("replace") === "true"
-
-  if (!replace) {
-    // ── [SECURITY PATCH] Algorithmic Queue Capacity DoS limit ──
-    // Restricts bad actors from infinitely looping the background engine, but allows up to 60 unseen artists to queue.
-    // Counts only UNEXPIRED unseen rows — the same set the feed shows
-    // (feed-query); counting expired rows left returning users stuck at an empty
-    // feed behind a "queue full" 429. Runs BEFORE the cooldown claim so a
-    // queue-full 429 doesn't burn the 30s cooldown.
-    const { count, error: countErr } = await supabase
-      .from("recommendation_cache")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", user.id)
-      .is("seen_at", null)
-      .gt("expires_at", new Date().toISOString())
+  if (queueCount) {
+    const { count, error: countErr } = queueCount
 
     if (countErr) {
       console.error("[generate] failed to check queue limit", countErr)
@@ -219,15 +227,22 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
     const apiCalls = snapshotCalls()
     console.log(formatGenTiming({
       userId: user.id,
-      phases: {
-        firstBatch: metrics.firstBatchMs,
-        primary: metrics.primaryMs,
-        preview: metrics.previewMs,
-        // Far pool (Wander farther): fetch wall-clock, and how long tier 1 blocked on it.
-        ...(metrics.farMs !== undefined ? { far: metrics.farMs } : {}),
-        ...(metrics.farWaitMs !== undefined ? { farWait: metrics.farWaitMs } : {}),
-        ...(metrics.farTimedOut ? { farTimeout: 1 } : {}),
-      },
+      // Stage clocks overlap (bleed runs alongside primary), so they don't sum to total.
+      phases: Object.fromEntries(
+        Object.entries({
+          firstBatch: metrics.firstBatchMs,
+          primary: metrics.primaryMs,
+          preview: metrics.previewMs,
+          gather: metrics.gatherMs,
+          similar: metrics.similarMs,
+          exclusions: metrics.exclusionsMs,
+          bleed: metrics.bleedMs,
+          // Far pool (Wander farther): fetch wall-clock, and how long tier 1 blocked on it.
+          far: metrics.farMs,
+          farWait: metrics.farWaitMs,
+          farTimeout: metrics.farTimedOut ? 1 : undefined,
+        }).filter((e): e is [string, number] => e[1] !== undefined),
+      ),
       totalMs: Date.now() - genStart,
       misses: metrics.misses,
       retries: metrics.retries,

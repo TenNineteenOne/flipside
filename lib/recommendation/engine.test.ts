@@ -611,6 +611,30 @@ describe("augmentWithAdjacent", () => {
     })
     expect(result).toEqual(tinyBase)
   })
+
+  it("uses a pre-started adjacentPool without refetching, and skips names the base holds", async () => {
+    const base = makeBase(20)
+    const fetchTagArtists = vi.fn(async () => ["never"])
+    const resolveArtists = vi.fn(async () => new Map<string, Artist>())
+    const result = await augmentWithAdjacent(base, {
+      userGenres: ["indie-rock"],
+      popularityCurve: 0.95,
+      fetchTagArtists,
+      resolveArtists,
+      adjacentPool: Promise.resolve({
+        resolved: new Map([
+          [base[7].artist.name, mkArtist("id_dupe", 30, "indie-pop")],
+          ["adjX", mkArtist("id_adjX", 30, "indie-pop")],
+        ]),
+        nameToTag: new Map([["adjx", "indie-pop"]]),
+      }),
+    })
+    expect(fetchTagArtists).not.toHaveBeenCalled()
+    expect(resolveArtists).not.toHaveBeenCalled()
+    const bleed = result.filter((r) => r.source === "adjacent_bleed")
+    expect(bleed.map((r) => r.artist.id)).toEqual(["id_adjX"])
+    expect(bleed[0].why.sourceArtists).toEqual(["indie-pop"])
+  })
 })
 
 // ── runWithSoftening (auto-soften cascade) ────────────────────────────────
