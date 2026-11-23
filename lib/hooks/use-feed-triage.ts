@@ -53,7 +53,7 @@ const linkRef = (a: CardArtist) => ({ artistId: a.id, spotifyId: a.spotifyId ?? 
 export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatform, initialSavedIds?: string[]) {
   const audio = useAudio()
   // Same error copy the feed has always passed.
-  const { signals, setSignal, restore } = useArtistFeedback({
+  const { signals, setSignal, restore, markSeen } = useArtistFeedback({
     errorMessages: {
       undoFailed: "Couldn't undo. Try again.",
       saveFailed: "Couldn't save feedback. Try again.",
@@ -223,10 +223,11 @@ export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatfor
   const save = useCallback(
     (a: CardArtist) => {
       const was = savedIds.has(a.id)
-      void toggleSave(a.id)
+      // A save stamps seen_at: Undo of a later Like/Pass on this card must leave it stamped.
+      void toggleSave(a.id).then((ok) => { if (ok && !was) markSeen(a.id) })
       notify(was ? `Removed ${a.name} from Saved` : `Saved ${a.name}`)
     },
-    [savedIds, toggleSave, notify],
+    [savedIds, toggleSave, markSeen, notify],
   )
 
   /** The artist on the user's preferred platform. */

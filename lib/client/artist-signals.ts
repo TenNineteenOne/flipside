@@ -135,6 +135,11 @@ export interface ArtistFeedback {
    */
   setSignal(artistId: string, signal: string): Promise<boolean>
   /**
+   * Tell the controller that seen_at was stamped outside it while the artist
+   * shows as undecided (a save: POST /api/saves), so `restore` leaves it stamped.
+   */
+  markSeen(artistId: string): void
+  /**
    * Unconditionally DELETE the artist's feedback. Not optimistic: the signal
    * clears only once the server confirms (History keeps the row until then).
    */
@@ -156,7 +161,16 @@ export interface ArtistFeedback {
    *   DELETE feedback     — soft-deletes the feedback row; seen_at stays
    *   DELETE dismiss      — clears skip_at + seen_at
    * So, from the visible value to `previous`:
-   *   thumbs → undecided        DELETE feedback
+   *   thumbs → undecided        DELETE feedback, then DELETE dismiss to clear the
+   *                             seen_at the thumbs stamped, so the card is back
+   *                             in the feed queue. Only the DELETE feedback when
+   *                             seen_at was stamped before the thumbs (the artist
+   *                             was saved or un-liked here): the rows end as they
+   *                             were before the undone tap either way. The DELETE
+   *                             dismiss is best-effort like the POST below: the
+   *                             verdict is already gone, so client and server
+   *                             agree on it; a failure leaves the card out of
+   *                             the queue (History "Skipped")
    *   skip   → undecided        DELETE dismiss
    *   skip   → thumbs           DELETE dismiss, then POST thumbs (the row was
    *                             never removed; the POST only restores seen_at,
@@ -176,6 +190,10 @@ export function createArtistFeedback({
   messages,
 }: ArtistFeedbackDeps): ArtistFeedback {
   const store = createOptimisticStore<string>()
+  // Artists shown as undecided here whose seen_at is stamped anyway: saved
+  // (markSeen) or un-liked (DELETE feedback leaves seen_at). Kept per request
+  // answer, read when Undo is tapped.
+  const seenBefore = new Set<string>()
   const undoFailed = messages?.undoFailed ?? DEFAULT_FEEDBACK_MESSAGES.undoFailed
   const saveFailed = messages?.saveFailed ?? DEFAULT_FEEDBACK_MESSAGES.saveFailed
 
@@ -194,14 +212,19 @@ export function createArtistFeedback({
   async function undismiss(artistId: string) {
     const res = await fetchImpl(`/api/dismiss/${artistId}`, { method: "DELETE" })
     if (!res.ok) throw new Error("Server error")
+    seenBefore.delete(artistId)
   }
 
   return {
     store,
+    markSeen: (artistId) => void seenBefore.add(artistId),
 
     async setSignal(artistId, signal) {
       if (classifyFeedbackOp(signal, store.get(artistId)) === "delete") {
-        const ok = await store.optimistic(artistId, undefined, () => del(buildFeedbackDeleteUrl(artistId)))
+        const ok = await store.optimistic(artistId, undefined, async () => {
+          await del(buildFeedbackDeleteUrl(artistId))
+          seenBefore.add(artistId)
+        })
         if (!ok) toast.error(undoFailed)
         return ok
       }
@@ -215,7 +238,11 @@ export function createArtistFeedback({
       if (current === previous) return true
       const steps: Array<() => Promise<void>> =
         previous === undefined
-          ? [current === "skip" ? () => undismiss(artistId) : () => del(buildFeedbackDeleteUrl(artistId))]
+          ? current === "skip"
+            ? [() => undismiss(artistId)]
+            : seenBefore.has(artistId)
+              ? [() => del(buildFeedbackDeleteUrl(artistId))]
+              : [() => del(buildFeedbackDeleteUrl(artistId)), () => undismiss(artistId).catch(() => {})]
           : current === "skip"
             ? [() => undismiss(artistId), () => post(artistId, previous).catch(() => {})]
             : previous === "skip" && current !== undefined

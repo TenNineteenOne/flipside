@@ -9,7 +9,7 @@ import { createArtistFeedback } from "@/lib/client/artist-signals"
 import { decide } from "@/lib/feed/decision"
 import { loadTables, type Row } from "./tables"
 import { closeSql, statements } from "./supabase-pg"
-import { APP, ARTIST, MODEL, RETURN_TO_FEED_SOURCE, pages, readState, requestName, returnToFeed, send, setState } from "./world"
+import { APP, ARTIST, MODEL, RETURN_TO_FEED_SOURCE, SAVE_SOURCE, pages, readState, requestName, returnToFeed, send, setState } from "./world"
 
 const T = loadTables()
 afterAll(closeSql)
@@ -64,8 +64,11 @@ describe("what the pages read (InQueue, InHistory, ServerSignal)", () => {
   })
 })
 
-/** A feedback client showing `cur`, and the requests it sent since; requests after the first `failFrom` fail. */
-async function clientShowing(cur: string, failFrom = Infinity) {
+/**
+ * A feedback client showing `cur`, and the requests it sent since; requests after the first `failFrom` fail.
+ * `kept`: the card was saved before the verdict (the model's `kept`; the store's seenBefore).
+ */
+async function clientShowing(cur: string, failFrom = Infinity, kept = false) {
   const sent: string[] = []
   let ready = false
   const fetchImpl = (async (url: string, init?: RequestInit) => {
@@ -73,6 +76,7 @@ async function clientShowing(cur: string, failFrom = Infinity) {
     return ready && sent.length > failFrom ? new Response(null, { status: 500 }) : new Response(null, { status: 200 })
   }) as typeof fetch
   const fb = createArtistFeedback({ fetchImpl, toast: { error: () => {} } })
+  if (kept) fb.markSeen(ARTIST)
   if (cur !== "U") await fb.setSignal(ARTIST, APP[cur as "up"])
   sent.length = 0
   ready = true
@@ -98,16 +102,42 @@ describe("client taps (JudgeSteps, RestoreSteps, RtfFirst)", () => {
     }
   })
 
-  it("Undo sends what the model says; only the second request of skip -> thumbs may fail quietly", async () => {
-    for (const [cur, prev, steps, soft] of T.RESTORE) {
-      const { fb, sent } = await clientShowing(cur)
+  it("Undo sends what the model says; only the second request of a two-request undo may fail quietly", async () => {
+    for (const [cur, prev, kept, steps, soft] of T.RESTORE) {
+      const { fb, sent } = await clientShowing(cur, Infinity, kept)
       expect(await fb.restore(ARTIST, prev === "U" ? undefined : APP[prev as "up"])).toBe(true)
-      expect(sent, `undo from ${cur} to ${prev}`).toEqual(steps)
+      expect(sent, `undo from ${cur} to ${prev}, kept ${kept}`).toEqual(steps)
       expect(shown(fb)).toBe(prev)
       if (steps.length === 0) continue
-      const last = await clientShowing(cur, steps.length - 1)
-      expect(await last.fb.restore(ARTIST, prev === "U" ? undefined : APP[prev as "up"]), `last request fails, ${cur} to ${prev}`).toBe(soft)
+      const last = await clientShowing(cur, steps.length - 1, kept)
+      expect(await last.fb.restore(ARTIST, prev === "U" ? undefined : APP[prev as "up"]), `last request fails, ${cur} to ${prev}, kept ${kept}`).toBe(soft)
     }
+  })
+
+  // The model's `kept` (Step, SaveStep): set by an answered un-like and an answered save, cleared by an answered dismiss-clear.
+  it("the store keeps `kept` as the model does", async () => {
+    const undoOfLike = async (fb: Awaited<ReturnType<typeof clientShowing>>["fb"], sent: string[]) => {
+      await fb.setSignal(ARTIST, "thumbs_up")
+      sent.length = 0
+      await fb.restore(ARTIST, undefined)
+      return [...sent]
+    }
+    const unliked = await clientShowing("up")
+    await unliked.fb.setSignal(ARTIST, "thumbs_up") // un-like
+    expect(await undoOfLike(unliked.fb, unliked.sent), "after an un-like").toEqual(["delFeedback"])
+
+    const failedUnlike = await clientShowing("up", 0)
+    expect(await failedUnlike.fb.setSignal(ARTIST, "thumbs_up")).toBe(false)
+    const again = await clientShowing("up")
+    expect(await again.fb.restore(ARTIST, undefined)).toBe(true)
+    expect(again.sent, "a failed un-like marks nothing (fresh client for comparison)").toEqual(["delFeedback", "delDismiss"])
+
+    const cleared = await clientShowing("skip", Infinity, true)
+    await cleared.fb.restore(ARTIST, undefined) // delDismiss
+    expect(await undoOfLike(cleared.fb, cleared.sent), "after a dismiss-clear").toEqual(["delFeedback", "delDismiss"])
+
+    const source = fs.readFileSync(path.join(process.env.FLIPSIDE_REPO!, "lib/hooks/use-feed-triage.ts"), "utf8")
+    expect(source, "the Feed's save changed: update world.ts feedSave and the model's SaveStep (kept)").toContain(SAVE_SOURCE)
   })
 
   it("Return to feed starts with the request the model says", async () => {

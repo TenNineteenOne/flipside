@@ -161,5 +161,16 @@ export const RETURN_TO_FEED_SOURCE =
 export const returnToFeed = async (fb: ArtistFeedback, signal: string) =>
   (!hasFeedbackRow(signal) || (await fb.removeSignal(ARTIST))) && (await fb.dismiss(ARTIST))
 
+/**
+ * The Feed's Save button: lib/hooks/use-feed-triage.ts save. A save that
+ * answered OK tells the feedback store that seen_at is stamped. Repeated here
+ * for the same reason; conformance.check.ts fails if the source line changes.
+ */
+export const SAVE_SOURCE = "void toggleSave(a.id).then((ok) => { if (ok && !was) markSeen(a.id) })"
+export const feedSave = (tab: { feedback: ArtistFeedback; saves: ReturnType<typeof createArtistSaves> }) => {
+  const was = tab.saves.store.get(ARTIST) === true
+  void tab.saves.toggleSave(ARTIST).then((ok) => { if (ok && !was) tab.feedback.markSeen(ARTIST) })
+}
+
 /** The signal a History row shows: the store's, else the one it was loaded with (history-client.tsx `shown`). */
 export const historyShows = (fb: ArtistFeedback, loaded: string) => fb.store.get(ARTIST) ?? loaded

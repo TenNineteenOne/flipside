@@ -13,8 +13,8 @@ ASSUME \A s \in States :
   PrintT(<<"READ", Row(s), InQueue(s), InHistory(s), ServerSignal(s)>>)
 ASSUME \A cur \in Vis : \A sig \in {"up", "down", "skip"} :
   PrintT(<<"JUDGE", cur, sig, JudgeSteps(cur, sig), JudgeTarget(cur, sig)>>)
-ASSUME \A cur \in Vis : \A prev \in Vis :
-  PrintT(<<"RESTORE", cur, prev, RestoreSteps(cur, prev), RestoreSoft(cur, prev)>>)
+ASSUME \A cur \in Vis : \A prev \in Vis : \A kept \in BOOLEAN :
+  PrintT(<<"RESTORE", cur, prev, kept, RestoreSteps(cur, prev, kept), RestoreSoft(cur, prev, kept)>>)
 ASSUME \A shown \in {"up", "down", "dismissed", "skip"} :
   PrintT(<<"RTF", shown, RtfFirst(shown)>>)
 =============================================================================

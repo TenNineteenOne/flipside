@@ -25,10 +25,12 @@
 (*   ServerSignal                                                          *)
 (*   JudgeSteps     lib/client/artist-signals.ts classifyFeedbackOp,       *)
 (*                  setSignal; lib/feed/decision.ts decide                 *)
-(*   RestoreSteps   lib/client/artist-signals.ts restore                   *)
+(*   RestoreSteps   lib/client/artist-signals.ts restore, seenBefore       *)
+(*                  (the tab's `kept`), markSeen                           *)
 (*   Step, SaveStep lib/client/artist-signals.ts createOptimisticStore     *)
 (*                  (optimistic, confirmedOp), lib/keyed-serializer.ts     *)
-(*   Undo, Save     lib/hooks/use-feed-triage.ts (undoLast, notify, save)  *)
+(*   Undo, Save     lib/hooks/use-feed-triage.ts (undoLast, notify, save;  *)
+(*                  save calls markSeen once the save has answered)        *)
 (*   ChangeTo,      components/history/history-client.tsx                  *)
 (*   ReturnToFeed   (handleChangeSignal, handleUndo, hasFeedbackRow)       *)
 (*                                                                         *)
@@ -91,14 +93,21 @@ ServerSignal(s) == IF s.fb # "none" THEN s.fb ELSE IF s.skip THEN "dismissed" EL
 JudgeSteps(cur, sig) == IF sig = "up" /\ cur = "up" THEN <<"delFeedback">> ELSE <<Post(sig)>>
 JudgeTarget(cur, sig) == IF sig = "up" /\ cur = "up" THEN "U" ELSE sig
 
-RestoreSteps(cur, prev) ==
+\* `kept` is the tab's belief that seen was stamped while the card showed no
+\* verdict (it was saved or un-liked here): then undoing a Like or Pass must
+\* leave seen alone. Otherwise the undo also clears the seen its Like stamped.
+RestoreSteps(cur, prev, kept) ==
   IF cur = prev THEN <<>>
-  ELSE IF prev = "U" THEN (IF cur = "skip" THEN <<"delDismiss">> ELSE <<"delFeedback">>)
+  ELSE IF prev = "U" THEN (IF cur = "skip" THEN <<"delDismiss">>
+                           ELSE IF kept \/ Variant = "undoLeavesSeen" THEN <<"delFeedback">>
+                           ELSE <<"delFeedback", "delDismiss">>)
   ELSE IF cur = "skip" THEN <<"delDismiss", Post(prev)>>
   ELSE IF prev = "skip" /\ cur # "U" THEN <<"delFeedback">>
   ELSE <<Post(prev)>>
-\* The second request of skip -> thumbs is best-effort: its failure is swallowed.
-RestoreSoft(cur, prev) == cur # prev /\ prev # "U" /\ cur = "skip"
+\* The second request of skip -> thumbs, and of thumbs -> no verdict, is
+\* best-effort: its failure is swallowed.
+RestoreSoft(cur, prev, kept) ==
+  cur # prev /\ (IF prev = "U" THEN Len(RestoreSteps(cur, prev, kept)) = 2 ELSE cur = "skip")
 
 \* History's "Return to feed": first request, by the label the row shows.
 RtfFirst(shown) == IF shown \in {"up", "down"} THEN "delFeedback" ELSE "delDismiss"
@@ -109,7 +118,8 @@ RtfFirst(shown) == IF shown \in {"up", "down"} THEN "delFeedback" ELSE "delDismi
 BlankTab ==
   [page |-> "feed", row |-> FALSE, vis |-> "U", conf |-> "U", loaded |-> "skip",
    booked |-> FALSE, savedVis |-> FALSE, savedConf |-> FALSE, q |-> <<>>, sq |-> <<>>,
-   undoTo |-> "none", rtf |-> FALSE, solo |-> Ghosts, snap |-> Fresh, snapOk |-> FALSE]
+   undoTo |-> "none", kept |-> FALSE, rtf |-> FALSE, solo |-> Ghosts, snap |-> Fresh,
+   snapOk |-> FALSE]
 
 Shown(tb) == IF tb.vis = "U" THEN tb.loaded ELSE tb.vis
 Idle(tb) == tb.q = <<>> /\ tb.sq = <<>> /\ ~tb.rtf
@@ -176,9 +186,10 @@ TapUndo(t) ==
   LET tb == tab[t]
       prev == tb.undoTo
       cur == tb.vis
-      steps == RestoreSteps(cur, prev)
-      op == [steps |-> steps, soft |-> RestoreSoft(cur, prev), target |-> prev,
-             mode |-> "opt", tok |-> FALSE, tag |-> "undo"]
+      steps == RestoreSteps(cur, prev, tb.kept)
+      op == [steps |-> steps, soft |-> RestoreSoft(cur, prev, tb.kept), target |-> prev,
+             mode |-> "opt", tok |-> FALSE,
+             tag |-> IF prev = "U" /\ cur \in {"up", "down"} THEN "undoVerdict" ELSE "undo"]
   IN /\ tb.page = "feed" /\ tb.row /\ prev # "none" /\ Len(tb.q) < MaxQueue
      /\ tab' = [tab EXCEPT ![t] =
           [tb EXCEPT !.undoTo = "none",
@@ -234,10 +245,15 @@ Rtf2Op == [steps |-> <<"delDismiss">>, soft |-> FALSE, target |-> "U", mode |-> 
 \*   "ok"   the server applies it and the tab gets the answer
 \*   "lost" the server applies it, the tab sees a failure
 \*   "fail" the server never applies it, the tab sees a failure
+\* The tab updates `kept` from each answer it gets: an un-like leaves seen
+\* stamped, the dismiss-clear clears it.
 Step(t, outcome) ==
-  LET tb == tab[t]
-      o == Head(tb.q)
+  LET t0 == tab[t]
+      o == Head(t0.q)
       r == Head(o.steps)
+      tb == [t0 EXCEPT !.kept = IF outcome # "ok" THEN @
+                                ELSE IF r = "delDismiss" THEN FALSE
+                                ELSE IF o.tag = "unlike" THEN TRUE ELSE @]
       last == Len(o.steps) = 1
       applied == outcome # "fail"
       s2 == IF applied THEN Apply(srv, r) ELSE srv
@@ -257,7 +273,7 @@ Step(t, outcome) ==
              THEN [tb EXCEPT !.q = Append(rest, Rtf2Op), !.conf = "U", !.vis = "U", !.solo = solo2]
              ELSE [tb EXCEPT !.q = rest, !.rtf = FALSE, !.row = FALSE, !.conf = "U", !.vis = "U",
                              !.loaded = "skip", !.booked = FALSE, !.solo = solo2]
-  IN /\ tb.q # <<>>
+  IN /\ t0.q # <<>>
      /\ outcome # "ok" => fails < MaxFails
      /\ srv' = s2
      /\ fails' = IF outcome = "ok" THEN fails ELSE fails + 1
@@ -267,8 +283,9 @@ Step(t, outcome) ==
                                           !.solo = solo2], applied)
              /\ evt' = "none"
         ELSE /\ tab' = Bump(t, done, applied)
-             /\ evt' = IF good /\ o.tag = "undo" /\ solo2 /\ tb.snapOk /\ s2 # tb.snap
-                         THEN "undoMismatch"
+             /\ evt' = IF good /\ o.tag \in {"undo", "undoVerdict"} /\ solo2 /\ tb.snapOk /\ s2 # tb.snap
+                         THEN (IF o.tag = "undoVerdict" /\ tb.snap.fb = "none"
+                               THEN "verdictUndoMismatch" ELSE "undoMismatch")
                        ELSE IF good /\ o.tag = "rtf2" /\ ~(InQueue(s2) /\ s2.fb = "none")
                          THEN "rtfMismatch"
                        ELSE "none"
@@ -278,7 +295,8 @@ RequestLost(t) == Step(t, "lost")
 RequestFails(t) == Step(t, "fail")
 
 \* The same for the save queue. POST /api/saves is two statements: the saves
-\* upsert, then a seen_at stamp whose failure is only logged.
+\* upsert, then a seen_at stamp whose failure is only logged. A save that
+\* answered OK marks the card `kept` (use-feed-triage.ts save -> markSeen).
 SaveStep(t, outcome) ==
   LET tb == tab[t]
       o == Head(tb.sq)
@@ -300,6 +318,7 @@ SaveStep(t, outcome) ==
           ELSE [tb EXCEPT !.sq = <<>>,
                           !.savedConf = IF good THEN o.target ELSE @,
                           !.savedVis = IF good THEN @ ELSE tb.savedConf,
+                          !.kept = @ \/ (good /\ o.target),
                           !.solo = solo2],
           applied)
 
@@ -327,7 +346,11 @@ NoQueuedVerdict == AllIdle => ~(InQueue(srv) /\ srv.fb # "none")
 
 \* Feed Undo, when every request succeeded and no other tab did anything,
 \* leaves the rows exactly as they were before the undone tap.
-UndoRestores == evt # "undoMismatch"
+UndoRestores == evt \notin {"undoMismatch", "verdictUndoMismatch"}
+
+\* The part of UndoRestores for the plain case: Undo of a Like or Pass that was
+\* tapped on a card with no verdict, on screen and on the server.
+UndoOfVerdictRestores == evt # "verdictUndoMismatch"
 
 \* When History reports that "Return to feed" worked, the artist is in the
 \* queue with no verdict.

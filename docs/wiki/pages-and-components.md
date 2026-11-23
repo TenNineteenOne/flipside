@@ -127,7 +127,11 @@ triage buttons, track chips, Play preview, the landing's primary buttons) a 1px 
   action. The plan's undo records the verdict the artist had before (undecided, thumbs_up,
   thumbs_down or skip); `undoLast()` puts it back with `useArtistFeedback`'s `restore`
   (optimistic, queued behind any in-flight call, so a later decision still wins) and
-  reselects, only while that toast is up. The toast and pending undo are dropped when the feed
+  reselects, only while that toast is up. Undo of a Like or Pass on an undecided card removes
+  the feedback and then clears `seen_at` (`DELETE /api/feedback`, then `DELETE /api/dismiss`),
+  so the card is still in the feed after a reload; when the card was saved or un-liked in this
+  tab first (`seen_at` already stamped; `save` reports a successful save with `markSeen`), it
+  only removes the feedback, which leaves the rows as they were before the tap. The toast and pending undo are dropped when the feed
   unmounts; when a decision's request fails (verdict rolled back, error toast from
   `useArtistFeedback`) and its toast is still the current one, that toast and its undo go too. An
   advancing `judge` on a different artist within 350ms of the previous decision that moved the
@@ -286,7 +290,7 @@ triage buttons, track chips, Play preview, the landing's primary buttons) a 1px 
 | `useFeedTriage` | selection, verdicts (from `useArtistFeedback`), saves, playback, undo toast | the feed's single triage object for desktop, tablet and Snap: `judge`, `undoLast`, `select`, `move`, `becomeCurrent`, `togglePlay`, `playTrack`, `save`, `share`, `artistLink`, `addTracks`; derived `selected`, `visible`, `remaining`, `total`, `counts`, `tuning`, `nowPlayingArtist` (details under Shared components) |
 | `useFeedFill` | seen ids, counts | polls `GET /api/recommendations` (2.5s, assembled `CardArtist[]`) → append playable; stops at target / 3 idle (a non-ok answer counts as idle) / 60s; a stopped or superseded run's in-flight poll never appends or counts (after one final poll, retried once after 1.5s if the fetch throws); a tick is skipped while a poll is in flight. The interval/ceiling/final-retry mechanics are `createPoller` (`lib/client/poll.ts`) |
 | `useArtistTracks` | tracks | `GET /api/artists/:id/tracks?name=` (only if no baked tracks); `isFetching` is derived (true from the first render until the request settles) |
-| `useArtistFeedback` | `Map<id,signal>` | POST/DELETE `/api/feedback`, DELETE `/api/dismiss`. Controller `lib/client/artist-signals.ts`: optimistic at tap time, per-artist serialized, falls back to last confirmed value when the last queued call fails. `restore(id, previous)` (feed Undo) is optimistic too and picks the request(s) from the visible → previous transition (see the comment in the controller; skip → thumbs is DELETE dismiss then a best-effort POST, done once the DELETE succeeds) |
+| `useArtistFeedback` | `Map<id,signal>` | POST/DELETE `/api/feedback`, DELETE `/api/dismiss`. Controller `lib/client/artist-signals.ts`: optimistic at tap time, per-artist serialized, falls back to last confirmed value when the last queued call fails. `restore(id, previous)` (feed Undo) is optimistic too and picks the request(s) from the visible → previous transition (see the comment in the controller; skip → thumbs is DELETE dismiss then a best-effort POST, done once the DELETE succeeds; thumbs → undecided is DELETE feedback then a best-effort DELETE dismiss that clears `seen_at`, skipped when `seen_at` was stamped before the thumbs: an un-like here, or a save reported through `markSeen`) |
 | `useArtistSaves` | `Set<id>` | POST/DELETE `/api/saves`; same artist-signal controller |
 | `useFeedGeneration` | generating | the only `POST /api/recommendations/generate` caller with a guard (`lib/client/feed-generation.ts`): `requestMore` (feed top-up appends; `{ replace: true }` regenerates via `?replace=true` and quietly retries a cooldown 429 every 3s for up to 35s). `release()` (unmount) reports generating=false and silences the abandoned run; the feed skips `router.refresh()` after unmount. Loader/onboarding use its `postGenerate` + `classifyGenerate` |
 

@@ -2,6 +2,7 @@
 # config        rule                      result   variant (default: code)
 solo            NoQueuedVerdict           broken
 solo            UndoRestores              broken
+solo            UndoOfVerdictRestores     holds
 solo            ReturnToFeedWorks         broken
 solo            SavedStaysSaved           holds
 solo            NeverStuck                holds
@@ -9,6 +10,7 @@ solo            ScreenUndecidedIsQueued   broken
 solo            ScreenVerdictIsRecorded   broken
 solo-nofail     NoQueuedVerdict           broken
 solo-nofail     UndoRestores              broken
+solo-nofail     UndoOfVerdictRestores     holds
 solo-nofail     ReturnToFeedWorks         broken
 solo-nofail     SavedStaysSaved           holds
 solo-nofail     NeverStuck                holds
@@ -23,3 +25,4 @@ tabs2-nofail    ReturnToFeedWorks         broken
 # Deliberately broken variants: proof that the rules that hold can fail.
 solo            NeverStuck                broken   clearDismissKeepsSkip
 solo            SavedStaysSaved           broken   deleteFeedbackDropsSave
+solo            UndoOfVerdictRestores     broken   undoLeavesSeen

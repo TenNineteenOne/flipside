@@ -20,7 +20,7 @@ const REQUEST = {
   postDown: "a Like or Pass lands",
   postSkip: "a Dismiss lands",
   delFeedback: "the verdict is removed (un-like, Undo of a Like or Pass, first half of Return to feed)",
-  delDismiss: "seen and dismissed are cleared (Undo of a Dismiss, second half of Return to feed)",
+  delDismiss: "seen and dismissed are cleared (Undo of a Dismiss, second half of Undo of a Like or Pass and of Return to feed)",
 }
 
 export const step = (action, from) => {

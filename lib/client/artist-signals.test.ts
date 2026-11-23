@@ -136,8 +136,8 @@ describe("feedback: restore (feed undo)", () => {
   }
 
   it.each([
-    ["thumbs_up", undefined, ["DELETE /api/feedback/a"]],
-    ["thumbs_down", undefined, ["DELETE /api/feedback/a"]],
+    ["thumbs_up", undefined, ["DELETE /api/feedback/a", "DELETE /api/dismiss/a"]],
+    ["thumbs_down", undefined, ["DELETE /api/feedback/a", "DELETE /api/dismiss/a"]],
     ["skip", undefined, ["DELETE /api/dismiss/a"]],
     ["thumbs_down", "thumbs_up", ["POST /api/feedback thumbs_up"]],
     ["thumbs_up", "thumbs_down", ["POST /api/feedback thumbs_down"]],
@@ -158,14 +158,14 @@ describe("feedback: restore (feed undo)", () => {
     expect(sig()).toBe(previous)
   })
 
-  it("X, Z, L with slow responses: ends liked; POST, DELETE, POST in order", async () => {
+  it("X, Z, L with slow responses: ends liked; the undo's two DELETEs stay together, ahead of the later tap", async () => {
     const { c, calls, sig } = feedback()
     c.setSignal("a", "thumbs_down")
     c.restore("a", undefined)
     expect(sig()).toBeUndefined()
     const last = c.setSignal("a", "thumbs_up")
     expect(sig()).toBe("thumbs_up")
-    expect(await drain(calls)).toEqual(["POST /api/feedback thumbs_down", "DELETE /api/feedback/a", "POST /api/feedback thumbs_up"])
+    expect(await drain(calls)).toEqual(["POST /api/feedback thumbs_down", "DELETE /api/feedback/a", "DELETE /api/dismiss/a", "POST /api/feedback thumbs_up"])
     await last
     expect(sig()).toBe("thumbs_up")
   })
@@ -179,6 +179,65 @@ describe("feedback: restore (feed undo)", () => {
     expect(await p).toBe(false)
     expect(sig()).toBe("thumbs_down")
     expect(toast.error).toHaveBeenCalledWith("Couldn't undo. Try again.")
+  })
+
+  it("thumbs → undecided: once the feedback DELETE succeeded, a failed seen-clear still counts as undone (no rollback, no toast)", async () => {
+    const { c, calls, sig, toast } = feedback()
+    await seed(c, "thumbs_up")
+    const p = c.restore("a", undefined)
+    await flush()
+    calls[0].resolve(true) // DELETE /api/feedback/a
+    await flush()
+    calls[1].resolve(false) // DELETE /api/dismiss/a
+    expect(await p).toBe(true)
+    expect(sig()).toBeUndefined()
+    expect(toast.error).not.toHaveBeenCalled()
+  })
+
+  it("a Like over an earlier Pass undoes to the Pass and does not clear seen", async () => {
+    const { c, calls, sig } = feedback()
+    c.setSignal("a", "thumbs_down")
+    c.setSignal("a", "thumbs_up")
+    const p = c.restore("a", "thumbs_down")
+    expect(sig()).toBe("thumbs_down")
+    expect((await drain(calls)).slice(2)).toEqual(["POST /api/feedback thumbs_down"])
+    expect(await p).toBe(true)
+  })
+
+  it("saved artist (markSeen): undo of a Like only removes the feedback, seen stays as the save left it", async () => {
+    const { c, calls, sig } = feedback()
+    c.markSeen("a")
+    c.setSignal("a", "thumbs_up")
+    c.restore("a", undefined)
+    expect(sig()).toBeUndefined()
+    expect(await drain(calls)).toEqual(["POST /api/feedback thumbs_up", "DELETE /api/feedback/a"])
+  })
+
+  it("un-liked artist (seen already stamped): undo of a later Like only removes the feedback", async () => {
+    const { c, calls } = feedback()
+    c.setSignal("a", "thumbs_up")
+    c.setSignal("a", "thumbs_up") // un-like: DELETE feedback, seen stays
+    await drain(calls)
+    c.setSignal("a", "thumbs_down")
+    c.restore("a", undefined)
+    expect((await drain(calls)).slice(2)).toEqual(["POST /api/feedback thumbs_down", "DELETE /api/feedback/a"])
+  })
+
+  it("a failed un-like does not count as seen-before; neither does a card whose dismissal was undone", async () => {
+    const { c, calls } = feedback()
+    c.markSeen("a")
+    await seed(c, "skip")
+    c.restore("a", undefined) // DELETE dismiss clears seen
+    await drain(calls)
+    c.setSignal("a", "thumbs_up")
+    c.setSignal("a", "thumbs_up") // un-like, fails below
+    await flush()
+    calls[1].resolve(true)
+    await flush()
+    calls[2].resolve(false)
+    await flush()
+    c.restore("a", undefined)
+    expect((await drain(calls)).slice(3)).toEqual(["DELETE /api/feedback/a", "DELETE /api/dismiss/a"])
   })
 
   it("skip → thumbs: once the DELETE succeeded, a failed POST still counts as undone (no rollback, no toast)", async () => {

@@ -6,7 +6,7 @@ interface Tables {
   APPLY: [Row, string, Row][]
   READ: [Row, boolean, boolean, string][]
   JUDGE: [string, string, string[], string][]
-  RESTORE: [string, string, string[], boolean][]
+  RESTORE: [string, string, boolean, string[], boolean][]
   RTF: [string, string][]
 }
 
@@ -28,7 +28,7 @@ export function loadTables(): Tables {
     const [, ...row] = JSON.parse(json)
     ;(out[m[1] as keyof Tables] as unknown[]).push(row)
   }
-  const want = { APPLY: 192, READ: 24, JUDGE: 12, RESTORE: 16, RTF: 4 }
+  const want = { APPLY: 192, READ: 24, JUDGE: 12, RESTORE: 32, RTF: 4 }
   for (const [k, n] of Object.entries(want)) {
     const got = out[k as keyof Tables].length
     if (got !== n) throw new Error(`Tables.tla printed ${got} ${k} rows, expected ${n}`)
