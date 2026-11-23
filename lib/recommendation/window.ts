@@ -26,10 +26,13 @@ export function cacheWindowSeed(userId: string, seedKey: string): number {
  */
 export function seededShuffle<T>(arr: T[], seed: number): T[] {
   const out = [...arr]
-  let s = seed || 1
+  let s = seed >>> 0
   for (let i = out.length - 1; i > 0; i--) {
-    s = (Math.imul(s, 1664525) + 1013904223) >>> 0
-    const j = s % (i + 1)
+    // mulberry32, index from the high bits: an LCG's low bits (`s % n`) cycle with tiny periods.
+    s = (s + 0x6d2b79f5) >>> 0
+    let t = Math.imul(s ^ (s >>> 15), s | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    const j = Math.floor((((t ^ (t >>> 14)) >>> 0) / 2 ** 32) * (i + 1))
     ;[out[i], out[j]] = [out[j], out[i]]
   }
   return out

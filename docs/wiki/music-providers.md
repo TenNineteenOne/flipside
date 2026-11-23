@@ -76,9 +76,11 @@ in-flight dedup), fetched by the generate route. `RateLimited` /
 
 `itunesFetch` owns iTunes HTTP; `searchTracksByArtist(name, market, limit)` returns `null`
 on breaker-open / failure, `[]` on zero matches (callers must distinguish). It asks for
-`entity=song&limit=25` and keeps the tracks by exactly that artist; when that returns results
-but none by the artist (common-word names such as Low or Cake, where the top 25 are songs
-titled that), it retries once with `limit=200&attribute=artistTerm`.
+`entity=song&limit=25` and keeps the tracks by exactly that artist (compared NFC-normalised,
+case-insensitive); when that returns results but none by the artist and the name is a single
+word (common-word names such as Low or Cake, where the top 25 are songs titled that), it
+retries once with `limit=200&attribute=artistTerm`. Multi-word names are never retried: no
+match is the normal answer for an artist iTunes lacks.
 
 ### Key types (`lib/music-provider/types.ts`)
 - `Artist.id` is the internal **uuid** (`artists.id`); `spotifyId` is an optional attribute.

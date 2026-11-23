@@ -36,6 +36,24 @@ describe("seededShuffle", () => {
     expect(first).not.toEqual(second)
   })
 
+  it("reaches all 24 orders of 4 items", () => {
+    const seen = new Set<string>()
+    for (let k = 0; k < 2000; k++) seen.add(seededShuffle(["a", "b", "c", "d"], cacheWindowSeed(`user-${k}`, "x")).join(""))
+    expect(seen.size).toBe(24)
+  })
+
+  it("includes each of 100 items in a 10-sample about equally often", () => {
+    const ids = Array.from({ length: 100 }, (_, i) => i)
+    const counts = new Array<number>(100).fill(0)
+    const RUNS = 20000
+    for (let k = 0; k < RUNS; k++) {
+      for (const id of seededShuffle(ids, cacheWindowSeed(`user-${k}`, "like-sample")).slice(0, 10)) counts[id]++
+    }
+    // Expected 10% each (sd ~0.2 points over 20k runs); the old generator gave 1.9%..18.5%.
+    expect(Math.min(...counts) / RUNS).toBeGreaterThan(0.085)
+    expect(Math.max(...counts) / RUNS).toBeLessThan(0.115)
+  })
+
   it("does not mutate input", () => {
     const ids = ["a", "b", "c"]
     const copy = [...ids]

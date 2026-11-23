@@ -27,8 +27,9 @@ far pool (step 10; always on).
    `playThreshold+5`, then fall back to `sampleColdStartSeeds()` from
    `data/cold-start-seeds.json`. A tier-1 *write error* (`PipelineRun.writeError`) is not an
    empty pool and never softens (#175 R7). Nor does a preview-source outage
-   (`PipelineRun.sourceDown`: tier 1 kept nothing and at least one iTunes lookup failed, as
-   opposed to answering "no tracks"; logged as `[engine] preview_source_down`): softening
+   (`PipelineRun.sourceDown`: tier 1 kept nothing and at least half of its iTunes lookups
+   failed, as opposed to answering "no tracks" (one stray error among real "no tracks"
+   answers still softens); logged as `[engine] preview_source_down`): softening
    would rerun the whole pipeline into the same outage. A zero-top run aborts its own far and bleed
    resolves (an `AbortSignal` the resolver checks between names) so they stop competing
    with the next run for the Last.fm gate and the DB. Every run of one build shares one

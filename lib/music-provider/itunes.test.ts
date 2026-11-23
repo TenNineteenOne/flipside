@@ -118,6 +118,19 @@ describe("searchTracksByArtist", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
+  it("does not retry a multi-word name with no match (the normal answer for an artist iTunes lacks)", async () => {
+    const fetchMock = mockSequence([row("Somebody Else")], [row("Obscure Band")])
+    expect(await searchTracksByArtist(" Obscure Band ")).toEqual([])
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("matches a decomposed (NFD) name against iTunes's composed (NFC) one", async () => {
+    const fetchMock = mockSequence([row("Sigur Rós".normalize("NFC"))])
+    const out = await searchTracksByArtist("Sigur Rós".normalize("NFD"))
+    expect(out!.map((t) => t.id)).toEqual(["7"])
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
   it("returns [] without retrying when iTunes has zero results", async () => {
     const fetchMock = mockSequence([])
     expect(await searchTracksByArtist("Zzyzx Qq")).toEqual([])

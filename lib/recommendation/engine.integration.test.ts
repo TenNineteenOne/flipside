@@ -398,6 +398,9 @@ describe("buildRecommendations — adjacent bleed is rehydrated (#175 D2)", () =
     // genre (used for genre seeds) yields nothing.
     const { adjacentGenres } = await import("@/lib/genre/adjacency")
     for (const tag of adjacentGenres("indie-rock", "close")) tagArtists.set(tag, ["BleedArtist"])
+    // Pin the far pool's seed: its random leaves land on one of these tags ~1 run in 50, and
+    // the far pool, read first, then claims BleedArtist as `far_pool`.
+    vi.spyOn(Math, "random").mockReturnValue(0.42)
 
     const result = await buildRecommendations(baseInput())
     await result.finish()
@@ -480,7 +483,7 @@ describe("buildRecommendations — writeScored cooldown read error (#175 F17)", 
 describe("buildRecommendations — preview source outage", () => {
   it("every confirm failing at the source is not an empty pool: no soften run, no cold-start rows", async () => {
     seed({ seed_artists: [{ user_id: "u1", name: "SeedA" }] })
-    const names = Array.from({ length: 10 }, (_, i) => `Fresh${i}`)
+    const names = Array.from({ length: 12 }, (_, i) => `Fresh${i}`)
     lf.similars.set("SeedA", similarRefs(names))
     for (const n of names) h.itunes.set(n, null) // null = iTunes failed (a real "no tracks" is [])
     vi.spyOn(console, "error").mockImplementation(() => {})
@@ -493,6 +496,62 @@ describe("buildRecommendations — preview source outage", () => {
     expect(lf.calls.similar.filter((n) => n === "SeedA")).toHaveLength(1) // the pipeline ran once
     expect(cacheRows()).toEqual([])
     expect(h.fake.tables.artist_tracks_cache).toEqual([]) // a failure is never cached as "no preview"
+  })
+
+  it("one failed lookup among genuine no-preview answers is an empty pool: it still softens", async () => {
+    seed({ seed_artists: [{ user_id: "u1", name: "SeedA" }] })
+    const names = Array.from({ length: 12 }, (_, i) => `Fresh${i}`)
+    lf.similars.set("SeedA", similarRefs(names))
+    for (const n of names) h.itunes.set(n, []) // a real "no tracks"
+    h.itunes.set("Fresh3", null) // one iTunes 500
+    vi.spyOn(console, "error").mockImplementation(() => {})
+
+    const result = await buildRecommendations(baseInput())
+    await result.finish()
+
+    expect(result.softenedFilters?.playThreshold).toBe(true)
+  })
+})
+
+describe("buildRecommendations — one row per artist in a write", () => {
+  it("two secondary spellings resolving to one artist id are written as one row, and the batch lands", async () => {
+    seed({ seed_artists: [{ user_id: "u1", name: "SeedA" }] })
+    // tail-first round robin: the LAST 36 refs fill the blocking pool, the first two are secondary.
+    lf.similars.set("SeedA", similarRefs(["Sigur Ros", "Sigur Rós", "Later0", ...Array.from({ length: 36 }, (_, i) => `Base${i}`)]))
+    const { PlayableCandidates } = await import("./playable-candidates")
+    const orig = PlayableCandidates.prototype.resolve
+    vi.spyOn(PlayableCandidates.prototype, "resolve").mockImplementation(async function (
+      this: InstanceType<typeof PlayableCandidates>,
+      names,
+      o = {},
+    ) {
+      const out = await orig.call(this, names, o)
+      const one = out.artists.get("Sigur Rós")
+      if (one && out.artists.has("Sigur Ros")) out.artists.set("Sigur Ros", one)
+      return out
+    })
+    // The fake accepts a repeated conflict key; Postgres rejects the whole statement (21000). Assert on the payloads.
+    const payloads: Row[][] = []
+    const origFrom = h.fake.client.from
+    h.fake.client.from = (t: string) => {
+      const q = origFrom(t)
+      if (t === "recommendation_cache") {
+        const origUpsert = q.upsert
+        q.upsert = (rows: Row[], o: unknown) => {
+          payloads.push(rows)
+          return origUpsert(rows, o)
+        }
+      }
+      return q
+    }
+
+    const result = await buildRecommendations(baseInput())
+    await result.finish()
+
+    for (const rows of payloads) expect(new Set(rows.map((r) => r.artist_id)).size).toBe(rows.length)
+    const secondary = cacheRows().filter((r) => r.source === "multi_source_secondary")
+    expect(secondary.filter((r) => r.artist_data.name === "Sigur Rós")).toHaveLength(1)
+    expect(secondary.some((r) => r.artist_data.name === "Later0")).toBe(true)
   })
 })
 
@@ -820,6 +879,9 @@ describe("buildRecommendations — adjacent bleed resolve (perf)", () => {
     lf.similars.set("SeedA", similarRefs(Array.from({ length: 10 }, (_, i) => `Base${i}`)))
     const { adjacentGenres } = await import("@/lib/genre/adjacency")
     for (const tag of adjacentGenres("indie-rock", "close")) tagArtists.set(tag, ["BleedArtist"])
+    // Pin the far pool's seed: its random leaves land on one of these tags ~1 run in 50, and
+    // the far pool, read first, then claims BleedArtist as `far_pool`.
+    vi.spyOn(Math, "random").mockReturnValue(0.42)
 
     const { PlayableCandidates } = await import("./playable-candidates")
     const orig = PlayableCandidates.prototype.resolve

@@ -82,7 +82,7 @@ export async function itunesFetch<T>(
 
 /**
  * Search iTunes for top tracks by an artist name. Free, no auth, no key.
- * Filters results to tracks whose artistName matches case-insensitively and
+ * Filters results to tracks whose artistName matches case-insensitively (NFC-normalised) and
  * de-dupes by track name (iTunes often returns album + single versions).
  *
  * Returns `null` on network / parse failure or when the circuit breaker is
@@ -99,6 +99,9 @@ export async function searchTracksByArtist(
   const first = await searchOnce(`${base}&limit=25`, artistName, limit)
   if (!first || first.tracks.length > 0 || first.total === 0) return first && first.tracks
   // Common-word names (Low, Air, Cake): the top 25 are songs titled that, so ask by artist.
+  // shortcut: single-word names only (a no-match is the normal answer for an artist iTunes lacks, and
+  // Apple rate-limits per IP), so multi-word common-phrase names are not retried; widen if those go missing.
+  if (/\s/.test(artistName.trim())) return first.tracks
   const retry = await searchOnce(`${base}&limit=200&attribute=artistTerm`, artistName, limit)
   return retry && retry.tracks
 }
@@ -128,12 +131,14 @@ async function searchOnce(
   }
   const items: ITunesResult[] = r.data.results ?? []
 
-  const target = artistName.toLowerCase().trim()
+  // NFC both sides: Last.fm can hand over a decomposed "Sigur Rós" that equals none of iTunes's composed ones.
+  const fold = (s: string) => s.normalize("NFC").toLowerCase().trim()
+  const target = fold(artistName)
   const seen = new Set<string>()
   const out: Track[] = []
   for (const it of items) {
     if (!it?.trackName || !it?.artistName) continue
-    if (it.artistName.toLowerCase().trim() !== target) continue
+    if (fold(it.artistName) !== target) continue
     const key = it.trackName.toLowerCase().trim()
     if (seen.has(key)) continue
     seen.add(key)

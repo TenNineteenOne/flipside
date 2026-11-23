@@ -12,7 +12,10 @@
  * Feed pick. Last.fm cost is capped at FAR_TAG_CALLS tag lookups (Curveballs
  * sampled 34–60 tags; that was Explore's slowest build).
  */
+import pickerData from '@/data/genres-picker.json'
 import { allLeavesWithAnchor, genreToAnchor, leafTagsInAnchor, listAnchors } from '@/lib/genre/adjacency'
+import { decodePickerTree, type PickerData } from '@/lib/genre/picker-data'
+import type { GenreNode } from '@/lib/types'
 import type { createServiceClient } from '@/lib/supabase/server'
 import { readAllRows } from './exclusions'
 import { seededShuffle } from './window'
@@ -43,6 +46,15 @@ export const FAR_TAG_CALLS = OUTSIDE_ANCHORS + LEFTFIELD_TAGS
 /** Max far names handed to the resolver (each cache miss is one Last.fm getInfo). */
 export const FAR_RESOLVE_CAP = 30
 
+/** Anchor of the artist's first genre that has one: common first tags (rnb, alternative, dance) map to none. */
+function artistAnchor(genres: string[]): string | null {
+  for (const g of genres) {
+    const anchor = genreToAnchor(g)
+    if (anchor) return anchor
+  }
+  return null
+}
+
 /**
  * The user's top 2 anchors by listened play_count; [] when fewer than 2
  * anchors have data (the leftfield guardrail is then skipped).
@@ -50,7 +62,7 @@ export const FAR_RESOLVE_CAP = 30
 export function computeTopAnchors(listened: ListenedGenres[]): string[] {
   const anchorPlays = new Map<string, number>()
   for (const row of listened) {
-    const anchor = row.genres[0] ? genreToAnchor(row.genres[0]) : null
+    const anchor = artistAnchor(row.genres)
     if (!anchor) continue
     anchorPlays.set(anchor, (anchorPlays.get(anchor) ?? 0) + (row.play_count ?? 0))
   }
@@ -80,7 +92,7 @@ export function outsideTags(selectedGenres: string[], listened: ListenedGenres[]
     if (anchor) touched.set(anchor, (touched.get(anchor) ?? 0) + 100)
   }
   for (const row of listened) {
-    const anchor = row.genres[0] ? genreToAnchor(row.genres[0]) : null
+    const anchor = artistAnchor(row.genres)
     if (anchor) touched.set(anchor, (touched.get(anchor) ?? 0) + (row.play_count ?? 1))
   }
   const anchors = listAnchors()
@@ -93,13 +105,28 @@ export function outsideTags(selectedGenres: string[], listened: ListenedGenres[]
     .filter((t) => !!t.tag)
 }
 
+/** Leaf tag → the genre node's own label ("punk-n-roll" → "punk 'n' roll"). Built on first use. */
+let leafLabels: Map<string, string> | undefined
+function leafLabel(tag: string): string {
+  if (!leafLabels) {
+    const labels = new Map<string, string>()
+    const walk = (n: GenreNode): void => {
+      if (n.children.length) n.children.forEach(walk)
+      else labels.set(n.lastfmTag, n.label)
+    }
+    decodePickerTree(pickerData as PickerData).forEach(walk)
+    leafLabels = labels
+  }
+  return leafLabels.get(tag) ?? tag.replace(/-/g, ' ')
+}
+
 /** Leaves sampled across the genre tree, minus the user's top-2 listened anchors. */
 export function leftfieldTags(listened: ListenedGenres[], seed: number): Array<{ tag: string; label: string }> {
   const excluded = new Set(computeTopAnchors(listened))
   const pool = allLeavesWithAnchor().filter((l) => !excluded.has(l.anchorId))
   return seededShuffle(pool, seed)
     .slice(0, LEFTFIELD_TAGS)
-    .map((l) => ({ tag: l.lastfmTag, label: l.lastfmTag.replace(/-/g, ' ') }))
+    .map((l) => ({ tag: l.lastfmTag, label: leafLabel(l.lastfmTag) }))
 }
 
 /**

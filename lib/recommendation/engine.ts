@@ -533,7 +533,7 @@ export interface PipelineRun {
    */
   writeError?: boolean
   /**
-   * Tier 1 confirmed nothing while the preview source was failing. A count of
+   * Tier 1 confirmed nothing while at least half its preview lookups failed. A count of
    * 0 then means "iTunes is down", not "nothing eligible": softening would
    * rerun the whole pipeline into the same outage.
    */
@@ -902,8 +902,15 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
    *     nightly cron's 3-day unseen expiry doesn't expire them again (F-C).
    */
   async function writeScored(items: ScoredArtist[]): Promise<number> {
-    // Exclude ids already written in a previous phase
-    const fresh = items.filter((item) => !writtenIds.has(item.artist.id))
+    // Exclude ids already written in a previous phase. One row per artist id (best
+    // score): Postgres rejects a whole upsert that names one conflict key twice (21000).
+    const byId = new Map<string, ScoredArtist>()
+    for (const item of items) {
+      if (writtenIds.has(item.artist.id)) continue
+      const dup = byId.get(item.artist.id)
+      if (!dup || item.score > dup.score) byId.set(item.artist.id, item)
+    }
+    const fresh = [...byId.values()]
     if (fresh.length === 0) return 0
 
     const ids = fresh.map((item) => item.artist.id)
@@ -1003,8 +1010,9 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
   const { kept: firstBatch, confirmedCount: c1 } = await candidates.confirm(ordered, FIRST_BATCH_TARGET)
   const firstBatchMs = Date.now() - firstBatchStart
   previewMs = firstBatchMs // time the user waited for first paint
-  const sourceDown = firstBatch.length === 0 && candidates.sourceFailures > 0
-  if (sourceDown) console.error(`[engine] preview_source_down source=${source} failures=${candidates.sourceFailures}`)
+  // An outage, not one stray error: at least half of this run's iTunes lookups failed.
+  const sourceDown = firstBatch.length === 0 && candidates.sourceFailures > 0 && candidates.sourceFailures * 2 >= candidates.sourceLookups
+  if (sourceDown) console.error(`[engine] preview_source_down source=${source} failures=${candidates.sourceFailures}/${candidates.sourceLookups}`)
 
   const tier1Written = await writeScored(firstBatch)
 

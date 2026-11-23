@@ -69,7 +69,27 @@ describe("tag pickers", () => {
     for (const p of picked) expect(labelsOfSelected.has(p.label)).toBe(false)
   })
 
-  it("leftfieldTags excludes the user's top-2 listened anchors and de-hyphenates labels", () => {
+  it("an artist whose first tag has no anchor still counts toward its first mapped genre", () => {
+    // "rnb" has no anchor; "soul" is the R&B / Soul anchor's tag.
+    expect(genreToAnchor("rnb")).toBeNull()
+    const soul = genreToAnchor("soul")!
+    const listened = Array.from({ length: 300 }, () => ({ play_count: 1, genres: ["rnb", "soul", "hip-hop"] }))
+    const soulLabel = listAnchors().find((a) => a.id === soul)!.label
+    for (let seed = 0; seed < 200; seed++) {
+      expect(outsideTags([], listened, seed).map((t) => t.label)).not.toContain(soulLabel)
+    }
+    expect(computeTopAnchors([...listened, { play_count: 1, genres: ["alternative", "rock"] }])).toEqual([soul, genreToAnchor("rock")])
+  })
+
+  it("leftfieldTags labels a leaf with the genre's own label, not its de-hyphenated tag", () => {
+    const labels = new Map<string, string>()
+    for (let seed = 0; seed < 3000 && !labels.has("punk-n-roll"); seed++) {
+      for (const t of leftfieldTags([], seed * 7919)) labels.set(t.tag, t.label)
+    }
+    expect(labels.get("punk-n-roll")).toBe("punk 'n' roll")
+  })
+
+  it("leftfieldTags excludes the user's top-2 listened anchors", () => {
     const leaves = allLeavesWithAnchor()
     const anchorIds = [...new Set(leaves.map((l) => l.anchorId))]
     const leafOf = (id: string) => leaves.find((l) => l.anchorId === id)!.lastfmTag
@@ -82,7 +102,7 @@ describe("tag pickers", () => {
     for (let seed = 0; seed < 20; seed++) {
       for (const t of leftfieldTags(listened, seed)) {
         expect(top).not.toContain(leaves.find((l) => l.lastfmTag === t.tag)!.anchorId)
-        expect(t.label).not.toContain("-")
+        expect(t.label).toBeTruthy()
       }
     }
   })

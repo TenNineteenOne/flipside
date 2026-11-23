@@ -73,6 +73,8 @@ export class PlayableCandidates {
   private readonly collector: ConfirmCollector
   /** Confirms whose iTunes lookup FAILED (null / threw), as opposed to answering "no tracks" ([]). */
   sourceFailures = 0
+  /** iTunes lookups attempted (the denominator for `sourceFailures`). */
+  sourceLookups = 0
 
   /** `identity`: pass a shared doorway so concurrent pipelines dedupe in-flight mints (#175 F25). */
   constructor(
@@ -133,6 +135,7 @@ export class PlayableCandidates {
       {
         onConfirmOutcome: this.collector.onConfirmOutcome,
         searchItunes: async (name) => {
+          this.sourceLookups++
           const tracks = await this.ports.searchItunes(name).catch(() => null)
           if (tracks === null) this.sourceFailures++
           return tracks
