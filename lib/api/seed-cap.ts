@@ -23,7 +23,8 @@ export async function seedCapError(
 
   const existingIds = new Set((existingRows ?? []).map((r) => r.artist_id))
   const newIds = artists.filter((a) => !existingIds.has(a.id))
-  if (existingIds.size + newIds.length > MAX_SEED_ARTISTS) {
+  // newIds.length: a user already over the cap (two-tab race) can still re-send existing seeds.
+  if (newIds.length > 0 && existingIds.size + newIds.length > MAX_SEED_ARTISTS) {
     return apiError(`Cannot exceed ${MAX_SEED_ARTISTS} seed artists`, 400)
   }
   return null

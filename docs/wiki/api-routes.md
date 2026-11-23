@@ -55,7 +55,7 @@ The `/api/explore/*` routes were removed with the Explore page (2026-11-10, #205
 |---|---|---|
 | `/api/feedback` | POST | thumbs-up first ensures this week's `user_challenges` row (`ensureCurrentChallenge`) so the RPC can credit it; `rpc_record_feedback_v2`. A `railKey` from an old Explore client is ignored |
 | `/api/feedback/[artistId]` | DELETE | `rpc_delete_feedback_v2` (undo thumbs), 204 |
-| `/api/dismiss/[artistId]` | DELETE | `rpc_clear_dismiss_v2`, 204 |
+| `/api/dismiss/[artistId]` | DELETE | stamps the row's `created_at` = now and `expires_at` = now + 30 days (as the engine's re-queue does, so the returned card outlives the nightly cron; 500 and nothing changed if that fails), then `rpc_clear_dismiss_v2`, 204 |
 | `/api/saves` | POST/DELETE | upsert/delete `saves`; POST first ensures this week's challenge row (`ensureCurrentChallenge`) and credits a `save_*` challenge via `rpc_increment_challenge_progress(p_signal 'save')` only when the save row didn't exist before; response keeps `playlistId: null` (the Spotify-playlist branch was removed in #175) |
 | `/api/history` | GET | paginated seen recs + feedback/saves join |
 | `/api/history/accumulate` | POST | 15-min cooldown, claimed before the sync; sync Last.fm or stats.fm history into `listened_artists`. A failed sync returns 500 and leaves a 1-minute wait (the stamp is set to 14 minutes ago, not restored to its old value). A failed `listened_artists` select or insert now fails the sync (500); a failed play-count bump is only logged |
@@ -66,8 +66,8 @@ The `/api/explore/*` routes were removed with the Explore page (2026-11-10, #205
 |---|---|---|
 | `/api/onboarding/search` | GET | prefix match on the `artists` table (`name_lower` ILIKE, up to 10); with fewer than 5 hits, tops up from Last.fm `artist.search` (those carry an `lf:` id and `needsResolve: true`, resolved by `/api/onboarding/resolve` on selection). No Spotify call. Queries under 2 characters return an empty list; 120/min per user (in-memory), 429 over that |
 | `/api/onboarding/resolve` | POST | resolves a Last.fm-sourced onboarding suggestion to the internal artist uuid: `artists`-table exact-name doorway lookup first, MusicBrainz mbid url-rels fallback → mint under MB's canonical name (client name must match it at ≥0.8 similarity after folding diacritics, else 404; the check is skipped when exactly one name has Latin letters, e.g. "BTS" vs "방탄소년단"); 404 when unresolvable; 30/min per-user in-memory rate limit |
-| `/api/onboarding/seeds` | POST | upsert `seed_artists` (3–200 per request; existing + new ≤ 200 total, same check as settings) |
-| `/api/settings` | PATCH | validate + encrypt usernames + update `users` (401 if no row was updated: deleted account); a changed Last.fm / stats.fm username clears that source's sync cooldown; `selectedGenres` change → unseen-feed wipe; `fameLevel` → nothing (next batch only); `adventurous` → 400 (`"adventurous is no longer a setting"`, retired) |
+| `/api/onboarding/seeds` | POST | upsert `seed_artists` (3–200 per request; existing + new ≤ 200 total, same check as settings; a repeated id counts once, and the 3 minimum is counted after that) |
+| `/api/settings` | PATCH | validate + encrypt usernames + update `users` (401 if no row was updated: deleted account); a changed Last.fm / stats.fm username clears that source's sync cooldown; `selectedGenres` is stored without empty strings or duplicates (a NUL character → 400) and a change → unseen-feed wipe; `fameLevel` → nothing (next batch only); `adventurous` → 400 (`"adventurous is no longer a setting"`, retired) |
 | `/api/settings/seed-artists` | GET/POST/DELETE | manage seeds |
 | `/api/account` | DELETE | delete user (cascade) + sign out |
 

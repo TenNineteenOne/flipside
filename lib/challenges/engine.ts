@@ -103,26 +103,28 @@ export async function ensureCurrentChallenge(
 ): Promise<UserChallenge | null> {
   const weekStart = getISOWeekStart(now)
 
-  const { data: existing } = await supabase
-    .from('user_challenges')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('week_start', weekStart)
-    .limit(1)
-    .maybeSingle()
+  const read = () =>
+    supabase
+      .from('user_challenges')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('week_start', weekStart)
+      .limit(1)
+      .maybeSingle()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const toChallenge = (row: any): UserChallenge => ({
+    id: row.id as string,
+    key: row.challenge_key as string,
+    weekStart: row.week_start as string,
+    target: row.target_count as number,
+    progress: row.progress as number,
+    completedAt: (row.completed_at as string | null) ?? null,
+    // null for a key no longer in CHALLENGE_TEMPLATES: the Feed then hides the strip.
+    template: CHALLENGE_TEMPLATES.find((t) => t.key === row.challenge_key) ?? null,
+  })
 
-  if (existing) {
-    return {
-      id: existing.id as string,
-      key: existing.challenge_key as string,
-      weekStart: existing.week_start as string,
-      target: existing.target_count as number,
-      progress: existing.progress as number,
-      completedAt: (existing.completed_at as string | null) ?? null,
-      // null for a key no longer in CHALLENGE_TEMPLATES: the Feed then hides the strip.
-      template: CHALLENGE_TEMPLATES.find((t) => t.key === existing.challenge_key) ?? null,
-    }
-  }
+  const { data: existing } = await read()
+  if (existing) return toChallenge(existing)
 
   const pick = pickWeeklyTemplate(weekStart)
 
@@ -137,16 +139,13 @@ export async function ensureCurrentChallenge(
     .select('*')
     .single()
 
-  if (error || !inserted) return null
-  return {
-    id: inserted.id as string,
-    key: inserted.challenge_key as string,
-    weekStart: inserted.week_start as string,
-    target: inserted.target_count as number,
-    progress: inserted.progress as number,
-    completedAt: (inserted.completed_at as string | null) ?? null,
-    template: pick,
+  // Lost a concurrent assign: the winner's row is this week's challenge.
+  if (error?.code === '23505') {
+    const { data: winner } = await read()
+    return winner ? toChallenge(winner) : null
   }
+  if (error || !inserted) return null
+  return toChallenge(inserted)
 }
 
 export interface UserChallenge {

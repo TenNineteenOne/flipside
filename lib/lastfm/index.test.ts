@@ -277,6 +277,40 @@ describe("userArtistNames", () => {
     const b = make(fakeFetch(json({ error: 6, message: "User not found" }), json({})).fn)
     await expect(b.lf.userArtistNames("u")).rejects.toThrow("User not found")
   })
+
+  it("accepts a single top artist as an object, and trims names", async () => {
+    const { fn } = fakeFetch(
+      json({ topartists: { artist: { name: "Radiohead " } } }),
+      json({ recenttracks: { track: [{ artist: { "#text": "Radiohead" } }, { artist: { "#text": "  " } }] } }),
+    )
+    expect(await make(fn).lf.userArtistNames("u")).toEqual(["Radiohead"])
+  })
+})
+
+describe("single result delivered as an object, not an array", () => {
+  it("getInfo with one tag keeps the tag", async () => {
+    const { fn } = fakeFetch(json({ artist: { stats: { listeners: "10000" }, tags: { tag: { name: "Dungeon Synth" } } } }))
+    expect(await make(fn).lf.artistInfo(uniq("one-tag"))).toEqual({ genres: ["dungeon synth"], popularity: 30 })
+  })
+
+  it("tag top artists with one artist", async () => {
+    const { fn } = fakeFetch(json({ topartists: { artist: { name: "Helleruin" } } }))
+    expect(await make(fn).lf.tagTopArtists(uniq("onetag"), 30)).toEqual(["Helleruin"])
+  })
+
+  it("similar artists with one artist", async () => {
+    const { fn } = fakeFetch(json({ similarartists: { artist: { name: "Sammath", match: "0.5" } } }))
+    expect(await make(fn).lf.similarArtists(uniq("one-similar"))).toEqual([{ name: "Sammath", match: 0.5 }])
+  })
+})
+
+describe("tagTopArtists error body", () => {
+  it("an error body with HTTP 200 is transient: [] and NOT cached", async () => {
+    const { fn } = fakeFetch(json({ error: 29, message: "Rate limit exceeded" }))
+    const { lf, cache } = make(fn)
+    expect(await lf.tagTopArtists(uniq("ratelimited"), 30)).toEqual([])
+    expect(cache.rows.size).toBe(0)
+  })
 })
 
 

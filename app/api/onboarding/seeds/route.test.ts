@@ -44,4 +44,19 @@ describe("POST /api/onboarding/seeds", () => {
     const res = await call({ artists: [artist(existing[0].artist_id), artist(existing[1].artist_id), artist()] })
     expect(res.status).toBe(200)
   })
+
+  it("a user already over the cap can still re-send existing seeds", async () => {
+    const existing = seeds(201)
+    db = createRouteFakeDb({ seed_artists: existing })
+    const res = await call({ artists: existing.slice(0, 3).map((s) => artist(s.artist_id)) })
+    expect(res.status).toBe(200)
+  })
+
+  it("the same id twice is upserted once and counted once against the cap", async () => {
+    db = createRouteFakeDb({ seed_artists: seeds(197) })
+    const [a, b, c] = [artist(), artist(), artist()]
+    const res = await call({ artists: [a, b, c, a] })
+    expect(res.status).toBe(200)
+    expect(db.log.find((l) => l.op === "upsert")?.payload).toHaveLength(3)
+  })
 })

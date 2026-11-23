@@ -149,7 +149,9 @@ async function resolveLastFmBatch(params: {
   userId: string
   batch: UnresolvedRow[]
 }): Promise<void> {
-  const { supabase, userId, batch } = params
+  const { supabase, userId } = params
+  // Rows stored before the Last.fm boundary trimmed names: "Radiohead " must land on "Radiohead".
+  const batch = params.batch.map((r) => ({ ...r, lastfm_artist_name: r.lastfm_artist_name.trim() }))
   const now = new Date().toISOString()
 
   // 2a. Resolve the batch through the artist-identity doorway. An unambiguous

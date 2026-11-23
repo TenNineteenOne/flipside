@@ -26,6 +26,7 @@ export function validateSeedArtists(
   }
 
   const out: ValidatedSeedArtist[] = []
+  const seen = new Set<string>()
   for (const entry of input) {
     if (!entry || typeof entry !== "object") {
       return { ok: false, error: "each artist must be an object" }
@@ -34,7 +35,11 @@ export function validateSeedArtists(
     if (typeof e.id !== "string" || !isValidArtistId(e.id)) {
       return { ok: false, error: "invalid artist id" }
     }
-    if (typeof e.name !== "string") {
+    // A repeated id fails the whole upsert (Postgres 21000) and double-counts the cap.
+    if (seen.has(e.id)) continue
+    seen.add(e.id)
+    // Postgres text cannot hold NUL.
+    if (typeof e.name !== "string" || e.name.includes("\0")) {
       return { ok: false, error: "artist name must be a string" }
     }
     const name = e.name.trim()
@@ -43,12 +48,13 @@ export function validateSeedArtists(
     }
     let imageUrl: string | null = null
     if (e.imageUrl !== null && e.imageUrl !== undefined) {
-      if (typeof e.imageUrl !== "string" || e.imageUrl.length > 500 || !HTTP_URL.test(e.imageUrl)) {
+      if (typeof e.imageUrl !== "string" || e.imageUrl.length > 500 || !HTTP_URL.test(e.imageUrl) || e.imageUrl.includes("\0")) {
         return { ok: false, error: "imageUrl must be an http(s) URL up to 500 chars, or null" }
       }
       imageUrl = e.imageUrl
     }
     out.push({ id: e.id, name, imageUrl })
   }
+  if (out.length < min) return { ok: false, error: `artists must be an array of ${min}–${max} entries` }
   return { ok: true, artists: out }
 }

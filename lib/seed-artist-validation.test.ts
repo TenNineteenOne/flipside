@@ -6,6 +6,24 @@ const UUID_A = "11111111-1111-4111-8111-111111111111"
 const UUID_B = "22222222-2222-4222-9222-222222222222"
 
 describe("validateSeedArtists", () => {
+  it("keeps one entry per id (a repeated id fails the upsert with 21000 and double-counts the cap)", () => {
+    const result = validateSeedArtists(
+      [{ id: UUID_A, name: "One", imageUrl: null }, { id: UUID_B, name: "Two", imageUrl: null }, { id: UUID_A, name: "One again", imageUrl: null }],
+      { min: 1, max: 10 },
+    )
+    expect(result.ok && result.artists.map((x) => x.name)).toEqual(["One", "Two"])
+  })
+
+  it("counts the minimum after de-duplicating", () => {
+    const a = { id: UUID_A, name: "One", imageUrl: null }
+    expect(validateSeedArtists([a, a, a], { min: 3, max: 10 }).ok).toBe(false)
+  })
+
+  it("rejects a NUL character, which Postgres text cannot store", () => {
+    expect(validateSeedArtists([{ id: UUID_A, name: "a\u0000b", imageUrl: null }], { min: 1, max: 10 }).ok).toBe(false)
+    expect(validateSeedArtists([{ id: UUID_A, name: "ab", imageUrl: "https://x.test/\u0000" }], { min: 1, max: 10 }).ok).toBe(false)
+  })
+
   it("accepts a valid array of uuid-keyed artists", () => {
     const result = validateSeedArtists(
       [

@@ -12,6 +12,19 @@ export const DELETE = withAuthedCsrfRoute(
 
     const supabase = createServiceClient()
 
+    // The RPC keeps the row's old created_at / expires_at, so the nightly cron would expire the
+    // returned card: stamp both like the engine's re-queue. First, so a failure changes nothing.
+    const now = new Date()
+    const expiresAt = new Date(now)
+    expiresAt.setDate(expiresAt.getDate() + 30)
+    const { error: stampError } = await supabase
+      .from("recommendation_cache")
+      .update({ created_at: now.toISOString(), expires_at: expiresAt.toISOString() })
+      .eq("user_id", userId)
+      .eq("artist_id", artistId)
+
+    if (stampError) return dbError(stampError, "dismiss/stamp")
+
     const { error: rpcError } = await supabase.rpc("rpc_clear_dismiss_v2", {
       p_user_id: userId,
       p_artist_id: artistId,

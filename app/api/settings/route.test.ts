@@ -69,3 +69,15 @@ describe("PATCH /api/settings deleted account", () => {
     expect((await call({ fameLevel: 1 })).status).toBe(401)
   })
 })
+
+describe("PATCH /api/settings selectedGenres", () => {
+  it("drops empty strings and duplicates, keeping order", async () => {
+    const res = await call({ selectedGenres: ["rock", "", "jazz", "rock"] })
+    expect(res.status).toBe(200)
+    expect(db.tables.users[0].selected_genres).toEqual(["rock", "jazz"])
+  })
+
+  it("a NUL character → 400, not a database 500", async () => {
+    expect((await call({ selectedGenres: ["ro\u0000ck"] })).status).toBe(400)
+  })
+})

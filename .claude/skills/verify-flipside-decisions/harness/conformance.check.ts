@@ -8,8 +8,8 @@ import path from "node:path"
 import { createArtistFeedback } from "@/lib/client/artist-signals"
 import { decide } from "@/lib/feed/decision"
 import { loadTables, type Row } from "./tables"
-import { closeSql, statements } from "./supabase-pg"
-import { APP, ARTIST, MODEL, RETURN_TO_FEED_SOURCE, SAVE_SOURCE, pages, readState, requestName, returnToFeed, send, setState } from "./world"
+import { closeSql, sql, statements } from "./supabase-pg"
+import { APP, ARTIST, MODEL, USER, RETURN_TO_FEED_SOURCE, SAVE_SOURCE, pages, readState, requestName, returnToFeed, send, setState } from "./world"
 
 const T = loadTables()
 afterAll(closeSql)
@@ -19,9 +19,12 @@ const shapes = (row: Row) => (row[0] === "none" ? [undefined, "up", "down"] as c
 const key = (row: Row) => row.join(",")
 const applyTable = new Map(T.APPLY.map(([from, req, to]) => [`${key(from)}|${req}`, to]))
 
+/** DELETE /api/dismiss first stamps the row's lifetime. The model has no time or expiry, so this write is not a model step. */
+const STAMP = /^update recommendation_cache set created_at = \$\d+, expires_at = \$\d+ where /
+
 /** Statements that write one of the three decision tables. */
 const writes = () =>
-  statements.filter((s) => /^select rpc_(record_feedback|delete_feedback|clear_dismiss)|^(insert into|update|delete from) (feedback|saves|recommendation_cache)\b/.test(s))
+  statements.filter((s) => !STAMP.test(s) && /^select rpc_(record_feedback|delete_feedback|clear_dismiss)|^(insert into|update|delete from) (feedback|saves|recommendation_cache)\b/.test(s))
 
 describe("server steps (Apply)", () => {
   const single = T.APPLY.filter(([, req]) => req !== "saveUpsert" && req !== "saveSeen")
@@ -34,6 +37,16 @@ describe("server steps (Apply)", () => {
         expect(await readState(), `${req} from ${key(from)} (soft-deleted row: ${shape ?? "none"})`).toEqual(to)
         expect(writes(), `${req} must stay one atomic step`).toHaveLength(1)
       }
+  })
+
+  it("DELETE /api/dismiss stamps a fresh lifetime (not modelled) before its one model step", async () => {
+    await setState(["none", true, false, false])
+    await sql("update recommendation_cache set created_at = now() - interval '10 days', expires_at = now() - interval '1 day' where user_id = $1", [USER])
+    expect((await send("delDismiss")).status).toBe(204)
+    expect(statements.map((s) => (STAMP.test(s) ? "stamp" : s.split("(")[0]))).toEqual(["stamp", "select rpc_clear_dismiss_v2"])
+    // Outlives the nightly cron (unseen rows older than 3 days expire) and the Feed read (expires_at in the future).
+    expect(await sql("select 1 from recommendation_cache where user_id = $1 and created_at > now() - interval '3 days' and expires_at > now() + interval '29 days'", [USER])).toHaveLength(1)
+    expect((await pages()).inQueue).toBe(true)
   })
 
   it("POST /api/saves is two statements: the saves upsert, then the seen_at stamp", async () => {

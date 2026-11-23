@@ -284,6 +284,15 @@ describe("resolveUnresolvedArtistIds — getInfo confirm + mint-by-name", () => 
     expect(artists[0].name).toBe("Radiohead")
   })
 
+  it("an untrimmed stored name resolves to the trimmed artist, minting no second row", async () => {
+    const listened = [baseRow({ lastfm_artist_name: "Radiohead " })]
+    const artists: ArtistRow[] = [{ id: "artist-uuid-7", spotify_id: null, name: "Radiohead", name_lower: "radiohead" }]
+    artistInfo.mockResolvedValue({ genres: ["rock"], popularity: 90 })
+    await resolveUnresolvedArtistIds({ supabase: makeSupabase(listened, artists), userId: "user-1" })
+    expect(listened[0].artist_id).toBe("artist-uuid-7")
+    expect(artists).toHaveLength(1)
+  })
+
   it("leaves artist_id null + only bumps timestamp when getInfo returns null (not found)", async () => {
     const listened = [baseRow({ lastfm_artist_name: "Radiohead" })]
     artistInfo.mockResolvedValue(null)

@@ -52,6 +52,21 @@ describe("ensureCurrentChallenge", () => {
     expect(db.log.map((l) => l.table)).toEqual(["user_challenges"])
   })
 
+  it("losing a concurrent assign (23505) returns the winner's row, not null", async () => {
+    const db = createRouteFakeDb({ user_challenges: [] })
+    const from = db.client.from
+    db.client.from = (table: string) => {
+      const q = from(table)
+      // The other request's insert lands between this one's read and its insert.
+      q.insert = (p: Record<string, unknown>) => {
+        db.tables.user_challenges.push({ id: "winner", progress: 0, ...p })
+        return { select: () => ({ single: async () => ({ data: null, error: { code: "23505", message: "duplicate key" } }) }) }
+      }
+      return q
+    }
+    expect(await ensureCurrentChallenge(db.client, "u1", now)).toMatchObject({ id: "winner", weekStart: "2026-10-19", progress: 0 })
+  })
+
   it("assigning reads and writes only user_challenges", async () => {
     const db = createRouteFakeDb({ user_challenges: [] })
     await ensureCurrentChallenge(db.client, "u1", now)

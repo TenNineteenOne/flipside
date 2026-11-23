@@ -50,7 +50,11 @@ export const PATCH = withAuthedJsonRoute(async ({ userId, body: rawBody }) => {
     if (!Array.isArray(body.selectedGenres) || body.selectedGenres.length > MAX_SELECTED_GENRES) {
       return apiError(`selectedGenres must be an array of up to ${MAX_SELECTED_GENRES} tags`, 400)
     }
-    update.selected_genres = body.selectedGenres.filter((g) => typeof g === "string" && g.length <= 80)
+    // Postgres text cannot hold NUL.
+    if (body.selectedGenres.some((g) => typeof g === "string" && g.includes("\0"))) {
+      return apiError("selectedGenres contains an invalid character", 400)
+    }
+    update.selected_genres = [...new Set(body.selectedGenres.filter((g) => typeof g === "string" && g.length > 0 && g.length <= 80))]
   }
 
   if (body.preferredMusicPlatform !== undefined) {

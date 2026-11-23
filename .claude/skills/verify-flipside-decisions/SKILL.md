@@ -101,7 +101,7 @@ Never weaken a rule, shrink a bound or remove a tap from the model to get back t
 - `solo` / `solo-nofail`: one tab, up to 2 taps waiting on the network, up to 2 / 0 failed requests. All eight rules.
 - `tabs2` / `tabs2-nofail`: two tabs, 1 tap waiting per tab, up to 1 / 0 failed requests. The four rules that do not depend on a single tab's view.
 - A request can succeed, fail before the server applies it, or be applied with the answer lost. There is no automatic retry in the code; a retry is the user tapping again.
-- One SQL function call or one statement is one step. `POST /api/saves` is two (upsert, then the `seen_at` stamp, whose failure is only logged). Return to feed, the undo of skip to thumbs and the undo of thumbs to no verdict are two requests each.
+- One SQL function call or one statement is one step. `POST /api/saves` is two (upsert, then the `seen_at` stamp, whose failure is only logged). Return to feed, the undo of skip to thumbs and the undo of thumbs to no verdict are two requests each. `DELETE /api/dismiss` first stamps the row's `created_at` and `expires_at` (so the returned card outlives the nightly cron) and answers 500 without calling the SQL function if that fails; the model has no time, so the stamp is not a step and a failed one is the request failing before the server applies it. Conformance checks the stamp and its order against the real route.
 - The recommendation row exists and has not expired; time does not pass (the 7-day cooldown never runs out).
 
 ## Not covered

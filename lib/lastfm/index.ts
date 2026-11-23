@@ -87,6 +87,11 @@ interface RawLastfmArtist {
   image?: Array<{ "#text"?: string; size?: string }>
 }
 
+/** Last.fm sends a lone result as an object, not a one-element array. */
+function asArray<T>(v: T | T[] | null | undefined): T[] {
+  return Array.isArray(v) ? v : v ? [v] : []
+}
+
 /** Pick the largest non-empty image URL Last.fm returned, or null. */
 function pickImage(images?: Array<{ "#text"?: string; size?: string }>): string | null {
   if (!Array.isArray(images)) return null
@@ -190,9 +195,9 @@ export function createLastfm(deps: LastfmDeps = {}): Lastfm {
     const res = await live(url, TAG_TIMEOUT_MS, incLastfmTag)
     if (!res.ok) throw new Error(`lastfm tag.gettopartists ${res.status}`)
     const data = await res.json()
-    const artists = data?.topartists?.artist
-    if (!Array.isArray(artists)) return []
-    return (artists as Array<{ name: string }>).map((a) => a.name).filter(Boolean)
+    // An error body arrives with HTTP 200; throwing keeps it out of the 12h empty cache.
+    if (data?.error) throw new Error(`lastfm tag.gettopartists error ${data.error}`)
+    return asArray<{ name: string }>(data?.topartists?.artist).map((a) => a.name).filter(Boolean)
   }
 
   // Genre-tree leaf tags are hyphenated slugs but Last.fm indexes most
@@ -230,12 +235,12 @@ export function createLastfm(deps: LastfmDeps = {}): Lastfm {
       if (!res.ok) { console.log(`[lfm] ${res.status} artist="${artistName}"`); return [] }
 
       const data = (await res.json()) as {
-        similarartists?: { artist: Array<{ name: string; match?: string | number }> }
+        similarartists?: { artist: { name: string; match?: string | number } | Array<{ name: string; match?: string | number }> }
         error?: number
       }
-      if (data.error || !data.similarartists?.artist?.length) return []
+      if (data.error) return []
 
-      return data.similarartists.artist
+      return asArray(data.similarartists?.artist)
         .map((a) => {
           const rawMatch = typeof a.match === "string" ? parseFloat(a.match) : a.match
           const match = typeof rawMatch === "number" && Number.isFinite(rawMatch) ? rawMatch : 0
@@ -268,7 +273,7 @@ export function createLastfm(deps: LastfmDeps = {}): Lastfm {
     const data = (await res.json()) as {
       artist?: {
         stats?: { listeners?: string }
-        tags?: { tag?: Array<{ name?: string }> }
+        tags?: { tag?: { name?: string } | Array<{ name?: string }> }
       }
       error?: number
     }
@@ -279,7 +284,7 @@ export function createLastfm(deps: LastfmDeps = {}): Lastfm {
     if (!data.artist) return null
 
     const listeners = parseInt(data.artist.stats?.listeners ?? "0", 10) || 0
-    const rawTags = (data.artist.tags?.tag ?? []).map((t) => t.name ?? "")
+    const rawTags = asArray(data.artist.tags?.tag).map((t) => t.name ?? "")
     return { genres: filterGenreTags(rawTags), popularity: scaleListeners(listeners) }
   }
 
@@ -334,7 +339,7 @@ export function createLastfm(deps: LastfmDeps = {}): Lastfm {
       if (!recentRes.ok) throw new Error(`Failed to fetch Last.fm recent tracks (HTTP ${recentRes.status})`)
 
       const top = (await topRes.json()) as {
-        topartists?: { artist: Array<{ name: string }> }
+        topartists?: { artist: { name: string } | Array<{ name: string }> }
         error?: number
         message?: string
       }
@@ -351,10 +356,10 @@ export function createLastfm(deps: LastfmDeps = {}): Lastfm {
       }
 
       const names = new Set<string>()
-      for (const a of top.topartists?.artist ?? []) if (a.name) names.add(a.name)
-      const raw = recent.recenttracks?.track ?? []
-      for (const t of Array.isArray(raw) ? raw : [raw]) {
-        const name = t.artist?.["#text"]
+      // Trimmed: "Radiohead " would otherwise mint a second artists row beside "Radiohead".
+      for (const a of asArray(top.topartists?.artist)) if (a.name?.trim()) names.add(a.name.trim())
+      for (const t of asArray(recent.recenttracks?.track)) {
+        const name = t.artist?.["#text"]?.trim()
         if (name) names.add(name)
       }
       return [...names]
