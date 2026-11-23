@@ -353,7 +353,7 @@ listened-artists.ts (658)           coordinator (~80)
 
 **Problem**
 
-The `MusicProvider` interface is the most important seam in the app per `docs/design.md`. The interface itself is reasonable. But:
+The `MusicProvider` interface is the most important seam in the app per `docs/archive/design.md`. The interface itself is reasonable. But:
 
 1. **One adapter is a hypothesis, two are a seam** — `SpotifyProvider` is the only live implementation. `itunes.ts` exists with tests but no caller. Until iTunes is actually instantiated, the seam is asserted by code that never runs through it.
 2. **The factory is hardcoded** — `provider.ts` instantiates `SpotifyProvider` directly, so swapping for tests requires editing source.

@@ -39,7 +39,7 @@ Top nav bar, sticky:
 ### Notes
 
 - The breakpoint in the existing component is at `md` (768px) — keep this.
-- Read the design spec at `docs/superpowers/specs/2026-04-08-visual-overhaul-design.md` § "Navigation" for full spec.
+- Read the design spec at `docs/archive/superpowers/specs/2026-04-08-visual-overhaul-design.md` § "Navigation" for full spec.
 
 ## Acceptance criteria
 

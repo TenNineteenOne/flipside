@@ -2,13 +2,13 @@
 title: Spotify-Removal — Stage 2 Implementation & Verification Checklist
 updated: 2026-06-06
 status: derived from 6 code reviews + 4 security agents (all code-verified)
-source_plan: docs/spotify-removal-plan.md (v4)
+source_plan: docs/archive/spotify-removal-plan.md (v4)
 ---
 
 # Stage 2 Implementation & Verification Checklist
 
 The exhaustive, code-verified map for the surrogate-UUID identity migration + resolver swap.
-Companion to `docs/spotify-removal-plan.md`. **Do Stage 1 (cache-max + onboarding) first; it
+Companion to `docs/archive/spotify-removal-plan.md`. **Do Stage 1 (cache-max + onboarding) first; it
 needs none of this.** Everything below is the atomic Stage 2 cut.
 
 `isValidArtistId` regex (use exactly this — strict UUID v4, lowercase, encodes version+variant

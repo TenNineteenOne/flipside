@@ -28,7 +28,7 @@ Keep the existing layout (fixed bottom, full width, above the mobile bottom nav)
 
 ### Notes
 
-- Read the mini player spec in `docs/superpowers/specs/2026-04-08-visual-overhaul-design.md` § "Mini Player".
+- Read the mini player spec in `docs/archive/superpowers/specs/2026-04-08-visual-overhaul-design.md` § "Mini Player".
 - Ensure the mini player sits above the mobile bottom nav (z-index and bottom offset may need updating after the nav rebuild in Issue 03).
 
 ## Acceptance criteria

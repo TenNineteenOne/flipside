@@ -49,7 +49,7 @@ If the user has no saved artists:
 
 ### Notes
 
-- Read the Saved spec in `docs/superpowers/specs/2026-04-08-visual-overhaul-design.md` § "Saved Screen".
+- Read the Saved spec in `docs/archive/superpowers/specs/2026-04-08-visual-overhaul-design.md` § "Saved Screen".
 - The TrackStrip in the Saved screen opens the Artist Detail Drawer the same way the feed does. Wire the same drawer pattern here if feasible, or at minimum make the strip tappable with a visual affordance (can be deferred to a follow-up issue if complexity is high).
 - Saved artists may not have `artist_color` in the database yet (if they were saved before Issue 06 shipped). Fallback to `#8b5cf6` for those rows.
 

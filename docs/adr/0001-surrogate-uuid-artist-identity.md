@@ -58,7 +58,7 @@ from Spotify so the resolver can later (#157) move off Spotify entirely.
    *resolver* (just re-keyed to `artist_id`); the Spotify-free Last.fm resolver swap is a separate
    slice (#157) immediately after. Rationale: the migration is the riskiest change we'll make
    (schema + ~15 files + a deploy gap, per the two-migration split in
-   `docs/spotify-removal-checklist.md` §H1); changing the resolution *source* in the same breath
+   `docs/archive/spotify-removal-checklist.md` §H1); changing the resolution *source* in the same breath
    would make name-based dedup load-bearing simultaneously with a schema cutover. Stage them so
    each is independently verifiable — #157 is the commit where the Spotify call count actually
    drops to ~0.
@@ -73,5 +73,5 @@ from Spotify so the resolver can later (#157) move off Spotify entirely.
 - Recovery during the cut is by reverting the Vercel deploy: 0036 is additive and keeps the old
   `spotify_artist_id` columns/constraints/RPCs alive; Migration B (0037) drops them later.
 
-See `docs/spotify-removal-plan.md` and `docs/spotify-removal-checklist.md` for the full migration
+See `docs/archive/spotify-removal-plan.md` and `docs/archive/spotify-removal-checklist.md` for the full migration
 map. Glossary terms: `CONTEXT.md`.

@@ -171,7 +171,7 @@ Modules to be tested:
 
 ## Further Notes
 
-- Design doc: `docs/superpowers/specs/2026-06-05-guaranteed-playable-previews-design.md`.
+- Design doc: `docs/archive/superpowers/specs/2026-06-05-guaranteed-playable-previews-design.md`.
 - The 3–5s budget is verified via the generation timing log's new `preview` phase;
   expect near-zero added cost on warm loads (name-cache hits carry previews) and a
   small, tunable cost on cold loads.

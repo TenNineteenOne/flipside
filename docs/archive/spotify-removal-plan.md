@@ -1,8 +1,8 @@
 ---
 title: Spotify-API-Independence Plan (v5 — two review rounds: 6 code + 4 security + 5 red-team)
 updated: 2026-06-06
-status: reviewed twice; ready to slice into issues. Stage 2 detail + Round-2 corrections → docs/spotify-removal-checklist.md
-related: docs/spotify-removal-checklist.md, docs/wiki/spotify-dependency.md, docs/wiki/data-model.md, docs/wiki/music-providers.md, docs/future-per-track-open-links.md, docs/council/2026-06-06-spotify-removal.md
+status: reviewed twice; ready to slice into issues. Stage 2 detail + Round-2 corrections → docs/archive/spotify-removal-checklist.md
+related: docs/archive/spotify-removal-checklist.md, docs/wiki/spotify-dependency.md, docs/wiki/data-model.md, docs/wiki/music-providers.md, docs/future-per-track-open-links.md, docs/archive/council/2026-06-06-spotify-removal.md
 ---
 
 # Plan: Drive shared-Spotify-key ratelimit risk to ~zero
@@ -10,7 +10,7 @@ related: docs/spotify-removal-checklist.md, docs/wiki/spotify-dependency.md, doc
 ## Review outcome (6 code-verified reviews + 4 security agents)
 Surrogate-UUID Stage 2 is the **right** call (unanimous). As written, v3 confidence was
 LOW (15–35%) — it would have shipped broken. With the fixes now in
-**`docs/spotify-removal-checklist.md`**, confidence rises to ~85–90%. The must-fixes the
+**`docs/archive/spotify-removal-checklist.md`**, confidence rises to ~85–90%. The must-fixes the
 reviews surfaced (all code-verified):
 - **3 omitted schema blockers:** `artist_search_cache` (hottest read path) was out of scope;
   `artist_tracks_cache` + `artist_external_links` have `spotify_artist_id` as their PRIMARY
@@ -49,7 +49,7 @@ captured in checklist §H — the architecture held but the cutover mechanics di
 - **Confirmed good:** Stage 1 is genuinely independent; no live Critical vulns; IDOR clean;
   open-link forgery not exploitable. Revised confidence with §H folded in: ~90%.
 
-Full implementation + verification + security checklist (incl. Round-2 §H): **`docs/spotify-removal-checklist.md`**.
+Full implementation + verification + security checklist (incl. Round-2 §H): **`docs/archive/spotify-removal-checklist.md`**.
 
 ## Goal (user's words)
 *"Reduce the possibility of a ratelimit greatly, if not all the way to zero."* Keep "Open in
@@ -66,7 +66,7 @@ Last.fm cold-gen volume ≤ today's).
 ---
 
 ## Why a real identity migration now (and why surrogate-UUID, not MBID)
-Verified hinge finding (see `docs/council/2026-06-06-spotify-removal.md`): `spotify_artist_id`
+Verified hinge finding (see `docs/archive/council/2026-06-06-spotify-removal.md`): `spotify_artist_id`
 is **not** a display label. `isValidSpotifyId` (`/^[a-zA-Z0-9]{22}$/`) guards **9 routes**;
 the column is `NOT NULL` and the dedup/feedback/cooldown key in 5+ tables; the name-cache
 writes it cross-user. So any move off Spotify search forces an identity decision.

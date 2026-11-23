@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-08
 **Status:** Approved
-**Design Spec:** `docs/superpowers/specs/2026-04-08-visual-overhaul-design.md`
+**Design Spec:** `docs/archive/superpowers/specs/2026-04-08-visual-overhaul-design.md`
 
 ---
 

@@ -77,7 +77,7 @@ interface ArtistDrawerProps {
 
 ### Notes
 
-- Read the drawer spec in `docs/superpowers/specs/2026-04-08-visual-overhaul-design.md` § "Artist Detail Drawer".
+- Read the drawer spec in `docs/archive/superpowers/specs/2026-04-08-visual-overhaul-design.md` § "Artist Detail Drawer".
 - Component file: `components/feed/artist-drawer.tsx`
 - The drawer should not unmount immediately on close — animate out first, then unmount. Use Framer Motion's `AnimatePresence`.
 

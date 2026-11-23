@@ -57,7 +57,7 @@ Accept `artistColor?: string` (from `recommendation.artist_color`). Default to `
 
 ### Notes
 
-- Read the full card spec in `docs/superpowers/specs/2026-04-08-visual-overhaul-design.md` § "Artist Card (Collapsed)".
+- Read the full card spec in `docs/archive/superpowers/specs/2026-04-08-visual-overhaul-design.md` § "Artist Card (Collapsed)".
 - Framer Motion is already installed. Use `<motion.div>` with `animate`, `layout`, and spring transition.
 - The card background is `var(--bg-card)` (`#0f0f0f`). Card border: `1px solid var(--border)`.
 - For desktop, the card should be max-width 640px, centred — this is handled by the feed layout, not the card itself.

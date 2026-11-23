@@ -10,7 +10,7 @@
 
 **Worktree-only:** All work stays on branch `perf/initial-load-3-5s`. Never merge to `main` or `Nick` without explicit user instruction.
 
-**Spec:** `docs/superpowers/specs/2026-06-04-initial-load-perf-design.md`
+**Spec:** `docs/archive/superpowers/specs/2026-06-04-initial-load-perf-design.md`
 
 ---
 

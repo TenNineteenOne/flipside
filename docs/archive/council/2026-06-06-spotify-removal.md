@@ -60,4 +60,4 @@ key. The hinge finding is real.
 - **7-day next step:** Stage 1 onboarding + cache pre-warm + Last.fm counters on a branch;
   localhost-verify Spotify call-count drop with Last.fm count ≤ baseline.
 
-Full plan: `docs/spotify-removal-plan.md` (v2). Deezer remains opt-in/unverified.
+Full plan: `docs/archive/spotify-removal-plan.md` (v2). Deezer remains opt-in/unverified.

@@ -2,7 +2,7 @@
 title: Future — Per-track "Open in …" links (deferred)
 updated: 2026-06-06
 status: idea / not scheduled — context + how-to for a later build
-depends_on: docs/spotify-removal-plan.md (the provider switch makes this feasible)
+depends_on: docs/archive/spotify-removal-plan.md (the provider switch makes this feasible)
 related: docs/wiki/music-providers.md, docs/wiki/pages-and-components.md, docs/wiki/external-apis.md
 ---
 
@@ -60,7 +60,7 @@ mostly-zero-API feature for everything except *exact* Spotify deep-links.
    "Open in …" button stays as-is.
 
 ## Prerequisites / ordering
-- Do this **after** the Spotify-independence switch (`docs/spotify-removal-plan.md`), so the
+- Do this **after** the Spotify-independence switch (`docs/archive/spotify-removal-plan.md`), so the
   track-of-record is settled and the per-platform fallbacks are the norm.
 - No schema change required for Apple/YouTube. The Spotify `spotifyTrackId` column already
   exists on the track payload.

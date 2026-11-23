@@ -16,9 +16,13 @@ const eslintConfig = defineConfig([
     ".claude/**",
     // Committed snapshot checked into the repo; not application code.
     "data/genres.json.backup*",
-    // Manual test harness (CommonJS)
-    "test-colour.js",
   ]),
+  {
+    rules: {
+      // `_arg` marks a parameter that is unused on purpose (test mocks).
+      "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
+    },
+  },
 ]);
 
 export default eslintConfig;

@@ -44,7 +44,7 @@ interface TrackStripProps {
 
 ### Notes
 
-- Read the design spec at `docs/superpowers/specs/2026-04-08-visual-overhaul-design.md` § "Track Strip" for the full visual reference.
+- Read the design spec at `docs/archive/superpowers/specs/2026-04-08-visual-overhaul-design.md` § "Track Strip" for the full visual reference.
 - The component should be in `components/feed/track-strip.tsx`.
 - Do not wire this to any real track-fetching logic — it receives `tracks` as a prop. Data fetching is handled by the parent.
 

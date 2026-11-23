@@ -1,6 +1,6 @@
 # PRD: Fast first paint (3-5s) + preview-volume reduction
 
-**Related design:** `docs/superpowers/specs/2026-06-06-fast-first-paint-design.md`
+**Related design:** `docs/archive/superpowers/specs/2026-06-06-fast-first-paint-design.md`
 **Branch:** `feat/playable-previews` (folds into PR #139 — ships the previews work corrected)
 
 ## Problem Statement
