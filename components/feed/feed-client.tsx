@@ -158,6 +158,13 @@ export function FeedClient({ recommendations, initialSavedIds, musicPlatform, in
   const triageRef = useRef(triage)
   useEffect(() => { triageRef.current = triage })
   const { savedIds } = triage
+  // Browser Back restores this page from the router cache as it first loaded (rated cards unrated again).
+  // Leaving after a decision or save drops that cache (router.refresh), so Back loads the queue fresh.
+  const [loaded] = useState({ signals: triage.signals, savedIds })
+  useEffect(() => () => {
+    const t = triageRef.current
+    if (t.signals !== loaded.signals || t.savedIds !== loaded.savedIds) router.refresh()
+  }, [loaded, router])
 
   // Saved badge in the rail / tab bar: artists saved since the feed opened.
   const [savedAtMount] = useState(savedIds.size)

@@ -1,7 +1,7 @@
 "use client"
 
 import "./feed.css"
-import { useCallback, useEffect, useRef } from "react"
+import { useCallback, useEffect, useRef, useSyncExternalStore } from "react"
 import { RefreshCw } from "lucide-react"
 import { EndState, VERDICT } from "@/components/feed/feed-parts"
 import { SnapCard } from "@/components/feed/snap-card"
@@ -10,8 +10,17 @@ import { ShellSlot } from "@/components/shell/shell-context"
 import { useAudio } from "@/lib/audio-context"
 import type { FeedTriage } from "@/lib/hooks/use-feed-triage"
 
-/** Fallback for browsers without `scrollend` (Safari): longest smooth scroll we expect. */
+/** Fallback for browsers without `scrollend` (Safari), or when no scroll was needed: how long to wait for one to start. */
 const SCROLL_GUARD_MS = 900
+/** No scroll event for this long: the scroll is over. A long one (Rate the rest: the whole queue) outlasts SCROLL_GUARD_MS. */
+const SCROLL_IDLE_MS = 150
+/** Too short for the cards' preview rows at any width (feed.css hides them): keep in step with the ev-page rules there. */
+const NO_ROWS = "(height < 400px)"
+const subscribeNoRows = (cb: () => void) => {
+  const m = matchMedia(NO_ROWS)
+  m.addEventListener("change", cb)
+  return () => m.removeEventListener("change", cb)
+}
 /** data-id of the end-of-queue page (artist ids are UUIDs). */
 const END = "__end"
 
@@ -110,8 +119,13 @@ export function FeedSnap({ triage, onLoadMore, generating, challenge, onShown }:
     first.current = false
     target.current = key
     let timer = 0
+    const idle = () => {
+      clearTimeout(timer)
+      timer = window.setTimeout(done, SCROLL_IDLE_MS)
+    }
     const done = () => {
       root.removeEventListener("scrollend", done)
+      root.removeEventListener("scroll", idle)
       clearTimeout(timer)
       target.current = null
       // If the user scrolled elsewhere meanwhile, the page now in view wins.
@@ -123,11 +137,13 @@ export function FeedSnap({ triage, onLoadMore, generating, challenge, onShown }:
       } else align()
     }
     root.addEventListener("scrollend", done)
+    root.addEventListener("scroll", idle)
     timer = window.setTimeout(done, smooth ? SCROLL_GUARD_MS : 100)
     // Both offsets are from .ev-snap (the fixed frame), so the challenge line above the scroller cancels out.
     root.scrollTo({ top: el.offsetTop - root.offsetTop, behavior: smooth ? "smooth" : "auto" })
     return () => {
       root.removeEventListener("scrollend", done)
+      root.removeEventListener("scroll", idle)
       clearTimeout(timer)
     }
   }, [key, align])
@@ -196,11 +212,13 @@ export function TopBarProgress({ triage, onLoadMore, generating, phone = false }
 }
 
 /**
- * The small player bar, shown only while the loaded track (playing or paused) is not the
- * selected artist's; the floating pill stays hidden while these feeds are mounted.
+ * The small player bar, shown while the loaded track (playing or paused) is not the selected
+ * artist's, or the page is too short for preview rows (phones in landscape: the bar is then the
+ * only pause control); the floating pill stays hidden while these feeds are mounted.
  */
 export function PlayerBar({ triage }: { triage: FeedTriage }) {
   useSuppressFloatingPlayer()
-  const show = !!useAudio().currentTrack && triage.nowPlayingArtist?.id !== triage.selectedId
+  const noRows = useSyncExternalStore(subscribeNoRows, () => matchMedia(NO_ROWS).matches, () => false)
+  const show = !!useAudio().currentTrack && (noRows || triage.nowPlayingArtist?.id !== triage.selectedId)
   return show ? <div className="ev-m-mini"><MiniPlayer docked /></div> : null
 }

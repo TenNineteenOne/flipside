@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { activationStamp, isDoubleActivation } from "./double-activation"
+import { activationStamp, isDoubleActivation, isRepeatActivation } from "./double-activation"
 
 describe("isDoubleActivation", () => {
   const last = { artistId: "a", at: 1000 }
@@ -30,5 +30,20 @@ describe("activationStamp", () => {
   it("so an un-like does not block deciding the next artist right after", () => {
     const after = activationStamp(null, "b", "b", "b", 2000) // un-like b, selection stays on b
     expect(isDoubleActivation(after, "c", true, 2100)).toBe(false)
+  })
+})
+
+describe("isRepeatActivation", () => {
+  const last = { key: "thumbs_up:a", at: 1000 }
+  it("ignores the same control on the same artist within 350ms (a double tap would un-like)", () => {
+    expect(isRepeatActivation(last, "thumbs_up:a", 1349)).toBe(true)
+  })
+  it("lets a deliberate second tap through from 350ms on (un-like stays)", () => {
+    expect(isRepeatActivation(last, "thumbs_up:a", 1350)).toBe(false)
+  })
+  it("never blocks another control, another artist or the first tap", () => {
+    expect(isRepeatActivation(last, "save:a", 1010)).toBe(false)
+    expect(isRepeatActivation(last, "thumbs_up:b", 1010)).toBe(false)
+    expect(isRepeatActivation(null, "thumbs_up:a", 1010)).toBe(false)
   })
 })

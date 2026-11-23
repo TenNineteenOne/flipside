@@ -4,6 +4,7 @@ import { renderToString } from "react-dom/server"
 import { HistoryClient, hasFeedbackRow } from "./history-client"
 
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { error: vi.fn() }) }))
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }))
 
 function entry(id: string, seenAt: string) {
   return {

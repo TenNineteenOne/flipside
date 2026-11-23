@@ -5,6 +5,7 @@
     from fvdrive import Run
 
     with Run("my-check", viewport=(1440, 900)) as r:      # evidence -> ~/.cache/flipside-verify/evidence/my-check/
+                                                            # (root: $FLIPSIDE_VERIFY_EVIDENCE, set before the import)
         r.sign_up("check-user")                             # real /sign-in page, New account
         r.seed("check-user", "feed")                        # fv seed
         r.page.goto(r.url("/feed"))
@@ -13,22 +14,34 @@
         r.expect(cond, "what was expected")                 # records PASS/FAIL, never raises
 
 Every console message, page error, failed request and >=400 response is written to console.log in
-the evidence folder; `r.problems()` returns the ones that count as failures (errors, CSP reports).
+the evidence folder; `r.problems()` returns the ones that count as failures (errors, CSP reports,
+failed requests the page did not cancel itself). End a journey with `return r.passed(allow=(...))`:
+it fails the journey on any problem that is not on that explicit allowlist.
+
+Await a destination with `p.wait_for_url(at("/settings"))`, never a "**/settings" glob: the glob
+also matches /sign-in?from=/settings, so it passes when the navigation never happened.
 """
 import os
 import re
 import subprocess
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from playwright.sync_api import sync_playwright
 
 SCRIPTS = Path(__file__).resolve().parent
 FV = str(SCRIPTS / "fv")
 HOME = Path(os.environ.get("FLIPSIDE_VERIFY_HOME", Path.home() / ".cache/flipside-verify"))
+EVIDENCE = Path(os.environ.get("FLIPSIDE_VERIFY_EVIDENCE", HOME / "evidence"))  # one folder per Run under here
 APP = "https://localhost:3947"  # must match NEXTAUTH_URL in fv (self-signed HTTPS; see the comments there)
 PHONE = (390, 844)
 DESKTOP = (1440, 900)
+
+
+def at(path: str):
+    """URL predicate for wait_for_url: true when the page's path is exactly `path` (query and hash ignored)."""
+    return lambda url: urlsplit(url).path == path
 
 
 def sql(query: str) -> str:
@@ -39,7 +52,7 @@ def sql(query: str) -> str:
 
 class Run:
     def __init__(self, name: str, viewport=DESKTOP, mobile: bool | None = None):
-        self.dir = HOME / "evidence" / name
+        self.dir = EVIDENCE / name
         self.dir.mkdir(parents=True, exist_ok=True)
         self.viewport = viewport
         # Phone widths get a touch, mobile-UA context so the server's layout guess matches a real phone.
@@ -96,9 +109,20 @@ class Run:
         d.accept() if self.dialog_action == "accept" else d.dismiss()
 
     def problems(self, ignore: tuple[str, ...] = ()) -> list[str]:
-        """Uncaught errors, console errors and CSP violations so far (CSP reports arrive as console errors)."""
-        bad = re.compile(r"\] (pageerror|console\.error):|Content Security Policy|Content-Security-Policy", re.I)
-        return [l for l in self.console if bad.search(l) and not any(i in l for i in ignore)]
+        """Uncaught errors, console errors, CSP violations and failed requests so far, minus lines containing
+        any `ignore` substring. CSP reports arrive as console errors; so does every >=400 fetch response.
+        net::ERR_ABORTED is not a problem: it is the page cancelling its own request (a navigation dropping
+        a prefetch, a preview switching track)."""
+        bad = re.compile(r"\] (pageerror|console\.error|requestfailed):|Content Security Policy|Content-Security-Policy", re.I)
+        return [l for l in self.console
+                if bad.search(l) and not ("] requestfailed:" in l and "net::ERR_ABORTED" in l) and not any(i in l for i in ignore)]
+
+    def passed(self, allow: tuple[str, ...] = ()) -> bool:
+        """A journey's last line. Adds the expectation that nothing in problems() is unexpected (`allow`:
+        substrings of the lines this journey causes on purpose), then says whether every expectation held."""
+        bad = self.problems(ignore=allow)
+        self.expect(not bad, f"no unexpected console errors, page errors or failed requests: {bad}")
+        return all(ok for ok, _ in self.results)
 
     def shot(self, label: str, full_page: bool = False) -> Path:
         self.n += 1
@@ -136,16 +160,17 @@ class Run:
         p.get_by_role("textbox", name="Username").fill(username)
         p.get_by_role("checkbox", name="I understand my username cannot be recovered if I forget it.").check()
         p.get_by_role("button", name="Create account").click()
-        p.wait_for_url("**/onboarding", timeout=20000)
+        p.wait_for_url(at("/onboarding"), timeout=20000)
 
-    def sign_in(self, username: str, dest: str = "**/feed"):
+    def sign_in(self, username: str, dest: str = "/feed"):
+        """Existing-account sign-in. `dest` is the path it must land on (a path, not a glob)."""
         p = self.page
         p.goto(self.url("/sign-in"))
         p.get_by_role("textbox", name="Username").fill(username)
         p.get_by_role("button", name="Sign in", exact=True).click()
-        p.wait_for_url(dest, timeout=20000)
+        p.wait_for_url(at(dest), timeout=20000)
 
     def skip_onboarding(self):
         """Onboarding's own 'Skip for now' path: stamps onboarding_completed_at and goes to /feed."""
         self.page.get_by_role("button", name="Skip", exact=True).click()
-        self.page.wait_for_url("**/feed", timeout=20000)
+        self.page.wait_for_url(at("/feed"), timeout=20000)

@@ -1,11 +1,13 @@
 "use client"
 
-import { useState, useMemo, useRef, useSyncExternalStore } from "react"
+import { useEffect, useState, useMemo, useRef, useSyncExternalStore } from "react"
+import { useRouter } from "next/navigation"
 import Image from "next/image"
 import { toast } from "sonner"
 import { ThumbsUp, ThumbsDown, SkipForward, Bookmark, Undo2 } from "lucide-react"
 import { hexToRgba, resolveArtistColor } from "@/lib/color-utils"
 import { artworkAt } from "@/lib/feed/artwork"
+import { isRepeatActivation } from "@/lib/feed/double-activation"
 import { useArtistFeedback } from "@/lib/hooks/use-artist-feedback"
 
 interface HistoryEntry {
@@ -169,6 +171,12 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
     [filtered, mounted],
   )
 
+  // Browser Back restores a page from the router cache as it first loaded (a returned row listed again).
+  // Leaving after a change drops that cache (router.refresh), so Back loads the list fresh.
+  const router = useRouter()
+  const changed = useRef(false)
+  useEffect(() => () => { if (changed.current) router.refresh() }, [router])
+
   async function handleUndo(artistId: string, signal: string) {
     setUndoingIds((prev) => new Set(prev).add(artistId))
     try {
@@ -176,6 +184,7 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
       // what clears skip_at + seen_at so the artist is eligible again.
       const ok = (!hasFeedbackRow(signal) || (await removeSignal(artistId))) && (await dismiss(artistId))
       if (ok) {
+        changed.current = true
         fetchedCountRef.current = Math.max(0, fetchedCountRef.current - 1)
         setHistory((prev) => prev.filter((h) => h.artist_id !== artistId))
       }
@@ -188,7 +197,14 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
     }
   }
 
-  function handleChangeSignal(artistId: string, newSignal: string) {
+  const lastChange = useRef<{ key: string; at: number } | null>(null)
+  /** `now`: the click's `timeStamp`. */
+  function handleChangeSignal(artistId: string, newSignal: string, now: number) {
+    // The tapped button becomes its opposite under the finger: a double tap would change the row straight back.
+    const repeat = isRepeatActivation(lastChange.current, artistId, now)
+    lastChange.current = { key: artistId, at: now }
+    if (repeat) return
+    changed.current = true
     void setSignal(artistId, newSignal)
   }
 
@@ -348,7 +364,7 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
                       <div style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0 }}>
                         {entry.signal !== "thumbs_up" && entry.signal !== "dismissed" && !entry.bookmarked && (
                           <button
-                            onClick={() => handleChangeSignal(entry.artist_id, "thumbs_up")}
+                            onClick={(e) => handleChangeSignal(entry.artist_id, "thumbs_up", e.timeStamp)}
                             title="Change to Liked"
                             style={{
                               width: 32, height: 32, borderRadius: 8,
@@ -361,7 +377,7 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
                         )}
                         {entry.signal !== "thumbs_down" && entry.signal !== "dismissed" && !entry.bookmarked && (
                           <button
-                            onClick={() => handleChangeSignal(entry.artist_id, "thumbs_down")}
+                            onClick={(e) => handleChangeSignal(entry.artist_id, "thumbs_down", e.timeStamp)}
                             title="Change to Passed"
                             style={{
                               width: 32, height: 32, borderRadius: 8,

@@ -42,6 +42,11 @@ export function SettingsForm({
           outline: none;
           cursor: pointer;
         }
+        /* The app's focus ring (globals.css :focus-visible), pushed out to clear the 16px thumb. */
+        .obs-slider:focus-visible {
+          outline: 2px solid var(--violet-ink);
+          outline-offset: 8px;
+        }
         .obs-slider::-webkit-slider-thumb {
           -webkit-appearance: none;
           width: 16px; height: 16px;

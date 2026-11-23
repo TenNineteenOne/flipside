@@ -24,7 +24,7 @@ Preconditions:
 - An onboarded account with `fv seed <name> feed` then `fv seed <name> history` (63 rows; see the README for which artist has which state). Add `fv seed <name> saved` for the Saved chip.
 - Journeys: `history-return`, `history-filters`.
 
-- **Open.** `p.get_by_role("navigation", name="Main").get_by_role("link", name=re.compile("^History")).first.click()`, `p.wait_for_url("**/history")`. `heading "History"`, 50 rows, the `All` chip reads `All50+`.
+- **Open.** `p.get_by_role("navigation", name="Main").get_by_role("link", name=re.compile("^History")).first.click()`, `p.wait_for_url(at("/history"))`. `heading "History"`, 50 rows, the `All` chip reads `All50+`.
 - **Find a row.** `row = p.locator("div").filter(has=p.get_by_text("Joy Division", exact=True)).filter(has=p.get_by_role("button")).last`. Its text contains `Liked`.
 - **Filter.** `p.get_by_role("button", name=re.compile("^Liked")).first.click()` (chips have `aria-pressed`). Joy Division is listed, Pixies is not. Same for Passed (Pixies), Skipped (Stereolab), Dismissed (Mogwai), Saved (Low).
 - **Return a liked row.** `row.get_by_role("button", name="Return to feed").click()`, then `p.get_by_text("Joy Division", exact=True).wait_for(state="detached")`. In the database `recommendation_cache.seen_at` and `skip_at` are null and the `feedback` row has `deleted_at` set.

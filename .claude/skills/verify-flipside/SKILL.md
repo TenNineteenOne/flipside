@@ -76,7 +76,11 @@ Read-only. Run it first whenever something looks off. Checks: each recorded pid 
 its port; the schema exists; the service-role JWT works through `/rest/v1`; `/sign-in` answers
 200; the app process's environment points at the local proxy (not a real Supabase project); the
 build was made from the current `HEAD`. It notes changed product files and whether
-`LASTFM_API_KEY` is set. Exit code 0 means worth driving. A stale build: `fv stop && fv launch`.
+`LASTFM_API_KEY` is set. Exit code 0 means worth driving.
+
+The build check fails as soon as someone commits mid-session ("built from 89540a9, HEAD is now
+915be70"). The running build is still a valid build of the commit it names: results from it
+describe that commit, not `HEAD`. To test the new `HEAD`, relaunch: `fv stop && fv launch`.
 
 ## Drive
 
@@ -94,7 +98,7 @@ $S/fv sql -c "select id, onboarding_completed_at from users"   # read (or set up
 For anything not scripted yet, write a short script on `scripts/fvdrive.py` (its docstring is the
 API): `Run(name, viewport)` gives a page that records the console, page errors, failed requests,
 every request and every dialog, plus `sign_up`, `sign_in`, `skip_onboarding`, `seed`, `sql`,
-`shot`, `note`, `expect`. Put the script in your scratch directory, not in the repo, unless it is
+`shot`, `note`, `expect`, `problems`, `passed`. Put the script in your scratch directory, not in the repo, unless it is
 a journey worth keeping (then add it to `journeys.py` and to the feature file).
 
 Rules that hold for every journey:
@@ -112,10 +116,25 @@ Rules that hold for every journey:
 - Selectors: roles and accessible names, read from the components. Each feature file lists them.
 - `window.confirm` dialogs: set `r.dialog_action = "accept"` or `"dismiss"` before the click;
   every dialog is recorded in `r.dialogs`.
+- Await a destination by its path: `p.wait_for_url(at("/settings"))` (`from fvdrive import at`),
+  or the exact URL (`r.url("/")`). Never a `"**/settings"` glob: it also matches
+  `/sign-in?from=/settings`, so the wait passes when sign-in never navigated.
+- `page.wait_for_function("<string>")` fails here: the production CSP has no `unsafe-eval`, and a
+  string predicate is evaluated in the page. Use `wait_for_url(lambda url: ...)`, locator waits
+  (`locator.wait_for()`, `expect(locator)`), or poll from Python with `p.evaluate(...)`, which is
+  not subject to the page's CSP.
+- End every journey with `return r.passed(allow=(...))`. It fails the journey on any console
+  error, page error, CSP report or failed request the run collected (`r.problems()`), except
+  lines containing a substring on that journey's `allow` tuple. List only what the journey causes
+  on purpose, with the reason in a comment. `net::ERR_ABORTED` request failures are never counted:
+  that is the page cancelling its own request (a navigation dropping a prefetch).
 
 ## Evidence
 
-Everything goes to `~/.cache/flipside-verify/evidence/<journey>-<HHMMSS>/` (outside the repo):
+Everything goes to `~/.cache/flipside-verify/evidence/<journey>-<HHMMSS>/` (outside the repo).
+To write somewhere else (a scratch folder for a one-off sweep), set `FLIPSIDE_VERIFY_EVIDENCE` to
+the root folder before running `journeys.py` or importing `fvdrive`; each `Run(name)` then writes
+to `$FLIPSIDE_VERIFY_EVIDENCE/<name>/`. `fv` itself (failed-launch logs) keeps the default.
 
 - `result.txt` one PASS / FAIL line per expectation (and `ERROR` if the journey could not finish)
 - `NN-<label>.png` screenshots, numbered in the order taken

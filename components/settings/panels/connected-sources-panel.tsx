@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, type KeyboardEvent } from "react"
 import { toast } from "sonner"
 import { hexToRgba } from "@/lib/color-utils"
 import { patchSettings } from "@/lib/settings/patch-settings"
@@ -32,7 +32,12 @@ function useSourceUsername(
     }
   }
 
-  return { draft, setDraft, saved, onBlur }
+  // Enter saves through blur, so there is one save path and Enter-then-blur can't send twice.
+  const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && !e.nativeEvent.isComposing) e.currentTarget.blur()
+  }
+
+  return { draft, setDraft, saved, onBlur, onKeyDown }
 }
 
 interface ConnectedSourcesPanelProps {
@@ -116,10 +121,12 @@ export function ConnectedSourcesPanel({
             <div className="field" style={{ height: 40, marginTop: 8 }}>
               <input
                 type="text"
+                aria-label="Last.fm username"
                 placeholder="your-lastfm-username"
                 value={lastfm.draft}
                 onChange={(e) => lastfm.setDraft(e.target.value)}
                 onBlur={lastfm.onBlur}
+                onKeyDown={lastfm.onKeyDown}
               />
             </div>
           </div>
@@ -169,10 +176,12 @@ export function ConnectedSourcesPanel({
             <div className="field" style={{ height: 40, marginTop: 8 }}>
               <input
                 type="text"
+                aria-label="stats.fm username"
                 placeholder="your-statsfm-username"
                 value={statsfm.draft}
                 onChange={(e) => statsfm.setDraft(e.target.value)}
                 onBlur={statsfm.onBlur}
+                onKeyDown={statsfm.onKeyDown}
               />
             </div>
           </div>

@@ -8,6 +8,7 @@ import { GenrePicker, ALL_GENRES } from "@/components/onboarding/genre-picker"
 import { ArtistSearch, type SpotifyArtist } from "@/components/onboarding/artist-search"
 import { normalizeGenre } from "@/lib/genre/normalize"
 import { MAX_SELECTED_GENRES, patchSettings } from "@/lib/settings/patch-settings"
+import { createKeyedSerializer } from "@/lib/keyed-serializer"
 
 const GENRE_CAP = MAX_SELECTED_GENRES
 const ARTIST_CAP = 200
@@ -25,6 +26,35 @@ export function buildTagLookup(nodes: GenreNode[], acc = new Map<string, GenreNo
     if (node.children.length) buildTagLookup(node.children, acc)
   }
   return acc
+}
+
+/**
+ * Writer for the genre selection (users.selected_genres). Each save carries the whole list, so a newer
+ * save aborts the one in flight. A failed save rolls the picker back to the last list the server
+ * confirmed, unless a newer change is waiting (`supersede()`) or in flight: that one re-sends the
+ * whole list, failed pick included, and its own outcome decides.
+ */
+export function createGenreWriter(
+  initial: GenreNode[],
+  rollback: (saved: GenreNode[]) => void,
+): ((next: GenreNode[]) => Promise<void>) & { supersede: () => void; abort: () => void } {
+  let saved = initial
+  let latest = 0
+  let aborter: AbortController | null = null
+  const write = async (next: GenreNode[]) => {
+    const id = ++latest
+    aborter?.abort()
+    const mine = (aborter = new AbortController())
+    try {
+      await patchSettings({ selectedGenres: next.map((g) => g.lastfmTag) }, { signal: mine.signal })
+      saved = next
+    } catch (err) {
+      if ((err as { name?: string } | null)?.name === "AbortError") return
+      if (id === latest) rollback(saved)
+      toast.error("Couldn't save genres")
+    }
+  }
+  return Object.assign(write, { supersede: () => { latest++ }, abort: () => aborter?.abort() })
 }
 
 export interface LibraryEditorProps {
@@ -52,7 +82,8 @@ export function LibraryEditor({ initialGenreTags, initialSeedArtists }: LibraryE
   const [artistsOpen, setArtistsOpen] = useState(false)
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const saveAborter = useRef<AbortController | null>(null)
+  const [writeGenres] = useState(() => createGenreWriter(initialGenreNodes, setGenres))
+  const [inTapOrder] = useState(createKeyedSerializer)
   const orphanNoticeShown = useRef(false)
 
   // When the genre taxonomy rebuild dropped some of the user's previously-
@@ -89,29 +120,22 @@ export function LibraryEditor({ initialGenreTags, initialSeedArtists }: LibraryE
       const next = pendingGenres.current
       if (!next) return
       pendingGenres.current = null
-      saveAborter.current?.abort()
+      writeGenres.abort()
       void patchSettings(
         { selectedGenres: next.map((g) => g.lastfmTag) },
         { fetchImpl: (url, init) => fetch(url, { ...init, keepalive: true }) },
       ).catch(() => toast.error("Couldn't save genres"))
     }
-  }, [])
+  }, [writeGenres])
 
   function scheduleGenreSave(next: GenreNode[]) {
     if (saveTimer.current) clearTimeout(saveTimer.current)
     pendingGenres.current = next
-    saveTimer.current = setTimeout(async () => {
+    writeGenres.supersede()
+    saveTimer.current = setTimeout(() => {
       saveTimer.current = null
       pendingGenres.current = null
-      saveAborter.current?.abort()
-      const aborter = new AbortController()
-      saveAborter.current = aborter
-      try {
-        await patchSettings({ selectedGenres: next.map((g) => g.lastfmTag) }, { signal: aborter.signal })
-      } catch (err) {
-        if ((err as { name?: string } | null)?.name === "AbortError") return
-        toast.error("Couldn't save genres")
-      }
+      void writeGenres(next)
     }, GENRE_SAVE_DEBOUNCE_MS)
   }
 
@@ -128,13 +152,14 @@ export function LibraryEditor({ initialGenreTags, initialSeedArtists }: LibraryE
     // Functional: `artists` here can be stale (a remove may have landed since this render).
     setArtists((cur) => (cur.some((a) => a.id === artist.id) || cur.length >= ARTIST_CAP ? cur : [...cur, artist]))
     try {
-      const res = await fetch("/api/settings/seed-artists", {
+      // Per artist, in tap order: a quick add-then-remove must not let the DELETE reach the server first.
+      const res = await inTapOrder(artist.id, () => fetch("/api/settings/seed-artists", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           artists: [{ id: artist.id, name: artist.name, imageUrl: artist.imageUrl }],
         }),
-      })
+      }))
       if (!res.ok) throw new Error("add failed")
     } catch {
       setArtists((prev) => prev.filter((a) => a.id !== artist.id))
@@ -147,9 +172,9 @@ export function LibraryEditor({ initialGenreTags, initialSeedArtists }: LibraryE
     if (!removed) return
     setArtists((cur) => cur.filter((a) => a.id !== id))
     try {
-      const res = await fetch(`/api/settings/seed-artists?id=${encodeURIComponent(id)}`, {
+      const res = await inTapOrder(id, () => fetch(`/api/settings/seed-artists?id=${encodeURIComponent(id)}`, {
         method: "DELETE",
-      })
+      }))
       if (!res.ok) throw new Error("remove failed")
     } catch {
       // Put back only this artist: a snapshot of the whole list would drop adds made meanwhile.

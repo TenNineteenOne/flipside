@@ -44,7 +44,7 @@ underground → 0, else the nearest curve stop, 0.90/0.91 → 1), `deep_discover
 [[generation-engine]]. The feed read path (`getUnseenRecommendations`) re-applies the
 stop-0 cap from the *current* `fame_level`, so moving the slider is honored on first paint.
 
-Connected sources: blur saves a Last.fm / stats.fm username when it differs from the last
+Connected sources: blur (or Enter, which blurs the field) saves a Last.fm / stats.fm username when it differs from the last
 value the server **accepted**; the "connected · @name" status and Sync use that saved
 value, never an unsaved or rejected draft. Genre pickers (onboarding + Settings) cap at
 50 (`MAX_SELECTED_GENRES`), matching `PATCH /api/settings`, which rejects the whole patch

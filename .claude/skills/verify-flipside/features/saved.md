@@ -23,7 +23,7 @@ Preconditions:
 - An onboarded account with `fv seed <name> feed`, `fv seed <name> history`, `fv seed <name> saved` (Low, Radiohead, Slowdive).
 - Journey: `saved`.
 
-- **Open.** `p.get_by_role("navigation", name="Main").get_by_role("link", name=re.compile("^Saved")).first.click()`, `p.wait_for_url("**/saved")`, then wait for `p.get_by_text("3 artists", exact=True)`.
+- **Open.** `p.get_by_role("navigation", name="Main").get_by_role("link", name=re.compile("^Saved")).first.click()`, `p.wait_for_url(at("/saved"))`, then wait for `p.get_by_text("3 artists", exact=True)`.
 - **Cards.** `p.get_by_role("button", name="Remove Low")`, `Remove Radiohead`, `Remove Slowdive` each exist once.
 - **Remove.** `p.get_by_role("button", name="Remove Low").click()` (wait for `DELETE /api/saves`). The header reads `2 artists`, the button is gone, `saves` has 2 rows for the user.
 - **Reload.** `p.reload()`, wait for `2 artists`: Low is still gone.

@@ -36,6 +36,9 @@ cleanup are in `../SKILL.md`.
 - After a navigation wait for real content, not the heading: `/history`, `/saved`, `/settings`
   and `/feed` have loading skeletons that already carry the heading.
 - `get_by_role("alert")` also matches Next's empty route announcer. Filter by text.
+- Await destinations with `p.wait_for_url(at("/feed"))` (`from fvdrive import at`), not a `"**/feed"` glob, and never use `page.wait_for_function("<string>")` (blocked by the CSP). See `../SKILL.md`, Drive.
+- The desktop rail's shortcuts button is named `Keyboard shortcuts` (its tooltip says "Shortcuts"): `p.get_by_role("button", name="Keyboard shortcuts")`.
+- Seeded preview tracks carry the full track's length as `durationMs` (iTunes `trackTimeMillis`), exactly as `lib/music-provider/itunes.ts` stores it, so a 30-second preview row reads e.g. `7:11`. That is the app's behaviour, not a seed artifact.
 
 ## Proof and skip reporting
 
@@ -58,6 +61,10 @@ sections: `Sub-features`, `How to get to it (user POV)`, `Driving it with Playwr
 - [History](./history.md): filter chips, Return to feed, Load more.
 - [Saved](./saved.md): the saved grid and Remove.
 - [Settings](./settings.md): sign out and account deletion's confirm dialog; the other panels are mapped, not yet driven.
+- [Mini player and audio across pages](./player.md): a preview keeps playing off the Feed in a pill. Mapped from the 2026-11-22 sweep, not yet re-driven.
+- [Keyboard shortcuts](./shortcuts.md): the desktop Feed's keys and the shortcuts sheet. Mapped from the 2026-11-22 sweep, not yet re-driven.
+- [Stats](./stats.md): totals, top genres, the taste-profile table and its sort. Mapped from the 2026-11-22 sweep, not yet re-driven.
+- [Landing page](./landing.md): the signed-out hero player and the username hand-off to sign-in. Mapped from the 2026-11-22 sweep, not yet re-driven.
 
-Not mapped yet: `/stats`, the landing page `/`, the Regenerate dialog, keyboard shortcuts, the
-tablet Feed layout, Settings' seeds / genres / "How famous?" editors.
+Not mapped yet: the Regenerate dialog (beyond its focus handling in shortcuts.md), the tablet Feed
+layout, Settings' seeds / genres / "How famous?" editors.

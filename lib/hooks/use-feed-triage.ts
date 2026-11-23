@@ -11,7 +11,7 @@ import { tuning } from "@/lib/feed/tuning"
 
 const END_PAGE = "__end"
 import { shouldHandOver } from "@/lib/feed/hand-over"
-import { activationStamp, isDoubleActivation } from "@/lib/feed/double-activation"
+import { activationStamp, isDoubleActivation, isRepeatActivation } from "@/lib/feed/double-activation"
 import { isCurrentTrack as isCurrent, nowPlayingArtistId } from "@/lib/feed/now-playing"
 import { getArtistLink, getShareableArtistLink, type MusicPlatform } from "@/lib/music-links"
 import { resolveArtistColor } from "@/lib/color-utils"
@@ -190,12 +190,20 @@ export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatfor
   )
 
   const lastAdvance = useRef<{ artistId: string; at: number } | null>(null)
+  const lastTap = useRef<{ key: string; at: number } | null>(null)
+  /** true for the second half of a double tap on one control of one artist (the caller ignores it). */
+  const repeated = useCallback((key: string) => {
+    const now = performance.now()
+    const repeat = isRepeatActivation(lastTap.current, key, now)
+    lastTap.current = { key, at: now }
+    return repeat
+  }, [])
 
   /** Returns null when the artist is unknown or the call is a double activation (ignored). */
   const judge = useCallback(
     (artistId: string, signal: Signal, opts: JudgeOptions): Plan | null => {
       const a = byId.get(artistId)
-      if (!a) return null
+      if (!a || repeated(`${signal}:${artistId}`)) return null
       const now = performance.now()
       if (isDoubleActivation(lastAdvance.current, artistId, opts.advance, now)) return null
       const plan = decide({ ids, signals, selectedId, playingArtistId }, { artistId, name: a.name, signal, ...opts })
@@ -217,17 +225,19 @@ export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatfor
       })
       return plan
     },
-    [byId, ids, signals, selectedId, playingArtistId, setSignal, playArtist, pause, notify, dismissToast],
+    [byId, ids, signals, selectedId, playingArtistId, setSignal, playArtist, pause, notify, dismissToast, repeated],
   )
 
   const save = useCallback(
     (a: CardArtist) => {
+      if (repeated(`save:${a.id}`)) return
       const was = savedIds.has(a.id)
+      const shown = notify(was ? `Removed ${a.name} from Saved` : `Saved ${a.name}`)
       // A save stamps seen_at: Undo of a later Like/Pass on this card must leave it stamped.
-      void toggleSave(a.id).then((ok) => { if (ok && !was) markSeen(a.id) })
-      notify(was ? `Removed ${a.name} from Saved` : `Saved ${a.name}`)
+      // Failed and rolled back (useArtistSaves toasts the error): the "Saved …" toast goes, as judge's does.
+      void toggleSave(a.id).then((ok) => { if (ok && !was) markSeen(a.id); else if (!ok && toastId.current === shown) dismissToast() })
     },
-    [savedIds, toggleSave, markSeen, notify],
+    [savedIds, toggleSave, markSeen, notify, dismissToast, repeated],
   )
 
   /** The artist on the user's preferred platform. */

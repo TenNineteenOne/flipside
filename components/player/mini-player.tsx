@@ -91,6 +91,8 @@ function FloatingPlayer() {
 
   return (
     <>
+      {/* Room at the foot of the page so the pill never covers its last control (History's Load more). */}
+      {open && <div className="h-[88px]" aria-hidden />}
       {present && currentTrack && (
         <div
            data-state={open ? "open" : "closed"}

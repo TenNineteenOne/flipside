@@ -106,6 +106,17 @@ export default function OnboardingPage() {
   const lastfmInvalid = lastfmUsername.trim() !== "" && !LASTFM_USERNAME_RE.test(lastfmUsername.trim())
   const statsfmInvalid = statsfmUsername.trim() !== "" && !STATSFM_USERNAME_RE.test(statsfmUsername.trim())
 
+  // Why "Get started" is disabled, in the order the user can act on it; null when it is enabled.
+  const short = MIN_SEEDS - selectedArtists.length
+  const getStartedHint = !hasAnyInput
+    ? `Add ${MIN_SEEDS} artists, a genre, or a Last.fm or stats.fm username to get started. Or skip.`
+    : artistsShort
+      ? `Add ${short} more artist${short === 1 ? "" : "s"} to use that path, or remove ${selectedArtists.length === 1 ? "it" : "them"}`
+      : lastfmInvalid || statsfmInvalid
+        ? `Fix the ${lastfmInvalid ? "Last.fm" : "stats.fm"} username to get started`
+        : null
+  const getStartedOff = getStartedHint !== null || saving
+
   async function handleContinue(skip = false) {
     if (saving) return
     setSaving(true)
@@ -327,16 +338,17 @@ export default function OnboardingPage() {
 
         {/* Actions */}
         <div className="col gap-10" style={{ marginTop: 28 }}>
-          {artistsShort && (
+          {getStartedHint && (
             <div className="muted" role="status" style={{ fontSize: 11, textAlign: "center" }}>
-              Add {MIN_SEEDS - selectedArtists.length} more artist{MIN_SEEDS - selectedArtists.length === 1 ? "" : "s"} to use that path, or remove {selectedArtists.length === 1 ? "it" : "them"}
+              {getStartedHint}
             </div>
           )}
           <button
             className="btn btn-primary btn-block"
             onClick={() => handleContinue(false)}
-            disabled={!hasAnyInput || artistsShort || lastfmInvalid || statsfmInvalid || saving}
-            style={{ height: 48, fontSize: 15 }}
+            disabled={getStartedOff}
+            // Same disabled look as the feed's primary button (feed.css .ev-btn-primary:disabled).
+            style={{ height: 48, fontSize: 15, ...(getStartedOff && { opacity: 0.7, cursor: "default" }) }}
           >
             {saving ? "Saving…" : "Get started"}
           </button>

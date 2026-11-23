@@ -166,7 +166,7 @@ export const returnToFeed = async (fb: ArtistFeedback, signal: string) =>
  * answered OK tells the feedback store that seen_at is stamped. Repeated here
  * for the same reason; conformance.check.ts fails if the source line changes.
  */
-export const SAVE_SOURCE = "void toggleSave(a.id).then((ok) => { if (ok && !was) markSeen(a.id) })"
+export const SAVE_SOURCE = "void toggleSave(a.id).then((ok) => { if (ok && !was) markSeen(a.id); else if (!ok && toastId.current === shown) dismissToast() })"
 export const feedSave = (tab: { feedback: ArtistFeedback; saves: ReturnType<typeof createArtistSaves> }) => {
   const was = tab.saves.store.get(ARTIST) === true
   void tab.saves.toggleSave(ARTIST).then((ok) => { if (ok && !was) tab.feedback.markSeen(ARTIST) })

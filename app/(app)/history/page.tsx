@@ -15,5 +15,7 @@ export default async function HistoryPage() {
 
   const { history, hasMore } = await getHistoryPage(supabase, userId, { offset: 0, limit: 50 })
 
-  return <HistoryClient history={history} hasMore={hasMore} />
+  // Keyed by the rows: a refresh that brings a different list (Back after rating in the Feed) remounts
+  // the client, whose state is seeded once from these props.
+  return <HistoryClient key={history.map((h) => `${h.artist_id}:${h.signal}`).join()} history={history} hasMore={hasMore} />
 }

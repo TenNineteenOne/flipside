@@ -45,9 +45,10 @@ async function itunes(name, cache) {
     const tracks = (json.results || [])
       .filter((t) => t.previewUrl && (t.artistName || "").toLowerCase() === name.toLowerCase())
       .slice(0, 3)
+      // Same fields as lib/music-provider/itunes.ts, including durationMs = the full track's length (not the preview's).
       .map((t) => ({
         id: String(t.trackId), spotifyTrackId: null, name: t.trackName, previewUrl: t.previewUrl,
-        durationMs: t.trackTimeMillis || 30000, albumName: t.collectionName || "",
+        durationMs: t.trackTimeMillis ?? 0, albumName: t.collectionName || "",
         albumImageUrl: (t.artworkUrl100 || "").replace("100x100bb", "600x600bb") || null, source: "itunes",
       }))
     if (tracks.length) cache[name] = tracks

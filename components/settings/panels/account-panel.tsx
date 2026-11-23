@@ -12,9 +12,7 @@ export function AccountPanel() {
     setIsDeleting(true)
     try {
       const res = await fetch("/api/account", { method: "DELETE" })
-      if (!res.ok && !res.redirected) {
-        throw new Error("Delete failed")
-      }
+      if (!res.ok) throw new Error("Delete failed")
       window.location.href = "/"
     } catch {
       toast.error("Failed to delete account")

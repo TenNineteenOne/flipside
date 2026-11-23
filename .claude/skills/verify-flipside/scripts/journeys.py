@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Scripted journeys for verify-flipside. Each one drives the real UI in headless Chromium against
 the instance `fv launch` started, checks the database alongside the screen, and writes evidence to
-~/.cache/flipside-verify/evidence/<journey>-<HHMMSS>/ (result.txt, notes.txt, console.log, PNGs).
+~/.cache/flipside-verify/evidence/<journey>-<HHMMSS>/ (result.txt, notes.txt, console.log, PNGs;
+set FLIPSIDE_VERIFY_EVIDENCE to put them somewhere else).
 
     journeys.py list
     journeys.py <name> [<name> ...]      # exit code 1 if any expectation failed
@@ -9,6 +10,9 @@ the instance `fv launch` started, checks the database alongside the screen, and 
 
 Each journey creates its own account through /sign-in (name printed in notes.txt), so they do not
 share state and can run in any order. Read the matching features/*.md before trusting a result.
+
+Every journey ends with `return r.passed(allow=...)`: any console error, page error or failed request
+it collected fails it unless a substring on that journey's allowlist explains it.
 """
 import re
 import sys
@@ -17,7 +21,7 @@ from pathlib import Path
 
 sys.dont_write_bytecode = True  # no __pycache__ inside the repo
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from fvdrive import DESKTOP, PHONE, Run  # noqa: E402
+from fvdrive import DESKTOP, PHONE, Run, at  # noqa: E402
 
 STAMP = time.strftime("%H%M%S")
 
@@ -79,7 +83,7 @@ def signin():
         p.get_by_role("checkbox", name="I understand my username cannot be recovered if I forget it.").check()
         r.shot("new-account-ready")
         create.click()
-        p.wait_for_url("**/onboarding", timeout=20000)
+        p.wait_for_url(at("/onboarding"), timeout=20000)
         r.expect(True, "new account lands on /onboarding (via /feed's resume redirect)")
         row = r.sql("select id, username_hash, onboarding_completed_at from users order by created_at desc limit 1")
         r.note("users after sign-up", row)
@@ -87,7 +91,7 @@ def signin():
         r.shot("onboarding-after-signup")
 
         p.get_by_role("button", name="Skip", exact=True).click()
-        p.wait_for_url("**/feed", timeout=20000)
+        p.wait_for_url(at("/feed"), timeout=20000)
         r.expect("onboarding_completed_at\":\"" in r.sql("select onboarding_completed_at from users order by created_at desc limit 1"), "DB: Skip stamped onboarding_completed_at")
 
         # Sign out from Settings, then the same name again in each mode.
@@ -106,11 +110,13 @@ def signin():
         r.shot("taken")
         p.get_by_role("button", name="Existing account").click()
         p.get_by_role("button", name="Sign in", exact=True).click()
-        p.wait_for_url("**/settings", timeout=20000)
+        p.wait_for_url(at("/settings"), timeout=20000)
         r.expect(True, "existing account signs in and returns to the ?from= page (/settings)")
         r.expect(users() == n0 + 1, "DB: still exactly one users row for this name")
         r.shot("signed-in-again")
-        return all(ok for ok, _ in r.results)
+        # Skip with nothing seeded: onboarding starts generation, then the empty Feed's loader asks again
+        # inside the cooldown and gets a 429 by design (it polls instead).
+        return r.passed(allow=("429 (Too Many Requests)  (https://localhost:3947/api/recommendations/generate)",))
 
 
 def _feed_render(viewport, label):
@@ -139,7 +145,7 @@ def _feed_render(viewport, label):
         r.note("console during the Feed load (every line)", "\n".join(feed_log) or "(nothing logged)")
         bad = [l for l in r.problems() if l in feed_log]
         r.expect(not bad, f"no uncaught errors, console errors or CSP violations on the Feed: {bad}")
-        return all(ok for ok, _ in r.results)
+        return r.passed()
 
 
 def feed_render():
@@ -207,7 +213,7 @@ def feed_triage():
         for artist, label in [("The Beatles", "Liked"), ("The Cure", "Passed"), ("The Smiths", "Dismissed")]:
             r.expect(label in row_of(artist).inner_text(), f"History lists {artist} as {label}")
         r.shot("history")
-        return all(ok for ok, _ in r.results)
+        return r.passed()
 
 
 def feed_save():
@@ -235,7 +241,8 @@ def feed_save():
         p.reload()
         p.wait_for_load_state("networkidle")
         in_queue = queue.get_by_role("button", name="Select The Cure").count() == 1
-        r.expect(in_queue, "after reload The Cure is still a Feed card (so its saved state can show)")
+        # By design: saving stamps seen_at, so the card leaves the Feed and shows in History as Saved.
+        r.expect(not in_queue, "after reload the saved card has left the Feed (saving marks it seen)")
         if in_queue:
             r.expect("Saved" in row.inner_text(), "after reload the queue row carries the Saved tag")
         else:
@@ -269,7 +276,7 @@ def feed_save():
         r.note("after unsave", state)
         r.expect('"saves":0' in state, "DB: the saves row is gone")
         r.shot("unsaved")
-        return all(ok for ok, _ in r.results)
+        return r.passed()
 
 
 def history_return():
@@ -279,7 +286,7 @@ def history_return():
         name, u = new_account_with(r, "hist", "feed")
         r.seed(name, "history")
         p.get_by_role("navigation", name="Main").get_by_role("link", name=re.compile("^History")).first.click()
-        p.wait_for_url("**/history")
+        p.wait_for_url(at("/history"))
         p.get_by_role("heading", name="History").wait_for()
         r.shot("history-before")
 
@@ -318,7 +325,7 @@ def history_return():
         r.shot("history-after-reload")
 
         p.get_by_role("navigation", name="Main").get_by_role("link", name=re.compile("^Feed")).first.click()
-        p.wait_for_url("**/feed")
+        p.wait_for_url(at("/feed"))
         queue = p.get_by_role("list", name="Artist queue")
         queue.wait_for()
         for artist in ("Joy Division", "Stereolab", "Mogwai"):
@@ -330,7 +337,7 @@ def history_return():
                  "Joy Division: shows as unrated in the Feed (More like this, not Liked)")
         p.get_by_role("button", name="Select Joy Division").scroll_into_view_if_needed()
         r.shot("feed-with-returned-artists")
-        return all(ok for ok, _ in r.results)
+        return r.passed()
 
 
 def history_filters():
@@ -357,7 +364,7 @@ def history_filters():
         r.expect(before == 50 and after == 63, f"Load more: 50 rows, then all 63 (got {before} -> {after})")
         r.expect(p.get_by_role("button", name="Load more").count() == 0, "Load more disappears when no pages remain")
         r.shot("after-load-more", full_page=True)
-        return all(ok for ok, _ in r.results)
+        return r.passed()
 
 
 def saved():
@@ -368,7 +375,7 @@ def saved():
         r.seed(name, "history")
         r.seed(name, "saved")
         p.get_by_role("navigation", name="Main").get_by_role("link", name=re.compile("^Saved")).first.click()
-        p.wait_for_url("**/saved")
+        p.wait_for_url(at("/saved"))
         def settled(text):               # the route's loading skeleton has the heading too: wait for the count
             try:
                 p.get_by_text(text, exact=True).wait_for(timeout=10000)
@@ -388,7 +395,7 @@ def saved():
         p.reload()
         r.expect(settled("2 artists") and p.get_by_role("button", name="Remove Low").count() == 0, "still gone after a reload")
         r.shot("after-remove-and-reload")
-        return all(ok for ok, _ in r.results)
+        return r.passed()
 
 
 def settings_delete():
@@ -416,16 +423,18 @@ def settings_delete():
         with p.expect_response(lambda s: "/api/account" in s.url and s.request.method == "DELETE") as resp:
             delete.click()
         r.note("delete request", f"DELETE /api/account -> {resp.value.status}")
+        r.expect(resp.value.status == 200, f"DELETE /api/account answers 200, not a redirect ({resp.value.status})")
         p.wait_for_url(r.url("/"), timeout=20000)
         r.expect(len(r.dialogs) == 2, "second click asks again")
         r.expect('"n":0' in count(), "accepting deletes the account (DB users row gone)")
         left = r.sql(f"select (select count(*) from recommendation_cache where user_id = '{u}')::int as recs")
         r.expect('"recs":0' in left, "DB: the user's recommendation_cache rows went with it (cascade)")
         r.expect(not any(c["name"].endswith("authjs.session-token") for c in r.ctx.cookies()), "signed out: no session cookie")
+        r.expect("DELETE " + r.url("/") not in r.requests, "the page's fetch did not replay the DELETE against /")
         r.shot("landing-after-delete")
         p.goto(r.url("/settings"))
         r.expect("/sign-in" in p.url, f"signed out: /settings now redirects to sign-in ({p.url})")
-        return all(ok for ok, _ in r.results)
+        return r.passed()
 
 
 def onboarding_seeds_fail():
@@ -475,12 +484,13 @@ def onboarding_seeds_fail():
 
         p.unroute("**/api/onboarding/seeds")
         go.click()                        # the retry the toast asks for, against the real route
-        p.wait_for_url("**/feed", timeout=20000)
+        p.wait_for_url(at("/feed"), timeout=20000)
         state = r.sql(f"select onboarding_completed_at is not null as stamped, (select count(*)::int from seed_artists where user_id = u.id) as seeds from users u where id = '{u}'")
         r.note("after retry", state)
         r.expect('"stamped":true' in state and '"seeds":3' in state, "retry without the fault: lands on /feed, 3 seed_artists rows, onboarding stamped")
         r.shot("feed-after-retry")
-        return all(ok for ok, _ in r.results)
+        # The one 500 this journey injects with page.route.
+        return r.passed(allow=("500 (Internal Server Error)  (https://localhost:3947/api/onboarding/seeds)",))
 
 
 JOURNEYS = {

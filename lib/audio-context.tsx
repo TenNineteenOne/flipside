@@ -122,7 +122,7 @@ export function AudioProvider({ children }: { children: ReactNode }) {
     audio.onended = () => {
       if (audioRef.current !== audio) return
       throttle.cancel()
-      setProgress(1)
+      setProgress(0) // the button is Play again: a full bar beside it read as still at the end
       setState(prev => ({ ...prev, isPlaying: false }))
     }
     audio.onerror = () => {
@@ -151,6 +151,7 @@ export function AudioProvider({ children }: { children: ReactNode }) {
   const resume = useCallback(() => {
     const audio = audioRef.current
     if (!audio) return
+    if (audio.error) audio.load() // a failed load never plays again without one (retry after going offline)
     audio.play().catch(() => {
       if (audioRef.current !== audio) return
       setState(prev => ({ ...prev, isPlaying: false }))

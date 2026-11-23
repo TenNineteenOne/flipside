@@ -18,9 +18,7 @@ export const DELETE = withAuthedCsrfRoute(async ({ userId }): Promise<Response> 
 
   console.log(`[account/delete] deleted userId=${userId}`)
 
-  // signOut() throws NEXT_REDIRECT internally — let it propagate for the redirect to work.
-  await signOut({ redirectTo: "/" })
-
-  // Unreachable — signOut always throws NEXT_REDIRECT. Satisfies TypeScript return type.
-  return new Response(null, { status: 204 })
+  // No redirect: fetch would replay the DELETE against "/" (405). The client navigates; this only clears the cookie.
+  await signOut({ redirect: false })
+  return Response.json({ success: true })
 })

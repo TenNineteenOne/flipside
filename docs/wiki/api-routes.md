@@ -69,7 +69,7 @@ The `/api/explore/*` routes were removed with the Explore page (2026-11-10, #205
 | `/api/onboarding/seeds` | POST | upsert `seed_artists` (3–200 per request; existing + new ≤ 200 total, same check as settings; a repeated id counts once, and the 3 minimum is counted after that) |
 | `/api/settings` | PATCH | validate + encrypt usernames + update `users` (401 if no row was updated: deleted account); a changed Last.fm / stats.fm username clears that source's sync cooldown; `selectedGenres` is stored without empty strings or duplicates (a NUL character → 400) and a change → unseen-feed wipe; `fameLevel` → nothing (next batch only); `adventurous` → 400 (`"adventurous is no longer a setting"`, retired) |
 | `/api/settings/seed-artists` | GET/POST/DELETE | manage seeds |
-| `/api/account` | DELETE | delete user (cascade) + sign out |
+| `/api/account` | DELETE | delete user (cascade) + sign out; answers 200 `{ success: true }` with the cleared session cookie, no redirect (the client navigates) |
 
 ## Misc
 
