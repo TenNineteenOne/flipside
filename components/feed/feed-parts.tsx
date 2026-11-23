@@ -19,6 +19,9 @@ import type { CardArtist } from "@/lib/cards/card-artist"
 // tablet and phone layout chunks don't carry the desktop layout.
 
 /** Per-artist colour as `--a`; feed.css derives `--a-dark` / `--a-light` from it. */
+/** Feedback signal to the verdict name feed.css styles (`data-v`). */
+export const VERDICT: Record<string, "liked" | "passed" | "dismissed"> = { thumbs_up: "liked", thumbs_down: "passed", skip: "dismissed" }
+
 export const artistVar = (a: CardArtist) => ({ "--a": resolveArtistColor(a.artistColor, a.name) }) as CSSProperties
 
 /**

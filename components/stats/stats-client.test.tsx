@@ -33,6 +33,15 @@ describe("StatsClient server render", () => {
     expect(html).not.toMatch(/style="[^"]*(color|font|padding|margin|background)/)
   })
 
+  it("two artists with the same name are both listed (deduped by id, not name)", () => {
+    const html = render({
+      ...statsEmpty,
+      savedArtists: [{ id: "a1", name: "Nirvana", popularity: 90 }],
+      likedArtists: [{ id: "a2", name: "Nirvana", popularity: 12 }, { id: "a3", name: "Nirvana", popularity: 40 }],
+    })
+    expect((html.match(/class="st-row"/g) ?? []).length).toBe(3)
+  })
+
   it("new account: totals still shown, both empty messages, the feed hint, and no chart", () => {
     const html = render(statsEmpty)
     const t = text(html)

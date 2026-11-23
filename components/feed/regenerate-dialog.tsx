@@ -49,7 +49,7 @@ export function RegenerateDialog({ open, remaining, onCancel, onConfirm }: {
     const d = ref.current
     if (!d) return
     if (open && !d.open) {
-      setSkip(false) // eslint-disable-line react-hooks/set-state-in-effect -- reset per opening
+      setSkip(false) // reset per opening
       d.showModal()
     }
     if (!open && d.open) d.close()

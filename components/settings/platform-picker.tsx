@@ -7,15 +7,14 @@ import { PlatformIcon } from "@/components/platform-icon"
 interface PlatformPickerProps {
   value: MusicPlatform
   onChange: (next: MusicPlatform) => void
-  layout?: "row" | "stack"
 }
 
 /**
  * Three-option picker for the user's preferred streaming platform. Rendered
- * identically in Settings and in the onboarding flow; shape differences (row
- * vs. stack, helper copy) belong to the caller.
+ * identically in Settings and in the onboarding flow; helper copy belongs to
+ * the caller.
  */
-export function PlatformPicker({ value, onChange, layout = "row" }: PlatformPickerProps) {
+export function PlatformPicker({ value, onChange }: PlatformPickerProps) {
   const refs = useRef<Array<HTMLButtonElement | null>>([])
 
   function handleKey(e: KeyboardEvent<HTMLButtonElement>, idx: number) {
@@ -37,9 +36,8 @@ export function PlatformPicker({ value, onChange, layout = "row" }: PlatformPick
       role="radiogroup"
       aria-label="Preferred music platform"
       style={{
-        display: layout === "row" ? "grid" : "flex",
-        gridTemplateColumns: layout === "row" ? "repeat(3, minmax(0, 1fr))" : undefined,
-        flexDirection: layout === "row" ? undefined : "column",
+        display: "grid",
+        gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
         gap: 8,
       }}
     >
@@ -59,9 +57,9 @@ export function PlatformPicker({ value, onChange, layout = "row" }: PlatformPick
             style={{
               display: "flex",
               alignItems: "center",
-              justifyContent: layout === "row" ? "center" : "flex-start",
+              justifyContent: "center",
               gap: 8,
-              padding: layout === "row" ? "14px 10px" : "14px 16px",
+              padding: "14px 10px",
               minHeight: 44,
               borderRadius: 12,
               border: selected

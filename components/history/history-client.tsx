@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useRef, useSyncExternalStore } from "react"
 import Image from "next/image"
+import { toast } from "sonner"
 import { ThumbsUp, ThumbsDown, SkipForward, Bookmark, Undo2 } from "lucide-react"
 import { hexToRgba, resolveArtistColor } from "@/lib/color-utils"
 import { artworkAt } from "@/lib/feed/artwork"
@@ -49,6 +50,11 @@ function timeAgo(dateStr: string): string {
   const days = Math.floor(hours / 24)
   if (days < 7) return `${days}d ago`
   return new Date(dateStr).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+}
+
+/** Liked/Passed rows have a feedback row to remove; Skipped/Dismissed only have cache stamps. */
+export function hasFeedbackRow(signal: string): boolean {
+  return signal === "thumbs_up" || signal === "thumbs_down"
 }
 
 const noopSubscribe = () => () => {}
@@ -109,12 +115,8 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
   const [undoingIds, setUndoingIds] = useState<Set<string>>(new Set())
   const [hasMore, setHasMore] = useState(initialHasMore)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
-  // Server-side fetch offset, independent of `history.length`: undo removes
-  // rows client-side without shrinking the server's row count (feedback
-  // delete leaves recommendation_cache.seen_at set), so paginating off
-  // history.length re-fetches an already-seen boundary row and produces a
-  // duplicate React key + duplicate visible row. Track what we've actually
-  // pulled from the server instead.
+  // Server-side fetch offset: rows pulled so far, minus rows returned to the
+  // feed (un-seen, so they left the server's list too).
   const fetchedCountRef = useRef(initialHistory.length)
   const mounted = useMounted()
 
@@ -170,11 +172,13 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
   async function handleUndo(artistId: string, signal: string) {
     setUndoingIds((prev) => new Set(prev).add(artistId))
     try {
-      // Dismissed items have no feedback row (the skip RPC only stamps
-      // recommendation_cache.skip_at): unblocking wipes skip_at + seen_at via
-      // /api/dismiss so the artist is fully eligible again.
-      const ok = signal === "dismissed" ? await dismiss(artistId) : await removeSignal(artistId)
-      if (ok) setHistory((prev) => prev.filter((h) => h.artist_id !== artistId))
+      // DELETE feedback only soft-deletes the feedback row; DELETE dismiss is
+      // what clears skip_at + seen_at so the artist is eligible again.
+      const ok = (!hasFeedbackRow(signal) || (await removeSignal(artistId))) && (await dismiss(artistId))
+      if (ok) {
+        fetchedCountRef.current = Math.max(0, fetchedCountRef.current - 1)
+        setHistory((prev) => prev.filter((h) => h.artist_id !== artistId))
+      }
     } finally {
       setUndoingIds((prev) => {
         const next = new Set(prev)
@@ -207,6 +211,7 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
       }
     } catch (err) {
       console.error("[history] load more failed", err)
+      toast.error("Couldn't load more. Try again.")
     } finally {
       setIsLoadingMore(false)
     }
@@ -228,6 +233,7 @@ export function HistoryClient({ history: initialHistory, hasMore: initialHasMore
             <button
               key={key}
               onClick={() => setFilter(key)}
+              aria-pressed={active}
               className={"chip" + (active ? " selected" : "")}
             >
               {label}

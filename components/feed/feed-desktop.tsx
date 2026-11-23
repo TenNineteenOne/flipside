@@ -4,7 +4,7 @@ import "./feed.css"
 import { useEffect, useRef } from "react"
 import { Bookmark, Heart, Pause, Play } from "lucide-react"
 import { MiniPlayer } from "@/components/player/mini-player"
-import { Art, artistVar, CardActions, EndState, LoadMore, TrackList } from "@/components/feed/feed-parts"
+import { Art, artistVar, CardActions, EndState, LoadMore, TrackList, VERDICT } from "@/components/feed/feed-parts"
 import { QueueColumns } from "@/components/feed/feed-skeleton"
 import { ShellSlot } from "@/components/shell/shell-context"
 import { artworkFor } from "@/lib/feed/artwork"
@@ -15,7 +15,6 @@ import { useReducedMotion } from "@/lib/hooks/use-reduced-motion"
 import type { FeedTriage } from "@/lib/hooks/use-feed-triage"
 import type { CardArtist } from "@/lib/cards/card-artist"
 
-const VERDICT: Record<string, string> = { thumbs_up: "liked", thumbs_down: "passed", skip: "dismissed" }
 const rowKey = (a: CardArtist) => a.id
 
 /**

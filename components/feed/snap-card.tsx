@@ -4,7 +4,7 @@ import "./feed.css"
 import { useEffect, useRef, useState } from "react"
 import { motion, useMotionValue, useReducedMotion, useTransform, type PanInfo } from "framer-motion"
 import { Heart, ThumbsDown, X } from "lucide-react"
-import { Art, artistVar, CardActions, TrackList } from "@/components/feed/feed-parts"
+import { Art, artistVar, CardActions, TrackList, VERDICT } from "@/components/feed/feed-parts"
 import { artworkFor } from "@/lib/feed/artwork"
 import { listSeparator, whyParts } from "@/lib/feed/card-copy"
 import { SWIPE_THRESHOLD, swipeDirection } from "@/lib/feed/swipe"
@@ -12,7 +12,6 @@ import { useArtistTracks } from "@/lib/hooks/use-artist-tracks"
 import type { FeedTriage } from "@/lib/hooks/use-feed-triage"
 import type { CardArtist } from "@/lib/cards/card-artist"
 
-const VERDICT: Record<string, "liked" | "passed" | "dismissed"> = { thumbs_up: "liked", thumbs_down: "passed", skip: "dismissed" }
 
 /**
  * Horizontal swipe on a card that stays where it is (the scroller moves on):

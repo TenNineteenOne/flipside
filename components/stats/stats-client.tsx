@@ -6,6 +6,8 @@ import { ArrowDown, ArrowUp } from "lucide-react"
 import { useId, useMemo, useState } from "react"
 
 interface SavedArtist {
+  /** Artist id; names are not unique. Absent only in dev-preview fixtures. */
+  id?: string
   name: string
   /** null = unknown; listed in the table, left out of the scatter and median. */
   popularity: number | null
@@ -97,7 +99,9 @@ function median(values: number[]): number {
   return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2)
 }
 
-type TasteItem = { name: string; popularity: number | null; kind: TasteKind }
+const keyOf = (a: SavedArtist) => a.id ?? a.name
+
+type TasteItem = { id?: string; name: string; popularity: number | null; kind: TasteKind }
 
 const TICKS = [0, 20, 40, 60, 80, 100]
 
@@ -113,10 +117,10 @@ function TasteProfileView({
   const captionId = useId()
 
   const items = useMemo<TasteItem[]>(() => {
-    const savedNames = new Set(savedArtists.map((a) => a.name))
+    const savedKeys = new Set(savedArtists.map(keyOf))
     const out: TasteItem[] = savedArtists.map((a) => ({ ...a, kind: "saved" as const }))
     for (const a of likedArtists) {
-      if (savedNames.has(a.name)) continue
+      if (savedKeys.has(keyOf(a))) continue
       out.push({ ...a, kind: "liked" })
     }
     return out
@@ -169,7 +173,7 @@ function TasteProfileView({
                 <line className="st-axis" x1="0" x2="100%" y1="100%" y2="100%" />
                 {known.map((a) => (
                   <circle
-                    key={`${a.kind}-${a.name}`}
+                    key={`${a.kind}-${keyOf(a)}`}
                     className={`st-dot-${a.kind}`}
                     cx={`${a.popularity}%`}
                     cy={`${8 + hashSeed(a.name) * 80}%`}
@@ -211,7 +215,7 @@ function TasteProfileView({
             {/* the scrolling body is focusable so keyboard users can scroll it */}
             <div className="st-rows" role="rowgroup" tabIndex={0} aria-label="Artists">
               {sorted.map((a) => (
-                <div key={`${a.kind}-${a.name}`} className="st-row" role="row">
+                <div key={`${a.kind}-${keyOf(a)}`} className="st-row" role="row">
                   <span className="st-row-name" role="cell" title={a.name}>{a.name}</span>
                   <span className="st-row-kind" role="cell">
                     <span className={`st-kind st-kind-${a.kind}`}>

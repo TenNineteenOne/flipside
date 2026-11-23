@@ -19,10 +19,10 @@ describe("loadStats", () => {
     expect(s.totalDislikes).toBe(1)
     expect(s.totalSaves).toBe(1)
     expect(s.topGenres).toEqual([{ genre: "indie", count: 2 }, { genre: "rock", count: 1 }, { genre: "jazz", count: 1 }])
-    expect(s.savedArtists).toEqual([{ name: "Gamma", popularity: 70 }])
+    expect(s.savedArtists).toEqual([{ id: "a3", name: "Gamma", popularity: 70 }])
     expect(s.likedArtists.sort((a, b) => a.name.localeCompare(b.name))).toEqual([
-      { name: "Alpha", popularity: 30 },
-      { name: "Beta", popularity: null },
+      { id: "a1", name: "Alpha", popularity: 30 },
+      { id: "a2", name: "Beta", popularity: null },
     ])
   })
 

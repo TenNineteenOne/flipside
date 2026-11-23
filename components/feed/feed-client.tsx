@@ -41,6 +41,8 @@ const preloadLayouts = () => loaders.forEach((load) => void load())
 
 interface FeedClientProps {
   recommendations: CardArtist[]
+  /** Which of `recommendations` are already saved (read once at mount). */
+  initialSavedIds?: string[]
   musicPlatform: MusicPlatform
   /** The server's guess (lib/feed/layout-guess) for the first render; matchMedia takes over after hydration. */
   initialLayout?: FeedLayout
@@ -79,7 +81,7 @@ const useHydrating = () => useSyncExternalStore(noSubscribe, () => false, () => 
 // Main component
 // ---------------------------------------------------------------------------
 
-export function FeedClient({ recommendations, musicPlatform, initialLayout = "phone", challengePromise }: FeedClientProps) {
+export function FeedClient({ recommendations, initialSavedIds, musicPlatform, initialLayout = "phone", challengePromise }: FeedClientProps) {
   // Generate requests (mount top-up + Load more) share one re-entry guard, so
   // a user's own "Load more" can't collide with the background top-up.
   const generation = useFeedGeneration()
@@ -152,7 +154,7 @@ export function FeedClient({ recommendations, musicPlatform, initialLayout = "ph
 
   // Selection, verdicts (feedback signals), saves and playback, shared by all
   // layouts (so resizing keeps them). Serialization and rollback live in the feedback/saves hooks.
-  const triage = useFeedTriage(recs, musicPlatform)
+  const triage = useFeedTriage(recs, musicPlatform, initialSavedIds)
   const triageRef = useRef(triage)
   useEffect(() => { triageRef.current = triage })
   const { savedIds } = triage
@@ -196,7 +198,7 @@ export function FeedClient({ recommendations, musicPlatform, initialLayout = "ph
     const r = await generation.requestMore({ replace: true })
     if (r === null || !aliveRef.current) return
     if (r.kind === "unauthorized") {
-      window.location.href = "/sign-in"
+      window.location.href = "/sign-in" // eslint-disable-line react-hooks/immutability -- full reload to sign-in
       return
     }
     if (!r.ok) return

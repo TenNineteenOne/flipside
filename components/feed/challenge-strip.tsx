@@ -11,7 +11,7 @@ export interface ChallengePayload {
 }
 
 /**
- * The weekly challenge as one line under the Feed header (mockup public/mockups/feed-merge.html §6,
+ * The weekly challenge as one line under the Feed header (mockup docs/archive/mockups/feed-merge.html §6,
  * option Q). Styles in feed.css, `.ev-chal*`: a light line beside Load more in the desktop queue header, a full-width line on phones and tablets.
  */
 export const ChallengeStrip = memo(function ChallengeStrip({ description, progress, target, completed }: ChallengePayload) {

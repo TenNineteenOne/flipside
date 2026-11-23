@@ -391,6 +391,7 @@ function GenreBranch({
       <button
         type="button"
         onClick={onToggleExpand}
+        aria-expanded={expanded}
         style={{
           display: "flex",
           alignItems: "center",
@@ -553,6 +554,7 @@ function GenreRow({
       type="button"
       onClick={onClick}
       disabled={disabled}
+      aria-pressed={selected}
       style={{
         display: "flex",
         alignItems: "center",

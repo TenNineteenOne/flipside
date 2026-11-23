@@ -104,7 +104,7 @@ export function ArtistSearch({ selected, onAdd, onRemove, cap, minForHint = 3 }:
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     abortRef.current?.abort()
-    setResolveFailedId(null)
+    setResolveFailedId(null) // eslint-disable-line react-hooks/set-state-in-effect -- reset per query
     if (query.trim().length < MIN_QUERY) { setResults([]); setError(null); setDegraded(false); setSearching(false); return }
 
     debounceRef.current = setTimeout(async () => {

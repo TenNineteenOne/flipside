@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { toast } from "sonner"
 import { PlatformPicker } from "@/components/settings/platform-picker"
 import { patchSettings } from "@/lib/settings/patch-settings"
@@ -13,17 +13,25 @@ interface PlatformPanelProps {
 export function PlatformPanel({ initialMusicPlatform }: PlatformPanelProps) {
   const [musicPlatform, setMusicPlatform] = useState<MusicPlatform>(initialMusicPlatform)
 
-  async function handleMusicPlatformChange(next: MusicPlatform) {
+  // Saves run one at a time in tap order (as createFameWriter in discovery-panel), so an older
+  // PATCH can never land after a newer one; only the newest failure rolls back, to the last saved value.
+  const saves = useRef({ chain: Promise.resolve(), latest: 0, confirmed: initialMusicPlatform })
+
+  function handleMusicPlatformChange(next: MusicPlatform) {
     if (next === musicPlatform) return
-    const prev = musicPlatform
     setMusicPlatform(next)
-    try {
-      await patchSettings({ preferredMusicPlatform: next })
-      toast.success("Saved")
-    } catch {
-      setMusicPlatform(prev)
-      toast.error("Failed to save preference")
-    }
+    const s = saves.current
+    const id = ++s.latest
+    s.chain = s.chain.then(() => patchSettings({ preferredMusicPlatform: next })).then(
+      () => {
+        s.confirmed = next
+        toast.success("Saved")
+      },
+      () => {
+        if (id === s.latest) setMusicPlatform(s.confirmed)
+        toast.error("Failed to save preference")
+      },
+    )
   }
 
   return (

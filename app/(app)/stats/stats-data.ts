@@ -12,8 +12,9 @@ export interface StatsData {
   totalLikes: number
   totalDislikes: number
   topGenres: { genre: string; count: number }[]
-  savedArtists: { name: string; popularity: number | null }[]
-  likedArtists: { name: string; popularity: number | null }[]
+  // `id` is optional only because lib/dev-preview/stats-fixtures.ts has none; loadStats always sets it.
+  savedArtists: { id?: string; name: string; popularity: number | null }[]
+  likedArtists: { id?: string; name: string; popularity: number | null }[]
 }
 
 /**
@@ -88,7 +89,7 @@ export async function loadStats(supabase: SupabaseClient, userId: string): Promi
   for (const id of allIds) {
     const a = artists.get(id)
     if (!a?.name) continue
-    const item = { name: a.name, popularity: typeof a.popularity === "number" ? a.popularity : null }
+    const item = { id, name: a.name, popularity: typeof a.popularity === "number" ? a.popularity : null }
     if (savedIds.has(id)) savedArtists.push(item)
     else likedArtists.push(item)
   }

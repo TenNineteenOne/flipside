@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest"
 import { createElement } from "react"
 import { renderToString } from "react-dom/server"
-import { HistoryClient } from "./history-client"
+import { HistoryClient, hasFeedbackRow } from "./history-client"
 
 vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { error: vi.fn() }) }))
 
@@ -40,5 +40,11 @@ describe("#175 F12 history hydration", () => {
     expect(empty).toContain("Load more")
     const some = renderToString(createElement(HistoryClient, { history: [entry("a", new Date().toISOString())], hasMore: true }))
     expect(some).toMatch(/1<!-- -->\+/)
+  })
+})
+
+describe("Return to feed", () => {
+  it("removes feedback only for rated rows; skipped and dismissed rows go straight to the un-seen call", () => {
+    expect(["thumbs_up", "thumbs_down", "skip", "dismissed"].map(hasFeedbackRow)).toEqual([true, true, false, false])
   })
 })

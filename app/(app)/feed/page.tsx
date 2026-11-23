@@ -76,11 +76,17 @@ export default async function FeedPage() {
 
   // Assemble cards (tracks-cache fallback, colour lift, playable filter,
   // interleave — see lib/cards/feed-cards).
-  const cards = await loadFeedCards(supabase, validRecs)
+  // Saves for the shown artists, so one saved without a rating still reads "Saved" after a reload.
+  // Best-effort: a failed read just starts every card unsaved, as before.
+  const [cards, { data: saves }] = await Promise.all([
+    loadFeedCards(supabase, validRecs),
+    supabase.from("saves").select("artist_id").eq("user_id", user.id).in("artist_id", validRecs.map((r) => r.artist_id)),
+  ])
 
   return (
     <FeedClient
       recommendations={cards}
+      initialSavedIds={(saves ?? []).map((s) => s.artist_id as string)}
       musicPlatform={musicPlatform}
       initialLayout={guessFeedLayout(await headers())}
       challengePromise={challengePromise}

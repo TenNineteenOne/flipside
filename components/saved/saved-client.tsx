@@ -1,9 +1,11 @@
 "use client"
 
 import Image from "next/image"
+import Link from "next/link"
 import { X, Bookmark, Share2 } from "lucide-react"
 import { toast } from "sonner"
 import { hexToRgba } from "@/lib/color-utils"
+import { artworkAt } from "@/lib/feed/artwork"
 import { resolveArtistColor } from "@/lib/color-utils"
 import { useArtistSaves } from "@/lib/hooks/use-artist-saves"
 import {
@@ -59,13 +61,13 @@ export function SavedClient({ artists, musicPlatform }: SavedClientProps) {
             Nothing saved yet.
           </div>
           <div style={{ marginTop: 16 }}>
-            <a
+            <Link
               href="/feed"
               className="btn"
               style={{ display: "inline-block", textDecoration: "none" }}
             >
               Go to your feed
-            </a>
+            </Link>
           </div>
         </div>
       ) : (
@@ -96,7 +98,7 @@ export function SavedClient({ artists, musicPlatform }: SavedClientProps) {
                 <div style={{ height: 120, position: "relative" }}>
                   {artist.imageUrl ? (
                     <Image
-                      src={artist.imageUrl}
+                      src={artworkAt(artist.imageUrl, 220)}
                       alt={artist.name}
                       fill
                       sizes="(max-width: 640px) 50vw, 220px"

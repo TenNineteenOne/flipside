@@ -1,6 +1,7 @@
 "use client"
 
 import { createContext, useContext, useRef, useState, useCallback, useEffect, useMemo, useSyncExternalStore, type ReactNode } from "react"
+import { toast } from "sonner"
 import type { Track } from "@/lib/music-provider/types"
 
 interface AudioState {
@@ -127,7 +128,16 @@ export function AudioProvider({ children }: { children: ReactNode }) {
     audio.onerror = () => {
       if (audioRef.current !== audio) return
       setState(prev => ({ ...prev, isPlaying: false }))
+      toast.error("Couldn't play this preview")
     }
+    // System pauses (phone call, headphones unplugged, lock-screen button) never go through pause().
+    // Same-value updates keep `prev` so useAudio() consumers don't re-render.
+    const setPlaying = (isPlaying: boolean) => {
+      if (audioRef.current !== audio) return
+      setState(prev => (prev.isPlaying === isPlaying ? prev : { ...prev, isPlaying }))
+    }
+    audio.onpause = () => setPlaying(false)
+    audio.onplaying = () => setPlaying(true)
 
     setProgress(0)
     setState({ currentTrack: track, artistName, artistImageUrl, artistColor: artistColor ?? null, isPlaying: true })

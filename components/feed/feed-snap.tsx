@@ -3,14 +3,13 @@
 import "./feed.css"
 import { useCallback, useEffect, useRef } from "react"
 import { RefreshCw } from "lucide-react"
-import { EndState } from "@/components/feed/feed-parts"
+import { EndState, VERDICT } from "@/components/feed/feed-parts"
 import { SnapCard } from "@/components/feed/snap-card"
 import { MiniPlayer, useSuppressFloatingPlayer } from "@/components/player/mini-player"
 import { ShellSlot } from "@/components/shell/shell-context"
 import { useAudio } from "@/lib/audio-context"
 import type { FeedTriage } from "@/lib/hooks/use-feed-triage"
 
-const VERDICT: Record<string, string> = { thumbs_up: "liked", thumbs_down: "passed", skip: "dismissed" }
 /** Fallback for browsers without `scrollend` (Safari): longest smooth scroll we expect. */
 const SCROLL_GUARD_MS = 900
 /** data-id of the end-of-queue page (artist ids are UUIDs). */

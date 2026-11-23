@@ -33,7 +33,6 @@ export function SeedsPanel({ initialSelectedGenres, initialSeedArtists }: SeedsP
         <LibraryEditor
           initialGenreTags={initialSelectedGenres}
           initialSeedArtists={initialSeedArtists}
-          flat
         />
       </div>
     </div>

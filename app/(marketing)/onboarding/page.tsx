@@ -125,9 +125,10 @@ export default function OnboardingPage() {
       if (!skip && selectedGenres.length > 0) {
         settingsPayload.selectedGenres = selectedGenres.map((g) => g.lastfmTag)
       }
+      let settingsSaved: Promise<boolean> = Promise.resolve(true)
       if (Object.keys(settingsPayload).length > 0) {
         promises.push(
-          patchSettings(settingsPayload).then(
+          settingsSaved = patchSettings(settingsPayload).then(
             () => true,
             (err) => {
               if (err instanceof SettingsSaveError) return false
@@ -150,16 +151,23 @@ export default function OnboardingPage() {
       }
 
       const results = await Promise.all(promises)
+      if (!(await seedsSaved)) {
+        toast.error("Couldn't save your artists. Try again.")
+        setSaving(false)
+        return
+      }
       // Stamp completion (Skip too) only once the seeds are in: a stamped user without seeds
       // could never get back here (the onboarding layout sends stamped users to /feed), while
       // an unstamped one is sent back by /feed's resume check.
-      if (await seedsSaved) {
-        const stamped = await patchSettings({ onboardingCompleted: true }).then(() => true, (err) => {
-          if (err instanceof SettingsSaveError) return false
-          throw err
-        })
-        results.push(stamped)
-      }
+      const stamped = await patchSettings({ onboardingCompleted: true }).then(() => true, (err) => {
+        if (err instanceof SettingsSaveError) return false
+        throw err
+      })
+      results.push(stamped)
+      // Unstamped with no seeds and no Last.fm name, /feed's resume check sends them straight back here.
+      const seedsPosted = !skip && artistsToSave.length >= MIN_SEEDS
+      const lastfmSaved = settingsPayload.lastfmUsername !== undefined && (await settingsSaved)
+      if (!stamped && !seedsPosted && !lastfmSaved) throw new Error("onboarding not stamped")
       if (results.includes(false)) {
         toast.error("Some settings couldn't be saved. You can update them later.")
       }
@@ -379,6 +387,7 @@ function PathCard({
       <button
         type="button"
         onClick={onToggle}
+        aria-expanded={open}
         style={{
           display: "flex",
           alignItems: "center",

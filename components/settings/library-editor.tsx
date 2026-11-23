@@ -30,10 +30,9 @@ export function buildTagLookup(nodes: GenreNode[], acc = new Map<string, GenreNo
 export interface LibraryEditorProps {
   initialGenreTags: string[]
   initialSeedArtists: SpotifyArtist[]
-  flat?: boolean
 }
 
-export function LibraryEditor({ initialGenreTags, initialSeedArtists, flat = false }: LibraryEditorProps) {
+export function LibraryEditor({ initialGenreTags, initialSeedArtists }: LibraryEditorProps) {
   const tagLookup = useMemo(() => buildTagLookup(ALL_GENRES), [])
 
   const { initialGenreNodes, orphanCount } = useMemo(() => {
@@ -126,8 +125,8 @@ export function LibraryEditor({ initialGenreTags, initialSeedArtists, flat = fal
 
   async function addArtist(artist: SpotifyArtist) {
     if (artists.some((a) => a.id === artist.id) || artists.length >= ARTIST_CAP) return
-    const next = [...artists, artist]
-    setArtists(next)
+    // Functional: `artists` here can be stale (a remove may have landed since this render).
+    setArtists((cur) => (cur.some((a) => a.id === artist.id) || cur.length >= ARTIST_CAP ? cur : [...cur, artist]))
     try {
       const res = await fetch("/api/settings/seed-artists", {
         method: "POST",
@@ -159,14 +158,13 @@ export function LibraryEditor({ initialGenreTags, initialSeedArtists, flat = fal
     }
   }
 
-  const collapsibles = (
+  return (
     <>
       <Collapsible
         title="Artists"
         count={artists.length}
         open={artistsOpen}
         onToggle={() => setArtistsOpen((v) => !v)}
-        flat={flat}
       >
         <ArtistSearch
           selected={artists}
@@ -182,20 +180,10 @@ export function LibraryEditor({ initialGenreTags, initialSeedArtists, flat = fal
         count={genres.length}
         open={genresOpen}
         onToggle={() => setGenresOpen((v) => !v)}
-        flat={flat}
       >
         <GenrePicker selected={genres} onToggle={toggleGenre} cap={GENRE_CAP} />
       </Collapsible>
     </>
-  )
-
-  if (flat) return collapsibles
-
-  return (
-    <div>
-      <div className="eyebrow" style={{ marginBottom: 10 }}>Your library</div>
-      <div className="col gap-10">{collapsibles}</div>
-    </div>
   )
 }
 
@@ -205,36 +193,25 @@ function Collapsible({
   open,
   onToggle,
   children,
-  flat,
 }: {
   title: string
   count: number
   open: boolean
   onToggle: () => void
   children: React.ReactNode
-  flat?: boolean
 }) {
-  const cardStyle: React.CSSProperties = flat
-    ? { padding: 0, overflow: "hidden", background: "transparent", border: 0 }
-    : {
-        padding: 0,
-        overflow: "hidden",
-        borderColor: open ? "rgba(139,92,246,0.4)" : "var(--border)",
-        background: open ? "rgba(139,92,246,0.04)" : "var(--bg-card)",
-        transition: "border-color 0.15s, background 0.15s",
-      }
-
   return (
-    <div className={flat ? undefined : "fs-card"} style={cardStyle}>
+    <div style={{ padding: 0, overflow: "hidden", background: "transparent", border: 0 }}>
       <button
         type="button"
         onClick={onToggle}
+        aria-expanded={open}
         style={{
           display: "flex",
           alignItems: "center",
           gap: 12,
           width: "100%",
-          padding: flat ? "6px 0" : "14px 16px",
+          padding: "6px 0",
           background: "none",
           border: 0,
           cursor: "pointer",
@@ -266,17 +243,7 @@ function Collapsible({
         </div>
       </button>
 
-      {open && (
-        <div
-          style={
-            flat
-              ? { paddingTop: 10 }
-              : { padding: "0 16px 16px", borderTop: "1px solid var(--border)" }
-          }
-        >
-          <div style={{ paddingTop: flat ? 0 : 14 }}>{children}</div>
-        </div>
-      )}
+      {open && <div style={{ paddingTop: 10 }}>{children}</div>}
     </div>
   )
 }

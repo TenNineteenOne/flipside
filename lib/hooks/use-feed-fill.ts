@@ -166,7 +166,7 @@ export function useFeedFill<R extends FeedRec>({
   onAppend,
 }: UseFeedFillOpts<R>): UseFeedFillResult {
   const onAppendRef = useRef(onAppend)
-  onAppendRef.current = onAppend
+  onAppendRef.current = onAppend // eslint-disable-line react-hooks/refs -- latest-callback ref
 
   const controllerRef = useRef<FeedFillController | null>(null)
 

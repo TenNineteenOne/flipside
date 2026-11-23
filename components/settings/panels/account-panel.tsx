@@ -6,13 +6,9 @@ import { toast } from "sonner"
 
 export function AccountPanel() {
   const [isDeleting, setIsDeleting] = useState(false)
-  const [deleteConfirm, setDeleteConfirm] = useState(false)
 
   async function handleDeleteAccount() {
-    if (!deleteConfirm) {
-      setDeleteConfirm(true)
-      return
-    }
+    if (!window.confirm("Permanently delete your account? This cannot be undone.")) return
     setIsDeleting(true)
     try {
       const res = await fetch("/api/account", { method: "DELETE" })
@@ -23,7 +19,6 @@ export function AccountPanel() {
     } catch {
       toast.error("Failed to delete account")
       setIsDeleting(false)
-      setDeleteConfirm(false)
     }
   }
 
@@ -43,11 +38,7 @@ export function AccountPanel() {
           disabled={isDeleting}
           style={{ color: "#ff7b7b", borderColor: "rgba(255,75,75,0.2)" }}
         >
-          {isDeleting
-            ? "Deleting…"
-            : deleteConfirm
-            ? "Are you sure? Tap again to confirm"
-            : "Forget my account permanently"}
+          {isDeleting ? "Deleting…" : "Forget my account permanently"}
         </button>
         <div className="muted" style={{ fontSize: 11.5, lineHeight: 1.5 }}>
           If you forget your username, your account is gone.

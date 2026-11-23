@@ -3,14 +3,13 @@
 import "./feed.css"
 import { useEffect, useRef } from "react"
 import { Heart, X } from "lucide-react"
-import { Art, artistVar, EndState, LoadMore } from "@/components/feed/feed-parts"
+import { Art, artistVar, EndState, LoadMore, VERDICT } from "@/components/feed/feed-parts"
 import { PlayerBar, TopBarProgress } from "@/components/feed/feed-snap"
 import { SnapCard } from "@/components/feed/snap-card"
 import { artworkFor } from "@/lib/feed/artwork"
 import { nextUndecided } from "@/lib/feed/triage-queue"
 import type { FeedTriage } from "@/lib/hooks/use-feed-triage"
 
-const VERDICT: Record<string, "liked" | "passed" | "dismissed"> = { thumbs_up: "liked", thumbs_down: "passed", skip: "dismissed" }
 const MARK = { liked: ", liked", passed: ", less like this", dismissed: ", dismissed" } as const
 
 interface FeedTabletProps {

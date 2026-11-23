@@ -50,7 +50,7 @@ const UNDO_LABEL = createElement(
 
 const linkRef = (a: CardArtist) => ({ artistId: a.id, spotifyId: a.spotifyId ?? null, artistName: a.name })
 
-export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatform) {
+export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatform, initialSavedIds?: string[]) {
   const audio = useAudio()
   // Same error copy the feed has always passed.
   const { signals, setSignal, restore } = useArtistFeedback({
@@ -59,7 +59,7 @@ export function useFeedTriage(artists: CardArtist[], musicPlatform: MusicPlatfor
       saveFailed: "Couldn't save feedback. Try again.",
     },
   })
-  const { savedIds, toggleSave } = useArtistSaves()
+  const { savedIds, toggleSave } = useArtistSaves({ initialSavedIds })
 
   const ids = useMemo(() => artists.map((a) => a.id), [artists])
   const byId = useMemo(() => new Map(artists.map((a) => [a.id, a])), [artists])
