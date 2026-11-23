@@ -1,8 +1,6 @@
-import { safeAuth } from "@/lib/auth"
-import { createServiceClient } from "@/lib/supabase/server"
-import { apiUnauthorized, dbError } from "@/lib/errors"
+import { dbError } from "@/lib/errors"
+import { withAuthedRoute } from "@/lib/api/with-authed-route"
 import { getHistoryPage } from "@/lib/history/query"
-import { type NextRequest } from "next/server"
 
 /**
  * GET /api/history
@@ -10,13 +8,7 @@ import { type NextRequest } from "next/server"
  * joined with feedback signal and saves status.
  * Supports pagination via `offset` and `limit` query params.
  */
-export async function GET(request: NextRequest): Promise<Response> {
-  const session = await safeAuth()
-  if (!session?.user?.id) return apiUnauthorized()
-
-  const userId = session.user.id
-  const supabase = createServiceClient()
-
+export const GET = withAuthedRoute(async ({ userId, request, supabase }): Promise<Response> => {
   const url = new URL(request.url)
   const offset = Math.max(0, parseInt(url.searchParams.get("offset") ?? "0", 10) || 0)
   const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get("limit") ?? "50", 10) || 50))
@@ -27,4 +19,4 @@ export async function GET(request: NextRequest): Promise<Response> {
   } catch (err) {
     return dbError(err as { message: string }, "history/seen")
   }
-}
+})

@@ -42,6 +42,18 @@ export const GET = withCronRoute("cron", async ({ supabase }) => {
     // Don't fail the whole job — expiration already succeeded.
   }
 
+  // Step 3: drop login rate-limit rows (hashed visitor IPs) a day past their
+  // 1-minute window; nothing reads them after that.
+  const { error: attemptsErr } = await supabase
+    .from("login_attempts")
+    .delete()
+    .lt("window_start", new Date(now.getTime() - 86_400_000).toISOString())
+
+  if (attemptsErr) {
+    console.error("[cron/recommendations] login_attempts delete error:", attemptsErr.message)
+    // Don't fail the whole job — the cache cleanup already ran.
+  }
+
   const expiredCount = expiredRows?.length ?? 0
   const deletedCount = deletedRows?.length ?? 0
   console.log(

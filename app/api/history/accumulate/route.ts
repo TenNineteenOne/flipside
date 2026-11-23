@@ -29,7 +29,7 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
 
   const { data: user, error: userError } = await supabase
     .from("users")
-    .select("lastfm_username, statsfm_username, last_accumulated_lastfm_at, last_accumulated_statsfm_at")
+    .select("lastfm_username, statsfm_username")
     .eq("id", userId)
     .maybeSingle()
 
@@ -41,7 +41,6 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
 
   const storedUsername = source === "lastfm" ? user.lastfm_username : user.statsfm_username
   const cooldownField = source === "lastfm" ? "last_accumulated_lastfm_at" : "last_accumulated_statsfm_at"
-  const lastAt = source === "lastfm" ? user.last_accumulated_lastfm_at : user.last_accumulated_statsfm_at
 
   if (!storedUsername) {
     return apiError(`No ${source === "lastfm" ? "Last.fm" : "stats.fm"} account connected`, 400)
@@ -59,8 +58,8 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
   }
 
   // Atomic claim BEFORE the sync, so a double-click can't run two syncs (and
-  // double-bump play_count). A failed sync restores the previous stamp, so it
-  // doesn't consume the cooldown (same semantics as the old stamp-on-success).
+  // double-bump play_count). A failed sync shortens the wait to 1 minute rather
+  // than clearing it, so a bogus username can't loop outbound calls.
   if ((await claimCooldown(supabase, userId, cooldownField, COOLDOWN_MS)) === "cooling") {
     return apiError("Please wait before syncing again", 429)
   }
@@ -76,7 +75,7 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
     console.error(`[history/accumulate] ${source} error:`, message)
     const { error: restoreError } = await supabase
       .from("users")
-      .update({ [cooldownField]: lastAt ?? null })
+      .update({ [cooldownField]: new Date(Date.now() - COOLDOWN_MS + 60_000).toISOString() })
       .eq("id", userId)
     if (restoreError) console.error("[history/accumulate] Cooldown restore error:", restoreError.message)
     return apiError(`${source === "lastfm" ? "Last.fm" : "stats.fm"} sync failed`, 500)

@@ -64,6 +64,7 @@ export async function ingestListens(
 /**
  * select-existing → partition insert-vs-bump → batch insert (per-row fallback
  * on a 23505 conflict) → atomic play_count bump, for one key column (#C7).
+ * Throws on a failed select or insert so the sync reports failure; a failed bump is only logged.
  */
 async function upsertListened(
   supabase: SupabaseClient,
@@ -87,10 +88,7 @@ async function upsertListened(
 
   const existingMap = new Map<string, string>()
   for (const { data, error } of chunkResults) {
-    if (error) {
-      console.error(`${logPrefix} Batch select (${label}) error:`, error.message)
-      return
-    }
+    if (error) throw new Error(`${logPrefix} Batch select (${label}) error: ${error.message}`)
     for (const row of (data ?? []) as Array<Record<string, unknown>>) {
       const key = row[keyColumn] as string | null
       if (key) existingMap.set(key, row.id as string)
@@ -133,11 +131,11 @@ async function upsertListened(
         for (const row of toInsert) {
           const { error: rowErr } = await supabase.from("listened_artists").insert(row)
           if (rowErr && rowErr.code !== "23505") {
-            console.error(`${logPrefix} Row insert (${label}) error:`, rowErr.message)
+            throw new Error(`${logPrefix} Row insert (${label}) error: ${rowErr.message}`)
           }
         }
       } else {
-        console.error(`${logPrefix} Batch insert (${label}) error:`, insertError.message)
+        throw new Error(`${logPrefix} Batch insert (${label}) error: ${insertError.message}`)
       }
     }
   }
@@ -151,6 +149,7 @@ async function upsertListened(
       p_now: now,
     })
     if (bumpError) {
+      // Soft: the rows exist; throwing would 500 a sync whose inserts landed.
       console.error(`${logPrefix} Batch update (${label}) error:`, bumpError.message)
     }
   }

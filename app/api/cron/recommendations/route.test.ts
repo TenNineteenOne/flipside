@@ -37,4 +37,23 @@ describe("GET /api/cron/recommendations (#175 F6b)", () => {
     expect(byId.old).toBe(iso(now - 10 * DAY))
     expect(Date.parse(byId.live)).toBeLessThanOrEqual(Date.now())
   })
+
+  it("deletes login_attempts rows older than 24 hours and keeps recent ones", async () => {
+    const now = Date.now()
+    db = createRouteFakeDb({
+      login_attempts: [
+        { ip_hash: "stale", attempt_count: 3, window_start: iso(now - 2 * DAY) },
+        { ip_hash: "fresh", attempt_count: 1, window_start: iso(now - 60_000) },
+      ],
+    })
+    expect((await call()).status).toBe(200)
+    expect(db.tables.login_attempts.map((r) => r.ip_hash)).toEqual(["fresh"])
+  })
+
+  it("a failed login_attempts delete is logged and does not fail the job", async () => {
+    db = createRouteFakeDb({}, { login_attempts: "delete" })
+    const err = vi.spyOn(console, "error").mockImplementation(() => {})
+    expect((await call()).status).toBe(200)
+    expect(err).toHaveBeenCalledWith("[cron/recommendations] login_attempts delete error:", "fake login_attempts delete failed")
+  })
 })

@@ -1,6 +1,5 @@
-import { type NextRequest } from "next/server"
-import { safeAuth } from "@/lib/auth"
-import { apiError, apiUnauthorized } from "@/lib/errors"
+import { apiError } from "@/lib/errors"
+import { withAuthedRoute } from "@/lib/api/with-authed-route"
 import { createServiceClient } from "@/lib/supabase/server"
 import { createWindowLimiter } from "@/lib/rate-limiter"
 import { lastfm } from "@/lib/lastfm"
@@ -89,19 +88,13 @@ function cacheToSuggestion(a: Artist): OnboardingSuggestion {
  * cache covers popular artists with real Spotify ids; Last.fm fills the tail
  * (resolved to a real id on selection).
  */
-export async function GET(req: NextRequest) {
-  const session = await safeAuth()
-  if (!session?.user?.id) {
-    console.log("[onboard-search] unauth")
-    return apiUnauthorized()
-  }
-
-  if (isSearchRateLimited(session.user.id)) {
-    console.log(`[onboard-search] self-rate-limited userId=${session.user.id}`)
+export const GET = withAuthedRoute(async ({ userId, request }) => {
+  if (isSearchRateLimited(userId)) {
+    console.log(`[onboard-search] self-rate-limited userId=${userId}`)
     return apiError("Too many searches. Slow down for a moment.", 429)
   }
 
-  const query = req.nextUrl.searchParams.get("q")
+  const query = new URL(request.url).searchParams.get("q")
   if (query === null) {
     return apiError("Query parameter 'q' is required", 400)
   }
@@ -149,4 +142,4 @@ export async function GET(req: NextRequest) {
       `(cache=${cached.length} lastfm=${suggestions.length - cached.length})`,
   )
   return Response.json({ artists: suggestions })
-}
+})

@@ -41,11 +41,15 @@ describe("POST /api/history/accumulate cooldown", () => {
     expect(accumulateLastFmHistory).toHaveBeenCalledOnce()
   })
 
-  it("a failed sync restores the previous stamp (cooldown not consumed)", async () => {
+  it("a failed sync leaves a 1-minute wait, not a free retry", async () => {
     accumulateLastFmHistory.mockRejectedValue(new Error("boom"))
     const res = await call()
     expect(res.status).toBe(500)
     expect(await res.json()).toEqual({ error: "Last.fm sync failed" })
-    expect(db.tables.users[0].last_accumulated_lastfm_at).toBe(OLD)
+    const waitMs = Date.parse(db.tables.users[0].last_accumulated_lastfm_at) + 15 * 60_000 - Date.now()
+    expect(waitMs).toBeGreaterThan(50_000)
+    expect(waitMs).toBeLessThanOrEqual(60_000)
+    expect((await call()).status).toBe(429)
+    expect(accumulateLastFmHistory).toHaveBeenCalledOnce()
   })
 })

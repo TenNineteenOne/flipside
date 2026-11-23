@@ -109,4 +109,54 @@ describe("ingestListens — listens in → listened_artists rows out", () => {
     await expect(ingestListens(broken, "u1", "lastfm", [{ name: "A" }])).resolves.toBeUndefined()
     expect(err).toHaveBeenCalledWith("[accumulateLastFmHistory] Resolution pass failed:", "db down")
   })
+
+  /** A client whose listened_artists inserts answer with `insertError(row)`. */
+  function failingInserts(insertError: (row: unknown) => { code?: string; message: string } | null) {
+    const { supabase, tables } = setup()
+    const client = {
+      ...supabase,
+      from: (t: string) => {
+        const q = supabase.from(t)
+        if (t !== "listened_artists") return q
+        const insert = q.insert.bind(q)
+        q.insert = (row: unknown) => {
+          const error = insertError(row)
+          return error ? Promise.resolve({ data: null, error }) : insert(row)
+        }
+        return q
+      },
+    }
+    return { client, tables }
+  }
+
+  it("throws when the existing-rows select fails, so the sync is not reported as a success", async () => {
+    const fake = createFakeSupabase({ artists: [], listened_artists: [] }, { fail: { listened_artists: "error" } })
+    await expect(ingestListens(fake.client, "u1", "lastfm", [{ name: "A" }])).rejects.toThrow("Batch select (names) error")
+  })
+
+  it("throws on a batch insert error that is not a unique violation", async () => {
+    const { client, tables } = failingInserts(() => ({ code: "57014", message: "timeout" }))
+    await expect(ingestListens(client, "u1", "lastfm", [{ name: "A" }])).rejects.toThrow("Batch insert (names) error: timeout")
+    expect(tables.listened_artists).toEqual([])
+  })
+
+  it("a 23505 on the batch retries per row; a per-row 23505 is skipped, any other error throws", async () => {
+    const dup = { code: "23505", message: "duplicate" }
+    const skipped = failingInserts((row) => (Array.isArray(row) || (row as Row).lastfm_artist_name === "A" ? dup : null))
+    await ingestListens(skipped.client, "u1", "lastfm", [{ name: "A" }, { name: "B" }])
+    expect(skipped.tables.listened_artists.map((r) => r.lastfm_artist_name)).toEqual(["B"])
+
+    const broken = failingInserts((row) => (Array.isArray(row) ? dup : { code: "57014", message: "timeout" }))
+    await expect(ingestListens(broken.client, "u1", "lastfm", [{ name: "A" }])).rejects.toThrow("Row insert (names) error: timeout")
+  })
+
+  it("a failed play_count bump is logged, not thrown", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {})
+    const fake = createFakeSupabase({
+      artists: [],
+      listened_artists: [{ id: "a", user_id: "u1", artist_id: null, lastfm_artist_name: "A", source: "lastfm", play_count: 1, id_resolution_attempted_at: new Date().toISOString() }],
+    })
+    await expect(ingestListens(fake.client, "u1", "lastfm", [{ name: "A" }])).resolves.toBeUndefined()
+    expect(err).toHaveBeenCalledWith("[accumulateLastFmHistory] Batch update (names) error:", "no rpc rpc_bump_listened_play_counts")
+  })
 })

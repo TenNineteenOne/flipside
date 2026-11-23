@@ -1,4 +1,4 @@
-import { LASTFM_USERNAME_RE, STATSFM_USERNAME_RE } from "@/lib/settings/patch-settings"
+import { LASTFM_USERNAME_RE, MAX_SELECTED_GENRES, STATSFM_USERNAME_RE, type SettingsPatch } from "@/lib/settings/patch-settings"
 import { revalidatePath } from "next/cache"
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, apiUnauthorized, dbError } from "@/lib/errors"
@@ -16,14 +16,7 @@ import { isFameLevel } from "@/lib/settings/fame"
 const RETIRED_KEYS = ["playThreshold", "popularityCurve", "undergroundMode", "deepDiscovery", "adventurous"] as const
 
 export const PATCH = withAuthedJsonRoute(async ({ userId, body: rawBody }) => {
-  const body = rawBody as {
-    fameLevel?: number
-    lastfmUsername?: string
-    statsfmUsername?: string
-    selectedGenres?: string[]
-    preferredMusicPlatform?: string
-    onboardingCompleted?: boolean
-  }
+  const body = rawBody as SettingsPatch
 
   const update: Record<string, unknown> = {}
 
@@ -54,8 +47,8 @@ export const PATCH = withAuthedJsonRoute(async ({ userId, body: rawBody }) => {
   }
 
   if (body.selectedGenres !== undefined) {
-    if (!Array.isArray(body.selectedGenres) || body.selectedGenres.length > 50) {
-      return apiError("selectedGenres must be an array of up to 50 tags", 400)
+    if (!Array.isArray(body.selectedGenres) || body.selectedGenres.length > MAX_SELECTED_GENRES) {
+      return apiError(`selectedGenres must be an array of up to ${MAX_SELECTED_GENRES} tags`, 400)
     }
     update.selected_genres = body.selectedGenres.filter((g) => typeof g === "string" && g.length <= 80)
   }

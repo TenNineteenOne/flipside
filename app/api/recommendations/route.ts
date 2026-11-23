@@ -1,16 +1,9 @@
-import { safeAuth } from "@/lib/auth"
-import { createServiceClient } from "@/lib/supabase/server"
-import { apiUnauthorized, dbError } from "@/lib/errors"
+import { dbError } from "@/lib/errors"
+import { withAuthedRoute } from "@/lib/api/with-authed-route"
 import { getUnseenRecommendations } from "@/lib/recommendation/feed-query"
 import { loadFeedCards } from "@/lib/cards/feed-cards"
 
-export async function GET(): Promise<Response> {
-  const session = await safeAuth()
-  if (!session?.user?.id) return apiUnauthorized()
-
-  const userId = session.user.id
-  const supabase = createServiceClient()
-
+export const GET = withAuthedRoute(async ({ userId, supabase }): Promise<Response> => {
   // fame_level (underground cap) lookup happens inside getUnseenRecommendations, in
   // parallel with the cache fetch.
   let recommendations
@@ -25,4 +18,4 @@ export async function GET(): Promise<Response> {
 
   // Return empty — client will trigger POST /api/recommendations/generate via useEffect
   return Response.json({ recommendations, generating: false })
-}
+})

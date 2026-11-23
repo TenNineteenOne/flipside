@@ -20,33 +20,6 @@ export function hashIp(ip: string): string {
 }
 
 /**
- * Pure decision logic: given the current attempt state and the current time,
- * decide whether the request is rate-limited and what the new state should be.
- */
-export function evaluateRateLimit(
-  existing: { attempt_count: number; window_start: string } | null,
-  now: Date,
-): { limited: boolean; newCount: number; resetWindow: boolean } {
-  if (!existing) {
-    return { limited: false, newCount: 1, resetWindow: true }
-  }
-
-  const windowStart = new Date(existing.window_start).getTime()
-  const elapsed = now.getTime() - windowStart
-
-  if (elapsed > WINDOW_MS) {
-    return { limited: false, newCount: 1, resetWindow: true }
-  }
-
-  const nextCount = existing.attempt_count + 1
-  if (nextCount > MAX_ATTEMPTS) {
-    return { limited: true, newCount: existing.attempt_count, resetWindow: false }
-  }
-
-  return { limited: false, newCount: nextCount, resetWindow: false }
-}
-
-/**
  * The network an address belongs to, for the per-network bucket.
  * - IPv6 → its /64 prefix, normalised (`2001:db8:0:1::/64`). A /64 is what one
  *   subscriber gets, so rotating addresses inside it no longer buys new buckets.
@@ -89,8 +62,7 @@ export function loginLimitBuckets(ip: string): { key: string; max: number }[] {
  *
  * Each bucket goes through the `rpc_register_login_attempt` Postgres function
  * (migration 0035) so concurrent requests can't race past a cap — the DB row
- * lock serializes them. `evaluateRateLimit` above remains the canonical
- * decision logic the SQL mirrors (and what the unit tests cover).
+ * lock serializes them. The SQL is the only decision logic.
  *
  * Buckets are checked in order and stop at the first full one, so an attempt
  * already rejected per-IP is never charged to the global bucket: a single
