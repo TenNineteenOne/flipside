@@ -1,5 +1,6 @@
 /**
- * Genre adjacency graph built from data/genres.json v2.
+ * Genre adjacency graph built from data/genres-picker.json, the slim encoding of
+ * data/genres.json v2 (3.3 MB, which server bundles then don't load).
  *
  * v2 changes: each leaf carries everynoise.com 2D sonic-map coordinates
  * (x ≈ mechanical↔organic, y ≈ dense↔spiky). adjacentGenres returns the K
@@ -16,17 +17,11 @@
  * all resolve identically.
  */
 
-import genreData from '@/data/genres.json'
-import type { GenreNode } from '@/lib/types'
+import pickerData from '@/data/genres-picker.json'
 import { createGenreGraph } from './genre-graph'
+import { decodePickerTree, type PickerData } from './picker-data'
 
-interface GenreData {
-  generated: string
-  source: string
-  nodes: GenreNode[]
-}
-
-const graph = createGenreGraph((genreData as GenreData).nodes)
+const graph = createGenreGraph(decodePickerTree(pickerData as PickerData))
 
 /**
  * Primary anchor id for a tag, or null if unknown. Stable across runs.

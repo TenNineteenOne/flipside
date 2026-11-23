@@ -20,16 +20,15 @@ import { ArtistIdentity } from "@/lib/artist-identity"
 import { resolveArtistsByName, type ResolveDeps, type ResolveResult } from "./resolve-candidates"
 import { confirmPlayableTracks, confirmToTarget, type ConfirmPreviewDeps } from "./confirm-previews"
 import { PreviewStore, type ConfirmCollector } from "./preview-store"
-import { buildEnrichArtist, lastfmResolve } from "@/lib/artist-identity/lastfm-lookup"
+import { lastfmResolve } from "@/lib/artist-identity/lastfm-lookup"
 import { searchTracksByArtist } from "@/lib/music-provider/itunes"
 import { getSpotifyTopTracks } from "@/lib/music-provider/spotify"
 import { snapshotCalls } from "@/lib/metrics/api-call-counter"
 import { lastfm } from "@/lib/lastfm"
 
-/** The outbound ports: Last.fm name lookup/enrichment, iTunes, Spotify top-tracks. */
+/** The outbound ports: Last.fm name lookup, iTunes, Spotify top-tracks. */
 export interface PlayablePorts {
   searchArtists: ResolveDeps["searchArtists"]
-  enrichArtist?: ResolveDeps["enrichArtist"]
   /** Batch cache read-ahead for a resolve's lookups (no network). */
   prefetch?: ResolveDeps["prefetch"]
   /** Live-lookup counter: lets the resolver skip its polite delay on cache hits. */
@@ -39,17 +38,16 @@ export interface PlayablePorts {
 }
 
 /**
- * The live ports: Last.fm getInfo as the doorway
- * lookup + enrichment, iTunes-first previews (free, no auth, near-universal 30s
+ * The live ports: Last.fm getInfo as the doorway lookup (it already carries
+ * genres + popularity, so no separate enrichment), iTunes-first previews (free, no auth, near-universal 30s
  * clips), Spotify top-tracks as the fallback — keyed on the SPOTIFY id, never
  * the uuid identity; no id (Last.fm-only artist) or no token → no-op to [].
  */
 export function livePlayablePorts(accessToken: string): PlayablePorts {
   return {
     searchArtists: (name) => lastfmResolve(name),
-    enrichArtist: buildEnrichArtist(),
     prefetch: (names) => lastfm.prefetch("getInfo", names),
-    // Both lookup ports are Last.fm getInfo; its counter ticks only on live calls.
+    // The lookup is Last.fm getInfo; its counter ticks only on live calls.
     liveCalls: () => snapshotCalls().lastfm.getInfo,
     searchItunes: (name) => searchTracksByArtist(name, "US", 5),
     getSpotifyTopTracks: (spotifyId) =>
@@ -73,6 +71,8 @@ export class PlayableCandidates {
   private readonly identity: ArtistIdentity
   private readonly previews: PreviewStore
   private readonly collector: ConfirmCollector
+  /** Confirms whose iTunes lookup FAILED (null / threw), as opposed to answering "no tracks" ([]). */
+  sourceFailures = 0
 
   /** `identity`: pass a shared doorway so concurrent pipelines dedupe in-flight mints (#175 F25). */
   constructor(
@@ -95,7 +95,6 @@ export class PlayableCandidates {
     const stats = await resolveArtistsByName(unique, {
       cache: this.identity,
       searchArtists: this.ports.searchArtists,
-      enrichArtist: this.ports.enrichArtist,
       mintArtist: (artist) => this.identity.ensure(artist),
       concurrency: opts.concurrency,
       delayMs: opts.delayMs,
@@ -133,7 +132,11 @@ export class PlayableCandidates {
       },
       {
         onConfirmOutcome: this.collector.onConfirmOutcome,
-        searchItunes: this.ports.searchItunes,
+        searchItunes: async (name) => {
+          const tracks = await this.ports.searchItunes(name).catch(() => null)
+          if (tracks === null) this.sourceFailures++
+          return tracks
+        },
         getSpotifyTopTracks: this.ports.getSpotifyTopTracks,
       },
     )

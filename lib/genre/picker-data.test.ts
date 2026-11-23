@@ -55,6 +55,7 @@ describe("data/genres-picker.json", () => {
     const g2 = createGenreGraph(SLIM)
     expect(g2.listAnchors()).toEqual(g1.listAnchors())
     expect(g2.allLeavesWithAnchor()).toEqual(g1.allLeavesWithAnchor())
+    for (const a of g1.listAnchors()) expect(g2.leafTagsInAnchor(a.id)).toEqual(g1.leafTagsInAnchor(a.id))
     const nodes = [...walk(FULL)].map((w) => w.node)
     for (const n of nodes) {
       expect(g2.adjacentGenres(n.lastfmTag, "close")).toEqual(g1.adjacentGenres(n.lastfmTag, "close"))
@@ -62,5 +63,5 @@ describe("data/genres-picker.json", () => {
       expect(g2.genreToAnchor(n.lastfmTag)).toBe(g1.genreToAnchor(n.lastfmTag))
     }
     expect(nodes.length).toBeGreaterThan(6000)
-  }, 60_000)
+  }, 180_000)
 })

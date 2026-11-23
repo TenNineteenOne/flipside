@@ -1,8 +1,8 @@
 /**
- * The genre adjacency graph as a pure factory over a genre tree. lib/genre/adjacency.ts binds it
- * to the full data/genres.json (server code); the onboarding genre picker binds it to the slim
- * data/genres-picker.json, which keeps every field this reads (id, label, lastfmTag, children,
- * x, y). See adjacency.ts for the behaviour.
+ * The genre adjacency graph as a pure factory over a genre tree. lib/genre/adjacency.ts (server
+ * code) and the onboarding genre picker both bind it to the slim data/genres-picker.json, which
+ * keeps every field this reads (id, label, lastfmTag, children, x, y). See adjacency.ts for the
+ * behaviour.
  */
 
 import type { GenreNode } from '@/lib/types'

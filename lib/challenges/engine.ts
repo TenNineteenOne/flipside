@@ -1,6 +1,6 @@
 /**
- * Weekly challenges — small rotating quests. Their only surface was the
- * retired Explore page; the feedback route still assigns and credits them.
+ * Weekly challenges — small rotating quests, shown as one line under the Feed
+ * header (ChallengeStrip); the feedback and saves routes assign and credit them.
  *
  * Model: one active challenge per user per ISO week. The challenge_key
  * encodes the qualifying feedback signal (prefix before `_`) so the
@@ -11,33 +11,18 @@
  * Week boundary: Monday 00:00 UTC. We compute it via ISO-style `date_trunc`
  * in SQL and mirror it in TS with getISOWeekStart().
  *
- * Adaptive fairness: on assignment, applicableFor(user) filters out
- * challenges that can't meaningfully apply to the current user state (e.g.
- * the "new anchor" challenge when every anchor is already touched). If all
- * templates are skipped, we fall back to the default `thumbs_up_any`.
- *
  * The row must exist before any feedback of the week: the progress RPC
  * no-ops without it. POST /api/feedback assigns it before a thumbs-up
  * (ensureCurrentChallenge).
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { listAnchors, genreToAnchor } from '@/lib/genre/adjacency'
 
 export interface ChallengeTemplate {
   key: string
   title: string
   description: string
   target: number
-  /** Returns true when this template makes sense for the user's current state. */
-  applicableFor: (ctx: ChallengeApplicabilityCtx) => boolean
-}
-
-export interface ChallengeApplicabilityCtx {
-  touchedAnchors: Set<string>
-  totalAnchors: number
-  selectedGenres: string[]
-  hasThumbsUp: boolean
 }
 
 export const CHALLENGE_TEMPLATES: ChallengeTemplate[] = [
@@ -46,42 +31,12 @@ export const CHALLENGE_TEMPLATES: ChallengeTemplate[] = [
     title: 'Five in a week',
     description: 'Thumbs-up 5 artists',
     target: 5,
-    applicableFor: () => true,
-  },
-  {
-    key: 'thumbs_up_new_anchor',
-    title: 'Cross the streams',
-    description: 'Thumbs-up 3 artists from an anchor you haven\u2019t touched',
-    target: 3,
-    applicableFor: (c) => c.touchedAnchors.size < c.totalAnchors,
-  },
-  {
-    key: 'thumbs_up_wildcards',
-    title: 'Embrace chaos',
-    description: 'Thumbs-up 3 artists from Left-field wildcards',
-    target: 3,
-    applicableFor: () => true,
-  },
-  {
-    key: 'thumbs_up_adjacent',
-    title: 'Stretch your taste',
-    description: 'Thumbs-up 4 artists from Adjacent rails',
-    target: 4,
-    applicableFor: (c) => c.selectedGenres.length > 0,
-  },
-  {
-    key: 'thumbs_up_wildcard_seed',
-    title: 'Second act',
-    description: 'Thumbs-up 3 artists from your wildcard rail',
-    target: 3,
-    applicableFor: (c) => c.hasThumbsUp,
   },
   {
     key: 'thumbs_up_deep',
     title: 'Deep dive',
     description: 'Thumbs-up 7 artists this week',
     target: 7,
-    applicableFor: () => true,
   },
   ...[
     ['thumbs_up_three', 'Warm-up', 'Thumbs-up 3 artists', 3],
@@ -98,7 +53,6 @@ export const CHALLENGE_TEMPLATES: ChallengeTemplate[] = [
     title: title as string,
     description: description as string,
     target: target as number,
-    applicableFor: () => true,
   })),
 ]
 
@@ -115,7 +69,7 @@ export function getISOWeekStart(now: Date = new Date()): string {
 }
 
 // Only templates the RPC credits honestly: thumbs_up_* counts any thumbs-up, save_* any new save.
-// Rail-specific thumbs_up_* templates stay out (the RPC can't tell rails apart).
+// No rail-specific thumbs_up_* templates (the RPC can't tell rails apart).
 // Order interleaves thumbs/save so neighbours differ in kind too.
 const ROTATING_KEYS = [
   'thumbs_up_any', 'save_three', 'thumbs_up_deep', 'save_two', 'thumbs_up_three', 'save_five',
@@ -127,26 +81,24 @@ const ROTATING_KEYS = [
  * Consecutive weeks never repeat, and the pick is stable within a week (reloads and
  * the feedback/saves routes' pre-RPC ensure agree).
  */
-export function pickWeeklyTemplate(ctx: ChallengeApplicabilityCtx, weekStart: string): ChallengeTemplate {
-  const pool = ROTATING_KEYS.map((k) => CHALLENGE_TEMPLATES.find((t) => t.key === k)!).filter((t) => t.applicableFor(ctx))
-  if (pool.length === 0) return CHALLENGE_TEMPLATES[0]
+export function pickWeeklyTemplate(weekStart: string): ChallengeTemplate {
   const week = Math.round((Date.parse(weekStart) / 86400000 - 4) / 7)
-  return pool[((week % pool.length) + pool.length) % pool.length]
+  const n = ROTATING_KEYS.length
+  const key = ROTATING_KEYS[((week % n) + n) % n]
+  return CHALLENGE_TEMPLATES.find((t) => t.key === key)!
 }
 
 /**
  * Fetch (or assign) the user's active challenge for this ISO week.
  *
- * Assignment rule: pickWeeklyTemplate over the applicable templates. The
+ * Assignment rule: pickWeeklyTemplate. The
  * UNIQUE (user_id, week_start, challenge_key) index keeps the row idempotent:
- * concurrent assigns on Monday morning can't spawn duplicates. `ctx` may be a
- * loader so callers that usually find an existing row skip its reads.
+ * concurrent assigns on Monday morning can't spawn duplicates.
  */
-async function ensureWeeklyChallenge(
+export async function ensureCurrentChallenge(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: SupabaseClient<any, any, any>,
   userId: string,
-  ctx: ChallengeApplicabilityCtx | (() => Promise<ChallengeApplicabilityCtx>),
   now: Date = new Date(),
 ): Promise<UserChallenge | null> {
   const weekStart = getISOWeekStart(now)
@@ -167,11 +119,12 @@ async function ensureWeeklyChallenge(
       target: existing.target_count as number,
       progress: existing.progress as number,
       completedAt: (existing.completed_at as string | null) ?? null,
+      // null for a key no longer in CHALLENGE_TEMPLATES: the Feed then hides the strip.
       template: CHALLENGE_TEMPLATES.find((t) => t.key === existing.challenge_key) ?? null,
     }
   }
 
-  const pick = pickWeeklyTemplate(typeof ctx === 'function' ? await ctx() : ctx, weekStart)
+  const pick = pickWeeklyTemplate(weekStart)
 
   const { data: inserted, error } = await supabase
     .from('user_challenges')
@@ -204,67 +157,4 @@ export interface UserChallenge {
   progress: number
   completedAt: string | null
   template: ChallengeTemplate | null
-}
-
-/**
- * Ensure the user's current-week challenge row exists, loading the
- * applicability ctx only when it has to assign one (selected genres, ≤500
- * listened artists' primary genres, any live thumbs-up).
- */
-export function ensureCurrentChallenge(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  supabase: SupabaseClient<any, any, any>,
-  userId: string,
-  now: Date = new Date(),
-): Promise<UserChallenge | null> {
-  return ensureWeeklyChallenge(supabase, userId, async () => {
-    const [{ data: userRow }, { data: listenedRows }, { data: thumbsUp }] = await Promise.all([
-      supabase.from('users').select('selected_genres').eq('id', userId).maybeSingle(),
-      supabase.from('listened_artists').select('artist_id').eq('user_id', userId).limit(500),
-      supabase.from('feedback').select('artist_id').eq('user_id', userId).eq('signal', 'thumbs_up').is('deleted_at', null).limit(1),
-    ])
-    const listenedIds = ((listenedRows ?? []) as Array<{ artist_id: string | null }>)
-      .map((r) => r.artist_id)
-      .filter((id): id is string => id != null)
-    const genresById = new Map<string, string[]>()
-    const chunks: string[][] = []
-    for (let i = 0; i < listenedIds.length; i += 200) chunks.push(listenedIds.slice(i, i + 200))
-    const reads = await Promise.all(chunks.map((ids) => supabase.from('artists').select('id, genres').in('id', ids)))
-    for (const { data } of reads) {
-      for (const row of data ?? []) genresById.set(row.id as string, (row.genres as string[] | null) ?? [])
-    }
-    return buildApplicabilityCtx({
-      selectedGenres: (userRow?.selected_genres as string[] | null) ?? [],
-      listened: listenedIds.map((id) => ({ genres: genresById.get(id) ?? [] })),
-      hasThumbsUp: (thumbsUp ?? []).length > 0,
-    })
-  }, now)
-}
-
-/**
- * Build the ChallengeApplicabilityCtx from the user's selected genres,
- * listened primary genres and likes. Synchronous + pure.
- */
-function buildApplicabilityCtx(args: {
-  selectedGenres: string[]
-  listened: Array<{ genres: string[] }>
-  hasThumbsUp: boolean
-}): ChallengeApplicabilityCtx {
-  const touched = new Set<string>()
-  for (const g of args.selectedGenres) {
-    const a = genreToAnchor(g)
-    if (a) touched.add(a)
-  }
-  for (const row of args.listened) {
-    const primary = row.genres[0]
-    if (!primary) continue
-    const a = genreToAnchor(primary)
-    if (a) touched.add(a)
-  }
-  return {
-    touchedAnchors: touched,
-    totalAnchors: listAnchors().length,
-    selectedGenres: args.selectedGenres,
-    hasThumbsUp: args.hasThumbsUp,
-  }
 }

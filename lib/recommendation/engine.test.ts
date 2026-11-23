@@ -5,6 +5,7 @@ import {
   backfillToTarget,
   runDeepHop,
   augmentWithAdjacent,
+  fetchAdjacentPool,
   runWithSoftening,
   withinBudget,
   FAR_WAIT_BUDGET_MS,
@@ -377,42 +378,20 @@ describe("augmentWithAdjacent", () => {
     )
   }
 
-  it("non-adventurous: injects ≤4 adjacent picks at positions ≥5", async () => {
-    const base = makeBase(20)
-    const result = await augmentWithAdjacent(base, {
-      userGenres: ["indie-rock"],
-      adventurous: false,
-      popularityCurve: 0.95,
-      fetchTagArtists: async () => ["adj1", "adj2", "adj3", "adj4", "adj5"],
-      resolveArtists: async (names) => {
-        const m = new Map<string, Artist>()
-        for (const n of names) m.set(n, mkArtist(`id_${n}`, 30, "indie-pop"))
-        return m
-      },
+  /** An already-fetched adjacent pool: every name resolved, tagged "indie-pop". */
+  const poolOf = (names: string[], popOf: (n: string) => number = () => 30) => () =>
+    Promise.resolve({
+      resolved: new Map(names.map((n) => [n, mkArtist(`id_${n}`, popOf(n), "indie-pop")] as [string, Artist])),
+      nameToTag: new Map(names.map((n) => [n.toLowerCase(), "indie-pop"])),
     })
-    const bleedIdxs = result
-      .map((r, i) => ({ r, i }))
-      .filter(({ r }) => r.source === "adjacent_bleed")
-      .map(({ i }) => i)
-    expect(bleedIdxs.length).toBeLessThanOrEqual(4)
-    for (const i of bleedIdxs) expect(i).toBeGreaterThanOrEqual(5)
-    // Positions 0-4 are untouched.
-    for (let i = 0; i < 5; i++) expect(result[i].source).toBe("test")
-  })
 
-  it("adventurous: injects ≤10 adjacent picks at positions ≥3", async () => {
+  it("injects ≤10 adjacent picks at positions ≥3", async () => {
     const base = makeBase(20)
     const adjNames = Array.from({ length: 12 }, (_, i) => `adj${i}`)
     const result = await augmentWithAdjacent(base, {
       userGenres: ["indie-rock"],
-      adventurous: true,
       popularityCurve: 0.95,
-      fetchTagArtists: async () => adjNames,
-      resolveArtists: async (names) => {
-        const m = new Map<string, Artist>()
-        for (const n of names) m.set(n, mkArtist(`id_${n}`, 30, "indie-pop"))
-        return m
-      },
+      adjacentPool: poolOf(adjNames),
     })
     const bleedIdxs = result
       .map((r, i) => ({ r, i }))
@@ -426,21 +405,13 @@ describe("augmentWithAdjacent", () => {
 
   it("skips bleed when user has no selected genres", async () => {
     const base = makeBase(20)
-    const fetchTagArtists = vi.fn(async () => ["x"])
-    const resolveArtists = vi.fn(async () => new Map<string, Artist>())
-    const result = await augmentWithAdjacent(base, {
-      userGenres: [],
-      popularityCurve: 0.95,
-      fetchTagArtists,
-      resolveArtists,
-    })
+    const adjacentPool = vi.fn(poolOf(["x"]))
+    const result = await augmentWithAdjacent(base, { userGenres: [], popularityCurve: 0.95, adjacentPool })
     expect(result).toEqual(base)
-    expect(fetchTagArtists).not.toHaveBeenCalled()
-    expect(resolveArtists).not.toHaveBeenCalled()
+    expect(adjacentPool).not.toHaveBeenCalled()
   })
 
   it("excludes tags already in user's selected_genres", async () => {
-    const base = makeBase(20)
     // User already selected both indie-rock and indie-pop. Adjacency would
     // normally return indie-pop as a close sibling, but it should be filtered.
     const fetchedTags: string[] = []
@@ -448,9 +419,8 @@ describe("augmentWithAdjacent", () => {
       fetchedTags.push(tag)
       return ["someArtist"]
     })
-    await augmentWithAdjacent(base, {
+    await fetchAdjacentPool({
       userGenres: ["indie-rock", "indie-pop"],
-      popularityCurve: 0.95,
       fetchTagArtists,
       resolveArtists: async () => new Map<string, Artist>(),
     })
@@ -458,35 +428,23 @@ describe("augmentWithAdjacent", () => {
     expect(fetchedTags).not.toContain("indie-pop")
   })
 
-  it("does not inject artists already in the base", async () => {
-    const base = makeBase(20)
-    const result = await augmentWithAdjacent(base, {
-      userGenres: ["indie-rock"],
-      popularityCurve: 0.95,
-      fetchTagArtists: async () => ["base5", "base10"],  // names collide with base[5], base[10]
-      resolveArtists: async () => new Map<string, Artist>(),
-    })
-    // Name-level dedup happens before resolution, so nothing is resolved/injected.
-    expect(result.every((r) => r.source === "test")).toBe(true)
+  it("fetchAdjacentPool does not resolve names the caller already holds", async () => {
+    const resolveArtists = vi.fn(async () => new Map<string, Artist>())
+    await fetchAdjacentPool(
+      { userGenres: ["indie-rock"], fetchTagArtists: async () => ["Base5", "new"], resolveArtists },
+      new Set(["base5"]),
+    )
+    expect(resolveArtists).toHaveBeenCalledWith(["new"])
   })
 
-  it("adventurous mainstream penalty orders low-pop injections ahead of high-pop", async () => {
+  it("mainstream penalty orders low-pop injections ahead of high-pop", async () => {
     const base = makeBase(20)
     const lowNames = Array.from({ length: 10 }, (_, i) => `low${i}`)
     const highNames = ["high1"]
     const result = await augmentWithAdjacent(base, {
       userGenres: ["indie-rock"],
-      adventurous: true,
       popularityCurve: 0.95,
-      fetchTagArtists: async () => [...lowNames, ...highNames],
-      resolveArtists: async (names) => {
-        const m = new Map<string, Artist>()
-        for (const n of names) {
-          const pop = n.startsWith("high") ? 80 : 20
-          m.set(n, mkArtist(`id_${n}`, pop, "indie-pop"))
-        }
-        return m
-      },
+      adjacentPool: poolOf([...lowNames, ...highNames], (n) => (n.startsWith("high") ? 80 : 20)),
     })
     const injected = result.filter((r) => r.source === "adjacent_bleed")
     // 10 low + 1 high candidates → all 10 low slots filled ahead of the high.
@@ -504,10 +462,8 @@ describe("augmentWithAdjacent", () => {
     it("fills the 10 slots from the far pool first and marks them outsideUsual", async () => {
       const result = await augmentWithAdjacent(makeBase(20), {
         userGenres: ["indie-rock"],
-        adventurous: true,
         popularityCurve: 0.95,
-        fetchTagArtists: async () => Array.from({ length: 12 }, (_, i) => `adj${i}`),
-        resolveArtists: resolveAs("indie-pop"),
+        adjacentPool: poolOf(Array.from({ length: 12 }, (_, i) => `adj${i}`)),
         far: far(Array.from({ length: 12 }, (_, i) => `far${i}`)),
       })
       const farPicks = result.filter((r) => r.source === "far_pool")
@@ -520,10 +476,8 @@ describe("augmentWithAdjacent", () => {
     it("adjacent bleed covers a far shortfall and is never marked", async () => {
       const result = await augmentWithAdjacent(makeBase(20), {
         userGenres: ["indie-rock"],
-        adventurous: true,
         popularityCurve: 0.95,
-        fetchTagArtists: async () => Array.from({ length: 12 }, (_, i) => `adj${i}`),
-        resolveArtists: resolveAs("indie-pop"),
+        adjacentPool: poolOf(Array.from({ length: 12 }, (_, i) => `adj${i}`)),
         far: far(["far0", "far1", "far2"]),
       })
       expect(result.filter((r) => r.source === "far_pool")).toHaveLength(3)
@@ -532,35 +486,16 @@ describe("augmentWithAdjacent", () => {
       for (const a of adj) expect(a.why.outsideUsual).toBeUndefined()
     })
 
-    it("runs with no selected genres; ignored when not adventurous", async () => {
-      const on = await augmentWithAdjacent(makeBase(20), {
-        userGenres: [],
-        adventurous: true,
-        popularityCurve: 0.95,
-        fetchTagArtists: async () => [],
-        resolveArtists: resolveAs("x"),
-        far: far(["far0"]),
-      })
+    it("runs with no selected genres", async () => {
+      const on = await augmentWithAdjacent(makeBase(20), { userGenres: [], popularityCurve: 0.95, far: far(["far0"]) })
       expect(on.filter((r) => r.source === "far_pool")).toHaveLength(1)
-
-      const off = await augmentWithAdjacent(makeBase(20), {
-        userGenres: [],
-        adventurous: false,
-        popularityCurve: 0.95,
-        fetchTagArtists: async () => [],
-        resolveArtists: resolveAs("x"),
-        far: far(["far0"]),
-      })
-      expect(off.every((r) => r.source === "test")).toBe(true)
     })
 
     it("a null far result degrades to adjacent only", async () => {
       const result = await augmentWithAdjacent(makeBase(20), {
         userGenres: ["indie-rock"],
-        adventurous: true,
         popularityCurve: 0.95,
-        fetchTagArtists: async () => ["adj0", "adj1"],
-        resolveArtists: resolveAs("indie-pop"),
+        adjacentPool: poolOf(["adj0", "adj1"]),
         far: { resolved: Promise.resolve(null), labelOf: () => "x" },
       })
       expect(result.filter((r) => r.source === "adjacent_bleed")).toHaveLength(2)
@@ -573,10 +508,8 @@ describe("augmentWithAdjacent", () => {
         const slowFar = new Promise<Map<string, Artist>>((r) => { settleFar = r })
         const run = augmentWithAdjacent(makeBase(20), {
           userGenres: ["indie-rock"],
-          adventurous: true,
           popularityCurve: 0.95,
-          fetchTagArtists: async () => ["adj0", "adj1"],
-          resolveArtists: resolveAs("indie-pop"),
+          adjacentPool: poolOf(["adj0", "adj1"]),
           far: { resolved: withinBudget(slowFar, FAR_WAIT_BUDGET_MS).then((r) => r ?? null), labelOf: () => "x" },
         })
         await vi.advanceTimersByTimeAsync(FAR_WAIT_BUDGET_MS)
@@ -602,25 +535,20 @@ describe("augmentWithAdjacent", () => {
   })
 
   it("returns base unchanged when base has ≤ startPos items", async () => {
-    const tinyBase = makeBase(4)  // 4 items, startPos=5 (non-adventurous)
+    const tinyBase = makeBase(3)  // startPos = 3
     const result = await augmentWithAdjacent(tinyBase, {
       userGenres: ["indie-rock"],
       popularityCurve: 0.95,
-      fetchTagArtists: async () => ["x"],
-      resolveArtists: async () => new Map([["x", mkArtist("id_x")]]),
+      adjacentPool: poolOf(["x"]),
     })
     expect(result).toEqual(tinyBase)
   })
 
-  it("uses a pre-started adjacentPool without refetching, and skips names the base holds", async () => {
+  it("skips adjacent-pool names the base holds", async () => {
     const base = makeBase(20)
-    const fetchTagArtists = vi.fn(async () => ["never"])
-    const resolveArtists = vi.fn(async () => new Map<string, Artist>())
     const result = await augmentWithAdjacent(base, {
       userGenres: ["indie-rock"],
       popularityCurve: 0.95,
-      fetchTagArtists,
-      resolveArtists,
       adjacentPool: () => Promise.resolve({
         resolved: new Map([
           [base[7].artist.name, mkArtist("id_dupe", 30, "indie-pop")],
@@ -629,8 +557,6 @@ describe("augmentWithAdjacent", () => {
         nameToTag: new Map([["adjx", "indie-pop"]]),
       }),
     })
-    expect(fetchTagArtists).not.toHaveBeenCalled()
-    expect(resolveArtists).not.toHaveBeenCalled()
     const bleed = result.filter((r) => r.source === "adjacent_bleed")
     expect(bleed.map((r) => r.artist.id)).toEqual(["id_adjX"])
     expect(bleed[0].why.sourceArtists).toEqual(["indie-pop"])
@@ -759,10 +685,9 @@ describe("runWithSoftening cascade order", () => {
       "soften_play_threshold",
       "soften_cold_start",
     ])
-    // undergroundMode stays true through play-threshold soften; cold-start
-    // disables it because starter picks are the degenerate-case escape hatch.
+    // The cap survives both soften steps: the feed read filters pop > 50 anyway.
     expect(calls[1].undergroundMode).toBe(true)
-    expect(calls[2].undergroundMode).toBe(false)
+    expect(calls[2].undergroundMode).toBe(true)
     expect(calls[2].seedNames).toEqual(["ColdA", "ColdB", "ColdC"])
     expect(result.count).toBe(12)
     expect(result.softenedFilters).toEqual({ playThreshold: true, coldStart: true })
@@ -823,7 +748,6 @@ describe("augmentWithAdjacent — stored score keeps the merge positions", () =>
     const result = await augmentWithAdjacent(base, {
       userGenres: ["indie-rock"],
       popularityCurve: 0.95,
-      adventurous: true, // 10 slots from position 3
       adjacentPool: () => Promise.resolve({
         resolved: new Map(Array.from({ length: 10 }, (_, i) => [`n${i}`, mkArtist(`id_${i}`, 10 + i * 3, "x")] as const)),
         nameToTag: new Map(),

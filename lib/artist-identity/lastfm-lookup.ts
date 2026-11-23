@@ -1,7 +1,7 @@
 /**
  * The doorway's Last.fm lookup adapters, built on the Last.fm adapter
  * (`@/lib/lastfm`, which owns the HTTP, key, cache, gate and counters):
- * getInfo as the name resolver / enrichment.
+ * getInfo as the name resolver.
  */
 import type { Artist } from "@/lib/music-provider/types"
 import { lastfm as defaultLastfm, type ArtistEnrichment, type Lastfm } from "@/lib/lastfm"
@@ -20,19 +20,8 @@ export function mergeEnrichment(artist: Artist, enrichment: ArtistEnrichment | n
 }
 
 /**
- * The live `enrichArtist` dep for resolve-candidates (Last.fm getInfo, cached).
- * Returns undefined when the key is missing — callers feature-detect rather
- * than noop.
- */
-export function buildEnrichArtist(lf: Lastfm = defaultLastfm) {
-  if (!lf.hasKey()) return undefined
-  return (name: string) => lf.artistInfo(name)
-}
-
-/**
  * Spotify-free name resolver (Stage 2, #157): the `searchArtists` dep for
- * resolve-candidates, wired to Last.fm artist.getInfo — the SAME cached call
- * `buildEnrichArtist` uses, so it adds ~0 extra network. Returns one Artist
+ * resolve-candidates, wired to Last.fm artist.getInfo (cached). Returns one Artist
  * carrying getInfo's genres/popularity, or [] for a genuine not-found.
  *
  *  - `id: ""` — the canonical uuid is minted downstream (ArtistIdentity.ensure).

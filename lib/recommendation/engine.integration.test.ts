@@ -424,7 +424,7 @@ describe("buildRecommendations — far pool (Wander farther, #205)", () => {
     const head = Array.from({ length: 10 }, (_, i) => `Head${i}`)
     lf.tags = (tag) => [...head, "FarDisliked", `Far-${tag}`]
 
-    const result = await buildRecommendations({ ...baseInput(), adventurous: true, deepDiscovery: true })
+    const result = await buildRecommendations(baseInput())
     await result.finish()
 
     const far = cacheRows().filter((r) => r.source === "far_pool")
@@ -436,17 +436,6 @@ describe("buildRecommendations — far pool (Wander farther, #205)", () => {
     expect(cacheRows().some((r) => r.artist_id === downId)).toBe(false)
     expect(cacheRows().some((r) => String(r.artist_data.name).startsWith("Head"))).toBe(false)
     expect(result.metrics.farMs).toBeTypeOf("number")
-  })
-
-  it("no far fetch when Wander farther is off", async () => {
-    seed({ seed_artists: [{ user_id: "u1", name: "SeedA" }] })
-    lf.similars.set("SeedA", similarRefs(Array.from({ length: 10 }, (_, i) => `Base${i}`)))
-    const tags = vi.fn(() => [] as string[])
-    lf.tags = tags
-    const result = await buildRecommendations(baseInput())
-    await result.finish()
-    expect(tags).not.toHaveBeenCalled()
-    expect(result.metrics.farMs).toBeUndefined()
   })
 })
 
@@ -481,10 +470,29 @@ describe("buildRecommendations — writeScored cooldown read error (#175 F17)", 
     expect(result.count).toBe(0)
     // #175 R7: a failed write is not an empty pool — no soften runs, no toast.
     expect(result.softenedFilters).toBeUndefined()
-    expect(lf.calls.similar).toEqual(["SeedA"])
+    expect(lf.calls.similar).toEqual(["SeedA", "Fresh0", "SeenLongAgo"]) // the seed + its 2nd hop, once
     const rows = cacheRows()
     expect(rows).toHaveLength(1)
     expect(rows[0].seen_at).toBe(seenAt)
+  })
+})
+
+describe("buildRecommendations — preview source outage", () => {
+  it("every confirm failing at the source is not an empty pool: no soften run, no cold-start rows", async () => {
+    seed({ seed_artists: [{ user_id: "u1", name: "SeedA" }] })
+    const names = Array.from({ length: 10 }, (_, i) => `Fresh${i}`)
+    lf.similars.set("SeedA", similarRefs(names))
+    for (const n of names) h.itunes.set(n, null) // null = iTunes failed (a real "no tracks" is [])
+    vi.spyOn(console, "error").mockImplementation(() => {})
+
+    const result = await buildRecommendations(baseInput())
+    await result.finish()
+
+    expect(result.count).toBe(0)
+    expect(result.softenedFilters).toBeUndefined()
+    expect(lf.calls.similar.filter((n) => n === "SeedA")).toHaveLength(1) // the pipeline ran once
+    expect(cacheRows()).toEqual([])
+    expect(h.fake.tables.artist_tracks_cache).toEqual([]) // a failure is never cached as "no preview"
   })
 })
 
@@ -607,6 +615,23 @@ describe("buildRecommendations — genre seed tag limit (#175 F15)", () => {
   })
 })
 
+describe("buildRecommendations — liked artists seed the feed", () => {
+  it("a liked artist with no recommendation_cache row still becomes a seed", async () => {
+    const likedId = "1c000000-0000-4000-8000-000000000001"
+    seed({
+      artists: [artistsRow(likedId, "LikedLongAgo")],
+      feedback: [{ id: "fb1", user_id: "u1", artist_id: likedId, signal: "thumbs_up", deleted_at: null }],
+    })
+    lf.similars.set("LikedLongAgo", similarRefs(["FromLike"]))
+
+    const result = await buildRecommendations(baseInput())
+
+    expect(lf.calls.similar).toContain("LikedLongAgo")
+    expect(result.softenedFilters).toBeUndefined()
+    expect(cacheRows().map((r) => r.artist_data.name)).toEqual(["FromLike"])
+  })
+})
+
 // ── #175 F-A: onboarding seed artists always shape the feed ─────────────────
 describe("buildRecommendations — picked seeds always used (#175 F-A)", () => {
   it("every picked seed is fanned out even when genre tags add 40 names; picks are never recommended back", async () => {
@@ -628,7 +653,8 @@ describe("buildRecommendations — picked seeds always used (#175 F-A)", () => {
       await result.finish()
 
       for (const p of picks) expect(lf.calls.similar).toContain(p)
-      expect(lf.calls.similar.length).toBe(10) // the seed cap still holds
+      // The seed cap still holds (2nd-hop lookups are the "-sim" names and "pickc").
+      expect(lf.calls.similar.filter((n) => !n.endsWith("-sim") && n !== "pickc").length).toBe(10)
       const names = cacheRows().map((r) => r.artist_data?.name.toLowerCase())
       expect(names.length).toBeGreaterThan(0)
       expect(names).not.toContain("pickc")
@@ -676,7 +702,7 @@ describe("buildRecommendations — liked and saved never resurface (#175 F-B)", 
 
 // ── #175 F-E: one doorway across soften runs ────────────────────────────────
 describe("buildRecommendations — one identity across soften runs (#175 F-E)", () => {
-  it("a softened build mints each secondary name once, though the discarded run's resolve is still in flight", async () => {
+  it("a softened build mints each secondary name once", async () => {
     const primaryNames = Array.from({ length: 36 }, (_, i) => `Heard${i}`)
     const secondaryNames = Array.from({ length: 6 }, (_, i) => `Later${i}`)
     seed({
@@ -686,25 +712,10 @@ describe("buildRecommendations — one identity across soften runs (#175 F-E)", 
     })
     // tail-first round robin: the LAST 36 refs fill the blocking pool.
     lf.similars.set("SeedA", similarRefs([...secondaryNames, ...primaryNames]))
-    // Hold every secondary lookup until BOTH runs have asked for it, so the two
-    // runs' doorways ensure the same names at the same time (prod: real latency).
-    let release!: () => void
-    const gate = new Promise<void>((r) => (release = r))
-    setTimeout(() => release(), 1000) // fallback, never hang
-    let asked = 0
-    const info = lf.artistInfo.bind(lf)
-    vi.spyOn(lf, "artistInfo").mockImplementation(async (name: string) => {
-      if (name === "Later0" && ++asked === 2) release()
-      if (name.startsWith("Later")) await gate
-      return info(name)
-    })
 
     const result = await buildRecommendations(baseInput())
     await result.finish()
     expect(result.softenedFilters?.playThreshold).toBe(true)
-    await gate
-    await new Promise((r) => setTimeout(r, 200)) // let run 1's orphaned secondary resolve settle
-    expect(asked).toBeGreaterThanOrEqual(2) // both runs looked Later0 up
 
     const counts = new Map<string, number>()
     for (const a of h.fake.tables.artists) counts.set(a.name_lower, (counts.get(a.name_lower) ?? 0) + 1)
@@ -781,9 +792,9 @@ describe("buildRecommendations — resurface lost update (#175 R4)", () => {
     expect(row.seen_at).toBeNull()
     const threeDaysAgo = Date.now() - 3 * 24 * 60 * 60 * 1000
     expect(new Date(row.created_at).getTime()).toBeGreaterThan(threeDaysAgo) // the cron's expiry cutoff
-    // Brand-new rows still take the DB default (no created_at in the payload).
+    // Brand-new rows are stamped on the same clock (replace mode's cutoff compares against it).
     const fresh = cacheRows().find((r) => r.artist_data?.name === "Fresh0")!
-    expect(fresh.created_at).toBeUndefined()
+    expect(new Date(fresh.created_at).getTime()).toBeGreaterThan(threeDaysAgo)
   })
 
   it("the feed query never lists a dismissed row, even one left unseen", async () => {
@@ -857,7 +868,7 @@ describe("buildRecommendations — exclusion rows read once per build (perf)", (
     expect(cacheRows().length).toBeGreaterThan(0)
     expect(cacheRows().every((r) => r.source.startsWith("soften_play_threshold"))).toBe(true)
     const listenedReads = (h.fake as FakeSupabase).queries.filter((q) => q.table === "listened_artists" && q.op === "select")
-    expect(listenedReads).toHaveLength(1)
+    expect(listenedReads).toHaveLength(2) // exclusions + the far pool's genre read: once per build, not per run
   })
 })
 
@@ -872,7 +883,7 @@ describe("buildRecommendations — bleed + far pools respect seeds and the genre
     // yields nothing, so these names never become seeds themselves).
     lf.tags = (tag) => (tag === "indie-rock" ? [] : ["PickA", `Other-${tag}`])
 
-    const result = await buildRecommendations({ ...baseInput(), adventurous: true })
+    const result = await buildRecommendations(baseInput())
     await result.finish()
 
     const names = cacheRows().map((r) => r.artist_data?.name.toLowerCase())
@@ -895,7 +906,7 @@ describe("buildRecommendations — bleed + far pools respect seeds and the genre
     const { adjacentGenres } = await import("@/lib/genre/adjacency")
     for (const tag of adjacentGenres("indie-rock", "close")) tagArtists.set(tag, bleedNames)
 
-    const result = await buildRecommendations({ ...baseInput(), adventurous: true })
+    const result = await buildRecommendations(baseInput())
     await result.finish()
 
     const rows = cacheRows()
@@ -923,8 +934,8 @@ describe("buildRecommendations — re-queued rows are not new (count)", () => {
 
     expect(result.count).toBe(0)
     expect(result.softenedFilters).toBeUndefined()
-    // Neither soften step ran: only the user's seed fanned out, no cold-start seeds.
-    expect(lf.calls.similar).toEqual(["SeedA"])
+    // Neither soften step ran: only the user's seed (+ its 2nd hop) fanned out, no cold-start seeds.
+    expect(lf.calls.similar).toEqual(["SeedA", "Queued"])
     const row = cacheRows().find((r) => r.artist_id === queuedId)!
     expect(row.seen_at).toBeNull()
     expect(new Date(row.created_at).getTime()).toBeGreaterThan(Date.now() - 3 * 24 * 60 * 60 * 1000)

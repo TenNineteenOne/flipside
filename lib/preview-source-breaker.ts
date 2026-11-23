@@ -11,8 +11,9 @@
  *   open     — source is blocked; canRequest() returns false until cooldown
  *              elapses. openUntil() forces this with an explicit expiry so
  *              Spotify retry-after values are honoured exactly.
- *   half-open — cooldown elapsed; one probe request is allowed. On success
- *              the breaker closes; on failure it re-opens for another cycle.
+ *   half-open — cooldown elapsed; canRequest() lets every caller through
+ *              (not a single probe) until one result lands. A success closes
+ *              the breaker; a failure re-opens it for another cycle.
  */
 
 export interface BreakerOptions {

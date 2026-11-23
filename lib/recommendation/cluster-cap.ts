@@ -6,8 +6,8 @@
  * offender(s) with the highest-ranked leftover whose genre is still under
  * the cap.
  *
- * Deterministic and idempotent given the same inputs — runs before cache
- * writes so cache-hit paths serve the capped result directly.
+ * Deterministic and idempotent given the same inputs — runs on every build,
+ * after the bleed merge and before the recommendation_cache writes.
  */
 
 export const CLUSTER_CAP_PCT = 0.25

@@ -86,16 +86,29 @@ export async function itunesFetch<T>(
  * de-dupes by track name (iTunes often returns album + single versions).
  *
  * Returns `null` on network / parse failure or when the circuit breaker is
- * open so the caller can fall back.
+ * open so the caller can fall back. `null` always means a source failure.
  */
 export async function searchTracksByArtist(
   artistName: string,
   market = "US",
   limit = 5
 ): Promise<Track[] | null> {
-  const url =
+  const base =
     `${ITUNES_BASE}?term=${encodeURIComponent(artistName)}` +
-    `&entity=song&limit=25&country=${encodeURIComponent(market)}`
+    `&entity=song&country=${encodeURIComponent(market)}`
+  const first = await searchOnce(`${base}&limit=25`, artistName, limit)
+  if (!first || first.tracks.length > 0 || first.total === 0) return first && first.tracks
+  // Common-word names (Low, Air, Cake): the top 25 are songs titled that, so ask by artist.
+  const retry = await searchOnce(`${base}&limit=200&attribute=artistTerm`, artistName, limit)
+  return retry && retry.tracks
+}
+
+/** One search request: `total` raw results, `tracks` those by exactly this artist. Null on failure. */
+async function searchOnce(
+  url: string,
+  artistName: string,
+  limit: number
+): Promise<{ total: number; tracks: Track[] } | null> {
   const r = await itunesFetch<ITunesResponse>(url)
   if (!r.ok) {
     if (r.reason === "breaker") {
@@ -136,7 +149,7 @@ export async function searchTracksByArtist(
     })
     if (out.length >= limit) break
   }
-  return out
+  return { total: items.length, tracks: out }
 }
 
 /** iTunes artwork URLs are fixed-size; swap 100x100 → 600x600 for HiDPI. */

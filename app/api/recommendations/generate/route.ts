@@ -126,8 +126,8 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
   // the promise so it never becomes an unhandled rejection if unused.
   const clientTokenPromise = getSpotifyClientToken().catch(() => null)
 
-  // Replace mode: wipe unseen queue before regenerating. Powers the Settings
-  // "Generate my feed" button so newly-added anchors take immediate effect.
+  // Replace mode: swap the unseen queue for a fresh batch (the Feed's
+  // Regenerate), so newly-added anchors take immediate effect.
   const replace = req.nextUrl.searchParams.get("replace") === "true"
 
   // ── [SECURITY PATCH] Algorithmic Queue Capacity DoS limit ──
@@ -181,22 +181,10 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
     return apiError("Please wait before generating more recommendations", 429)
   }
 
-  if (replace) {
-    const { error: wipeErr } = await supabase
-      .from("recommendation_cache")
-      .delete()
-      .eq("user_id", user.id)
-      .is("seen_at", null)
-      .is("skip_at", null) // never wipe a dismissal
-    if (wipeErr) {
-      console.error("[generate] replace wipe failed", wipeErr.message)
-    }
-  }
-
   try {
     // Note: For the normal append path, we no longer delete the unseen cache entries.
     // This allows users to request "more" natively and gracefully append them to their existing batch.
-    // Replace mode (above) wipes unseen first so Settings-driven regen reflects new anchors.
+    // Replace mode drops the old unseen rows below, once the new batch has landed.
 
     // Spotify token is OPTIONAL (Stage 2 / #157): candidate resolution is now
     // Last.fm-based and previews fall back to iTunes, so generation runs fully
@@ -209,25 +197,34 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
       console.log("[generate] no Spotify token — generating Spotify-free (Last.fm resolver + iTunes previews)")
     }
 
-    // Optional genre filter from query params
-    const rawGenre = req.nextUrl.searchParams.get("genre")
-    const genre = rawGenre && rawGenre.length <= 80 ? rawGenre : undefined
-
     // Reset per-request API call counters before the blocking generate. The
     // snapshot below captures only the critical-path calls; background after()
     // work runs after logging and is intentionally excluded.
     resetCalls()
     const genStart = Date.now()
-    const { count: recCount, pending, finish, softenedFilters, metrics } = await buildRecommendations({
+    const { count: recCount, requeued, pending, finish, softenedFilters, metrics } = await buildRecommendations({
       userId: user.id,
       accessToken,
       playThreshold: FEED_PLAY_THRESHOLD,
       popularityCurve,
-      genre,
       undergroundMode,
-      deepDiscovery: true,
-      adventurous: true,
     })
+    // Replace: the old queue goes only now, and only if this build wrote or
+    // re-queued something, so a failed or empty build never leaves the user
+    // with nothing. Every row the build wrote carries created_at >= genStart.
+    if (replace && (recCount > 0 || (requeued ?? 0) > 0)) {
+      const { error: wipeErr } = await supabase
+        .from("recommendation_cache")
+        .delete()
+        .eq("user_id", user.id)
+        .is("seen_at", null)
+        .is("skip_at", null) // never wipe a dismissal
+        .lt("created_at", new Date(genStart).toISOString())
+      if (wipeErr) {
+        console.error("[generate] replace wipe failed", wipeErr.message)
+      }
+    }
+
     // Snapshot before logging — after() work runs after this point and is excluded.
     const apiCalls = snapshotCalls()
     console.log(formatGenTiming({

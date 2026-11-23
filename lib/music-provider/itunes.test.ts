@@ -90,4 +90,37 @@ describe("searchTracksByArtist", () => {
     const out = await searchTracksByArtist("A")
     expect(out).toBeNull()
   })
+
+  const row = (artistName: string) => ({
+    trackId: 7, trackName: "Song", artistName, collectionName: "X", artworkUrl100: null, previewUrl: "https://p.example/7.mp3", trackTimeMillis: 1,
+  })
+  function mockSequence(...pages: unknown[][]) {
+    const fetchMock = vi.fn(async (url: string) => {
+      void url
+      const results = pages.shift() ?? []
+      return new Response(JSON.stringify({ resultCount: results.length, results }), { status: 200 })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    return fetchMock
+  }
+
+  it("retries by artistTerm when the first page has no track by the artist", async () => {
+    const fetchMock = mockSequence([row("Flo Rida")], [row("Low")])
+    const out = await searchTracksByArtist("Low")
+    expect(out!.map((t) => t.id)).toEqual(["7"])
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls[1][0]).toContain("&limit=200&attribute=artistTerm")
+  })
+
+  it("returns a definitive [] when the artist retry also has no match", async () => {
+    const fetchMock = mockSequence([row("Flo Rida")], [row("Lowell")])
+    expect(await searchTracksByArtist("Low")).toEqual([])
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it("returns [] without retrying when iTunes has zero results", async () => {
+    const fetchMock = mockSequence([])
+    expect(await searchTracksByArtist("Zzyzx Qq")).toEqual([])
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
 })

@@ -137,7 +137,7 @@ async function settle() {
   }
 }
 
-async function scenario(label: string, input: { adventurous?: boolean }, fresh: boolean, tables: Tables = {}) {
+async function scenario(label: string, fresh: boolean, tables: Tables = {}) {
   if (fresh) { h.store.clear(); seedDb(tables) }
   h.fake.queries.length = 0
   h.lfm = {}; h.cacheReads = 0; h.cacheWrites = 0; h.itunes = 0
@@ -146,7 +146,7 @@ async function scenario(label: string, input: { adventurous?: boolean }, fresh: 
   let seed = 42
   vi.spyOn(Math, "random").mockImplementation(() => ((seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31))
   const t0 = Date.now()
-  const r = await buildRecommendations({ userId: "u1", accessToken: "", playThreshold: 5, popularityCurve: 0.95, deepDiscovery: input.adventurous, adventurous: input.adventurous })
+  const r = await buildRecommendations({ userId: "u1", accessToken: "", playThreshold: 5, popularityCurve: 0.95 })
   const tier1Ms = Date.now() - t0
   const atReturn = snap()
   await r.finish()
@@ -160,13 +160,12 @@ async function scenario(label: string, input: { adventurous?: boolean }, fresh: 
 describe.skipIf(!process.env.BENCH)("engine cost bench", () => {
   it("measures", async () => {
     void LFM_MS; void ITUNES_MS; void hash
-    await scenario("normal-cold", {}, true)
+    await scenario("normal-cold", true)
     h.fake.tables.recommendation_cache.length = 0 // another user, same taste: shared caches warm
-    await scenario("normal-warm", {}, false)
-    await scenario("wander-cold", { adventurous: true }, true)
+    await scenario("normal-warm", false)
     const listened = Array.from({ length: 600 }, (_, n) => ({ id: `l${String(n).padStart(4, "0")}`, user_id: "u1", artist_id: null, lastfm_artist_name: `Artist ${n}`, play_count: 8 }))
-    await scenario("soften-cold", {}, true, { listened_artists: listened })
+    await scenario("soften-cold", true, { listened_artists: listened })
     // Thin signal: 70% of the similar pool already heard, so the pick is short and backfills.
-    await scenario("short-cold", {}, true, { listened_artists: listened.filter((_, n) => n % 10 < 7) })
+    await scenario("short-cold", true, { listened_artists: listened.filter((_, n) => n % 10 < 7) })
   }, 120_000)
 })

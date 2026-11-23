@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest"
-import { buildEnrichArtist, lastfmResolve, mergeEnrichment } from "./lastfm-lookup"
+import { lastfmResolve, mergeEnrichment } from "./lastfm-lookup"
 import type { Artist } from "@/lib/music-provider/types"
 import type { ArtistEnrichment, Lastfm } from "@/lib/lastfm"
 
@@ -37,15 +37,6 @@ describe("lastfmResolve (Spotify-free name resolver)", () => {
     const { lf, artistInfo } = fakeLastfm({ genres: [], popularity: 1 }, false)
     expect(await lastfmResolve("Anything", lf)).toEqual([])
     expect(artistInfo).not.toHaveBeenCalled()
-  })
-})
-
-describe("buildEnrichArtist", () => {
-  it("is undefined without a key (callers feature-detect) and getInfo otherwise", async () => {
-    expect(buildEnrichArtist(fakeLastfm(null, false).lf)).toBeUndefined()
-    const { lf, artistInfo } = fakeLastfm({ genres: ["jazz"], popularity: 4 })
-    expect(await buildEnrichArtist(lf)!("X")).toEqual({ genres: ["jazz"], popularity: 4 })
-    expect(artistInfo).toHaveBeenCalledWith("X")
   })
 })
 

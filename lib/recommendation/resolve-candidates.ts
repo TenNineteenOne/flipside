@@ -5,7 +5,7 @@ import { artistNameDbKey, stringSimilarity, type ArtistIdentity } from "@/lib/ar
 import { mergeEnrichment } from "@/lib/artist-identity/lastfm-lookup"
 import type { ArtistEnrichment } from "@/lib/lastfm"
 
-/** Min Dice-coefficient name similarity to accept a fuzzy (non-exact) Spotify result. */
+/** Min Dice-coefficient name similarity to accept a fuzzy (non-exact) search result. */
 const FUZZY_ACCEPT_THRESHOLD = 0.8
 
 export interface ResolveDeps {
@@ -31,11 +31,11 @@ export interface ResolveDeps {
    */
   mintArtist: (artist: Artist) => Promise<string | null>
   /**
-   * Optional enrichment — called by name in parallel with the Spotify
-   * search and merged into the resolved Artist before the cache write.
-   * Fills `genres` + `popularity` since Spotify's /search endpoint returns
-   * neither. A null result is survivable: the cache write still happens
-   * with whatever Spotify returned.
+   * Optional enrichment — called by name in parallel with `searchArtists`
+   * and merged (fill-only) into the resolved Artist before the cache write,
+   * for a search source that returns no `genres` / `popularity`. No live
+   * caller passes it: generation's Last.fm getInfo search already carries
+   * both. A null result is survivable.
    */
   enrichArtist?: (name: string) => Promise<ArtistEnrichment | null>
   /** Delay between successful searches (ms). Default 200. Pass 0 in tests. */
@@ -82,19 +82,22 @@ export interface ResolveResult {
 const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
 /**
- * Resolve a list of artist names to Spotify Artist objects, cache-first.
+ * Resolve a list of artist names to Artist objects, cache-first (the
+ * artist-identity doorway), then `deps.searchArtists` for the misses
+ * (Last.fm getInfo in generation).
  *
- * On a 429 for a given name, backs off (honoring Spotify's `Retry-After`,
- * capped at `maxRetryBackoffMs`) and retries up to `maxAttemptsPerName`
- * times. If all attempts still fail, **skips the name and continues** to
- * the next one — Spotify rate limits are short-windowed and later calls
- * frequently succeed.
+ * When a search returns the `RateLimited` sentinel, backs off (honoring its
+ * `retryAfterSec`, capped at `maxRetryBackoffMs`) and retries up to
+ * `maxAttemptsPerName` times. If all attempts still fail, **skips the name
+ * and continues** to the next one. Last.fm never returns the sentinel (its
+ * gate paces it), so only scripts/seed-artist-cache.ts (Spotify search)
+ * reaches this path.
  *
  * Bounded by `totalBackoffBudgetMs` across the whole run: once exceeded,
- * subsequent 429s are not waited out (we still attempt the call, but do
- * not sleep before it).
+ * subsequent rate limits are not waited out (we still attempt the call, but
+ * do not sleep before it).
  *
- * Pure: no Supabase, no Spotify, no env access — all I/O is on `deps`.
+ * Pure: no Supabase, no provider, no env access — all I/O is on `deps`.
  */
 export async function resolveArtistsByName(
   names: string[],
@@ -156,9 +159,9 @@ export async function resolveArtistsByName(
       }
       const liveBefore = deps.liveCalls?.()
 
-      // Fire enrichment in parallel with Spotify search. The Spotify retry
-      // loop below may take multiple round-trips; enrichment resolves
-      // (or fails silently) in the background either way.
+      // Fire enrichment in parallel with the search. The retry loop below may
+      // take multiple round-trips; enrichment resolves (or fails silently) in
+      // the background either way.
       const enrichmentPromise: Promise<ArtistEnrichment | null> = deps.enrichArtist
         ? deps.enrichArtist(name).catch(() => null)
         : Promise.resolve(null)
@@ -207,8 +210,8 @@ export async function resolveArtistsByName(
           resolvedArtist = exact
         } else {
           // No exact match: only accept the top result as a fuzzy fallback when
-          // its name is similar enough. A weak fallback (Spotify returning an
-          // unrelated artist for a misspelled / non-Spotify name) would mint a
+          // its name is similar enough. A weak fallback (the search returning an
+          // unrelated artist for a misspelled / unknown name) would mint a
           // wrong identity and poison the cache, so we'd rather no-resolve.
           const candidate = res[0]
           if (stringSimilarity(name, candidate.name) >= FUZZY_ACCEPT_THRESHOLD) {

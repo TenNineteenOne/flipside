@@ -24,8 +24,8 @@ const iso = (ms: number) => new Date(ms).toISOString()
 const queue = (n: number, expiresAt: string): Row[] =>
   Array.from({ length: n }, (_, i) => ({ id: `r${i}`, user_id: "u1", artist_id: `a${i}`, seen_at: null, expires_at: expiresAt }))
 
-const call = () =>
-  POST(new NextRequest("https://flipside.test/api/recommendations/generate", {
+const call = (query = "") =>
+  POST(new NextRequest(`https://flipside.test/api/recommendations/generate${query}`, {
     method: "POST",
     headers: { origin: "https://flipside.test", host: "flipside.test" },
   }))
@@ -90,6 +90,40 @@ describe("POST /api/recommendations/generate queue-full gate", () => {
     const res = await call()
     expect(res.status).toBe(429)
     expect(await res.json()).toEqual({ error: "Please wait before generating more recommendations" })
+  })
+})
+
+describe("POST /api/recommendations/generate?replace=true", () => {
+  const old = iso(Date.now() - HOUR)
+  const row = (id: string, extra: Row = {}): Row =>
+    ({ id, user_id: "u1", artist_id: id, seen_at: null, skip_at: null, created_at: old, expires_at: iso(Date.now() + HOUR), ...extra })
+  const seedDb = () => {
+    db = createRouteFakeDb({
+      users: [{ id: "u1", last_generated_at: null }],
+      recommendation_cache: [row("unseen"), row("seen", { seen_at: old }), row("dismissed", { skip_at: old })],
+    })
+  }
+  const ids = () => db.tables.recommendation_cache.map((r) => r.id).sort()
+
+  it("drops only the old unseen rows: never a seen or dismissed row, nor one the build just wrote", async () => {
+    seedDb()
+    buildRecommendations.mockImplementation(async () => {
+      db.tables.recommendation_cache.push(row("fresh", { created_at: iso(Date.now()) }))
+      return { count: 1, pending: false, finish: async () => {}, metrics: { firstBatchMs: 0, primaryMs: 0, previewMs: 0, misses: 0, retries: 0, rateLimited: false } }
+    })
+    expect((await call("?replace=true")).status).toBe(200)
+    expect(ids()).toEqual(["dismissed", "fresh", "seen"])
+  })
+
+  it("keeps the old queue when the build throws or writes nothing", async () => {
+    seedDb()
+    expect((await call("?replace=true")).status).toBe(200) // default mock: count 0
+    expect(ids()).toEqual(["dismissed", "seen", "unseen"])
+
+    seedDb()
+    buildRecommendations.mockRejectedValue(new Error("upstream down"))
+    expect((await call("?replace=true")).status).toBe(500)
+    expect(ids()).toEqual(["dismissed", "seen", "unseen"])
   })
 })
 

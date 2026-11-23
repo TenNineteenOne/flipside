@@ -5,10 +5,7 @@ export interface RecommendationInput {
   accessToken: string   // Spotify access token (empty string if user has no Spotify)
   playThreshold: number // FEED_PLAY_THRESHOLD (fixed since #205; users.play_threshold is retired)
   popularityCurve: number // from users.fame_level via fameToEngine — base `k` of k^popularity scoring
-  genre?: string        // optional genre filter for targeted generation
   undergroundMode?: boolean // fame_level 0: hard pop<=50 cap + discoveryScore penalty
-  deepDiscovery?: boolean   // when true, take a 2nd-hop walk from each seed's lowest-match similars (= adventurous since #205)
-  adventurous?: boolean     // "Wander farther": 10-slot exploration budget filled from the far pool, then adjacent bleed
 }
 
 /**
@@ -46,6 +43,8 @@ export const UNDERGROUND_MAX_POPULARITY = 50
 
 export interface BuildResult {
   count: number
+  /** Tier-1 rows that were already queued unseen and re-written (not in `count`). */
+  requeued?: number
   /**
    * True when background work remains (the tier-2 + secondary confirm/write
    * pass); false only when the pipeline failed early (empty pool).
