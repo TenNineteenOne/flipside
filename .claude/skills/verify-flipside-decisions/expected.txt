@@ -1,0 +1,25 @@
+# What the model check is expected to say at the sync commit (see SKILL.md).
+# config        rule                      result   variant (default: code)
+solo            NoQueuedVerdict           broken
+solo            UndoRestores              broken
+solo            ReturnToFeedWorks         broken
+solo            SavedStaysSaved           holds
+solo            NeverStuck                holds
+solo            ScreenUndecidedIsQueued   broken
+solo            ScreenVerdictIsRecorded   broken
+solo-nofail     NoQueuedVerdict           broken
+solo-nofail     UndoRestores              broken
+solo-nofail     ReturnToFeedWorks         broken
+solo-nofail     SavedStaysSaved           holds
+solo-nofail     NeverStuck                holds
+solo-nofail     ScreenUndecidedIsQueued   broken
+solo-nofail     ScreenVerdictIsRecorded   broken
+tabs2           NoQueuedVerdict           broken
+tabs2           ReturnToFeedWorks         broken
+tabs2           SavedStaysSaved           holds
+tabs2           NeverStuck                holds
+tabs2-nofail    NoQueuedVerdict           broken
+tabs2-nofail    ReturnToFeedWorks         broken
+# Deliberately broken variants: proof that the rules that hold can fail.
+solo            NeverStuck                broken   clearDismissKeepsSkip
+solo            SavedStaysSaved           broken   deleteFeedbackDropsSave

@@ -1,0 +1,221 @@
+#!/usr/bin/env bash
+# verify-flipside launcher. VERIFICATION SCAFFOLDING: a throwaway local backend (private Postgres,
+# PostgREST, a /rest/v1 proxy) plus a production build of the app behind a self-signed HTTPS proxy,
+# all on loopback.
+# Never touches a real Supabase project or the production site. No sudo, no docker.
+#
+#   fv install   one-time: fetch Postgres + PostgREST into $HOME_DIR (outside the repo)
+#   fv launch    empty DB -> bootstrap -> all migrations -> PostgREST -> proxy -> next build -> next start -> HTTPS proxy
+#   fv doctor    read-only: is this instance worth driving?
+#   fv sql ...   SQL against the throwaway DB:  fv sql -c "select ..."  |  fv sql -f file.sql
+#   fv seed <username> [feed|history|saved|all]   seed rows for an account made through /sign-in
+#   fv stop      stop what launch started (by recorded pid) and delete the run dir; evidence is kept
+set -uo pipefail
+
+SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO="$(cd "$SKILL_DIR/../../.." && pwd)"
+HOME_DIR="${FLIPSIDE_VERIFY_HOME:-$HOME/.cache/flipside-verify}"
+RUN="$HOME_DIR/run"                 # pids, logs, pgdata, this run's throwaway secrets; deleted by stop
+EVIDENCE="$HOME_DIR/evidence"       # never deleted by this script
+PGBIN="$HOME_DIR/node_modules/@embedded-postgres/linux-x64/native/bin"
+POSTGREST="$HOME_DIR/bin/postgrest"
+
+PG_PORT=54329      # Postgres
+REST_PORT=54330    # PostgREST
+API_PORT=54331     # /rest/v1 proxy = NEXT_PUBLIC_SUPABASE_URL
+APP_PORT=3947      # the app as the browser sees it, HTTPS (never 3000: the owner's dev server lives there)
+NEXT_PORT=3946     # next start itself, plain HTTP behind the TLS proxy; do not drive this one
+# localhost, not 127.0.0.1: Next rewrites 127.0.0.1 to localhost in request URLs, so next-auth's
+# redirects would change origin and lose the cookie.
+APP_URL="https://localhost:$APP_PORT"
+
+EMBEDDED_PG_VERSION="18.7.0-beta.19"
+POSTGREST_VERSION="v16.6"
+POSTGREST_SHA256="335ea29f00145705fb569b1268b9c8e53d062f8f6f9188192e92ea3781d2dca1"
+
+export NODE_PATH="$HOME_DIR/node_modules" FV_PG_PORT="$PG_PORT"
+
+die() { echo "fv: $*" >&2; exit 1; }
+port_busy() { ss -ltnH "sport = :$1" 2>/dev/null | grep -q .; }
+port_pid() { ss -ltnpH "sport = :$1" 2>/dev/null | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2; }
+alive() { [ -n "${1:-}" ] && kill -0 "$1" 2>/dev/null; }
+pid_of() { cat "$RUN/$1.pid" 2>/dev/null; }
+wait_port() { for _ in $(seq 1 "${2:-60}"); do port_busy "$1" && return 0; sleep 0.5; done; return 1; }
+
+cmd_install() {
+  mkdir -p "$HOME_DIR/bin" && cd "$HOME_DIR" || die "cannot create $HOME_DIR"
+  if [ ! -x "$PGBIN/postgres" ]; then
+    [ -f package.json ] || echo '{"name":"flipside-verify-cache","private":true}' > package.json
+    npm install --no-audit --no-fund "embedded-postgres@$EMBEDDED_PG_VERSION" || die "npm install failed"
+    # npm may skip the package's postinstall; it only recreates symlinks, so run it directly.
+    node node_modules/@embedded-postgres/linux-x64/scripts/hydrate-symlinks.js
+  fi
+  for ext in pg_trgm uuid-ossp; do
+    [ -f "$PGBIN/../share/postgresql/extension/$ext.control" ] || die "bundled Postgres lacks $ext"
+  done
+  if [ ! -x "$POSTGREST" ]; then
+    local tmp; tmp="$(mktemp -d)"
+    curl -fsSL -o "$tmp/p.tar.xz" \
+      "https://github.com/PostgREST/postgrest/releases/download/$POSTGREST_VERSION/postgrest-$POSTGREST_VERSION-linux-static-x86-64.tar.xz" \
+      || die "PostgREST download failed"
+    echo "$POSTGREST_SHA256  $tmp/p.tar.xz" | sha256sum -c - >/dev/null || die "PostgREST checksum mismatch"
+    tar -xJf "$tmp/p.tar.xz" -C "$HOME_DIR/bin" postgrest && rm -rf "$tmp"
+  fi
+  echo "installed: $("$PGBIN/postgres" --version), $("$POSTGREST" --version | head -1)"
+}
+
+# Starts "$@" detached, logging to $RUN/<name>.log, pid in $RUN/<name>.pid.
+start_bg() {
+  local name="$1"; shift
+  setsid nohup "$@" >"$RUN/$name.log" 2>&1 </dev/null &
+  echo $! > "$RUN/$name.pid"
+}
+
+cmd_launch() {
+  [ -x "$PGBIN/postgres" ] && [ -x "$POSTGREST" ] || cmd_install
+  [ -d "$RUN" ] && die "a run dir exists ($RUN). Run 'fv doctor', then 'fv stop' before launching again."
+  for p in $PG_PORT $REST_PORT $API_PORT $NEXT_PORT $APP_PORT; do
+    port_busy "$p" && die "port $p is already in use by something this script did not start (pid $(port_pid "$p")). Not touching it."
+  done
+  [ -d "$REPO/node_modules/next" ] || die "$REPO/node_modules missing: run npm install in the repo first"
+  ls "$REPO"/.env.local "$REPO"/.env.production* "$REPO"/.env >/dev/null 2>&1 && \
+    echo "fv: WARNING: the repo has .env files. Process env wins for everything set below, but any OTHER key in them (LASTFM_API_KEY, SPOTIFY_*) will be live in this instance."
+
+  umask 077; mkdir -p "$RUN" "$EVIDENCE"
+  trap 'echo "fv: launch failed, cleaning up (logs copied to $EVIDENCE/last-failed-launch/)" >&2; mkdir -p "$EVIDENCE/last-failed-launch"; cp "$RUN"/*.log "$EVIDENCE/last-failed-launch/" 2>/dev/null; cmd_stop; exit 1' ERR
+  set -E
+
+  # --- throwaway secrets: fresh every launch, held in the run dir (outside the repo), deleted by stop
+  rand() { openssl rand -base64 32; }
+  local jwt_secret; jwt_secret="$(openssl rand -hex 32)"
+  local service_jwt; service_jwt="$(JWT_SECRET="$jwt_secret" node -e '
+    const c=require("crypto"),b=(o)=>Buffer.from(JSON.stringify(o)).toString("base64url");
+    const now=Math.floor(Date.now()/1000);
+    const p=b({alg:"HS256",typ:"JWT"})+"."+b({role:"service_role",iss:"verify-flipside",iat:now,exp:now+86400});
+    console.log(p+"."+c.createHmac("sha256",process.env.JWT_SECRET).update(p).digest("base64url"))')"
+  cat > "$RUN/env" <<EOF
+AUTH_SECRET='$(rand)'
+USERNAME_HMAC_SECRET='$(rand)'
+USERNAME_ENCRYPTION_KEY='$(rand)'
+CRON_SECRET='$(rand)'
+NEXTAUTH_URL='$APP_URL'
+AUTH_URL='$APP_URL'
+AUTH_TRUST_HOST='true'
+NEXT_PUBLIC_SUPABASE_URL='http://127.0.0.1:$API_PORT'
+SUPABASE_SERVICE_ROLE_KEY='$service_jwt'
+EOF
+
+  # --- 1. private Postgres, empty data dir
+  "$PGBIN/initdb" -D "$RUN/pgdata" -U postgres -A trust -E UTF8 --no-sync >"$RUN/initdb.log" 2>&1
+  "$PGBIN/pg_ctl" -D "$RUN/pgdata" -l "$RUN/postgres.log" -w \
+    -o "-p $PG_PORT -c listen_addresses=127.0.0.1 -c unix_socket_directories=''" start >/dev/null
+  head -1 "$RUN/pgdata/postmaster.pid" > "$RUN/postgres.pid"
+
+  # --- 2. Supabase stand-ins, then every migration in order, unmodified
+  node "$SKILL_DIR/scripts/pg.cjs" -f "$SKILL_DIR/scripts/bootstrap.sql" > "$RUN/migrate.log" 2>&1 \
+    || { cat "$RUN/migrate.log"; false; }
+  node "$SKILL_DIR/scripts/pg.cjs" -f "$REPO"/supabase/migrations/*.sql >> "$RUN/migrate.log" 2>&1 \
+    || { tail -3 "$RUN/migrate.log"; cp "$RUN/migrate.log" "$EVIDENCE/last-failed-migrate.log"; false; }
+  echo "migrations: $(grep -c '^applied .*/supabase/migrations/' "$RUN/migrate.log") applied"
+
+  # --- 3. PostgREST (settings mirror Supabase: public schema, anon role, 1000-row cap)
+  PGRST_DB_URI="postgres://authenticator@127.0.0.1:$PG_PORT/postgres" PGRST_DB_SCHEMAS=public \
+    PGRST_DB_ANON_ROLE=anon PGRST_JWT_SECRET="$jwt_secret" PGRST_DB_MAX_ROWS=1000 \
+    PGRST_SERVER_HOST=127.0.0.1 PGRST_SERVER_PORT="$REST_PORT" start_bg postgrest "$POSTGREST"
+  wait_port "$REST_PORT" 40
+
+  # --- 4. /rest/v1 prefix proxy
+  start_bg proxy node "$SKILL_DIR/scripts/rest-proxy.mjs" "$API_PORT" "$REST_PORT"
+  wait_port "$API_PORT" 20
+
+  # --- 5. the app: production build, then next start (see SKILL.md for why not next dev)
+  set -a; . "$RUN/env"; set +a
+  # LASTFM_API_KEY / SPOTIFY_CLIENT_ID / SPOTIFY_CLIENT_SECRET pass through if the caller exported them.
+  git -C "$REPO" rev-parse HEAD > "$RUN/build-commit" 2>/dev/null || echo unknown > "$RUN/build-commit"
+  echo "building (about a minute)..."
+  (cd "$REPO" && node node_modules/next/dist/bin/next build) > "$RUN/build.log" 2>&1 \
+    || { tail -30 "$RUN/build.log"; cp "$RUN/build.log" "$EVIDENCE/last-failed-build.log"; false; }
+  (cd "$REPO" && start_bg app node node_modules/next/dist/bin/next start -H 127.0.0.1 -p "$NEXT_PORT")
+  wait_port "$NEXT_PORT" 60
+
+  # --- 6. HTTPS in front: the production CSP carries upgrade-insecure-requests, so over plain http
+  #        Chromium upgrades redirected fetches to https and they fail (seen on DELETE /api/account).
+  openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj /CN=localhost -addext subjectAltName=DNS:localhost \
+    -keyout "$RUN/tls-key.pem" -out "$RUN/tls-cert.pem" >/dev/null 2>&1
+  start_bg tls node "$SKILL_DIR/scripts/tls-proxy.mjs" "$APP_PORT" "$NEXT_PORT" "$RUN/tls-key.pem" "$RUN/tls-cert.pem"
+  wait_port "$APP_PORT" 20
+
+  trap - ERR; set +E
+  cmd_doctor || { echo "fv: launched but doctor failed" >&2; return 1; }
+  echo "READY  app=$APP_URL  evidence=$EVIDENCE  (stop with: fv stop)"
+}
+
+cmd_doctor() {
+  local ok=0 name port pid owner
+  check() { if [ "$2" = ok ]; then echo "ok    $1"; else echo "FAIL  $1: $2"; ok=1; fi; }
+  [ -d "$RUN" ] || { echo "FAIL  no run dir ($RUN): nothing launched"; return 1; }
+  for pair in postgres:$PG_PORT postgrest:$REST_PORT proxy:$API_PORT app:$NEXT_PORT tls:$APP_PORT; do
+    name="${pair%%:*}"; port="${pair##*:}"; pid="$(pid_of "$name")"; owner="$(port_pid "$port")"
+    if ! alive "$pid"; then check "$name (port $port)" "recorded pid ${pid:-none} is not running"
+    # next start listens from a child of the recorded pid; accept the pid itself or its child.
+    elif [ "$owner" = "$pid" ] || [ "$(ps -o ppid= -p "${owner:-0}" 2>/dev/null | tr -d ' ')" = "$pid" ]; then check "$name pid $pid owns port $port" ok
+    else check "$name (port $port)" "port is held by pid ${owner:-nobody}, not our pid $pid"; fi
+  done
+  local n; n="$(node "$SKILL_DIR/scripts/pg.cjs" -c "select count(*)::int as n from pg_tables where schemaname='public'" 2>&1)"
+  case "$n" in *'"n":'*) check "database schema present ($n)" ok ;; *) check "database" "$n" ;; esac
+  # shellcheck disable=SC1091
+  local key; key="$(. "$RUN/env" 2>/dev/null; echo "$SUPABASE_SERVICE_ROLE_KEY")"
+  local code; code="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $key" "http://127.0.0.1:$API_PORT/rest/v1/users?select=id&limit=1")"
+  [ "$code" = 200 ] && check "service-role JWT accepted through /rest/v1 proxy" ok || check "REST via proxy" "HTTP $code"
+  code="$(curl -sk -o /dev/null -w '%{http_code}' "$APP_URL/sign-in")"
+  [ "$code" = 200 ] && check "app answers $APP_URL/sign-in" ok || check "app /sign-in" "HTTP $code"
+  pid="$(pid_of app)"
+  if alive "$pid" && tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null | grep -qx "NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:$API_PORT"; then
+    check "app points at the local stand-in, not a real Supabase project" ok
+  else check "app backend target" "could not confirm NEXT_PUBLIC_SUPABASE_URL is the local proxy"; fi
+  local built head; built="$(cat "$RUN/build-commit" 2>/dev/null)"; head="$(git -C "$REPO" rev-parse HEAD 2>/dev/null)"
+  [ "$built" = "$head" ] && check "build is of HEAD ${head:0:7}" ok || check "build" "built from ${built:0:7}, HEAD is ${head:0:7}: fv stop && fv launch"
+  local dirty; dirty="$(git -C "$REPO" status --porcelain -- . ':!.claude' 2>/dev/null | wc -l)"
+  [ "$dirty" = 0 ] || echo "note  working tree has $dirty changed product file(s); the build may predate them"
+  if alive "$pid" && tr '\0' '\n' < "/proc/$pid/environ" | grep -q '^LASTFM_API_KEY=.'; then echo "note  LASTFM_API_KEY is set: generation and Last.fm journeys can run"
+  else echo "note  LASTFM_API_KEY is NOT set: generation, Last.fm sync and Last.fm-backed search cannot run"; fi
+  return $ok
+}
+
+cmd_stop() {
+  trap - ERR
+  [ -d "$RUN" ] || { echo "nothing to stop (no $RUN)"; return 0; }
+  local name pid
+  for name in tls app proxy postgrest; do
+    pid="$(pid_of "$name")"
+    if alive "$pid"; then
+      # setsid made each one a session leader: signal its group so next's worker goes too.
+      kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null
+      for _ in $(seq 1 20); do alive "$pid" || break; sleep 0.25; done
+      alive "$pid" && kill -KILL -- "-$pid" 2>/dev/null
+      echo "stopped $name (pid $pid)"
+    fi
+  done
+  if [ -f "$RUN/pgdata/postmaster.pid" ]; then
+    "$PGBIN/pg_ctl" -D "$RUN/pgdata" -m fast -w stop >/dev/null 2>&1 && echo "stopped postgres (pid $(pid_of postgres))"
+  fi
+  local left=0
+  for p in $PG_PORT $REST_PORT $API_PORT $NEXT_PORT $APP_PORT; do port_busy "$p" && { echo "WARNING: port $p still held by pid $(port_pid "$p")"; left=1; }; done
+  [ "$left" = 0 ] && rm -rf "$RUN" && echo "run dir removed; evidence kept in $EVIDENCE"
+  return $left
+}
+
+cmd_seed() {
+  [ -n "${1:-}" ] || die "usage: fv seed <username> [feed|history|saved|all]"
+  ( set -a; . "$RUN/env"; set +a; node "$SKILL_DIR/scripts/seed.cjs" "$1" "${2:-all}" )
+}
+
+case "${1:-}" in
+  install) cmd_install ;;
+  launch)  cmd_launch ;;
+  doctor)  cmd_doctor ;;
+  stop)    cmd_stop ;;
+  sql)     shift; node "$SKILL_DIR/scripts/pg.cjs" "$@" ;;
+  seed)    shift; cmd_seed "$@" ;;
+  *) sed -n '2,12p' "$0"; exit 2 ;;
+esac
