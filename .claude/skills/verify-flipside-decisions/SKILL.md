@@ -56,7 +56,7 @@ After F5 has left the artist queued with a live Pass, a reloaded Feed card shows
 
 ## Does my change touch this?
 
-Yes if it edits any of these (the coverage record). Run `git diff --stat 3084bea -- <paths>` to see what moved since the sync commit.
+Yes if it edits any of these (the coverage record). Run `git diff --stat f79127b -- <paths>` to see what moved since the sync commit.
 
 | Model part (`Decisions.tla`) | Code |
 |---|---|
@@ -70,7 +70,7 @@ Yes if it edits any of these (the coverage record). Run `git diff --stat 3084bea
 | `ChangeTo`, `TapReturnToFeed`, `RtfFirst`, `Shown` | `components/history/history-client.tsx` `handleChangeSignal`, `handleUndo`, `hasFeedbackRow`, `shown`, and which buttons a row offers |
 | `LoadTo` | `app/(app)/feed/page.tsx` and the History page (what a fresh load shows) |
 
-**Sync commit: `3084bea`** (branch `Nick`). The model was confirmed against the code at this commit. Move it forward only after you have re-read the rows above against the code at the new commit and `check.sh` reports unchanged there.
+**Sync commit: `f79127b`** (branch `Nick`). The model was confirmed against the code at this commit. Move it forward only after you have re-read the rows above against the code at the new commit and `check.sh` reports unchanged there.
 
 Conformance covers `Apply`, `InQueue`, `InHistory`, `ServerSignal`, `JudgeSteps`, `JudgeTarget`, `RestoreSteps`, `RestoreSoft`, `RtfFirst` and what sets and clears `kept` mechanically. The rows for `Step`/`SaveStep`, the taps in `use-feed-triage.ts` and the History buttons are covered by reading plus the replays, so a change there needs your eyes on the model.
 
