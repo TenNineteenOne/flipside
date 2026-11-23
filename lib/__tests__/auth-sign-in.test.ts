@@ -51,6 +51,17 @@ describe("resolveSignIn — new account", () => {
     expect(await resolveSignIn("new", "h1", store({}, { taken: true }))).toEqual({ error: "taken" })
   })
 
+  it("reports limited when the network is over its daily new-account cap (#218)", async () => {
+    expect(await resolveSignIn("new", "h1", store({}, { limited: true }))).toEqual({ error: "limited" })
+    expect(signInErrorMessage("new", SIGN_IN_CODES.accountLimit)).toMatch(/too many new accounts/i)
+  })
+
+  it("never asks the store to create (so never charges the cap) for an existing account", async () => {
+    const s = store({ h1: "u1" }, { limited: true })
+    expect(await resolveSignIn("existing", "h1", s)).toEqual({ id: "u1" })
+    expect(s.create).not.toHaveBeenCalled()
+  })
+
   it("fails generically when the insert fails", async () => {
     expect(await resolveSignIn("new", "h1", store({}, null))).toEqual({ error: "failed" })
   })

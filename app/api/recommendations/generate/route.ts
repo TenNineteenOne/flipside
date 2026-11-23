@@ -1,5 +1,5 @@
 import { createServiceClient } from "@/lib/supabase/server"
-import { apiError } from "@/lib/errors"
+import { apiError, apiUnauthorized } from "@/lib/errors"
 import { withAuthedCsrfRoute } from "@/lib/api/with-authed-route"
 import { getSpotifyClientToken } from "@/lib/spotify-client-token"
 import { claimCooldown } from "@/lib/cooldown"
@@ -159,7 +159,9 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
     queueCountPromise,
   ])
 
-  if (userError || !user) return apiError("User not found", 404)
+  if (userError) return apiError("User not found", 404)
+  // Row gone (account deleted on another device): 401 so the client signs out (#222).
+  if (!user) return apiUnauthorized()
 
   const { popularityCurve, undergroundMode } = fameToEngine(user.fame_level)
 

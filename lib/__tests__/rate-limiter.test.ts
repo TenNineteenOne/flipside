@@ -9,6 +9,7 @@ import {
   networkOf,
   loginLimitBuckets,
   isRateLimited,
+  isNewAccountLimited,
 } from "../rate-limiter"
 
 describe("networkOf", () => {
@@ -82,6 +83,47 @@ describe("isRateLimited", () => {
     vi.spyOn(console, "error").mockImplementation(() => {})
     rpc.mockResolvedValue({ data: null, error: { message: "down" } })
     expect(await isRateLimited("203.0.113.7")).toBe(false)
+  })
+})
+
+describe("isNewAccountLimited (#218)", () => {
+  afterEach(() => {
+    rpc.mockReset()
+  })
+
+  it("charges one 24h bucket of 5 keyed on the network, separate from the sign-in buckets", async () => {
+    rpc.mockResolvedValue({ data: false, error: null })
+    expect(await isNewAccountLimited("203.0.113.7")).toBe(false)
+    expect(rpc).toHaveBeenCalledExactlyOnceWith("rpc_register_login_attempt", {
+      p_ip_hash: hashIp("new:203.0.113.7"),
+      p_window_ms: 86_400_000,
+      p_max_attempts: 5,
+    })
+    expect(loginLimitBuckets("203.0.113.7").map((b) => b.key)).not.toContain(hashIp("new:203.0.113.7"))
+  })
+
+  it("shares the bucket across one IPv6 /64", async () => {
+    rpc.mockResolvedValue({ data: false, error: null })
+    await isNewAccountLimited("2001:db8:0:1::a")
+    await isNewAccountLimited("2001:db8:0:1::b")
+    expect(rpc.mock.calls[0][1].p_ip_hash).toBe(hashIp("new:2001:db8:0:1::/64"))
+    expect(rpc.mock.calls[1][1].p_ip_hash).toBe(rpc.mock.calls[0][1].p_ip_hash)
+  })
+
+  it("is limited when the database says the bucket is over", async () => {
+    rpc.mockResolvedValue({ data: true, error: null })
+    expect(await isNewAccountLimited("203.0.113.7")).toBe(true)
+  })
+
+  it("fails open on a DB error", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {})
+    rpc.mockResolvedValue({ data: null, error: { message: "down" } })
+    expect(await isNewAccountLimited("203.0.113.7")).toBe(false)
+  })
+
+  it.each(["unknown", "127.0.0.1", "::1", "::ffff:127.0.0.1"])("does not cap %s (local dev)", async (ip) => {
+    expect(await isNewAccountLimited(ip)).toBe(false)
+    expect(rpc).not.toHaveBeenCalled()
   })
 })
 

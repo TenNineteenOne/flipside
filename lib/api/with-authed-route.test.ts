@@ -276,6 +276,56 @@ describe("context supabase client", () => {
   })
 })
 
+// ─── deleted account (#222) ───────────────────────────────────────────────────
+
+describe("handler failure for a user whose row is gone", () => {
+  const usersLookup = (result: { data: unknown; error: unknown }) => {
+    const q = { select: () => q, eq: () => q, maybeSingle: async () => result }
+    fakeClient.from.mockReturnValue(q)
+  }
+  const wrappers = [
+    ["withAuthedRoute", withAuthedRoute],
+    ["withAuthedCsrfRoute", withAuthedCsrfRoute],
+    ["withAuthedJsonRoute", withAuthedJsonRoute],
+  ] as const
+
+  beforeEach(() => {
+    mockSafeAuth.mockResolvedValue(sessionWith("deleted-user"))
+  })
+
+  it.each(wrappers)("%s: a 500 becomes 401 when the users row is missing", async (_n, wrap) => {
+    usersLookup({ data: null, error: null })
+    const res = await wrap(async () => Response.json({ error: "fk" }, { status: 500 }))(makeRequest("{}"))
+    expect(res.status).toBe(401)
+    expect(fakeClient.from).toHaveBeenCalledWith("users")
+  })
+
+  it.each(wrappers)("%s: a throw becomes 401 when the users row is missing", async (_n, wrap) => {
+    usersLookup({ data: null, error: null })
+    const res = await wrap(async () => { throw new Error("fk") })(makeRequest("{}"))
+    expect(res.status).toBe(401)
+  })
+
+  it("keeps the 500 (and rethrows a throw) when the user still exists", async () => {
+    usersLookup({ data: { id: "deleted-user" }, error: null })
+    const res = await withAuthedCsrfRoute(async () => Response.json({}, { status: 500 }))(makeRequest())
+    expect(res.status).toBe(500)
+    await expect(withAuthedCsrfRoute(async () => { throw new Error("boom") })(makeRequest())).rejects.toThrow("boom")
+  })
+
+  it("keeps the 500 when the lookup itself fails", async () => {
+    usersLookup({ data: null, error: { message: "db down" } })
+    const res = await withAuthedCsrfRoute(async () => Response.json({}, { status: 500 }))(makeRequest())
+    expect(res.status).toBe(500)
+  })
+
+  it("does not look the user up for a non-5xx answer", async () => {
+    const res = await withAuthedCsrfRoute(async () => Response.json({}, { status: 404 }))(makeRequest())
+    expect(res.status).toBe(404)
+    expect(createServiceClient).not.toHaveBeenCalled()
+  })
+})
+
 // ─── withCronRoute ────────────────────────────────────────────────────────────
 
 describe("withCronRoute", () => {

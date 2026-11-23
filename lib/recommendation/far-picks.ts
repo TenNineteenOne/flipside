@@ -12,10 +12,8 @@
  * Feed pick. Last.fm cost is capped at FAR_TAG_CALLS tag lookups (Curveballs
  * sampled 34–60 tags; that was Explore's slowest build).
  */
-import pickerData from '@/data/genres-picker.json'
 import { allLeavesWithAnchor, genreToAnchor, leafTagsInAnchor, listAnchors } from '@/lib/genre/adjacency'
-import { decodePickerTree, type PickerData } from '@/lib/genre/picker-data'
-import type { GenreNode } from '@/lib/types'
+import { genreTagName } from '@/lib/lastfm/tag-name'
 import type { createServiceClient } from '@/lib/supabase/server'
 import { readAllRows } from './exclusions'
 import { seededShuffle } from './window'
@@ -105,28 +103,13 @@ export function outsideTags(selectedGenres: string[], listened: ListenedGenres[]
     .filter((t) => !!t.tag)
 }
 
-/** Leaf tag → the genre node's own label ("punk-n-roll" → "punk 'n' roll"). Built on first use. */
-let leafLabels: Map<string, string> | undefined
-function leafLabel(tag: string): string {
-  if (!leafLabels) {
-    const labels = new Map<string, string>()
-    const walk = (n: GenreNode): void => {
-      if (n.children.length) n.children.forEach(walk)
-      else labels.set(n.lastfmTag, n.label)
-    }
-    decodePickerTree(pickerData as PickerData).forEach(walk)
-    leafLabels = labels
-  }
-  return leafLabels.get(tag) ?? tag.replace(/-/g, ' ')
-}
-
 /** Leaves sampled across the genre tree, minus the user's top-2 listened anchors. */
 export function leftfieldTags(listened: ListenedGenres[], seed: number): Array<{ tag: string; label: string }> {
   const excluded = new Set(computeTopAnchors(listened))
   const pool = allLeavesWithAnchor().filter((l) => !excluded.has(l.anchorId))
   return seededShuffle(pool, seed)
     .slice(0, LEFTFIELD_TAGS)
-    .map((l) => ({ tag: l.lastfmTag, label: leafLabel(l.lastfmTag) }))
+    .map((l) => ({ tag: l.lastfmTag, label: genreTagName(l.lastfmTag) }))
 }
 
 /**

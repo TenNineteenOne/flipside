@@ -23,6 +23,8 @@ sys.dont_write_bytecode = True  # no __pycache__ inside the repo
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fvdrive import DESKTOP, PHONE, Run, at  # noqa: E402
 
+LANDSCAPE = (844, 390)  # a phone held sideways: Snap layout, too short for the cards' preview rows
+
 STAMP = time.strftime("%H%M%S")
 
 
@@ -213,6 +215,86 @@ def feed_triage():
         for artist, label in [("The Beatles", "Liked"), ("The Cure", "Passed"), ("The Smiths", "Dismissed")]:
             r.expect(label in row_of(artist).inner_text(), f"History lists {artist} as {label}")
         r.shot("history")
+        return r.passed()
+
+
+def feed_landscape():
+    """Feed on a phone held sideways (844x390): tapping the artwork plays and pauses the top preview (#214; features/feed.md)."""
+    ok = True
+    with Run(f"feed-landscape-{STAMP}", viewport=LANDSCAPE, mobile=True) as r:
+        p = r.page
+        new_account_with(r, "land", "feed")
+        p.get_by_role("heading", name="The Beatles").wait_for()
+        card = p.get_by_role("article").first
+        r.expect(card.get_by_role("button", name=re.compile("^(Play|Pause) Hey Jude")).count() == 0, "landscape: the preview rows are hidden (the case #214 is about)")
+        play = card.get_by_role("button", name="Play The Beatles preview")
+        r.expect(play.is_visible(), "landscape: the artwork is a visible button named Play The Beatles preview")
+        r.shot("landscape-before")
+        play.tap()
+        pause = card.get_by_role("button", name="Pause The Beatles preview")
+        try:
+            pause.wait_for(timeout=10000)
+            playing = True
+        except Exception:
+            playing = False
+        r.expect(playing, "tap on the artwork: its button turns into Pause The Beatles preview")
+        p.wait_for_timeout(3000)
+        bar = "(() => { const b = document.querySelector('.ev-player-bar > span'); return b ? b.style.transform : null })()"
+        progress = p.evaluate(bar)
+        r.note("player bar transform 3s after the tap", str(progress))
+        r.expect(bool(progress) and progress != "scaleX(0)", f"audio is really advancing (player bar {progress})")
+        r.expect(p.get_by_text("Hey Jude").count() >= 1, "the player bar shows Hey Jude, The Beatles' first preview")
+        r.expect(p.get_by_text("Couldn't play this preview").count() == 0, "no playback error toast")
+        r.shot("landscape-playing")
+        if playing:
+            pause.tap()
+            play.wait_for(timeout=5000)
+            p.wait_for_timeout(1200)
+            a = p.evaluate(bar)
+            p.wait_for_timeout(1500)
+            b = p.evaluate(bar)
+            r.expect(a == b, f"second tap pauses: the button reads Play again and the player bar stands still ({a} then {b})")
+            r.shot("landscape-paused")
+        ok = r.passed()
+    with Run(f"feed-landscape-portrait-{STAMP}", viewport=PHONE) as r:
+        p = r.page
+        new_account_with(r, "port", "feed")
+        p.get_by_role("heading", name="The Beatles").wait_for()
+        card = p.get_by_role("article").first
+        r.expect(card.get_by_role("button", name="Play Hey Jude").is_visible(), "portrait: the preview rows are shown")
+        r.expect(card.get_by_role("button", name="Play The Beatles preview").count() == 0, "portrait: no artwork play button (unchanged)")
+        return r.passed() and ok
+
+
+def disabled_buttons():
+    """Disabled primary buttons (Create account, Get started) are grey, not violet (#222; features/sign-in.md)."""
+    with Run(f"disabled-buttons-{STAMP}") as r:
+        p, name = r.page, user("dis")
+        bg = lambda loc: loc.evaluate("e => getComputedStyle(e).backgroundColor")
+        p.goto(r.url("/sign-in?mode=new"))
+        create = p.get_by_role("button", name="Create account")
+        r.expect(create.is_disabled(), "Create account starts disabled")
+        off = bg(create)
+        r.shot("sign-in-disabled-dark")
+        p.emulate_media(color_scheme="light")
+        r.shot("sign-in-disabled-os-light")       # the app is dark only: this must look the same
+        r.expect(bg(create) == off, "an OS light theme does not change the page (the app has one dark theme)")
+        p.emulate_media(color_scheme="dark")
+        p.get_by_role("textbox", name="Username").fill(name)
+        p.get_by_role("checkbox", name="I understand my username cannot be recovered if I forget it.").check()
+        r.expect(create.is_enabled(), "Create account is enabled once a name is typed and the box ticked")
+        p.wait_for_timeout(400)                   # the colour change is a 180ms transition
+        on = bg(create)
+        r.note("Create account background", f"disabled {off}  enabled {on}")
+        r.expect(on != off and on == "rgb(139, 92, 246)", f"enabled is violet ({on}), disabled is a different, neutral colour ({off})")
+        r.shot("sign-in-enabled")
+        create.click()
+        p.wait_for_url(at("/onboarding"), timeout=20000)
+        start = p.get_by_role("button", name="Get started")
+        start.scroll_into_view_if_needed()
+        r.expect(start.is_disabled() and bg(start) == off, f"onboarding: Get started is disabled with the same grey ({bg(start)})")
+        r.shot("onboarding-disabled")
+        # Leaving a fresh account's onboarding half-way starts nothing; no request is expected to fail.
         return r.passed()
 
 
@@ -494,7 +576,7 @@ def onboarding_seeds_fail():
 
 
 JOURNEYS = {
-    "signin": signin, "feed-render": feed_render, "feed-triage": feed_triage, "feed-save": feed_save, "history-return": history_return,
+    "signin": signin, "disabled-buttons": disabled_buttons, "feed-render": feed_render, "feed-triage": feed_triage, "feed-landscape": feed_landscape, "feed-save": feed_save, "history-return": history_return,
     "history-filters": history_filters, "saved": saved, "settings-delete": settings_delete, "onboarding-seeds-fail": onboarding_seeds_fail,
 }
 

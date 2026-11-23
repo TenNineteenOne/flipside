@@ -13,6 +13,13 @@ const MAX_NETWORK_ATTEMPTS = 20
 // fixed 1-minute window rolls over after the flood stops.
 const MAX_GLOBAL_ATTEMPTS = 300
 const WINDOW_MS = 60_000 // 1 minute
+// New accounts one network (IPv4 address / IPv6 /64) may create per 24 hours
+// (#218). Signing in to an existing account is never charged to this bucket.
+const MAX_NEW_ACCOUNTS = 5
+const NEW_ACCOUNT_WINDOW_MS = 86_400_000
+// No client address, or loopback: local dev and the verify harness, which make
+// an account per journey. Vercel always sets x-real-ip to the public address.
+const UNCAPPED_NETWORKS = new Set(["unknown", "127.0.0.1", "0:0:0:0::/64"])
 
 /** Hash an IP address with SHA-256 so raw IPs are never stored. */
 export function hashIp(ip: string): string {
@@ -90,6 +97,28 @@ export async function isRateLimited(ip: string): Promise<boolean> {
   }
 
   return false
+}
+
+/**
+ * Whether `ip`'s network has used up its new accounts for the day, atomically
+ * counting this one. Call it only when an account is about to be created.
+ * Same table and RPC as `isRateLimited` (key `sha256("new:<network>")`, 24h
+ * fixed window from the first creation); the daily cron drops the row once the
+ * window is over. Fails open on a DB error, like the sign-in buckets.
+ */
+export async function isNewAccountLimited(ip: string): Promise<boolean> {
+  const network = networkOf(ip)
+  if (UNCAPPED_NETWORKS.has(network)) return false
+  const { data, error } = await createServiceClient().rpc("rpc_register_login_attempt", {
+    p_ip_hash: hashIp(`new:${network}`),
+    p_window_ms: NEW_ACCOUNT_WINDOW_MS,
+    p_max_attempts: MAX_NEW_ACCOUNTS,
+  })
+  if (error) {
+    console.error("[rate-limiter] new-account rpc_register_login_attempt failed:", error.message)
+    return false
+  }
+  return data === true
 }
 
 /**

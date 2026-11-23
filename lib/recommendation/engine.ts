@@ -26,6 +26,8 @@ const POPULARITY_WEIGHT = 0.8
 const RELEVANCE_WEIGHT = 0.2
 /** Source bonus for adjacent-bleed picks over same-formula main-pool scoring. */
 const ADJACENT_BLEED_BONUS = 0.08
+/** Selected genres seeded per build (one Last.fm tag lookup each). */
+const GENRE_SEEDS_PER_BUILD = 5
 /** User needs this many selected_genres before seed cap widens 10 → 15 and medium adjacency opens up. */
 const ADAPTIVE_BROADEN_THRESHOLD = 10
 /** Longest tier 1's bleed step waits on the far pool; past it this run's bleed is adjacent-only. */
@@ -96,7 +98,9 @@ async function gatherSeedContext(
 
   const sampledThumbsUp = sampleLikes(thumbsUpRows, userId)
   const userGenres = ((userRow?.selected_genres as string[] | null) ?? [])
-  const topGenres = userGenres.slice(0, 5)
+  // Five genres per build, sampled so every selected genre gets a turn (#216):
+  // the first five alone meant a twelve-genre user was only ever seeded from five.
+  const topGenres = shuffle([...userGenres]).slice(0, GENRE_SEEDS_PER_BUILD)
 
   const [thumbsUpNames, genreBatches] = await Promise.all([
     // Resolve sampled thumbs-up IDs → names via the roster (the nightly cron
@@ -357,7 +361,8 @@ export async function fetchAdjacentPool(
   if (opts.userGenres.length === 0) return null
   const userGenreKeys = new Set(opts.userGenres.map((g) => normalizeGenre(g)))
   const tagSet = new Set<string>()
-  for (const g of opts.userGenres.slice(0, 5)) {
+  // Every selected genre contributes (#216); the shuffle + cap below bound the Last.fm calls.
+  for (const g of opts.userGenres) {
     for (const adj of adjacentGenres(g, 'close')) {
       if (!userGenreKeys.has(normalizeGenre(adj))) tagSet.add(adj)
     }

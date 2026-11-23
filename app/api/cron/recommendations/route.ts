@@ -23,22 +23,25 @@ export const GET = withCronRoute("cron", async ({ supabase }) => {
     return apiError("An unexpected error occurred", 500)
   }
 
-  // Step 2: hard-delete anything that's been expired for > 30 days, regardless
-  // of seen_at. Prevents unbounded table growth over months of production use.
-  // Exception: rows with skip_at set are permanent dismissals — deleting them
-  // would let the artist resurface in the Feed ~60 days after dismissal.
+  // Step 2: hard-delete anything that's been expired for > 30 days. Prevents
+  // unbounded table growth over months of production use. Kept forever:
+  //   - rows with skip_at set (permanent dismissals: deleting them would let
+  //     the artist resurface in the Feed ~60 days after dismissal);
+  //   - seen rows whose artist the user liked, passed or saved (#219: History
+  //     reads this table, so a verdict must not drop out of it).
+  // The second exception needs a join, so the delete lives in
+  // rpc_prune_recommendation_cache (migration 0045). If the RPC fails or is not
+  // applied yet, nothing is deleted this run: the plain delete would remove the
+  // rows we mean to keep.
   const thirtyDaysAgo = new Date(now)
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
 
-  const { data: deletedRows, error: deleteErr } = await supabase
-    .from("recommendation_cache")
-    .delete()
-    .lt("expires_at", thirtyDaysAgo.toISOString())
-    .is("skip_at", null)
-    .select("id")
+  const { data: deleted, error: deleteErr } = await supabase.rpc("rpc_prune_recommendation_cache", {
+    p_cutoff: thirtyDaysAgo.toISOString(),
+  })
 
   if (deleteErr) {
-    console.error("[cron/recommendations] Delete error:", deleteErr.message)
+    console.warn("[cron/recommendations] prune skipped (is migration 0045 applied?):", deleteErr.message)
     // Don't fail the whole job — expiration already succeeded.
   }
 
@@ -55,7 +58,7 @@ export const GET = withCronRoute("cron", async ({ supabase }) => {
   }
 
   const expiredCount = expiredRows?.length ?? 0
-  const deletedCount = deletedRows?.length ?? 0
+  const deletedCount = typeof deleted === "number" ? deleted : 0
   console.log(
     `[cron/recommendations] Expired ${expiredCount} stale entries; deleted ${deletedCount} > 30d old`,
   )

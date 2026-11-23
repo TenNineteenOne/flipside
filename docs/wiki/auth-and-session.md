@@ -1,6 +1,6 @@
 ---
 title: Auth & Session
-updated: 2026-11-22
+updated: 2026-11-23
 related: [[data-model]], [[api-routes]], [[infra-and-ops]]
 ---
 
@@ -40,6 +40,12 @@ success uses `router.replace` so Back doesn't return to the form.
    - **new** → insert the `users` row if the hash is free; a taken name (including a
      concurrent insert hitting `users_username_hash_key`) fails with code `username_taken`.
      This reveals that a name exists; accepted trade-off.
+     A new account is also capped per network (#218): **5 per 24 hours** per IPv4 address
+     or IPv6 /64 (`isNewAccountLimited`, key `sha256("new:<network>")` in `login_attempts`,
+     same RPC with a 24h window). It is charged only when an account is about to be created
+     (name free, New mode), so signing in to an existing account never counts. Over the cap →
+     code `account_limit`, nothing inserted. Fails open on a DB error. Loopback and a missing
+     address are not capped (local dev and the verify harness).
    Codes reach the client as `signIn(...).code` (custom `CredentialsSignin` subclasses).
 5. **JWT callback** stores the UUID as `token.sub`; **session callback** copies it to
    `session.user.id`. Strategy is `"jwt"` (signed cookie, not DB sessions).
@@ -104,8 +110,13 @@ Idempotent (already-encrypted passes through). One-time backfill:
 ## Account deletion
 
 `DELETE /api/account` deletes the `users` row (cascades to all child tables) then signs
-out. Another device's JWT stays valid until it expires; `PATCH /api/settings` answers 401
-when its update touches no row, and pages redirect to `/sign-in?reauth=1`.
+out. Another device's JWT stays valid until it expires; pages redirect to
+`/sign-in?reauth=1`, and API calls answer 401 instead of 500 (#222): when a handler answers
+5xx or throws, the wrappers in `lib/api/with-authed-route.ts` look the `users` row up and
+return 401 if it is gone (the write failed on the `user_id` foreign key). The lookup runs
+only on that failure path. `PATCH /api/settings` (no row updated) and
+`POST /api/recommendations/generate` (no row read) answer 401 themselves;
+`POST /api/history/accumulate` still answers 404 "User not found".
 
 ## Sign-out
 

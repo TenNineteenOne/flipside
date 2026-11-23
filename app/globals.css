@@ -251,6 +251,9 @@
   font-weight: 700;
 }
 .btn-primary:hover { filter: brightness(1.1); background: var(--accent); }
+/* Disabled primary: grey, not a dimmer violet, so it cannot be read as ready (#222). --fg-3 on --raise is about 6:1. */
+.btn:disabled { cursor: default; }
+.btn-primary:disabled, .btn-primary:disabled:hover { background: var(--raise); color: var(--fg-3); border-color: var(--line-strong); filter: none; }
 .btn-block { width: 100%; }
 .btn-lg { height: 56px; font-size: 15px; border-radius: 16px; }
 .btn-sm { height: 36px; font-size: 12px; padding: 0 14px; border-radius: 10px; }

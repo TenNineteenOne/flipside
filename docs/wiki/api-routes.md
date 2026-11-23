@@ -1,6 +1,6 @@
 ---
 title: API Routes
-updated: 2026-11-22
+updated: 2026-11-23
 related: [[generation-engine]], [[music-providers]], [[auth-and-session]], [[data-model]]
 ---
 
@@ -30,6 +30,9 @@ handlers a lazily-created service-role client as `ctx.supabase` (tests mock
 longer logs `[onboard-search] unauth` before its 401). Crons use
 `withCronRoute(tag, handler)` — the single `CRON_SECRET` check.
 
+All three authed wrappers turn a handler's 5xx (or throw) into 401 when the signed-in user's
+`users` row no longer exists (account deleted on another device, #222). See [[auth-and-session]].
+
 `lib/api/routes-wrapped.test.ts` reads every `app/api/**/route.ts` and fails if a
 `POST`/`PATCH`/`PUT`/`DELETE` export is not written as
 `export const X = withAuthedCsrfRoute(` / `withAuthedJsonRoute(` (imported from
@@ -40,7 +43,7 @@ longer logs `[onboard-search] unauth` before its 401). Crons use
 | Route | Method | Does | Calls |
 |---|---|---|---|
 | `/api/recommendations` | GET | read ≤40 unseen/unexpired `recommendation_cache`, underground re-filter, return 20 | cache only |
-| `/api/recommendations/generate` | POST | `buildRecommendations`; refuses (429) if unexpired unseen ≥60 unless `?replace=true` (checked before the cooldown claim); 30s cooldown; with `?replace=true` the old unseen, non-dismissed rows are deleted after the build returns, and only if it wrote or re-queued something (see [[generation-engine]]); no `?genre` filter any more; schedules `finish()` (secondary + preview flush) + color via `after()` | [[generation-engine]], Spotify, iTunes |
+| `/api/recommendations/generate` | POST | `buildRecommendations`; refuses (429) if unexpired unseen ≥60 unless `?replace=true` (checked before the cooldown claim); 401 if the `users` row is gone; 30s per-user cooldown (the only generation-volume limit; accounts per network are capped at sign-in, #218); with `?replace=true` the old unseen, non-dismissed rows are deleted after the build returns, and only if it wrote or re-queued something (see [[generation-engine]]); no `?genre` filter any more; schedules `finish()` (secondary + preview flush) + color via `after()` | [[generation-engine]], Spotify, iTunes |
 | `/api/artists/[id]/tracks` | GET | lazy tracks for a card; cache→iTunes; name/ID cross-check guards cache poisoning | **iTunes only** |
 
 ## Feedback, saves, history
@@ -77,7 +80,7 @@ The `/api/explore/*` routes were removed with the Explore page (2026-11-10, #205
 |---|---|---|
 | `/api/open/[platform]/[artistId]` | GET | **only `apple_music`** — `linkFor` (`lib/external-links.ts`): cached iTunes result (30d) → live iTunes by the `artists` row name (never client `?name`; `itunesFetch` gate-only: no preview breaker, no counter) → search URL; 302 redirect; 404 unknown artist id. `artists.apple_id` is NOT trusted (MB name search, homonym risk) |
 | `/api/auth/[...nextauth]` | GET/POST | NextAuth handlers (Credentials only) |
-| `/api/cron/recommendations` | GET | **no session** — `CRON_SECRET` Bearer (timing-safe); expire >3d unseen not-yet-expired rows, hard-delete >30d expired (keeps `skip_at`), delete `login_attempts` rows older than 24 hours (a failure there is logged, the job still succeeds) |
+| `/api/cron/recommendations` | GET | **no session** — `CRON_SECRET` Bearer (timing-safe); expire >3d unseen not-yet-expired rows, hard-delete >30d expired through `rpc_prune_recommendation_cache` (0045; keeps `skip_at` rows and seen rows the user liked, passed or saved; if the RPC errors or is not applied, nothing is deleted that run), delete `login_attempts` rows older than 24 hours (a failure there is logged, the job still succeeds) |
 
 ## The "Open in Spotify" path
 Spotify links are **client-side, zero-API**: `lib/music-links.getArtistLink('spotify', …)`

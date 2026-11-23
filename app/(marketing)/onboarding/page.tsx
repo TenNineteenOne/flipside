@@ -347,8 +347,7 @@ export default function OnboardingPage() {
             className="btn btn-primary btn-block"
             onClick={() => handleContinue(false)}
             disabled={getStartedOff}
-            // Same disabled look as the feed's primary button (feed.css .ev-btn-primary:disabled).
-            style={{ height: 48, fontSize: 15, ...(getStartedOff && { opacity: 0.7, cursor: "default" }) }}
+            style={{ height: 48, fontSize: 15 }}
           >
             {saving ? "Saving…" : "Get started"}
           </button>

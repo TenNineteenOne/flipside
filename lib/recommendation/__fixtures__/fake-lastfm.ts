@@ -53,7 +53,7 @@ export function createFakeLastfm(): FakeLastfm {
     async searchArtists() {
       return []
     },
-    async userArtistNames() {
+    async userArtistPlays() {
       return []
     },
   }

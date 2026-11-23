@@ -64,7 +64,7 @@ describe("key missing", () => {
     expect(await lf.similarArtists(uniq("a"))).toEqual([])
     expect(await lf.tagTopArtists(uniq("t"), 10)).toEqual([])
     expect(await lf.searchArtists(uniq("q"))).toEqual([])
-    await expect(lf.userArtistNames("u")).rejects.toThrow("Last.fm API key is not configured")
+    await expect(lf.userArtistPlays("u")).rejects.toThrow("Last.fm API key is not configured")
     expect(calls).toHaveLength(0)
     // getInfo short-circuits before the cache; tag/search negative-cache the empty (pre-#175 behavior).
     expect([...cache.rows.keys()].some((k) => k.startsWith("getInfo:"))).toBe(false)
@@ -123,7 +123,7 @@ describe("gate + counters", () => {
     await lf.similarArtists(uniq("s"))
     await lf.artistInfo(uniq("i"))
     await lf.searchArtists(uniq("q"))
-    expect(await lf.userArtistNames("me")).toEqual(["U1", "U2"])
+    expect(await lf.userArtistPlays("me")).toEqual([{ name: "U1", plays: 1 }, { name: "U2", plays: 1 }])
     expect(gated).toBe(6)
     expect(snapshotCalls().lastfm).toEqual({ similar: 1, getInfo: 1, tag: 1, search: 1, user: 2, total: 6 })
   })
@@ -247,6 +247,25 @@ describe("tagTopArtists hyphen→space retry", () => {
     expect(calls[1].url).toContain("tag=dutch%20black%20metal")
   })
 
+  it("retries under the genre's real name when the slug lost punctuation or a hyphen (#216)", async () => {
+    // slug → [what the retry must send, URL-encoded]
+    const cases: Array<[string, string]> = [
+      ["r-b", "r%26b"], // "r&b" — was "r b"
+      ["alternative-r-b", "alternative%20r%26b"],
+      ["punk-n-roll", "punk%20'n'%20roll"],
+      ["lo-fi-indie", "lo-fi%20indie"], // was "lo fi indie"
+      ["pov-indie", "pov%3A%20indie"],
+      ["drum-and-bass", "drum%20and%20bass"],
+      ["samba-rock", "samba%20rock"], // the name IS the slug: spaces, as before
+      ["r-and-b", "r%20and%20b"], // a cluster tag, not a leaf: spaces, as before
+    ]
+    for (const [slug, retried] of cases) {
+      const { fn, calls } = fakeFetch(tags([]), tags(["Someone"]))
+      expect(await make(fn).lf.tagTopArtists(slug, 20)).toEqual(["Someone"])
+      expect(calls.map((c) => c.url.match(/&tag=([^&]*)/)![1])).toEqual([slug, retried])
+    }
+  })
+
   it("does not retry a single-word empty tag; negative-caches the empty", async () => {
     const { fn, calls } = fakeFetch(tags([]))
     const { lf, cache } = make(fn)
@@ -270,12 +289,12 @@ describe("tagTopArtists hyphen→space retry", () => {
   })
 })
 
-describe("userArtistNames", () => {
+describe("userArtistPlays", () => {
   it("throws on a non-2xx or a Last.fm error body", async () => {
     const a = make(fakeFetch(json({}, 500), json({})).fn)
-    await expect(a.lf.userArtistNames("u")).rejects.toThrow("HTTP 500")
+    await expect(a.lf.userArtistPlays("u")).rejects.toThrow("HTTP 500")
     const b = make(fakeFetch(json({ error: 6, message: "User not found" }), json({})).fn)
-    await expect(b.lf.userArtistNames("u")).rejects.toThrow("User not found")
+    await expect(b.lf.userArtistPlays("u")).rejects.toThrow("User not found")
   })
 
   it("accepts a single top artist as an object, and trims names", async () => {
@@ -283,7 +302,23 @@ describe("userArtistNames", () => {
       json({ topartists: { artist: { name: "Radiohead " } } }),
       json({ recenttracks: { track: [{ artist: { "#text": "Radiohead" } }, { artist: { "#text": "  " } }] } }),
     )
-    expect(await make(fn).lf.userArtistNames("u")).toEqual(["Radiohead"])
+    expect(await make(fn).lf.userArtistPlays("u")).toEqual([{ name: "Radiohead", plays: 1 }])
+  })
+
+  it("carries real play counts: all-time playcount from top artists, scrobbles counted for recent-only artists (#215)", async () => {
+    const { fn } = fakeFetch(
+      json({ topartists: { artist: [{ name: "Radiohead", playcount: "500" }, { name: "Burial", playcount: "2" }] } }),
+      json({ recenttracks: { track: [
+        { artist: { "#text": "Burial" } }, { artist: { "#text": "Burial" } }, { artist: { "#text": "Burial" } },
+        { artist: { "#text": "New Band" } }, { artist: { "#text": "New Band" } },
+        { artist: { "#text": "Radiohead" } },
+      ] } }),
+    )
+    expect(await make(fn).lf.userArtistPlays("u")).toEqual([
+      { name: "Radiohead", plays: 500 },
+      { name: "Burial", plays: 3 }, // never below what the recent tracks prove
+      { name: "New Band", plays: 2 },
+    ])
   })
 })
 

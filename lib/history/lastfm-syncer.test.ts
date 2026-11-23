@@ -6,75 +6,38 @@ vi.mock("@/lib/history/id-resolver", () => ({
   resolveUnresolvedArtistIds: (arg: unknown) => resolveUnresolvedArtistIds(arg),
 }))
 
-let currentSupabase: ReturnType<typeof makeSupabase>
+let currentSupabase: FakeSupabase["client"]
 vi.mock("@/lib/supabase/server", () => ({
   createServiceClient: () => currentSupabase,
 }))
 
 import { accumulateLastFmHistory } from "./lastfm-syncer"
+import { createFakeSupabase, type FakeSupabase, type Row, type Tables } from "@/lib/recommendation/__fixtures__/fake-supabase"
 
-interface ListenedRow {
-  id: string
-  user_id: string
-  artist_id: string | null
-  lastfm_artist_name: string | null
-  source: string
-  play_count: number
-  last_seen_at: string
-}
-
-function makeSupabase(listened: ListenedRow[]) {
-  let seq = 0
-  return {
-    from() {
-      return {
-        select() {
-          return {
-            _userId: undefined as string | undefined,
-            eq(col: string, val: string) {
-              if (col === "user_id") this._userId = val
-              return this
-            },
-            in(_col: string, values: string[]) {
-              const data = listened.filter(
-                (r) => r.user_id === this._userId && r.lastfm_artist_name != null && values.includes(r.lastfm_artist_name)
-              )
-              return Promise.resolve({
-                data: data.map((r) => ({ id: r.id, lastfm_artist_name: r.lastfm_artist_name, play_count: r.play_count })),
-                error: null,
-              })
-            },
-          }
-        },
-        async insert(rows: Omit<ListenedRow, "id">[] | Omit<ListenedRow, "id">) {
-          const arr = Array.isArray(rows) ? rows : [rows]
-          for (const r of arr) listened.push({ id: `row-${++seq}`, ...r })
-          return { error: null }
-        },
-        async upsert(rows: Array<{ id: string; play_count: number; last_seen_at: string }>) {
-          for (const r of rows) {
-            const target = listened.find((x) => x.id === r.id)
-            if (target) Object.assign(target, { play_count: r.play_count, last_seen_at: r.last_seen_at })
-          }
-          return { error: null }
-        },
-      }
-    },
+const bump = {
+  rpcs: {
     // Atomic play_count bump (0041 rpc_bump_listened_play_counts).
-    async rpc(_name: string, params: { p_user_id: string; p_ids: string[]; p_now: string }) {
-      for (const row of listened) {
-        if (row.user_id === params.p_user_id && params.p_ids.includes(row.id)) {
-          row.play_count += 1
-          row.last_seen_at = params.p_now
+    rpc_bump_listened_play_counts: (args: { p_user_id: string; p_ids: string[]; p_now: string }, tables: Tables) => {
+      for (const r of tables.listened_artists) {
+        if (r.user_id === args.p_user_id && args.p_ids.includes(r.id)) {
+          r.play_count += 1
+          r.last_seen_at = args.p_now
         }
       }
       return { error: null }
     },
-  }
+  },
+}
+
+/** A fake DB holding `listened`; returns the live listened_artists rows. */
+function makeSupabase(listened: Row[]): Row[] {
+  const fake = createFakeSupabase({ listened_artists: listened }, bump)
+  currentSupabase = fake.client
+  return fake.tables.listened_artists
 }
 
 const lastfmResponse = (names: string[]) => ({
-  topartists: { artist: names.map((name) => ({ name, playcount: "5" })) },
+  topartists: { artist: names.map((name) => ({ name, playcount: "500" })) },
 })
 
 beforeEach(() => {
@@ -97,8 +60,7 @@ afterEach(() => {
 
 describe("accumulateLastFmHistory", () => {
   it("inserts name-only rows with artist_id: null (no spotify_artist_id)", async () => {
-    const listened: ListenedRow[] = []
-    currentSupabase = makeSupabase(listened)
+    const listened = makeSupabase([])
 
     await accumulateLastFmHistory({ userId: "user-1", lastfmUsername: "u" })
 
@@ -113,25 +75,24 @@ describe("accumulateLastFmHistory", () => {
     expect(resolveUnresolvedArtistIds).toHaveBeenCalledOnce()
   })
 
-  it("increments play_count for an existing name row", async () => {
-    const listened: ListenedRow[] = [
+  it("stores Last.fm's real play count: on insert, and on an existing row that held a sync count (#215)", async () => {
+    const listened = makeSupabase([
       {
         id: "existing",
         user_id: "user-1",
         artist_id: null,
         lastfm_artist_name: "Aphex Twin",
         source: "lastfm",
-        play_count: 7,
+        play_count: 1,
         last_seen_at: "2026-01-01T00:00:00.000Z",
       },
-    ]
-    currentSupabase = makeSupabase(listened)
+    ])
 
     await accumulateLastFmHistory({ userId: "user-1", lastfmUsername: "u" })
 
-    const aphex = listened.find((r) => r.lastfm_artist_name === "Aphex Twin")!
-    expect(aphex.play_count).toBe(8)
-    // Boards of Canada newly inserted
-    expect(listened.find((r) => r.lastfm_artist_name === "Boards of Canada")).toBeTruthy()
+    expect(listened.map((r) => [r.lastfm_artist_name, r.play_count])).toEqual([
+      ["Aphex Twin", 500],
+      ["Boards of Canada", 500],
+    ])
   })
 })

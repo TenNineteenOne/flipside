@@ -6,7 +6,7 @@ related: [[auth-and-session]], [[generation-engine]], [[api-routes]]
 
 # Data Model (Supabase)
 
-Postgres on Supabase, migrations in `supabase/migrations/` (`0001`–`0044`; `0043` and `0044` are written and tested locally but **not yet applied to production** as of 2026-11-23). **All tables
+Postgres on Supabase, migrations in `supabase/migrations/` (`0001`–`0045`; `0043`, `0044` and `0045` are written and tested locally but **not yet applied to production** as of 2026-11-23). **All tables
 have RLS enabled.** The service-role key bypasses RLS; most privileged writes go through
 `createServiceClient()` (see [[auth-and-session]]).
 
@@ -55,7 +55,7 @@ set on name-only rows), `source` (`lastfm`|`statsfm`; legacy rows may carry
 `spotify_recent`|`spotify_top`), `play_count`, `last_seen_at`, `id_resolution_attempted_at`.
 Unique partial indexes on `(user_id, artist_id) WHERE artist_id IS NOT NULL` and
 `(user_id, lastfm_artist_name) WHERE lastfm_artist_name IS NOT NULL AND artist_id IS NULL`
-(0041). Play counts bump atomically via `rpc_bump_listened_play_counts` (0041).
+(0041). `play_count` holds the real play count when the source gives one (Last.fm; raised, never lowered), else it bumps by one per sync via `rpc_bump_listened_play_counts` (0041).
 
 ### `recommendation_cache` — the Feed queue
 Per-user scored queue, unique `(user_id, artist_id)`. Columns: `user_id`, `artist_id`, `artist_data` (jsonb),
@@ -65,10 +65,16 @@ cooldown / permanent dismiss), `expires_at` (hard TTL), `source`. Hot query uses
 index `WHERE seen_at IS NULL` on `(user_id, score DESC, expires_at DESC)`.
 RPCs: `rpc_record_feedback_v2`, `rpc_delete_feedback_v2`, `rpc_clear_dismiss_v2` (uuid-keyed, 0036).
 
-Rows do not live forever. The daily cron (`app/api/cron/recommendations/route.ts`) deletes
-every row whose `expires_at` is more than 30 days in the past, seen or not, unless `skip_at`
-is set. History (`lib/history/query.ts`) reads its list from the seen rows of this table, so
-an artist drops out of History once its row is deleted. Stats
+Most rows do not live forever. The daily cron (`app/api/cron/recommendations/route.ts`) calls
+`rpc_prune_recommendation_cache(p_cutoff)` (migration `0045`, **not yet applied to
+production**), which deletes every row whose `expires_at` is more than 30 days in the past
+except: rows with `skip_at` set, and **seen** rows whose artist has a live `feedback` row
+(`deleted_at` is null) or a `saves` row for that user (#219). Those stay for good, bounded by
+the user's likes + passes + saves. Until `0045` is applied the cron deletes nothing from this
+table (it logs `prune skipped`), so apply it soon after deploying. History
+(`lib/history/query.ts`) reads its list from the seen rows of this table, so an artist that
+was only seen or skipped still drops out of History once its row is deleted; one with a
+verdict stays. Un-thumbing a like lets the row age out again. Stats
 (`app/(app)/stats/stats-data.ts`) also counts seen rows toward Discovered, alongside
 `feedback` and `saves`. Saved and the engine's liked-artist seed lookup read artist names
 from `artists` by id, so the delete does not reach them.
@@ -103,7 +109,9 @@ seeds. Last.fm-only picks get their uuid via `/api/onboarding/resolve` (the door
 
 ## Other tables
 
-- `login_attempts` — IP-hash rate limiting (`rpc_register_login_attempt`, 0035). The daily
+- `login_attempts` — IP-hash rate limiting (`rpc_register_login_attempt`, 0035): the 60s
+  sign-in buckets, plus one 24h new-account bucket per network (key `sha256("new:<network>")`,
+  5 accounts, #218; no schema change). The daily
   cron (`/api/cron/recommendations`) deletes rows whose `window_start` is more than 24 hours old.
 - `user_challenges` — weekly discovery quests, `(user_id, week_start, challenge_key)`;
   progress via `rpc_increment_challenge_progress`, called from `rpc_record_feedback` on

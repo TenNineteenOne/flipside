@@ -16,8 +16,9 @@ far pool (step 10; always on).
 1. **Gather seeds** (`gatherSeedContext`) — three parallel Supabase sources:
    `seed_artists`, a stable weekly sample of thumbs-up artists (`sampleLikes`; their names
    are read from `artists` by id, not from `recommendation_cache`, whose old rows the nightly
-   cron deletes), and Last.fm `tag.gettopartists` (`lastfm.tagTopArtists`) for the
-   user's top ~5 `selected_genres`. Deduped → `seedNames[]` (capped 10–15): the user's own
+   cron deletes), and Last.fm `tag.gettopartists` (`lastfm.tagTopArtists`) for **5 of the
+   user's `selected_genres`, sampled at random per build** (#216; it was always the first
+   five, so a twelve-genre user was seeded from five; still 5 tag lookups). Deduped → `seedNames[]` (capped 10–15): the user's own
    `seed_artists` always come first (shuffled among themselves), then the likes + genre-tag
    fill (shuffled) — #175 F-A; before it, ~40 genre names in one shuffled pool dropped every
    picked seed from about half of first feeds. Picked seeds are also `knownNames` (never
@@ -65,7 +66,9 @@ far pool (step 10; always on).
    Spotify row keeps the Spotify fallback and scores on the row's popularity (#175 F-F).
 7. **Filter** (the `keep` gate, before rehydrate/confirm) — `Exclusions`
    (`exclusions.ts`: thumbs-down, listened over `FEED_PLAY_THRESHOLD` (fixed at **5** since
-   #205; `users.play_threshold` is retired) by id or name key, thumbs-up
+   #205; `users.play_threshold` is retired) by id or name key — `play_count` is the
+   source's real play count since #215 (Last.fm playcount / stats.fm streams; see
+   [[external-apis]]), so one sync is enough to hide a well-played artist — thumbs-up
    or saved — Feed only, they never come back (D1, #175 F-B) — and the 7-day seen /
    dismissed cooldown), popularity>50 at fame level 0 ("Underground only").
    A thumbs-down, like, save or dismiss also applies by name key, so it holds when the
@@ -100,7 +103,8 @@ far pool (step 10; always on).
       usual: <genre>"); adjacent bleed never does. `why` is stored verbatim in
       `recommendation_cache.why` and lifted onto `CardArtist.why.outsideUsual` by
       `assembleFeedCards`. The far and adjacent fetches run concurrently.
-    The adjacent bleed's tag fetch + resolve (`fetchAdjacentPool`) starts alongside step 6
+    The adjacent bleed's tag fetch + resolve (`fetchAdjacentPool`: adjacent tags of **every**
+    selected genre (#216, was the first five), shuffled, 10 fetched) starts alongside step 6
     (skipping only the primary pool's names — not the secondary/round-robin tail, which may
     never reach the feed) and is handed in as
     `adjacentPool`. It is read only when the far pool leaves slots open, and the far and
@@ -171,6 +175,9 @@ through `lib/artist-identity` (with `lastfm-lookup.ts` = `lastfmResolve`,
 
 ## Important truths
 
+- **The far pool ignores selected genres on purpose** (#216): `outsideTags` uses them only
+  to pick anchors the user has NOT chosen, and `leftfieldTags` samples the whole tree minus
+  the top-2 listened anchors. It is the "outside your usual" half of the batch.
 - **Last.fm is the graph engine.** Similarity, tags, getInfo and search all go through the
   one adapter `lib/lastfm` ([[music-providers]]).
 - **Genres + popularity come from Last.fm enrichment**, because Spotify's search response
@@ -202,6 +209,9 @@ through `lib/artist-identity` (with `lastfm-lookup.ts` = `lastfmResolve`,
 - `chain-walker.ts` (speculative multi-hop BFS) was deleted 2026-07-11 — it had zero callers.
 - Wander farther is no longer toggleable. Neither `adventurous` nor `fameLevel` wipes the
   unseen queue (`lib/taste-change.ts`); only `selectedGenres` does.
-- Last.fm tags hyphenated in flipside's tree (e.g. `dutch-black-metal`) may return 0 from
-  Last.fm; `lastfm.tagTopArtists` retries with spaces (a second sequential call) — this was
+- Genre tags are slugs of the genre's name (`dutch-black-metal`, `r-b` for "r&b",
+  `lo-fi-indie`) and may return 0 from Last.fm; `lastfm.tagTopArtists` retries once under the
+  genre's real name (`lib/lastfm/tag-name.ts`: a leaf's picker label — "r&b", "lo-fi indie" —
+  else hyphens as spaces; #216, before it "r-b" was retried as "r b") — a second sequential
+  call; this was
   the old Explore leftfield-rail latency cause, and why the far pool caps tag lookups at 8.

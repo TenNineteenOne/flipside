@@ -65,10 +65,10 @@ describe("POST /api/recommendations/generate queue-full gate", () => {
     expect(buildRecommendations).not.toHaveBeenCalled()
   })
 
-  it("a missing user row still answers 404 first, though the queue count now runs alongside it", async () => {
+  it("a missing user row answers 401 first (deleted account, #222), though the queue count now runs alongside it", async () => {
     db = createRouteFakeDb({ users: [], recommendation_cache: queue(60, iso(Date.now() + HOUR)) })
     const res = await call()
-    expect(res.status).toBe(404)
+    expect(res.status).toBe(401)
     expect(buildRecommendations).not.toHaveBeenCalled()
   })
 

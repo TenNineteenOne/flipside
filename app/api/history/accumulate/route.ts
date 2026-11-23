@@ -37,7 +37,7 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
     console.error("[history/accumulate] User lookup error:", userError.message)
     return apiError("Failed to load user profile", 500)
   }
-  if (!user) return apiError("User not found", 404)
+  if (!user) return apiError("User not found", 401)
 
   const storedUsername = source === "lastfm" ? user.lastfm_username : user.statsfm_username
   const cooldownField = source === "lastfm" ? "last_accumulated_lastfm_at" : "last_accumulated_statsfm_at"

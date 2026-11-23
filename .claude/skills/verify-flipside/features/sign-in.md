@@ -10,6 +10,7 @@ Create account). A new account goes on to onboarding; an existing one goes to th
 - `signin-unknown` Existing mode with an unknown name shows one generic error and creates no row.
 - `signin-create` New mode creates the account once the checkbox is ticked, and lands on `/onboarding`.
 - `signin-taken` New mode with a name that exists says it is taken.
+- `signin-disabled-look` a disabled submit button (Create account before the checkbox; either button with no name typed) is grey, the enabled one violet `rgb(139, 92, 246)`. Journey `disabled-buttons` compares the computed backgrounds (wait 400ms after enabling: the colour is a 180ms transition) and screenshots both states. The app has one dark theme; an OS light setting changes nothing.
 - `signin-return` an existing account signs in and returns to the `?from=` page.
 - `signout` Sign out clears the session; protected pages then redirect to `/sign-in?from=...`.
 

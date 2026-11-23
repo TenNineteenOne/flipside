@@ -68,7 +68,8 @@ export async function resolveUnresolvedArtistIds(params: {
 /**
  * Try to set artist_id on `orphanId`. If a row with the same
  * (user_id, artist_id) already exists (unique constraint 23505), merge the
- * orphan's play_count into the existing row and delete the orphan.
+ * orphan into the existing row (higher play_count, later last_seen_at) and
+ * delete the orphan.
  *
  * Safeguard: if the merge can't find the target row by artist_id (the gap
  * 3-row edge where the conflicting row is identified by some other column),
@@ -117,10 +118,12 @@ async function resolveOrMergeRow(params: {
     return { merged: false, error: orphanErr?.message ?? "orphan row not found" }
   }
 
-  // ponytail: read-modify-write; rpc_bump_listened_play_counts (0041) only does
-  // +1, so it can't add the orphan's count. A concurrent bump on the target in
-  // this window can still be lost — needs an add-N RPC (migration) to close.
-  const mergedPlays = (target.play_count ?? 0) + (orphan.play_count ?? 0)
+  // Both rows count plays of the SAME artist (real counts since #215), so keep
+  // the higher: adding would double-count, and again on every later sync (a
+  // Last.fm sync re-creates the name-only orphan whenever the target has no name).
+  // shortcut: read-modify-write, a concurrent raise on the target in this window
+  // can be lost until the next sync re-raises it; needs a greatest() RPC to close.
+  const mergedPlays = Math.max(target.play_count ?? 0, orphan.play_count ?? 0)
   const mergedLastSeen =
     new Date(target.last_seen_at).getTime() >= new Date(orphan.last_seen_at).getTime()
       ? target.last_seen_at

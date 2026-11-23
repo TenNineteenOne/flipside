@@ -9,7 +9,8 @@ interface StatsFmArtist {
 
 interface StatsFmTopArtistItem {
   position?: number
-  streams?: number
+  /** Lifetime stream count; null/absent when stats.fm has no imported history for the user. */
+  streams?: number | null
   playedMs?: number
   artist: StatsFmArtist
 }
@@ -38,7 +39,8 @@ export async function accumulateStatsFmHistory(params: {
   for (const item of items) {
     const name = item.artist?.name?.trim()
     if (!name) continue
-    listens.push({ name, spotifyId: item.artist.spotifyIds?.[0] || null })
+    const plays = typeof item.streams === "number" && item.streams > 0 ? Math.floor(item.streams) : undefined
+    listens.push({ name, spotifyId: item.artist.spotifyIds?.[0] || null, plays })
   }
 
   await ingestListens(createServiceClient(), userId, "statsfm", listens)

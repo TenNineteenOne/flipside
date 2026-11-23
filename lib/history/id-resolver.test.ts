@@ -314,8 +314,8 @@ describe("resolveUnresolvedArtistIds — getInfo confirm + mint-by-name", () => 
 })
 
 describe("resolveUnresolvedArtistIds — 23505 merge path on artist_id", () => {
-  it("merges play_count into the existing row and deletes the orphan", async () => {
-    const orphan = baseRow({ id: "orphan", play_count: 4, lastfm_artist_name: "Radiohead" })
+  it("merges into the existing row (higher play_count, not the sum) and deletes the orphan", async () => {
+    const orphan = baseRow({ id: "orphan", play_count: 40, lastfm_artist_name: "Radiohead" })
     const target = baseRow({
       id: "target",
       artist_id: "artist-uuid-9",
@@ -333,7 +333,7 @@ describe("resolveUnresolvedArtistIds — 23505 merge path on artist_id", () => {
     // orphan deleted, target merged
     expect(listened.find((r) => r.id === "orphan")).toBeUndefined()
     const merged = listened.find((r) => r.id === "target")!
-    expect(merged.play_count).toBe(14)
+    expect(merged.play_count).toBe(40) // both rows count the same plays (#215): max, never 50
     expect(merged.last_seen_at).toBe("2026-02-01T00:00:00.000Z")
   })
 

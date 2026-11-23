@@ -1,6 +1,6 @@
 ---
 title: Music Providers & Resilience
-updated: 2026-11-22
+updated: 2026-11-23
 related: [[external-apis]], [[generation-engine]], [[spotify-dependency]], [[api-routes]]
 ---
 
@@ -39,7 +39,7 @@ byte-identical to the pre-#175 fetchers.
 | `similarArtists(name)` | `artist.getSimilar&limit=50` | 8s | 7d; empties not cached | warn once, `[]` |
 | `artistInfo(name)` | `artist.getInfo&autocorrect=1` | 6s | 7d; not-found (error 6) 12h; transient never | `null`, no cache read |
 | `searchArtists(q, limit=10)` | `artist.search` | 8s | 7d; empties 12h | `[]` (negative-cached) |
-| `userArtistNames(user)` | `user.getTopArtists` + `user.getRecentTracks` (200 each) | 8s | none | throws |
+| `userArtistPlays(user)` (names with real play counts) | `user.getTopArtists` + `user.getRecentTracks` (200 each) | 8s | none | throws |
 | `hasKey()` | — | — | — | `false` |
 
 Deps (`apiKey`, `fetch`, `limiter`, `cache`) are injectable; `lib/lastfm/index.test.ts`

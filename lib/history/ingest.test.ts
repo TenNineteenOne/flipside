@@ -150,6 +150,76 @@ describe("ingestListens — listens in → listened_artists rows out", () => {
     await expect(ingestListens(broken.client, "u1", "lastfm", [{ name: "A" }])).rejects.toThrow("Row insert (names) error: timeout")
   })
 
+  describe("real play counts (#215)", () => {
+    it("an artist played 500 times is stored as 500 by the first sync that sees them", async () => {
+      const { supabase, tables } = setup()
+      await ingestListens(supabase, "u1", "lastfm", [{ name: "Radiohead", plays: 500 }, { name: "Radiohead", plays: 3 }, { name: "Once", plays: 1 }])
+      await ingestListens(supabase, "u1", "statsfm", [{ name: "Burial", spotifyId: "sp-burial", plays: 42 }])
+      expect(tables.listened_artists.map((r) => [r.lastfm_artist_name ?? "Burial", r.play_count])).toEqual([
+        ["Radiohead", 500],
+        ["Once", 1],
+        ["Burial", 42],
+      ])
+    })
+
+    it("existing rows (old sync counts) are raised to the real count and never lowered", async () => {
+      const seen = "2026-01-01T00:00:00.000Z"
+      const attempted = new Date().toISOString()
+      const { supabase, tables } = setup({
+        artists: [{ id: U(3), spotify_id: "sp-x", name: "X", name_lower: "x" }],
+        listened_artists: [
+          { id: "low", user_id: "u1", artist_id: null, lastfm_artist_name: "Low", source: "lastfm", play_count: 2, last_seen_at: seen, id_resolution_attempted_at: attempted },
+          { id: "high", user_id: "u1", artist_id: null, lastfm_artist_name: "High", source: "lastfm", play_count: 900, last_seen_at: seen, id_resolution_attempted_at: attempted },
+          { id: "x", user_id: "u1", artist_id: U(3), lastfm_artist_name: null, source: "statsfm", play_count: 1, last_seen_at: seen },
+          { id: "other", user_id: "u2", artist_id: null, lastfm_artist_name: "Low", source: "lastfm", play_count: 1, last_seen_at: seen },
+        ],
+      })
+      await ingestListens(supabase, "u1", "lastfm", [{ name: "Low", plays: 500 }, { name: "High", plays: 700 }])
+      await ingestListens(supabase, "u1", "statsfm", [{ name: "X", spotifyId: "sp-x", plays: 60 }])
+      await ingestListens(supabase, "u1", "lastfm", [{ name: "Low", plays: 500 }]) // a re-sync adds nothing
+
+      const row = (id: string) => tables.listened_artists.find((r) => r.id === id)!
+      expect(row("low").play_count).toBe(500)
+      expect(row("high").play_count).toBe(900)
+      expect(row("x").play_count).toBe(60)
+      expect(row("other").play_count).toBe(1) // another user's row is untouched
+      expect(row("high").last_seen_at).not.toBe(seen) // still marked as seen by this sync
+    })
+
+    it("a source without counts keeps counting sightings, even on a row that holds a real count", async () => {
+      const { supabase, tables } = setup({
+        listened_artists: [{ id: "a", user_id: "u1", artist_id: null, lastfm_artist_name: "A", source: "lastfm", play_count: 500, id_resolution_attempted_at: new Date().toISOString() }],
+      })
+      await ingestListens(supabase, "u1", "statsfm", [{ name: "A" }])
+      expect(tables.listened_artists[0].play_count).toBe(501)
+    })
+
+    it("a 23505 conflict raises the row the other sync just inserted to this source's count", async () => {
+      const dup = { code: "23505", message: "duplicate" }
+      // The other source's sync inserts "A" between our select and our insert.
+      const racing = { id: "racing", user_id: "u1", artist_id: null, lastfm_artist_name: "A", source: "statsfm", play_count: 1, id_resolution_attempted_at: new Date().toISOString() }
+      const { client, tables } = failingInserts((row) => {
+        if (Array.isArray(row)) tables.listened_artists.push(racing)
+        return Array.isArray(row) || (row as Row).lastfm_artist_name === "A" ? dup : null
+      })
+      await ingestListens(client, "u1", "lastfm", [{ name: "A", plays: 500 }, { name: "B", plays: 9 }])
+      expect(tables.listened_artists.map((r) => [r.id === "racing", r.lastfm_artist_name, r.play_count])).toEqual([
+        [true, "A", 500],
+        [false, "B", 9],
+      ])
+    })
+
+    it("long lists go out in chunks of at most 200 keys per request (#222)", async () => {
+      const fake = createFakeSupabase({ artists: [], listened_artists: [] })
+      const listens = Array.from({ length: 450 }, (_, i) => ({ name: `Artist ${i}`, plays: 10 }))
+      await ingestListens(fake.client, "u1", "lastfm", listens)
+      await ingestListens(fake.client, "u1", "lastfm", listens.map((l) => ({ ...l, plays: 20 })))
+      const sizes = fake.queries.filter((q) => q.table === "listened_artists" && q.in).map((q) => q.in!.length)
+      expect(Math.max(...sizes)).toBe(200)
+      expect(fake.tables.listened_artists.every((r) => r.play_count === 20)).toBe(true)
+    })
+  })
+
   it("a failed play_count bump is logged, not thrown", async () => {
     const err = vi.spyOn(console, "error").mockImplementation(() => {})
     const fake = createFakeSupabase({

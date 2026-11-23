@@ -1,6 +1,6 @@
 ---
 title: External APIs
-updated: 2026-11-12
+updated: 2026-11-23
 related: [[music-providers]], [[spotify-dependency]], [[generation-engine]], [[api-routes]]
 ---
 
@@ -21,7 +21,19 @@ adapter, `lib/lastfm` (`lastfm.*`): key, timeouts, the `runLastfm` gate (12 conc
 | `tag.gettopartists` | top artists per genre tag (seeds, bleed, far pool) | `tagTopArtists` → `engine.ts`, `far-picks.ts` |
 | `artist.getInfo` | doorway name resolve + **genres / listener-count→popularity** | `artistInfo` → `artist-identity/lastfm-lookup.ts`, `history/id-resolver.ts` |
 | `artist.search` | onboarding typeahead | `searchArtists` → `app/api/onboarding/search` |
-| `user.getTopArtists`, `user.getRecentTracks` | listening history (opt-in) | `userArtistNames` → `history/lastfm-syncer.ts` |
+| `user.getTopArtists`, `user.getRecentTracks` | listening history (opt-in) **with real play counts** (#215) | `userArtistPlays` → `history/lastfm-syncer.ts` |
+
+**Play counts (#215).** `listened_artists.play_count` holds the source's real count, so the
+Feed's "played more than 5 times" filter works after one sync. Last.fm: the all-time
+`playcount` of each of the top 200 artists; an artist only in the last 200 recent tracks gets
+the number of those tracks. stats.fm: `streams`, when it is a number. `ingestListens` stores
+the count on insert and only ever **raises** an existing row to it (guarded `play_count < n`
+UPDATE; the 23505 conflict fallback does the same), so rows that held the old per-sync counts
+correct themselves on the next sync and two sources never lower each other. A source with no
+count (stats.fm `streams: null`) keeps the old behaviour: 1 on insert, +1 per sync
+(`rpc_bump_listened_play_counts`). When the resolver merges a name-only row into an existing
+artist row it keeps the higher count (it used to add them). Id/name lists go out 200 per
+request (#222).
 
 > Last.fm **artist images are dead** (placeholder star since years ago; confirmed still
 > true 2026) and its license excludes images — images come from Spotify today.
@@ -57,6 +69,8 @@ Adapter: `lib/music-provider/spotify.ts`. See [[spotify-dependency]] for the 202
 ## stats.fm — optional history
 Auth: none (public per-username). `GET /api/v1/users/{username}/top/artists?range=lifetime`.
 Items often embed `artist.spotifyIds[]`, so many map to Spotify IDs without a search.
+Each item's `streams` (lifetime plays; null when stats.fm has no imported history for the
+user) is stored as the play count, see Last.fm above.
 8s timeout, no breaker. `lib/history/statsfm-syncer.ts` → `ingestListens`.
 
 ## Researched but NOT integrated (candidates)

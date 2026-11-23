@@ -16,7 +16,8 @@
  */
 
 const MB_BASE = "https://musicbrainz.org/ws/2"
-const USER_AGENT = "Flipside/0.1.0 ( fluxuate27@gmail.com )"
+// MusicBrainz accepts a contact URL in place of an address; keep personal contacts out of the repo.
+const USER_AGENT = "Flipside/0.1.0 ( https://github.com/TenNineteenOne/flipside )"
 const TIMEOUT_MS = 10_000
 const MB_MIN_INTERVAL_MS = 1000
 

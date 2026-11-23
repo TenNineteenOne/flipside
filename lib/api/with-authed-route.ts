@@ -29,6 +29,32 @@ function authedContext(userId: string, request: Request): AuthedContext {
   }
 }
 
+/**
+ * Run a handler; if it answers 5xx (or throws) and the signed-in user's
+ * `users` row is gone, answer 401 instead (#222). A JWT outlives an account
+ * deleted on another device, and its writes then fail on the user_id foreign
+ * key. The lookup runs only on the failure path; if it errors too, the
+ * original failure stands.
+ */
+async function runAuthed(ctx: AuthedContext, run: () => Promise<Response>): Promise<Response> {
+  let res: Response | undefined
+  let thrown: unknown
+  try {
+    res = await run()
+    if (res.status < 500) return res
+  } catch (err) {
+    thrown = err
+  }
+  try {
+    const { data, error } = await ctx.supabase.from("users").select("id").eq("id", ctx.userId).maybeSingle()
+    if (!error && !data) return apiUnauthorized()
+  } catch {
+    // keep the original failure
+  }
+  if (res) return res
+  throw thrown
+}
+
 export interface AuthedJsonContext extends AuthedContext {
   body: unknown
 }
@@ -46,7 +72,8 @@ export function withAuthedRoute<TArgs extends unknown[]>(
     const session = await safeAuth()
     if (!session?.user?.id) return apiUnauthorized()
 
-    return handler(authedContext(session.user.id, request), ...rest)
+    const ctx = authedContext(session.user.id, request)
+    return runAuthed(ctx, () => handler(ctx, ...rest))
   }
 }
 
@@ -65,7 +92,8 @@ export function withAuthedCsrfRoute<TArgs extends unknown[]>(
     const session = await safeAuth()
     if (!session?.user?.id) return apiUnauthorized()
 
-    return handler(authedContext(session.user.id, request), ...rest)
+    const ctx = authedContext(session.user.id, request)
+    return runAuthed(ctx, () => handler(ctx, ...rest))
   }
 }
 
@@ -88,7 +116,8 @@ export function withAuthedJsonRoute<TArgs extends unknown[]>(
     const body = await request.json().catch(() => null)
     if (body === null) return apiError("Invalid JSON", 400)
 
-    return handler(Object.assign(authedContext(session.user.id, request), { body }), ...rest)
+    const ctx = Object.assign(authedContext(session.user.id, request), { body })
+    return runAuthed(ctx, () => handler(ctx, ...rest))
   }
 }
 

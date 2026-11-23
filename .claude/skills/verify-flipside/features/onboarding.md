@@ -9,7 +9,7 @@ goes to the Feed; `Skip` goes straight there. Until it is finished, `/feed` send
 - `onb-resume` an unfinished account opening `/feed` lands on `/onboarding`; a finished one opening `/onboarding` lands on `/feed`.
 - `onb-search` the `Artists I like` card searches artists and adds picks as chips.
 - `onb-min-seeds` with 1 or 2 artists picked `Get started` is disabled and a hint says how many more.
-- `onb-disabled-hint` whenever `Get started` is disabled it looks disabled (opacity 0.7, default cursor) and a `status` line above it says why: nothing entered yet, 1 or 2 artists, or a malformed Last.fm / stats.fm username. Mapped, not yet driven.
+- `onb-disabled-hint` whenever `Get started` is disabled it looks disabled (grey fill and text from the shared `.btn-primary:disabled` style, not violet; default cursor) and a `status` line above it says why: nothing entered yet, 1 or 2 artists, or a malformed Last.fm / stats.fm username. The grey look with nothing entered is driven by `journeys.py disabled-buttons`; the other reasons are mapped, not yet driven.
 - `onb-save` `Get started` stores the artists in `seed_artists`, stamps `onboarding_completed_at`, goes to `/feed`.
 - `onb-save-fails` when the artists save fails the page stays, shows an error toast and the button works again.
 - `onb-skip` `Skip` stamps `onboarding_completed_at` without seeds and goes to `/feed`.

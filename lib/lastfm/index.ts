@@ -29,6 +29,7 @@ import {
   type CacheStore,
 } from "./cache"
 import { runLastfm } from "./limit"
+import { genreTagName } from "./tag-name"
 import type { ArtistEnrichment, LastfmArtistCandidate, SimilarArtistRef } from "./types"
 
 export type { ArtistEnrichment, LastfmArtistCandidate, SimilarArtistRef } from "./types"
@@ -134,8 +135,9 @@ export interface Lastfm {
   hasKey(): boolean
   /**
    * tag.gettopartists names, rank order, cached (7d; empties 12h). Tries the tag
-   * as-is, then retries an empty hyphenated tag with spaces ("dutch-black-metal"
-   * → "dutch black metal"). Transient failure → [] (not cached).
+   * as-is, then retries an empty hyphenated tag once under the genre's real name
+   * ("dutch-black-metal" → "dutch black metal", "r-b" → "r&b"). Transient
+   * failure → [] (not cached).
    */
   tagTopArtists(tag: string, limit?: number): Promise<string[]>
   /** artist.getSimilar refs (name + match), cached 7d (empties not cached). [] on any failure. */
@@ -154,10 +156,12 @@ export interface Lastfm {
   /** artist.search candidates, cached (7d; empties 12h). Blank query → []. Transient failure → []. */
   searchArtists(query: string, limit?: number): Promise<LastfmArtistCandidate[]>
   /**
-   * Unique artist names from user.getTopArtists + user.getRecentTracks (200 each).
+   * Unique artists from user.getTopArtists + user.getRecentTracks (200 each),
+   * each with a real play count: the all-time `playcount` from top artists, or
+   * (for an artist outside the top 200) their scrobbles among the recent tracks.
    * Uncached. THROWS on missing key, non-2xx or a Last.fm error body.
    */
-  userArtistNames(username: string): Promise<string[]>
+  userArtistPlays(username: string): Promise<Array<{ name: string; plays: number }>>
 }
 
 export interface LastfmDeps {
@@ -200,16 +204,19 @@ export function createLastfm(deps: LastfmDeps = {}): Lastfm {
     return asArray<{ name: string }>(data?.topartists?.artist).map((a) => a.name).filter(Boolean)
   }
 
-  // Genre-tree leaf tags are hyphenated slugs but Last.fm indexes most
-  // multi-word tags space-separated. As-is FIRST so canonical hyphenated tags
-  // (trip-hop, post-punk) keep their better-curated results.
+  // Genre-tree tags are hyphenated slugs but Last.fm indexes tags as people
+  // type them. As-is FIRST so canonical hyphenated tags (trip-hop, post-punk)
+  // keep their better-curated results; an empty one is retried once under the
+  // genre's real name ("r-b" → "r&b", "lo-fi-indie" → "lo-fi indie", #216),
+  // or with spaces when that name is the slug itself ("samba-rock").
   async function tagWithRetry(tag: string, limit: number): Promise<string[]> {
     const key = apiKey()
     if (!key) return []
     const names = await tagOnce(tag, limit, key)
     if (names.length > 0 || !tag.includes("-")) return names
+    const name = genreTagName(tag)
     try {
-      return await tagOnce(tag.replace(/-/g, " "), limit, key)
+      return await tagOnce(name === tag ? tag.replace(/-/g, " ") : name, limit, key)
     } catch {
       return names // primary spelling was genuinely empty; don't let a retry blip mask that
     }
@@ -326,7 +333,7 @@ export function createLastfm(deps: LastfmDeps = {}): Lastfm {
       return cachedArtistSearch<LastfmArtistCandidate>(q, limit, searchRaw, cache)
     },
 
-    userArtistNames: async (username) => {
+    userArtistPlays: async (username) => {
       const key = apiKey()
       if (!key) throw new Error("Last.fm API key is not configured")
       const base = "https://ws.audioscrobbler.com/2.0/"
@@ -339,7 +346,7 @@ export function createLastfm(deps: LastfmDeps = {}): Lastfm {
       if (!recentRes.ok) throw new Error(`Failed to fetch Last.fm recent tracks (HTTP ${recentRes.status})`)
 
       const top = (await topRes.json()) as {
-        topartists?: { artist: { name: string } | Array<{ name: string }> }
+        topartists?: { artist: { name: string; playcount?: string } | Array<{ name: string; playcount?: string }> }
         error?: number
         message?: string
       }
@@ -355,14 +362,20 @@ export function createLastfm(deps: LastfmDeps = {}): Lastfm {
         throw new Error(recent.message ?? `Last.fm error ${recent.error}: could not load recent tracks for "${username}"`)
       }
 
-      const names = new Set<string>()
       // Trimmed: "Radiohead " would otherwise mint a second artists row beside "Radiohead".
-      for (const a of asArray(top.topartists?.artist)) if (a.name?.trim()) names.add(a.name.trim())
+      const recentPlays = new Map<string, number>()
       for (const t of asArray(recent.recenttracks?.track)) {
         const name = t.artist?.["#text"]?.trim()
-        if (name) names.add(name)
+        if (name) recentPlays.set(name, (recentPlays.get(name) ?? 0) + 1)
       }
-      return [...names]
+      const plays = new Map<string, number>()
+      for (const a of asArray(top.topartists?.artist)) {
+        const name = a.name?.trim()
+        // A missing/garbled playcount still means "seen at least once".
+        if (name) plays.set(name, Math.max(plays.get(name) ?? 0, parseInt(a.playcount ?? "", 10) || 1))
+      }
+      for (const [name, n] of recentPlays) plays.set(name, Math.max(plays.get(name) ?? 0, n))
+      return [...plays].map(([name, n]) => ({ name, plays: n }))
     },
   }
 }

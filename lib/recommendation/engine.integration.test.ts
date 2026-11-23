@@ -674,6 +674,30 @@ describe("buildRecommendations — genre seed tag limit (#175 F15)", () => {
   })
 })
 
+// ── #216: every selected genre gets a turn ──────────────────────────────────
+describe("buildRecommendations — genre seeds are sampled per build (#216)", () => {
+  it("twelve selected genres: five tag lookups per build, and not always the first five", async () => {
+    const genres = Array.from({ length: 12 }, (_, i) => `g-${i}`)
+    const seededBy = async (random: number) => {
+      seed({ users: [{ id: "u1", selected_genres: genres }] })
+      const asked: string[] = []
+      lf.tags = (tag) => {
+        if (genres.includes(tag)) asked.push(tag)
+        return []
+      }
+      const spy = vi.spyOn(Math, "random").mockReturnValue(random)
+      await buildRecommendations(baseInput())
+      spy.mockRestore()
+      return asked.sort()
+    }
+    const a = await seededBy(0.999) // shuffle leaves the order as selected
+    const b = await seededBy(0) // shuffle rotates the list
+    expect(a).toEqual(["g-0", "g-1", "g-2", "g-3", "g-4"])
+    expect(new Set(b).size).toBe(5)
+    expect(b).not.toEqual(a)
+  })
+})
+
 describe("buildRecommendations — liked artists seed the feed", () => {
   it("a liked artist with no recommendation_cache row still becomes a seed", async () => {
     const likedId = "1c000000-0000-4000-8000-000000000001"

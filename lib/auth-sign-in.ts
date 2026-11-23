@@ -13,6 +13,8 @@ export const SIGN_IN_CODES = {
   failed: "credentials",
   taken: "username_taken",
   rateLimited: "rate_limited",
+  /** Too many new accounts from this network today (#218). */
+  accountLimit: "account_limit",
 } as const
 
 /** Unknown / missing mode falls back to "existing": never create by accident. */
@@ -32,6 +34,7 @@ export const SIGN_IN_GENERIC_ERROR = "Something went wrong. Please try again."
  */
 export function signInErrorMessage(mode: SignInMode, code: string | undefined): string {
   if (code === SIGN_IN_CODES.rateLimited) return "Too many attempts. Wait a minute and try again."
+  if (code === SIGN_IN_CODES.accountLimit) return "Too many new accounts from this network today. Try again tomorrow, or choose Existing account if you have one."
   if (code === SIGN_IN_CODES.taken) return "That username is taken. Pick another, or choose Existing account if it’s yours."
   if (code === SIGN_IN_CODES.failed && mode === "existing") return "Couldn’t sign in with that username. New here? Choose New account."
   return SIGN_IN_GENERIC_ERROR
@@ -48,11 +51,14 @@ export function normalizeUsername(raw: unknown): string | null {
 
 export interface UserStore {
   findIdByHash(hash: string): Promise<string | null>
-  /** Inserts a user. `taken` when the unique index on username_hash rejects it. */
-  create(hash: string): Promise<{ id: string } | { taken: true } | null>
+  /**
+   * Inserts a user. `taken` when the unique index on username_hash rejects it;
+   * `limited` when this network is over its daily new-account cap (nothing inserted).
+   */
+  create(hash: string): Promise<{ id: string } | { taken: true } | { limited: true } | null>
 }
 
-export type SignInResult = { id: string } | { error: "failed" | "taken" }
+export type SignInResult = { id: string } | { error: "failed" | "taken" | "limited" }
 
 export async function resolveSignIn(
   mode: SignInMode,
@@ -70,5 +76,6 @@ export async function resolveSignIn(
   if (!created) return { error: "failed" }
   // A concurrent "new" with the same name won the insert.
   if ("taken" in created) return { error: "taken" }
+  if ("limited" in created) return { error: "limited" }
   return { id: created.id }
 }

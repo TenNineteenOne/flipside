@@ -14,7 +14,8 @@ const daysAgo = (n: number) => new Date(Date.now() - n * DAY).toISOString()
 
 function setup(fail: Record<string, string> = {}) {
   db = createRouteFakeDb(
-    { recommendation_cache: [{ user_id: "u1", artist_id: ARTIST, created_at: daysAgo(10), expires_at: daysAgo(-20), seen_at: daysAgo(5), skip_at: null }] },
+    // users row present: a 500 for a user whose row is gone becomes 401 in the wrapper (#222).
+    { users: [{ id: "u1" }], recommendation_cache: [{ user_id: "u1", artist_id: ARTIST, created_at: daysAgo(10), expires_at: daysAgo(-20), seen_at: daysAgo(5), skip_at: null }] },
     fail,
   )
   // rpc_clear_dismiss_v2 as the migration defines it: seen_at and skip_at only.

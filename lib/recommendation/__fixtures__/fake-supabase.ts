@@ -6,10 +6,10 @@
  * exercise:
  *
  *   .from(table)
- *     .select(cols)[.eq/.is/.not/.gt/.gte/.in/.or/.order/.limit/.range][.maybeSingle/.single]
+ *     .select(cols)[.eq/.is/.not/.gt/.lt/.gte/.in/.or/.order/.limit/.range][.maybeSingle/.single]
  *     .insert(row | rows)[.select(cols).single()]
  *     .upsert(rows, { onConflict, ignoreDuplicates })
- *     .update(patch).eq(col, val)
+ *     .update(patch).eq(col, val)[.in/.lt]
  *     .delete().eq(col, val)
  *   .rpc(name, args)   — dispatched to the `rpcs` handlers passed in (optional)
  *
@@ -180,6 +180,11 @@ export function createFakeSupabase(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       gt(col: string, val: any) {
         filters.push((r) => r[col] != null && r[col] > val)
+        return q
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      lt(col: string, val: any) {
+        filters.push((r) => r[col] != null && r[col] < val)
         return q
       },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

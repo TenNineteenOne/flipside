@@ -1,6 +1,6 @@
 ---
 title: Infra & Ops
-updated: 2026-11-22
+updated: 2026-11-23
 related: [[auth-and-session]], [[api-routes]], [[data-model]]
 ---
 
@@ -30,8 +30,11 @@ Two jobs, both daily and both gated by `Authorization: Bearer <CRON_SECRET>` (`w
 - `GET /api/cron/mb-backfill` at `0 4 * * *` (04:00 UTC): fills missing external ids on
   `artists` (`spotify_id`, `mbid`, `apple_id`, `deezer_id`) from MusicBrainz, up to 120 artists a run.
 - `GET /api/cron/recommendations` at `0 3 * * *` (03:00 UTC): expires unseen recs >3 days,
-  hard-deletes rows expired >30 days (excluding `skip_at` permanent dismissals), and deletes
-  `login_attempts` rows older than 24 hours.
+  hard-deletes rows expired >30 days via `rpc_prune_recommendation_cache` (migration 0045),
+  keeping `skip_at` permanent dismissals and seen rows whose artist the user liked, passed or
+  saved (#219, so History keeps them). Until 0045 is applied the RPC call fails and the job
+  logs `prune skipped` and deletes no Feed rows. It also deletes `login_attempts` rows older
+  than 24 hours (which is also when a new-account bucket's 24h window ends, #218).
 
 See [[api-routes]].
 

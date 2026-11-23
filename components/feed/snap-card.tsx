@@ -3,7 +3,7 @@
 import "./feed.css"
 import { useEffect, useRef, useState } from "react"
 import { motion, useMotionValue, useReducedMotion, useTransform, type PanInfo } from "framer-motion"
-import { Heart, ThumbsDown, X } from "lucide-react"
+import { Heart, Pause, Play, ThumbsDown, X } from "lucide-react"
 import { Art, artistVar, CardActions, TrackList, VERDICT } from "@/components/feed/feed-parts"
 import { artworkFor } from "@/lib/feed/artwork"
 import { listSeparator, whyParts } from "@/lib/feed/card-copy"
@@ -69,6 +69,9 @@ export function SnapCard({ a, triage, eager = false, enter = false }: {
   // Artists that arrived without tracks fetch them once selected, as the desktop focus pane does.
   const fetchTracks = a.topTracks.length === 0 && a.id === triage.selectedId
 
+  const playable = tracks.some((t) => t.previewUrl)
+  const playing = triage.isPlaying(a)
+
   const v = VERDICT[triage.signals.get(a.id) ?? ""]
   const sw = useSwipe((dir) => triage.judge(a.id, dir > 0 ? "thumbs_up" : "thumbs_down", { toggle: false, advance: true }))
 
@@ -93,6 +96,12 @@ export function SnapCard({ a, triage, eager = false, enter = false }: {
     >
       <div className="ev-m-art">
         <Art a={a} src={art} size={600} className="ev-m-img" alt={`${tracks[0]?.albumName || a.name} cover art`} eager={eager} priority={eager} />
+        {/* Shown by feed.css only where the preview rows are hidden (short pages, #214). A click that ends a drag is not a tap. */}
+        {playable && (
+          <button type="button" className="ev-m-play" onClick={() => { if (Math.abs(sw.style.x.get()) < 4) triage.togglePlay(a) }} aria-label={`${playing ? "Pause" : "Play"} ${a.name} preview`}>
+            <span aria-hidden>{playing ? <Pause size={18} fill="currentColor" strokeWidth={0} /> : <Play size={18} fill="currentColor" strokeWidth={0} />}</span>
+          </button>
+        )}
         <div className="ev-m-title">
           <h2 className="ev-m-name">{a.name}</h2>
           {a.genres.length > 0 && <p className="ev-m-genres">{a.genres.join(" · ")}</p>}
@@ -116,7 +125,7 @@ export function SnapCard({ a, triage, eager = false, enter = false }: {
           </p>
         )}
         <CardActions a={a} triage={triage} />
-        {tracks.some((t) => t.previewUrl) ? (
+        {playable ? (
           <TrackList a={a} triage={triage} tracks={tracks} />
         ) : fetchTracks ? (
           <TrackFetch a={a} triage={triage} />

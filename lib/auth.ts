@@ -3,7 +3,7 @@ import Credentials from "next-auth/providers/credentials"
 import { createHmac } from "crypto"
 import { cookies } from "next/headers"
 import { createServiceClient } from "@/lib/supabase/server"
-import { isRateLimited } from "@/lib/rate-limiter"
+import { isNewAccountLimited, isRateLimited } from "@/lib/rate-limiter"
 import {
   SIGN_IN_CODES,
   normalizeUsername,
@@ -19,7 +19,11 @@ class RateLimitedError extends CredentialsSignin {
   code = SIGN_IN_CODES.rateLimited
 }
 
-function supabaseUserStore(): UserStore {
+class AccountLimitError extends CredentialsSignin {
+  code = SIGN_IN_CODES.accountLimit
+}
+
+function supabaseUserStore(ip: string): UserStore {
   const supabase = createServiceClient()
   return {
     async findIdByHash(hash) {
@@ -32,6 +36,8 @@ function supabaseUserStore(): UserStore {
       return data?.id ?? null
     },
     async create(hash) {
+      // Only reached when the name is free, so existing accounts never pay this.
+      if (await isNewAccountLimited(ip)) return { limited: true }
       const { data, error } = await supabase
         .from("users")
         .insert({ username_hash: hash })
@@ -73,10 +79,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         }
 
         const hash = createHmac("sha256", secret).update(username).digest("hex")
-        const result = await resolveSignIn(parseSignInMode(credentials?.mode), hash, supabaseUserStore())
+        const result = await resolveSignIn(parseSignInMode(credentials?.mode), hash, supabaseUserStore(ip))
 
         if ("id" in result) return { id: result.id }
         if (result.error === "taken") throw new UsernameTakenError()
+        if (result.error === "limited") throw new AccountLimitError()
         return null
       },
     }),
