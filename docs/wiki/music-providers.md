@@ -58,19 +58,11 @@ the name resolver; it already carries genres and popularity, so `buildEnrichArti
 deleted on 2026-11-22) and `mergeEnrichment` (the uncalled `pickBestMatch`/`searchAndMatchArtist` search guard was
 deleted 2026-11-12).
 
-## Spotify — `lib/music-provider/spotify.ts` (client-credentials only)
+## Spotify — removed
 
-The user-token surface is gone (restore tag `archive/spotify-user-token`). Two functions:
-
-- `getSpotifyTopTracks(token, spotifyId, limit, market)` — the preview fallback after
-  iTunes, wired in `livePlayablePorts` (`playable-candidates.ts`); keyed on the Spotify
-  id, no-op without an id or token.
-- `searchSpotifyArtists(token, query)` — returns `RateLimited` on 429 / open breaker; used
-  only by `scripts/seed-artist-cache.ts`.
-
-The token is `getSpotifyClientToken()` (`lib/spotify-client-token.ts`: in-memory cache,
-in-flight dedup), fetched by the generate route. `RateLimited` /
-`isRateLimited` stay in `lib/music-provider/index.ts`.
+The adapter, the client token and the seeding script were deleted on 2026-11-23 (#217);
+the app makes no Spotify API calls. `RateLimited` / `isRateLimited` stay in
+`lib/music-provider/index.ts`.
 
 ## iTunes — `lib/music-provider/itunes.ts`
 
@@ -91,7 +83,6 @@ match is the normal answer for an artist iTunes lacks.
 
 | Mechanism | File | Behavior |
 |---|---|---|
-| `spotifyBreaker` | `preview-source-breaker.ts` (instance in `spotify.ts`) | threshold 5 failures, 60s cooldown; honors `Retry-After` via `openUntil()` (can be ~24h on a credential ban). When open, search returns `{rateLimited, skipRetry}` and top-tracks returns `[]`. |
 | `itunesBreaker` | instance in `itunes.ts` | threshold 5, 60s; trips on 403/429/timeout; returns `null` so callers fall back to Spotify. |
 | `createLimiter` | `lib/limiter.ts` | the generic gate (token bucket / min interval / concurrency) behind both limiters below. |
 | iTunes gate | `itunes-limit.ts` | max 5 concurrent, 50ms min spacing. |

@@ -146,7 +146,7 @@ async function scenario(label: string, fresh: boolean, tables: Tables = {}) {
   let seed = 42
   vi.spyOn(Math, "random").mockImplementation(() => ((seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31))
   const t0 = Date.now()
-  const r = await buildRecommendations({ userId: "u1", accessToken: "", playThreshold: 5, popularityCurve: 0.95 })
+  const r = await buildRecommendations({ userId: "u1",  playThreshold: 5, popularityCurve: 0.95 })
   const tier1Ms = Date.now() - t0
   const atReturn = snap()
   await r.finish()

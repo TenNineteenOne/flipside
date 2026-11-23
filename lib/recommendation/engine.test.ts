@@ -575,8 +575,7 @@ describe("runWithSoftening cascade order", () => {
     playThreshold: 5,
     seedNames: ["A", "B"],
     undergroundMode: true,
-    source: "multi_source",
-    accessToken: "",
+    source: "multi_source", 
     popularityCurve: 0.95,
     supabase: undefined as unknown as RunPipelineOpts["supabase"],
   }

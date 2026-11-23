@@ -44,13 +44,6 @@ export interface ConfirmPreviewDeps {
   /** iTunes search by artist name. Returns tracks, [] for no match, or null on failure. */
   searchItunes: (name: string) => Promise<Track[] | null>
   /**
-   * Spotify top-tracks by *Spotify* artist id. Returns tracks ([] on
-   * none/failure). Fallback source. Accepts null (no Spotify id known, e.g. a
-   * Last.fm-only artist) and no-ops to [] — NEVER call Spotify with the
-   * internal uuid identity, which would 404 and trip the breaker.
-   */
-  getSpotifyTopTracks: (spotifyId: string | null) => Promise<Track[]>
-  /**
    * Optional persistence hook (#162). Called ONCE per live confirm — see the
    * firing matrix in `confirmPlayableTracks`. Never called on cache reuse or
    * the `knownEmpty` short-circuit.
@@ -62,9 +55,7 @@ export interface ConfirmInput {
   id: string
   name: string
   /**
-   * Spotify artist id (the attribute, not the identity). Used for the Spotify
-   * top-tracks fallback. Null/undefined when unknown (Last.fm-only artist) →
-   * the Spotify fallback no-ops.
+   * Spotify artist id (the attribute, not the identity); only carried through for links.
    */
   spotifyId?: string | null
   /**
@@ -144,7 +135,7 @@ export async function confirmToTarget<T extends { artist: Artist }>(
 
 /**
  * Confirm an artist's playable tracks. Reuses cached topTracks when present
- * (no network); otherwise iTunes-first, Spotify fallback. Returns ONLY playable
+ * (no network); otherwise iTunes. Returns ONLY playable
  * tracks (non-null previewUrl); an empty result means "drop this artist".
  * NEVER throws — any source failure degrades to the next source / empty.
  */
@@ -177,21 +168,10 @@ export async function confirmPlayableTracks(
     return p
   }
 
-  // 4. Spotify fallback — keyed on the SPOTIFY id, never the uuid identity.
-  const sp = await deps.getSpotifyTopTracks(artist.spotifyId ?? null).catch(() => [])
-  const p2 = playableTracks(sp)
-  if (p2.length > 0) {
-    deps.onConfirmOutcome?.({ artistId: artist.id, name: artist.name, tracks: p2, definitiveEmpty: false, source: 'spotify' })
-    return p2
-  }
-
-  // 5. Nothing playable. Emit a negative ONLY when iTunes gave a DEFINITIVE
-  //    answer (it !== null — not a failure/breaker/timeout) AND there's no
-  //    Spotify id, so the empty isn't Spotify-ambiguous. iTunes null → no
-  //    callback (artist stays unconfirmed). iTunes real-[] but a spotifyId is
-  //    present and Spotify also came back empty → Spotify [] is failure-
-  //    ambiguous, so still no negative.
-  if (it !== null && artist.spotifyId == null) {
+  // 4. Nothing playable. Emit a negative ONLY when iTunes gave a DEFINITIVE
+  //    answer (it !== null — not a failure/breaker/timeout). iTunes null → no
+  //    callback (artist stays unconfirmed).
+  if (it !== null) {
     deps.onConfirmOutcome?.({ artistId: artist.id, name: artist.name, tracks: [], definitiveEmpty: true, source: 'itunes' })
   }
   return []

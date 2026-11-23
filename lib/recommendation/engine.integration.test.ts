@@ -106,8 +106,7 @@ function seed(tables: Tables): void {
 
 function baseInput() {
   return {
-    userId: "u1",
-    accessToken: "",
+    userId: "u1", 
     playThreshold: 5,
     popularityCurve: 0.95,
   }

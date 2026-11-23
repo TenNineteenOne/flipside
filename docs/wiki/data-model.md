@@ -103,7 +103,7 @@ seeds. Last.fm-only picks get their uuid via `/api/onboarding/resolve` (the door
 
 | Table | Key | Holds | TTL |
 |---|---|---|---|
-| `artist_tracks_cache` | `artist_id` (PK, 0037) | track list (iTunes primary / Spotify fallback) | 24h (app-enforced via `fetched_at`) |
+| `artist_tracks_cache` | `artist_id` (PK, 0037) | track list (iTunes; old rows may say `spotify`) | 24h (app-enforced via `fetched_at`) |
 | `lastfm_cache` | `(kind, key)` | `tag_top` + `similar` Last.fm responses | 7-day positive, 12h negative |
 | `artist_external_links` | `artist_id` (PK, 0037) | resolved `apple_music_url` | 30-day |
 

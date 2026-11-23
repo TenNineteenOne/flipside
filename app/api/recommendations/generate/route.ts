@@ -1,7 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/server"
 import { apiError, apiUnauthorized } from "@/lib/errors"
 import { withAuthedCsrfRoute } from "@/lib/api/with-authed-route"
-import { getSpotifyClientToken } from "@/lib/spotify-client-token"
 import { claimCooldown } from "@/lib/cooldown"
 import { buildRecommendations } from "@/lib/recommendation/engine"
 import { formatGenTiming } from "@/lib/recommendation/gen-timing"
@@ -120,12 +119,6 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
 
   const supabase = createServiceClient()
 
-  // Warm the Spotify client token concurrently with the user-row read. On
-  // serverless cold starts the module-cached token is empty; overlapping it
-  // with the DB round-trip removes a 200–400ms serial blip. The .catch settles
-  // the promise so it never becomes an unhandled rejection if unused.
-  const clientTokenPromise = getSpotifyClientToken().catch(() => null)
-
   // Replace mode: swap the unseen queue for a fresh batch (the Feed's
   // Regenerate), so newly-added anchors take immediate effect.
   const replace = req.nextUrl.searchParams.get("replace") === "true"
@@ -188,17 +181,6 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
     // This allows users to request "more" natively and gracefully append them to their existing batch.
     // Replace mode drops the old unseen rows below, once the new batch has landed.
 
-    // Spotify token is OPTIONAL (Stage 2 / #157): candidate resolution is now
-    // Last.fm-based and previews fall back to iTunes, so generation runs fully
-    // Spotify-free. Use a token when we have one (enables richer Spotify previews
-    // via confirm), otherwise generate without it.
-    // '' = no Spotify (the established RecommendationInput convention) — generation
-    // runs Spotify-free (Last.fm resolver + iTunes previews).
-    const accessToken = (await clientTokenPromise) ?? ""
-    if (!accessToken) {
-      console.log("[generate] no Spotify token — generating Spotify-free (Last.fm resolver + iTunes previews)")
-    }
-
     // Reset per-request API call counters before the blocking generate. The
     // snapshot below captures only the critical-path calls; background after()
     // work runs after logging and is intentionally excluded.
@@ -206,7 +188,6 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }): Promise<Res
     const genStart = Date.now()
     const { count: recCount, requeued, pending, finish, softenedFilters, metrics } = await buildRecommendations({
       userId: user.id,
-      accessToken,
       playThreshold: FEED_PLAY_THRESHOLD,
       popularityCurve,
       undergroundMode,

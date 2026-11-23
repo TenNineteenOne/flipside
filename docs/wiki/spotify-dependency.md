@@ -1,11 +1,17 @@
 ---
 title: Spotify Dependency — Analysis
-updated: 2026-11-22
+updated: 2026-11-23
 related: [[music-providers]], [[external-apis]], [[generation-engine]], [[data-model]]
 sources: docs/_sweeps/research-A-deezer-apple.md, research-B-musicbrainz-lastfm.md, research-C-spotify-state.md
 ---
 
 # Spotify Dependency — Analysis
+
+> **Status 2026-11-23 (#217): the app no longer calls the Spotify API at all.** The preview
+> fallback (`lib/music-provider/spotify.ts`), the client token (`lib/spotify-client-token.ts`)
+> and `scripts/seed-artist-cache.ts` are deleted; `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET`
+> are unused and can be removed from Vercel. What is left is data only: `artists.spotify_id`
+> (from MusicBrainz) for the "Open in Spotify" link. Everything below is history.
 
 > **Status 2026-10-24 (#175):** much of this analysis has been acted on. Login is
 > username-only; the Spotify **user-token** surface (history, like, save→playlist, OAuth)

@@ -2,7 +2,6 @@ import type { ArtistWithTracks } from '../music-provider/types'
 
 export interface RecommendationInput {
   userId: string        // Supabase UUID
-  accessToken: string   // Spotify access token (empty string if user has no Spotify)
   playThreshold: number // FEED_PLAY_THRESHOLD (fixed since #205; users.play_threshold is retired)
   popularityCurve: number // from users.fame_level via fameToEngine — base `k` of k^popularity scoring
   undergroundMode?: boolean // fame_level 0: hard pop<=50 cap + discoveryScore penalty

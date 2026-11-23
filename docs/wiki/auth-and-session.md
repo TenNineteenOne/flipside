@@ -60,9 +60,8 @@ cookie instead of throwing).
 There is **no per-user Spotify token**. Login is Credentials-only, so nothing ever wrote an
 `accessToken` into the JWT. The dead reader (`lib/get-access-token.ts`) and the routes that
 depended on it (`/api/spotify/like`, `/api/spotify/resolve-track`, the save→playlist branch
-of `/api/saves`) were deleted in #175 (restore tag `archive/spotify-user-token`). All
-server-side Spotify calls use the shared client-credentials token
-(`lib/spotify-client-token.ts`), or `""` (Spotify-free) when it is unavailable. The
+of `/api/saves`) were deleted in #175 (restore tag `archive/spotify-user-token`). There are
+no server-side Spotify calls since 2026-11-23 (#217). The
 `users.flipside_playlist_id` / `spotify_id` columns remain but are unused. See
 [[external-apis]] and [[music-providers]].
 

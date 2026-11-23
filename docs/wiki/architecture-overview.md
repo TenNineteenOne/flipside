@@ -1,6 +1,6 @@
 ---
 title: Architecture Overview
-updated: 2026-11-22
+updated: 2026-11-23
 related: [[generation-engine]], [[api-routes]], [[music-providers]], [[data-model]]
 ---
 
@@ -44,7 +44,7 @@ seeds ─▶ Last.fm similarity / tag fan-out ─▶ candidate names
          `artists` name read → Last.fm artist.getInfo → mint/reuse row)
       ─▶ filter (listened / thumbs-down / cooldown / underground cap)
       ─▶ score (k^popularity) + diversity (greedy + 25% cluster cap)
-      ─▶ confirm playable preview (iTunes first → Spotify fallback)
+      ─▶ confirm playable preview (iTunes only)
       ─▶ write to cache (recommendation_cache)
 ```
 
@@ -56,7 +56,7 @@ Key design properties:
   `docs/archive/superpowers/specs/prd-fast-first-paint.md`.)
 - **Last.fm is the recommendation brain**, not Spotify. Similar-artist and genre-tag
   expansion are 100% Last.fm. See [[external-apis]].
-- **iTunes is the primary preview source**; Spotify is a fallback. See [[music-providers]].
+- **iTunes is the only preview source** (the Spotify fallback was removed 2026-11-23). See [[music-providers]].
 - **Diversity is enforced** by a hard 25% per-genre cluster cap plus soft greedy penalties.
 - **Resilience** comes from per-provider circuit breakers + concurrency limiters so one
   generation can't self-DDoS the shared keys. See [[music-providers]].
@@ -81,7 +81,7 @@ See [[index]] for the full module map.
 |---|---|---|
 | Last.fm | similar artists, genre tags, enrichment (genres/popularity), history | [[external-apis]] |
 | iTunes / Apple | 30s preview audio (primary), Apple Music links | [[external-apis]] |
-| Spotify Web API | client-credentials top-tracks preview fallback only (`lib/music-provider/spotify.ts`); no user token, no library actions, no name resolution (#157, #175). "Open in Spotify" is a URL, not an API call | [[external-apis]], [[spotify-dependency]] |
+| Spotify Web API | not called at all since 2026-11-23 (only `open.spotify.com` links remain); no user token, no library actions, no name resolution (#157, #175). "Open in Spotify" is a URL, not an API call | [[external-apis]], [[spotify-dependency]] |
 | stats.fm | optional listening-history source | [[external-apis]] |
 | Supabase | all persistence | [[data-model]] |
 

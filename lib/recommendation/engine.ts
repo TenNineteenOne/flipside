@@ -491,7 +491,6 @@ export interface RunPipelineOpts {
   seedNames: string[]
   /** The user's onboarding seed artists: never recommended back, even past the seed cap. */
   pinnedSeeds?: string[]
-  accessToken: string
   userId: string
   playThreshold: number
   popularityCurve: number
@@ -553,7 +552,7 @@ export interface PipelineRun {
 
 async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
   const {
-    seedNames, pinnedSeeds = [], accessToken, userId, playThreshold, popularityCurve, supabase,
+    seedNames, pinnedSeeds = [], userId, playThreshold, popularityCurve, supabase,
     source, undergroundMode, userGenres = [],
   } = o
 
@@ -561,7 +560,7 @@ async function runPipeline(o: RunPipelineOpts): Promise<PipelineRun> {
   // (primary, secondary, bleed) shares its doorway; every confirm tier (tier-1
   // blocking, tier-2 deferred, secondary) records outcomes into it, flushed
   // once by finish() (in after()) so a single batch-upsert covers all three phases.
-  const candidates = new PlayableCandidates(supabase, livePlayablePorts(accessToken), o.identity)
+  const candidates = new PlayableCandidates(supabase, livePlayablePorts(), o.identity)
   const flush = () => candidates.flush()
   // A zero-top run is discarded by softening: abort its far/bleed resolves so
   // they stop competing with the next run for the Last.fm gate and the DB.
@@ -1211,7 +1210,7 @@ export async function runWithSoftening(
  * widening. See `runWithSoftening` for the cascade logic.
  */
 export async function buildRecommendations(input: RecommendationInput): Promise<BuildResult> {
-  const { userId, accessToken, playThreshold, popularityCurve, undergroundMode } = input
+  const { userId, playThreshold, popularityCurve, undergroundMode } = input
   const supabase = createServiceClient()
 
   // The exclusion rows every run needs, read once and alongside the gather.
@@ -1228,7 +1227,6 @@ export async function buildRecommendations(input: RecommendationInput): Promise<
   const makeBaseOpts = (overrides: Partial<RunPipelineOpts>): RunPipelineOpts => ({
     seedNames,
     pinnedSeeds,
-    accessToken,
     userId,
     playThreshold,
     popularityCurve,

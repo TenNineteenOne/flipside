@@ -53,13 +53,10 @@ paid developer JWT.
 ## Spotify Web API
 **Client-credentials only** — login is username-only and the user-token surface (history,
 like, save→playlist, OAuth) was deleted in #175 (restore tag `archive/spotify-user-token`).
-Adapter: `lib/music-provider/spotify.ts`. See [[spotify-dependency]] for the 2026 API gutting.
+**Removed 2026-11-23:** the app makes no Spotify API calls (the adapter, the client token and the seeding script are deleted). See [[spotify-dependency]] for the 2026 API gutting.
 
 | Endpoint | Used for | Where | Degrades? |
 |---|---|---|---|
-| `/artists/{id}/top-tracks` | preview fallback after iTunes | `getSpotifyTopTracks` via `livePlayablePorts` | no Spotify id / token → skipped; ⚠️ likely removed for client-creds in Feb 2026 |
-| `/search?type=artist` | name → Spotify id + image | `searchSpotifyArtists`, **only** `scripts/seed-artist-cache.ts` | generation resolves names via Last.fm since #157 |
-| `accounts.spotify.com/api/token` | client-credentials token | `lib/spotify-client-token.ts` | null token → Spotify fallback skipped |
 
 > ⚠️ As of **Feb 2026** Spotify removed `popularity`/`followers` from the artist object,
 > deprecated `genres`, nulled `preview_url` for client-creds, and removed related-artists /

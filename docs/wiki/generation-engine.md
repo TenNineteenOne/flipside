@@ -63,7 +63,7 @@ far pool (step 10; always on).
    resolve keeps the resolver defaults (4 workers, 200 ms). Before the workers start, one
    batched `lastfm_cache` read covers every miss's getInfo (`lastfm.prefetch`). The resolved artist carries
    its roster row's `spotify_id` and (when set) popularity — a name landing on a homonym's
-   Spotify row keeps the Spotify fallback and scores on the row's popularity (#175 F-F).
+   Spotify row keeps its `spotify_id` and scores on the row's popularity (#175 F-F).
 7. **Filter** (the `keep` gate, before rehydrate/confirm) — `Exclusions`
    (`exclusions.ts`: thumbs-down, listened over `FEED_PLAY_THRESHOLD` (fixed at **5** since
    #205; `users.play_threshold` is retired) by id or name key — `play_count` is the
@@ -121,7 +121,7 @@ far pool (step 10; always on).
     tag. See [[genre-system]].
 12. **Confirm previews — Tier 1** (`PlayableCandidates.confirm` → `confirmToTarget` /
     `confirm-previews.ts`) — first 8 artists, in waves: rehydrated cache → **iTunes**
-    `search?entity=song` → **Spotify `/artists/{id}/top-tracks`** fallback. Artists with no
+    `search?entity=song` (iTunes only; the Spotify fallback was removed 2026-11-23). Artists with no
     playable preview are **dropped**. Every live outcome is collected for persistence.
 13. **Write Tier 1** (`writeScored`) — write ≤8 rows to `recommendation_cache` (re-checks
     cooldown fresh from the DB as a safety net; a failed read writes nothing). New artists:
@@ -161,7 +161,7 @@ the build wrote carries a later `created_at`. A failed or empty build leaves the
 | `preview-store.ts` | `PreviewStore`: the ONLY code touching `artist_tracks_cache` — confirm read (`rehydrate`), display read, outcome collector, tracks-route read/refresh/write; one 24h TTL; poisoning guard on tracks-route writes (collector writes satisfy it by construction, #175 E4a) |
 | `resolve-candidates.ts` | name → Artist resolver (cache → Last.fm `getInfo` resolve; Spotify-free since #157), 429 backoff |
 | `resolve-pools.ts` | blocking (36) / secondary (54) split; latency knobs |
-| `confirm-previews.ts` | iTunes-first / Spotify-fallback playability confirm |
+| `confirm-previews.ts` | iTunes playability confirm |
 | `cluster-cap.ts` | 25% per-genre diversity cap |
 | `scoring` (in engine) | `k^popularity` tier multiplier + relevance |
 | `window.ts` | weekly-stable seeds: `cacheWindowSeed`, `seededShuffle`, `sampleLikes` |

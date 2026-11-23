@@ -9,7 +9,6 @@ import { createRouteFakeDb, type Row } from "@/lib/api/__fixtures__/route-fake-d
 let db: ReturnType<typeof createRouteFakeDb>
 vi.mock("@/lib/supabase/server", () => ({ createServiceClient: () => db.client }))
 vi.mock("@/lib/auth", () => ({ safeAuth: vi.fn(async () => ({ user: { id: "u1" } })) }))
-vi.mock("@/lib/spotify-client-token", () => ({ getSpotifyClientToken: vi.fn(async () => "") }))
 const buildRecommendations = vi.fn()
 vi.mock("@/lib/recommendation/engine", () => ({ buildRecommendations: (...a: unknown[]) => buildRecommendations(...a) }))
 const afterFns: Array<() => Promise<void>> = []

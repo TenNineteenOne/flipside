@@ -69,7 +69,6 @@ pickers (`far-picks.ts`); the cluster cap keys on `genres[0]` (see [[generation-
 | `build-genres-picker.ts` | write the slim `data/genres-picker.json` the client genre picker ships (rerun after any change to `data/genres.json`) |
 | `validate-genre-tree.ts` | Last.fm `tag.getSimilar` validation; `--apply` auto-moves leaves ≥0.75 confidence |
 | `subcluster-keywords.ts` | the keyword dictionary |
-| `seed-artist-cache.ts` | seed the `artists` table: Last.fm tag top artists for every leaf, then Spotify search through the identity doorway (names already in `artists` skip Spotify) |
 | `backfill-artist-genres.ts` | fill-only genres+popularity on `artists` (+ `recommendation_cache.artist_data`) via MusicBrainz + Last.fm (avoids Spotify quota) |
 
 The two one-off scripts that first built `data/genres.json` (`build-genre-taxonomy.ts`,

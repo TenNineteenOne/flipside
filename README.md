@@ -3,7 +3,7 @@
 Flipside is a music-discovery web app (Next.js 16, React 19, Supabase). You sign in with a
 username only; there is no Spotify login. It builds one page, the Feed: a stack of artist
 cards found by walking Last.fm's similar-artist graph from the artists and genres you pick,
-each with a 30-second preview (iTunes first, Spotify as a fallback). You like, pass or save
+each with a 30-second preview (from iTunes). You like, pass or save
 artists, and can sync listening history from Last.fm or stats.fm.
 
 ## Run it

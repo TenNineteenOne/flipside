@@ -1,6 +1,6 @@
 ---
 title: flipside — Codebase Wiki
-updated: 2026-11-10
+updated: 2026-11-23
 kind: hub
 ---
 
@@ -27,7 +27,7 @@ your usual genres (no setting). (Explore, the old rails page, was folded into Fe
 Recommendations are grown by walking the **Last.fm** artist-similarity graph from your
 seeds, resolving candidate names to artists, scoring them by a "How famous?"
 popularity curve, capping genre clustering for diversity, and confirming each artist
-has a **playable 30-second preview** (iTunes first, Spotify fallback) before showing it.
+has a **playable 30-second preview** (iTunes) before showing it.
 
 ## The map
 
@@ -122,7 +122,7 @@ graph TD
 | `recommendation/preview-store.ts` | `PreviewStore`, sole owner of `artist_tracks_cache` |
 | `recommendation/exclusions.ts` | the one "never show this artist" policy |
 | `lastfm/` | the one Last.fm adapter: key, timeouts, gate (`limit.ts`), `lastfm_cache` (`cache.ts`), counters |
-| `music-provider/` | `itunes.ts` (previews, `itunesFetch`), `spotify.ts` (client-creds top-tracks + script search), shared types |
+| `music-provider/` | `itunes.ts` (previews, `itunesFetch`), shared types |
 | `artist-identity/` | the doorway (`ArtistIdentity`), `artistNameKey`, Last.fm lookup (`lastfm-lookup.ts`), MusicBrainz (`musicbrainz.ts`) — ADR-0001 |
 | `cards/` | server-side card assembly (`CardArtist`, `feed-cards.ts`) |
 | `client/` | framework-free UI controllers (feed generation, artist signals) under thin hooks in `hooks/` |

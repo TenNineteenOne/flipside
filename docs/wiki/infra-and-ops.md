@@ -55,9 +55,8 @@ falls back to `#8b5cf6`). Runs in `after()` during generation; writes
 
 ## Environment variables (observed)
 `USERNAME_HMAC_SECRET`, `USERNAME_ENCRYPTION_KEY`, `AUTH_SECRET`/`NEXTAUTH_SECRET`,
-`SPOTIFY_CLIENT_ID`/`SPOTIFY_CLIENT_SECRET` (shared client-creds key),
 `LASTFM_API_KEY`, `CRON_SECRET`, `SUPABASE_*` (URL, anon, service-role), and the
-origin/URL vars used by CSRF ([[auth-and-session]]). The Spotify and iTunes/Apple keys are a
+origin/URL vars used by CSRF ([[auth-and-session]]). The iTunes/Apple keys are a
 **single shared set** across local/preview/prod — throttling one throttles all; measure perf
 by request-count, not wall-clock.
 
