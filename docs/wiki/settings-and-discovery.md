@@ -1,6 +1,6 @@
 ---
 title: Settings & Discovery Tuning
-updated: 2026-11-10
+updated: 2026-11-22
 related: [[generation-engine]], [[data-model]], [[genre-system]], [[pages-and-components]]
 ---
 
@@ -24,8 +24,7 @@ nothing; the slider saves only when its value differs from the last saved one.
 Stops (labels exported as `FAME_LEVELS`): 0 Underground only · 1 Mostly niche · 2 Balanced ·
 3 Mostly popular · 4 Anything goes.
 
-**Wander farther retired**: no longer a setting. It is always on (the generate route passes
-`deepDiscovery: true, adventurous: true` and never reads `users.adventurous`; column kept for rollback, like
+**Wander farther retired**: no longer a setting. It is always on (the engine has no flag for it: `deepDiscovery` / `adventurous` are gone from its input, and the generate route never reads `users.adventurous`; column kept for rollback, like
 `play_threshold`). The Settings switch ("How close to your taste?"), `useAdventurousMode`, the
 shell's violet line and the rainbow Load more were removed; `PATCH /api/settings` rejects `adventurous`
 with a 400 (`"adventurous is no longer a setting"`). See [[generation-engine]].

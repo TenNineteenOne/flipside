@@ -148,4 +148,4 @@ like / save→playlist; tag `archive/spotify-user-token`), the `MusicProvider` i
 
 Raw research sweeps (with inline citations + confidence labels) live in `docs/_sweeps/`:
 `research-A-deezer-apple.md`, `research-B-musicbrainz-lastfm.md`, `research-C-spotify-state.md`.
-Historical design docs and PRDs are under `docs/superpowers/`.
+Historical design docs, PRDs and plans are under `docs/archive/` (past states of the app; trust this wiki and the code instead).

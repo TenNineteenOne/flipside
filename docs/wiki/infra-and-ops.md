@@ -1,6 +1,6 @@
 ---
 title: Infra & Ops
-updated: 2026-11-12
+updated: 2026-11-22
 related: [[auth-and-session]], [[api-routes]], [[data-model]]
 ---
 
@@ -25,24 +25,30 @@ protected pages → `/sign-in?from=<path>` (401 for APIs). `/api/cron/*` and `/a
 [[auth-and-session]].
 
 ## Cron — `vercel.json`
-One job: `GET /api/cron/recommendations` at `0 3 * * *` (03:00 UTC). Verifies
-`Authorization: Bearer <CRON_SECRET>` (timing-safe HMAC), then expires unseen recs >3 days
-and hard-deletes rows expired >30 days (excluding `skip_at` permanent dismissals). See
-[[api-routes]].
+Two jobs, both daily and both gated by `Authorization: Bearer <CRON_SECRET>` (`withCronRoute`,
+`lib/api/with-authed-route.ts`):
+- `GET /api/cron/mb-backfill` at `0 4 * * *` (04:00 UTC): fills missing external ids on
+  `artists` (`spotify_id`, `mbid`, `apple_id`, `deezer_id`) from MusicBrainz, up to 120 artists a run.
+- `GET /api/cron/recommendations` at `0 3 * * *` (03:00 UTC): expires unseen recs >3 days,
+  hard-deletes rows expired >30 days (excluding `skip_at` permanent dismissals), and deletes
+  `login_attempts` rows older than 24 hours.
+
+See [[api-routes]].
 
 ## Color extraction — `lib/colour-extraction.ts`
 Server-only. Fetches artist image from an allowlisted CDN set (`i.scdn.co`,
 `mosaic.scdn.co`, `is[1-5]-ssl.mzstatic.com`), 8s fetch timeout, 5MB cap, `node-vibrant`
 (5s parse timeout). Enforces WCAG AA contrast vs black (lightens in HSL until ≥4.5:1 or
 falls back to `#8b5cf6`). Runs in `after()` during generation; writes
-`artist_search_cache.artist_color`. Client-safe helpers in `lib/color-utils.ts`
+`artists.artist_color` and copies it into the user's `recommendation_cache.artist_data`. Client-safe helpers in `lib/color-utils.ts`
 (`sanitizeHex`, `stringToVibrantHex`, `hexToRgba`).
 
 ## Small but load-bearing
 - `lib/types.ts` → `GenreNode` (shared with `data/genres.json` and [[genre-system]]).
 - `lib/errors.ts` → `apiError`, `apiUnauthorized`, `apiNotFound`, `dbError`.
-- `lib/spotify-ids.ts` → `isValidSpotifyId` (base62×22) — path-traversal defense on
-  save/like/resolve/open routes.
+- `lib/spotify-ids.ts` → `isValidSpotifyId` (base62×22), used by the saves route (track id) and
+  onboarding resolve; `isValidArtistId` (internal artist id) guards the feedback, dismiss,
+  saves, open, artist-tracks and seed-artist routes.
 
 ## Environment variables (observed)
 `USERNAME_HMAC_SECRET`, `USERNAME_ENCRYPTION_KEY`, `AUTH_SECRET`/`NEXTAUTH_SECRET`,
@@ -53,8 +59,12 @@ origin/URL vars used by CSRF ([[auth-and-session]]). The Spotify and iTunes/Appl
 by request-count, not wall-clock.
 
 ## Tests & build
-`vitest` (`npm test`), `next build`, `eslint`. Genre/cache scripts via `npx tsx` (see
+`vitest` (`npm test`), `next build`, `eslint`. `npm run build` is `vitest run && next build`,
+so a failing test blocks a Vercel deploy. Genre/cache scripts via `npx tsx` (see
 [[genre-system]]).
+
+The static design mockups moved from `public/mockups/` to `docs/archive/mockups/` on
+2026-11-22 and are no longer served (there is no `public/` folder now).
 
 - `npm run measure:bundle` (`scripts/measure-bundle.mjs`): after `npx next build`, prints each
   page route's first-load client JS (raw and gzip), the feed's `next/dynamic` layout chunks

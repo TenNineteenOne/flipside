@@ -1,6 +1,6 @@
 ---
 title: API Routes
-updated: 2026-11-12
+updated: 2026-11-22
 related: [[generation-engine]], [[music-providers]], [[auth-and-session]], [[data-model]]
 ---
 
@@ -25,16 +25,22 @@ error-message text):
 All of the above still adopted `withAuthedCsrfRoute` for the shared CSRF+auth preamble; only
 the body-parse step stayed local. GET routes use `withAuthedRoute` (no CSRF). The shell hands
 handlers a lazily-created service-role client as `ctx.supabase` (tests mock
-`@/lib/supabase/server`). Still inline: `/api/onboarding/search` (logs `[onboard-search] unauth`
-before its 401) and the GETs owned elsewhere (`/api/history`, `/api/recommendations`). Crons use
+`@/lib/supabase/server`). `GET /api/onboarding/search`, `GET /api/history` and
+`GET /api/recommendations` moved onto `withAuthedRoute` on 2026-11-22 (the search route no
+longer logs `[onboard-search] unauth` before its 401). Crons use
 `withCronRoute(tag, handler)` — the single `CRON_SECRET` check.
+
+`lib/api/routes-wrapped.test.ts` reads every `app/api/**/route.ts` and fails if a
+`POST`/`PATCH`/`PUT`/`DELETE` export is not written as
+`export const X = withAuthedCsrfRoute(` / `withAuthedJsonRoute(` (imported from
+`lib/api/with-authed-route`). The only allowlisted file is `auth/[...nextauth]/route.ts`.
 
 ## Generation & discovery
 
 | Route | Method | Does | Calls |
 |---|---|---|---|
 | `/api/recommendations` | GET | read ≤40 unseen/unexpired `recommendation_cache`, underground re-filter, return 20 | cache only |
-| `/api/recommendations/generate` | POST | `buildRecommendations`; refuses (429) if unexpired unseen ≥60 unless `?replace=true` (checked before the cooldown claim); 30s cooldown; schedules `finish()` (secondary + preview flush) + color via `after()` | [[generation-engine]], Spotify, iTunes |
+| `/api/recommendations/generate` | POST | `buildRecommendations`; refuses (429) if unexpired unseen ≥60 unless `?replace=true` (checked before the cooldown claim); 30s cooldown; with `?replace=true` the old unseen, non-dismissed rows are deleted after the build returns, and only if it wrote or re-queued something (see [[generation-engine]]); no `?genre` filter any more; schedules `finish()` (secondary + preview flush) + color via `after()` | [[generation-engine]], Spotify, iTunes |
 | `/api/artists/[id]/tracks` | GET | lazy tracks for a card; cache→iTunes; name/ID cross-check guards cache poisoning | **iTunes only** |
 
 ## Feedback, saves, history
@@ -47,18 +53,18 @@ The `/api/explore/*` routes were removed with the Explore page (2026-11-10, #205
 
 | Route | Method | Does |
 |---|---|---|
-| `/api/feedback` | POST | thumbs-up first ensures this week's `user_challenges` row (`ensureCurrentChallenge`) so the RPC can credit it; `rpc_record_feedback`. A `railKey` from an old Explore client is ignored |
-| `/api/feedback/[artistId]` | DELETE | `rpc_delete_feedback` (undo thumbs), 204 |
-| `/api/dismiss/[artistId]` | DELETE | `rpc_clear_dismiss`, 204 |
+| `/api/feedback` | POST | thumbs-up first ensures this week's `user_challenges` row (`ensureCurrentChallenge`) so the RPC can credit it; `rpc_record_feedback_v2`. A `railKey` from an old Explore client is ignored |
+| `/api/feedback/[artistId]` | DELETE | `rpc_delete_feedback_v2` (undo thumbs), 204 |
+| `/api/dismiss/[artistId]` | DELETE | `rpc_clear_dismiss_v2`, 204 |
 | `/api/saves` | POST/DELETE | upsert/delete `saves`; POST first ensures this week's challenge row (`ensureCurrentChallenge`) and credits a `save_*` challenge via `rpc_increment_challenge_progress(p_signal 'save')` only when the save row didn't exist before; response keeps `playlistId: null` (the Spotify-playlist branch was removed in #175) |
 | `/api/history` | GET | paginated seen recs + feedback/saves join |
-| `/api/history/accumulate` | POST | 15-min cooldown; sync Last.fm or stats.fm history into `listened_artists` |
+| `/api/history/accumulate` | POST | 15-min cooldown, claimed before the sync; sync Last.fm or stats.fm history into `listened_artists`. A failed sync returns 500 and leaves a 1-minute wait (the stamp is set to 14 minutes ago, not restored to its old value). A failed `listened_artists` select or insert now fails the sync (500); a failed play-count bump is only logged |
 
 ## Onboarding & settings
 
 | Route | Method | Does |
 |---|---|---|
-| `/api/onboarding/search` | GET | **Spotify search** (client-creds), 120/min per user; **falls back to `artist_search_cache` ILIKE on 429** (`degraded:true`) |
+| `/api/onboarding/search` | GET | prefix match on the `artists` table (`name_lower` ILIKE, up to 10); with fewer than 5 hits, tops up from Last.fm `artist.search` (those carry an `lf:` id and `needsResolve: true`, resolved by `/api/onboarding/resolve` on selection). No Spotify call. Queries under 2 characters return an empty list; 120/min per user (in-memory), 429 over that |
 | `/api/onboarding/resolve` | POST | resolves a Last.fm-sourced onboarding suggestion to the internal artist uuid: `artists`-table exact-name doorway lookup first, MusicBrainz mbid url-rels fallback → mint under MB's canonical name (client name must match it at ≥0.8 similarity after folding diacritics, else 404; the check is skipped when exactly one name has Latin letters, e.g. "BTS" vs "방탄소년단"); 404 when unresolvable; 30/min per-user in-memory rate limit |
 | `/api/onboarding/seeds` | POST | upsert `seed_artists` (3–200 per request; existing + new ≤ 200 total, same check as settings) |
 | `/api/settings` | PATCH | validate + encrypt usernames + update `users` (401 if no row was updated: deleted account); a changed Last.fm / stats.fm username clears that source's sync cooldown; `selectedGenres` change → unseen-feed wipe; `fameLevel` → nothing (next batch only); `adventurous` → 400 (`"adventurous is no longer a setting"`, retired) |
@@ -71,7 +77,7 @@ The `/api/explore/*` routes were removed with the Explore page (2026-11-10, #205
 |---|---|---|
 | `/api/open/[platform]/[artistId]` | GET | **only `apple_music`** — `linkFor` (`lib/external-links.ts`): cached iTunes result (30d) → live iTunes by the `artists` row name (never client `?name`; `itunesFetch` gate-only: no preview breaker, no counter) → search URL; 302 redirect; 404 unknown artist id. `artists.apple_id` is NOT trusted (MB name search, homonym risk) |
 | `/api/auth/[...nextauth]` | GET/POST | NextAuth handlers (Credentials only) |
-| `/api/cron/recommendations` | GET | **no session** — `CRON_SECRET` Bearer (timing-safe); expire >3d unseen not-yet-expired rows, hard-delete >30d expired (keeps `skip_at`) |
+| `/api/cron/recommendations` | GET | **no session** — `CRON_SECRET` Bearer (timing-safe); expire >3d unseen not-yet-expired rows, hard-delete >30d expired (keeps `skip_at`), delete `login_attempts` rows older than 24 hours (a failure there is logged, the job still succeeds) |
 
 ## The "Open in Spotify" path
 Spotify links are **client-side, zero-API**: `lib/music-links.getArtistLink('spotify', …)`

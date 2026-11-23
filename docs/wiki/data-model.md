@@ -1,6 +1,6 @@
 ---
 title: Data Model (Supabase)
-updated: 2026-11-12
+updated: 2026-11-22
 related: [[auth-and-session]], [[generation-engine]], [[api-routes]]
 ---
 
@@ -65,6 +65,14 @@ cooldown / permanent dismiss), `expires_at` (hard TTL), `source`. Hot query uses
 index `WHERE seen_at IS NULL` on `(user_id, score DESC, expires_at DESC)`.
 RPCs: `rpc_record_feedback_v2`, `rpc_delete_feedback_v2`, `rpc_clear_dismiss_v2` (uuid-keyed, 0036).
 
+Rows do not live forever. The daily cron (`app/api/cron/recommendations/route.ts`) deletes
+every row whose `expires_at` is more than 30 days in the past, seen or not, unless `skip_at`
+is set. History (`lib/history/query.ts`) reads its list from the seen rows of this table, so
+an artist drops out of History once its row is deleted. Stats
+(`app/(app)/stats/stats-data.ts`) also counts seen rows toward Discovered, alongside
+`feedback` and `saves`. Saved and the engine's liked-artist seed lookup read artist names
+from `artists` by id, so the delete does not reach them.
+
 ### `explore_cache` — retired
 The removed Explore page's per-rail cache (`(user_id, rail_key)`, 24h TTL). No code reads or
 writes it since 2026-11-10 (#205); a later migration drops it. `users.last_explore_generated_at`
@@ -91,11 +99,14 @@ seeds. Last.fm-only picks get their uuid via `/api/onboarding/resolve` (the door
 
 ## Other tables
 
-- `login_attempts` — IP-hash rate limiting (`rpc_register_login_attempt`, 0035).
+- `login_attempts` — IP-hash rate limiting (`rpc_register_login_attempt`, 0035). The daily
+  cron (`/api/cron/recommendations`) deletes rows whose `window_start` is more than 24 hours old.
 - `user_challenges` — weekly discovery quests, `(user_id, week_start, challenge_key)`;
   progress via `rpc_increment_challenge_progress`, called from `rpc_record_feedback` on
   thumbs-up transitions, and by `POST /api/saves` for `save_*` templates. See
-  `lib/challenges/engine.ts` (11 rotating templates; [[pages-and-components]] `ChallengeStrip`).
+  `lib/challenges/engine.ts` (11 rotating templates, picked by calendar week: `ROTATING_KEYS`
+  indexed by weeks since 1970-01-05, the same for every user, with no per-user applicability
+  check; [[pages-and-components]] `ChallengeStrip`).
 - `groups`, `group_members`, `group_activity` — **legacy** social tables (0001), feature
   removed (0010); tables may still exist but are unused.
 

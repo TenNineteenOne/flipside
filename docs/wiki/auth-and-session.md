@@ -1,6 +1,6 @@
 ---
 title: Auth & Session
-updated: 2026-11-12
+updated: 2026-11-22
 related: [[data-model]], [[api-routes]], [[infra-and-ops]]
 ---
 
@@ -82,7 +82,11 @@ Idempotent (already-encrypted passes through). One-time backfill:
 - **API wrappers** (`lib/api/with-authed-route.ts`): three factories —
   `withAuthedRoute` (session only), `withAuthedCsrfRoute` (+CSRF), `withAuthedJsonRoute`
   (+CSRF +JSON parse), each passing `{ userId, request, supabase }`; plus `withCronRoute` for
-  the `CRON_SECRET` gate on `/api/cron/*`. A few routes still inline the preamble. See [[api-routes]].
+  the `CRON_SECRET` gate on `/api/cron/*`. A few mutating routes keep their own body parse inside
+  `withAuthedCsrfRoute`. `proxy.ts` only checks for a session on `/api/*`, so the CSRF check lives
+  in the wrappers: `lib/api/routes-wrapped.test.ts` fails if a `POST`/`PATCH`/`PUT`/`DELETE`
+  handler is not built from `withAuthedCsrfRoute` / `withAuthedJsonRoute` (next-auth's own route
+  is the one exception). See [[api-routes]].
 - **CSRF** (`lib/csrf.ts`): `enforceSameOrigin` checks Origin → Referer →
   `Sec-Fetch-Site` against known origins (`AUTH_URL`, `NEXTAUTH_URL`,
   `NEXT_PUBLIC_APP_URL`, `VERCEL_URL`, `VERCEL_PROJECT_PRODUCTION_URL`). **Fails closed**

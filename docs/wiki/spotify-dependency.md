@@ -1,6 +1,6 @@
 ---
 title: Spotify Dependency — Analysis
-updated: 2026-10-24
+updated: 2026-11-22
 related: [[music-providers]], [[external-apis]], [[generation-engine]], [[data-model]]
 sources: docs/_sweeps/research-A-deezer-apple.md, research-B-musicbrainz-lastfm.md, research-C-spotify-state.md
 ---
@@ -14,16 +14,10 @@ sources: docs/_sweeps/research-A-deezer-apple.md, research-B-musicbrainz-lastfm.
 > uuid with `spotify_id` as an attribute (ADR-0001), backfilled by the MusicBrainz worker
 > (#159). What remains on Spotify: the client-credentials **top-tracks preview fallback**
 > (`lib/music-provider/spotify.ts`) and Spotify search in `scripts/seed-artist-cache.ts`.
-> The tables below are the original 2026-06 analysis, with the "already replaced" column
-> updated.
-
-Answers: **what does flipside actually use the Spotify API for, and how replaceable is
-each use?** Motivation: the shared client-credentials key (the repurposed "Home Assistant"
-app; one-app-per-account limit) is throttle-prone and, when banned, empties cold-user feeds
-and breaks onboarding search. See [[music-providers]] and the resilience goal.
-
-> An accompanying **implementation plan** (verified with live API calls + pressure-tested)
-> is tracked separately — see `docs/spotify-removal-plan.md` once written.
+> The table below is the original 2026-06 analysis with the "already replaced" column
+> updated; the rest of the old analysis (ID-migration options, Deezer direction) was cut on
+> 2026-11-22 because that work is done. The plan that carried it out is archived at
+> `docs/archive/spotify-removal-plan.md` (historical).
 
 ## What Spotify gives flipside (and the alternative that already exists)
 
@@ -40,8 +34,10 @@ and breaks onboarding search. See [[music-providers]] and the resilience goal.
 | User history (opt-in) | `/me/top`, `/me/recent` | no | **Removed** — Last.fm / stats.fm only |
 | Like a track / save→playlist | `/me/tracks`, playlists | no | **Removed** with the user-token surface (#175) |
 
-**Bottom line:** generation already leans on Last.fm + iTunes for everything *except* (1)
-resolving a name to an artist (ID + image) and (2) the Spotify **ID** itself.
+**Bottom line:** nothing in sign-in, onboarding or generation needs the Spotify API. With
+`SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` unset, `getSpotifyClientToken()` returns `null`
+(`lib/spotify-client-token.ts`) and the app runs on iTunes previews alone; only
+`scripts/seed-artist-cache.ts` cannot resolve new names.
 
 ## The Feb 2026 Spotify API reality (High confidence — see research-C)
 
@@ -57,40 +53,11 @@ So Spotify `/search` now returns roughly **ID + name + image** — and that is t
 remaining value. ⚠️ This implies parts of the current code (Spotify top-tracks fallback,
 `getArtists` batch) **may already be dead in prod** — verify in runtime logs.
 
-## The two real dependencies
-
-### 1. Name → artist resolution (search)
-Replaceable by **Deezer** (keyless `GET api.deezer.com/search/artist` → id, name, picture,
-`nb_fan` popularity, link) or **MusicBrainz** search. Deezer also gives `/artist/{id}/related`
-(similar) and 30s previews. Caveats: Deezer ToS is **non-commercial**, **images can't be
-cached**, and **preview URLs expire** (hours) — must fetch fresh. See research-A.
-
-### 2. The Spotify artist ID (DB primary key + open-link)
-This is the hardest tie — `spotify_artist_id` keys nearly every table ([[data-model]]).
-Two paths:
-- **Keep Spotify IDs, source them without the API.** **MusicBrainz url-rels**
-  (`/ws/2/artist/{mbid}?inc=url-rels`) return the artist's Spotify URL keyless
-  (worked example: Nirvana → real ID). Keyless, 1 req/s, User-Agent required. Coverage is
-  great for mainstream, uneven long-tail (research-B).
-- **Fall back to a search URL** when no ID: `open.spotify.com/search/{name}` keeps the user
-  in Spotify with zero API (lands on search, not the profile).
-
-A *full* migration off Spotify IDs (e.g. to MBID or Deezer ID as the key) is a larger
-schema change; the cheaper move keeps the Spotify-ID column but stops *requiring* the
-Spotify API to fill it.
-
-## Where Spotify is still needed or nice-to-have
-- ~~**Optional user connect** (history sync, like-a-track, save→playlist)~~ — removed in
-  #175 (restore tag `archive/spotify-user-token`).
-- **"Open in Spotify"** as the default outbound platform — keep, via stored/MusicBrainz ID
-  or search-URL fallback.
-- **Spotify image quality** — Spotify images are good and free *with* the search result; if
-  search moves to Deezer, images come from Deezer (can't be cached) or Wikidata/Commons.
-
-## Direction (for the plan)
-(Original direction; MusicBrainz is in via the #159 backfill. There is no `musicProvider`
-abstraction any more — each upstream has its own adapter, see [[music-providers]].)
-Add **Deezer** + **MusicBrainz** providers; use them as the default search/metadata path (and as fallback when the Spotify
-breaker is open); keep iTunes primary for previews; keep Spotify only for the optional
-user-connect features and the open-link. Also **debounce `/api/onboarding/search`** (fires
-per keystroke today). Target: ratelimit risk from the shared Spotify key → near zero.
+## What Spotify is still used for
+- **Preview fallback**: `getSpotifyTopTracks` in `lib/music-provider/spotify.ts`, tried after
+  iTunes, with the shared client-credentials key. See [[music-providers]].
+- **Seeding script**: `scripts/seed-artist-cache.ts` resolves new names with Spotify search.
+- **"Open in Spotify"**: a link built from `artists.spotify_id`, or a Spotify search URL when
+  there is none (`lib/music-links.ts`); no API call. The id is an
+  attribute, not a key: identity is the internal uuid (ADR-0001, [[data-model]]) and the
+  MusicBrainz backfill cron fills `spotify_id` ([[infra-and-ops]]).

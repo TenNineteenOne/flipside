@@ -1,6 +1,6 @@
 ---
 title: Genre System
-updated: 2026-11-12
+updated: 2026-11-22
 related: [[generation-engine]], [[settings-and-discovery]], [[infra-and-ops]]
 ---
 
@@ -35,9 +35,10 @@ stored `lastfmTag`. Raw values are never mutated.
 
 The logic is a pure factory, `createGenreGraph(nodes)` (`lib/genre/genre-graph.ts`), which builds
 five in-memory indexes (`leafByKey`, `tagToAnchors`, `tagToClusters`, `clusterToLeafKeys`,
-`anchorToClusters`). `adjacency.ts` binds it once to the full `data/genres.json` for server code.
-The client genre picker (onboarding + Settings) binds it to **`data/genres-picker.json`**
-instead: the same tree with only `id`, `label`, `lastfmTag`, `children` and leaf `x`/`y`
+`anchorToClusters`). `adjacency.ts` binds it once, for server code, to the slim
+**`data/genres-picker.json`** (decoded with `decodePickerTree`), so server bundles do not load
+the full `data/genres.json`; only scripts and `picker-data.test.ts` read that file now.
+The client genre picker (onboarding + Settings) binds it to the same slim file: the same tree with only `id`, `label`, `lastfmTag`, `children` and leaf `x`/`y`
 (`slimGenreTree`, `lib/genre/picker-data.ts`), stored in a compact lossless encoding
 (`encodePickerTree` / `decodePickerTree`, same file): `{ t, x, y }`, where a leaf whose id is
 `sp:` + its tag is just the tag (or `[tag, label]` when the label is not the tag with `-` as
@@ -64,14 +65,16 @@ pickers (`far-picks.ts`); the cluster cap keys on `genres[0]` (see [[generation-
 
 | Script | Purpose |
 |---|---|
-| `build-genre-taxonomy.ts` | original Wikidata SPARQL → 12×80 skeleton |
-| `build-genres-v2.ts` | slot 6,291 everynoise leaves; add x/y/color |
 | `build-subclusters.ts` | split clusters >30 leaves by keyword dict (idempotent) |
-| `build-genres-picker.ts` | write the slim `data/genres-picker.json` the client genre picker ships (rerun after any of the above) |
+| `build-genres-picker.ts` | write the slim `data/genres-picker.json` the client genre picker ships (rerun after any change to `data/genres.json`) |
 | `validate-genre-tree.ts` | Last.fm `tag.getSimilar` validation; `--apply` auto-moves leaves ≥0.75 confidence |
 | `subcluster-keywords.ts` | the keyword dictionary |
-| `seed-artist-cache.ts` | populate `artist_search_cache` from Last.fm tag top artists → Spotify-resolve |
+| `seed-artist-cache.ts` | seed the `artists` table: Last.fm tag top artists for every leaf, then Spotify search through the identity doorway (names already in `artists` skip Spotify) |
 | `backfill-artist-genres.ts` | fill-only genres+popularity on `artists` (+ `recommendation_cache.artist_data`) via MusicBrainz + Last.fm (avoids Spotify quota) |
+
+The two one-off scripts that first built `data/genres.json` (`build-genre-taxonomy.ts`,
+`build-genres-v2.ts`) were deleted on 2026-11-22; they are in git history. `data/genres.json`
+is now the source of truth and is edited through the scripts above.
 
 All long scripts checkpoint to `.checkpoint.json` for safe resume.
 

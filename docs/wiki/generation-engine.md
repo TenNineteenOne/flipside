@@ -1,6 +1,6 @@
 ---
 title: Generation Engine (Feed)
-updated: 2026-11-12
+updated: 2026-11-22
 related: [[music-providers]], [[external-apis]], [[genre-system]], [[data-model]]
 ---
 
@@ -14,8 +14,9 @@ far pool (step 10; always on).
 ## Pipeline (in order)
 
 1. **Gather seeds** (`gatherSeedContext`) — three parallel Supabase sources:
-   `seed_artists`, a stable weekly sample of thumbs-up artists (`sampleLikes`, via
-   `recommendation_cache`), and Last.fm `tag.gettopartists` (`lastfm.tagTopArtists`) for the
+   `seed_artists`, a stable weekly sample of thumbs-up artists (`sampleLikes`; their names
+   are read from `artists` by id, not from `recommendation_cache`, whose old rows the nightly
+   cron deletes), and Last.fm `tag.gettopartists` (`lastfm.tagTopArtists`) for the
    user's top ~5 `selected_genres`. Deduped → `seedNames[]` (capped 10–15): the user's own
    `seed_artists` always come first (shuffled among themselves), then the likes + genre-tag
    fill (shuffled) — #175 F-A; before it, ~40 genre names in one shuffled pool dropped every
@@ -25,7 +26,10 @@ far pool (step 10; always on).
 2. **Soften gate** (`runWithSoftening`) — if the run returns `count=0`, retry with
    `playThreshold+5`, then fall back to `sampleColdStartSeeds()` from
    `data/cold-start-seeds.json`. A tier-1 *write error* (`PipelineRun.writeError`) is not an
-   empty pool and never softens (#175 R7). A zero-top run aborts its own far and bleed
+   empty pool and never softens (#175 R7). Nor does a preview-source outage
+   (`PipelineRun.sourceDown`: tier 1 kept nothing and at least one iTunes lookup failed, as
+   opposed to answering "no tracks"; logged as `[engine] preview_source_down`): softening
+   would rerun the whole pipeline into the same outage. A zero-top run aborts its own far and bleed
    resolves (an `AbortSignal` the resolver checks between names) so they stop competing
    with the next run for the Last.fm gate and the DB. Every run of one build shares one
    `ArtistIdentity`, so a discarded run's still-running secondary resolve can't race the next
@@ -33,9 +37,9 @@ far pool (step 10; always on).
 3. **First-hop similarity** (`runPipeline`) — each seed →
    `lastfm.similarArtists` → **Last.fm `artist.getSimilar`** (7-day cached; one batched
    `lastfm_cache` read for all seeds, and one for the 2nd-hop names, via `lastfm.prefetch`).
-   2nd hop (`runDeepHop`) always (Wander farther is always on): the
-   route passes `deepDiscovery: true, adventurous: true` for everyone and no longer reads
-   `users.adventurous` (`deep_discovery` is retired).
+   2nd hop (`runDeepHop`) always: Wander farther is always on, with no flag (the
+   `deepDiscovery` / `adventurous` inputs are gone from `RecommendationInput`; the route does
+   not read `users.adventurous`, and `deep_discovery` is retired).
    The **far-pool fetch** (`startFarFetch` → `far-picks.ts`) is started
    once per build right after seed gathering, so it overlaps the first hop; see step 10.
 4. **Round-robin ordering** (`buildRoundRobinNames`, `tailFirst=true`) — interleave
@@ -62,22 +66,22 @@ far pool (step 10; always on).
    (`exclusions.ts`: thumbs-down, listened over `FEED_PLAY_THRESHOLD` (fixed at **5** since
    #205; `users.play_threshold` is retired) by id or name key, thumbs-up
    or saved — Feed only, they never come back (D1, #175 F-B) — and the 7-day seen /
-   dismissed cooldown), popularity>50 at fame level 0 ("Underground only"), optional genre filter.
+   dismissed cooldown), popularity>50 at fame level 0 ("Underground only").
    Exclusions start loading before the seed gather: every exclusion read (listened,
    thumbs-down, cooldown seen/skipped, thumbs-up, saves) runs once per build
    (`preloadExclusionRows`) and is shared by every soften run; the gather reuses the same
    thumbs-up read.
    Then **rehydrate** from `artist_tracks_cache` via `PreviewStore`.
 8. **Score** (`scoreCandidate` / `tierMultiplier`) —
-   `k^popularity × 0.8 + seedRelevance × 0.2 − adventurousPenalty`, where `k` comes from
-   `users.fame_level` via `fameToEngine` (`lib/settings/fame.ts`). See [[settings-and-discovery]].
+   `k^popularity × 0.8 + seedRelevance × 0.2 − adventurousPenalty` (0.08 for every candidate
+   with popularity > 50), where `k` comes from
+   `users.fame_level` via `fameToEngine` (`lib/settings/fame.ts`). One scorer ranks the primary
+   pool, the backfill reserve and the secondary pass. See [[settings-and-discovery]].
 9. **Greedy diversity** (`greedyPickTop`) — top 40 → pick 20 with soft per-genre (10%) and
    per-seed (8%) penalties.
 10. **Exploration budget** (`augmentWithAdjacent`) — replace the lowest-scored picks past the
-    top few (skipped when a `genre` filter is active):
-    - Wander farther is always on (the route never passes `adventurous: false`; the
-      4-slot close-bleed-only branch below is only reachable by direct engine callers/tests).
-    - **Wander farther on (the route's mode):** 10 slots from position 3, filled from the **far pool** first,
+    top few:
+    - **Always on, one mode:** 10 slots from position 3, filled from the **far pool** first,
       adjacent bleed covering any shortfall. The far pool (`lib/recommendation/far-picks.ts`)
       is the retired Explore page's Uncharted Territory + Curveballs logic, ported into Feed: 4 anchors the
       user hasn't touched (selected genres / listened genres via `artists`) and 4 leaves
@@ -114,7 +118,9 @@ far pool (step 10; always on).
     playable preview are **dropped**. Every live outcome is collected for persistence.
 13. **Write Tier 1** (`writeScored`) — write ≤8 rows to `recommendation_cache` (re-checks
     cooldown fresh from the DB as a safety net; a failed read writes nothing). New artists:
-    one upsert with no `seen_at`/`skip_at`/`created_at` (DB defaults). Existing rows: a
+    one upsert with no `seen_at`/`skip_at` (DB defaults) and `created_at` stamped from the
+    app clock, the same clock as the rewrites, because replace mode (below) deletes the rows
+    older than its build. Existing rows: a
     conditional UPDATE per row that lands only if the row still has the `seen_at` we read and
     no `skip_at` (#175 R4), so a dismiss / thumbs-down / save racing the write is never undone.
     Rewrites get `created_at: now` so the nightly 3-day unseen expiry doesn't drop them again
@@ -123,13 +129,20 @@ far pool (step 10; always on).
     query also skips any `skip_at` row (defense in depth). The returned count is rows **new
     to the feed** (inserts + resurfaced): an already-queued unseen row is still re-written
     (F-C) but not counted. A run that only re-queued rows (`PipelineRun.requeued > 0`) is
-    still **done**: it returns `count: 0` without softening, so a quick regenerate never
-    widens the filters (cold-start would drop the underground cap) on an established feed.
+    still **done**: it returns `count: 0` (and `requeued` on the `BuildResult`) without
+    softening, so a quick regenerate never widens the filters on an established feed. The
+    underground cap holds in every soften run, cold-start included (it no longer lifts it).
 14. **Return fast** — the result carries `count`, `pending`, one `finish()` continuation,
     and `metrics`.
 15. **Background** (`finish()` via `after()`) — confirm the rest of the primary pool
     (Tier 2, ≤12) then the secondary pool (≤20), writing each batch; then flush every soften
     run's confirm outcomes to `artist_tracks_cache` (even if the secondary pass threw).
+
+**Replace mode** (`POST /api/recommendations/generate?replace=true`, the Feed's Regenerate):
+the route deletes the old queue only after `buildRecommendations` returns, and only if the
+build wrote or re-queued something (`count > 0` or `requeued > 0`). It deletes the user's
+rows with no `seen_at`, no `skip_at` and a `created_at` before the build started; every row
+the build wrote carries a later `created_at`. A failed or empty build leaves the queue intact.
 
 ## Key modules (`lib/recommendation/`)
 
@@ -146,10 +159,10 @@ far pool (step 10; always on).
 | `scoring` (in engine) | `k^popularity` tier multiplier + relevance |
 | `window.ts` | weekly-stable seeds: `cacheWindowSeed`, `seededShuffle`, `sampleLikes` |
 | `far-picks.ts` | the always-on far pool: outside-anchor + leftfield tag pickers, `fetchFarNames` (≤8 tag lookups), `loadListenedGenres` |
-| `gen-timing.ts` (+ `lib/metrics/api-call-counter.ts`) | instrumentation (`[gen-timing]` logs; `far=` far fetch wall-clock (so far, on a timeout) and `farWait=` bleed-step start until the far pool was ready or the wait budget ran out (`farTimeout=1`), when Wander farther ran; `bleedTimeout=1` when the adjacent pool missed the same budget) |
+| `gen-timing.ts` (+ `lib/metrics/api-call-counter.ts`) | instrumentation (`[gen-timing]` logs; `far=` far fetch wall-clock (so far, on a timeout) and `farWait=` bleed-step start until the far pool was ready or the wait budget ran out (`farTimeout=1`); `bleedTimeout=1` when the adjacent pool missed the same budget) |
 
 Outside this folder: Last.fm calls go through `lib/lastfm` (one adapter), name → uuid
-through `lib/artist-identity` (with `lastfm-lookup.ts` = `lastfmResolve`, `buildEnrichArtist`,
+through `lib/artist-identity` (with `lastfm-lookup.ts` = `lastfmResolve`,
 `mergeEnrichment`), previews through `lib/music-provider/{itunes,spotify}.ts`. See
 [[music-providers]].
 
@@ -159,8 +172,8 @@ through `lib/artist-identity` (with `lastfm-lookup.ts` = `lastfmResolve`, `build
   one adapter `lib/lastfm` ([[music-providers]]).
 - **Genres + popularity come from Last.fm enrichment**, because Spotify's search response
   returns empty genres / zero popularity (and as of Feb 2026 Spotify *removed* popularity
-  and deprecated genres — [[spotify-dependency]]). getInfo enrichment
-  (`buildEnrichArtist`) is effectively required for scoring to work.
+  and deprecated genres — [[spotify-dependency]]). The getInfo lookup (`lastfmResolve`)
+  already carries both, so there is no separate enrichment call; scoring depends on it.
 - **iTunes is the primary preview source.** The Spotify top-tracks fallback may already be
   dead for client-credentials (Feb 2026 removal) — verify in logs.
 - **Preview cache tri-state** (`artist_tracks_cache`, owned by `PreviewStore`): no row =

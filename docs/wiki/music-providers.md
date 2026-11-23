@@ -1,6 +1,6 @@
 ---
 title: Music Providers & Resilience
-updated: 2026-11-12
+updated: 2026-11-22
 related: [[external-apis]], [[generation-engine]], [[spotify-dependency]], [[api-routes]]
 ---
 
@@ -54,8 +54,8 @@ the Feed uses it for every resolve batch's misses and for the seeds' / 2nd-hop s
 `ArtistEnrichment`, `LastfmArtistCandidate`).
 
 Doorway wiring lives in `lib/artist-identity/lastfm-lookup.ts`: `lastfmResolve` (getInfo as
-the name resolver), `buildEnrichArtist` (undefined without a key, so callers feature-detect),
-and `mergeEnrichment` (the uncalled `pickBestMatch`/`searchAndMatchArtist` search guard was
+the name resolver; it already carries genres and popularity, so `buildEnrichArtist` was
+deleted on 2026-11-22) and `mergeEnrichment` (the uncalled `pickBestMatch`/`searchAndMatchArtist` search guard was
 deleted 2026-11-12).
 
 ## Spotify — `lib/music-provider/spotify.ts` (client-credentials only)
@@ -75,7 +75,10 @@ in-flight dedup), fetched by the generate route. `RateLimited` /
 ## iTunes — `lib/music-provider/itunes.ts`
 
 `itunesFetch` owns iTunes HTTP; `searchTracksByArtist(name, market, limit)` returns `null`
-on breaker-open / failure, `[]` on zero matches (callers must distinguish).
+on breaker-open / failure, `[]` on zero matches (callers must distinguish). It asks for
+`entity=song&limit=25` and keeps the tracks by exactly that artist; when that returns results
+but none by the artist (common-word names such as Low or Cake, where the top 25 are songs
+titled that), it retries once with `limit=200&attribute=artistTerm`.
 
 ### Key types (`lib/music-provider/types.ts`)
 - `Artist.id` is the internal **uuid** (`artists.id`); `spotifyId` is an optional attribute.

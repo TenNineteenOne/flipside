@@ -1,6 +1,6 @@
 ---
 title: Architecture Overview
-updated: 2026-11-10
+updated: 2026-11-22
 related: [[generation-engine]], [[api-routes]], [[music-providers]], [[data-model]]
 ---
 
@@ -36,7 +36,7 @@ hands serialized data to a `"use client"` shell for interactivity. A single
 ## The generation flow (the heart of the app)
 
 The **Feed** ([[generation-engine]]) runs one resolver/confirm core (Explore was folded into
-it on 2026-11-10; `/explore` 308-redirects to `/feed` via `next.config.ts` `redirects()`):
+it on 2026-11-10; `/explore` 307-redirects to `/feed` via `next.config.ts` `redirects()`):
 
 ```
 seeds ─▶ Last.fm similarity / tag fan-out ─▶ candidate names
@@ -53,7 +53,7 @@ Key design properties:
 - **Fast first paint, fill in background.** The Feed writes a first tier of ~8 confirmed
   artists, returns, then continues resolving/confirming the rest inside `after()`. The
   client polls `/api/recommendations` to append. (See [[generation-engine]] and PRD
-  `docs/superpowers/specs/prd-fast-first-paint.md`.)
+  `docs/archive/superpowers/specs/prd-fast-first-paint.md`.)
 - **Last.fm is the recommendation brain**, not Spotify. Similar-artist and genre-tag
   expansion are 100% Last.fm. See [[external-apis]].
 - **iTunes is the primary preview source**; Spotify is a fallback. See [[music-providers]].
