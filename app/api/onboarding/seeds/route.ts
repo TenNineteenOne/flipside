@@ -2,7 +2,7 @@ import { apiError, dbError } from "@/lib/errors"
 import { createServiceClient } from "@/lib/supabase/server"
 import { validateSeedArtists } from "@/lib/seed-artist-validation"
 import { withAuthedCsrfRoute } from "@/lib/api/with-authed-route"
-import { MAX_SEED_ARTISTS, seedCapError } from "@/lib/api/seed-cap"
+import { MAX_SEED_ARTISTS, seedCapDbError, seedCapError } from "@/lib/api/seed-cap"
 
 // withAuthedCsrfRoute (not withAuthedJsonRoute): the invalid-body error here
 // is "Invalid JSON body", matching /api/settings/seed-artists — not the
@@ -35,6 +35,8 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }) => {
     .upsert(rows, { onConflict: "user_id,artist_id" })
 
   if (error) {
+    const capped = seedCapDbError(error)
+    if (capped) return capped
     if (error.code === "23503") return dbError(error, "onboarding/seeds/upsert")
     console.error("[onboarding/seeds] upsert error:", error.message)
     return apiError("Failed to save seed artists", 500)

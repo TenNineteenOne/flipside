@@ -80,6 +80,35 @@ describe("loadExclusions — feedback + cooldown", () => {
   })
 })
 
+describe("loadExclusions — verdicts follow the name across duplicate roster rows (#168)", () => {
+  it("a thumbs-down, like or dismiss on one row hides a same-name row with another id", async () => {
+    const ex = await load(
+      {
+        feedback: [
+          { user_id: "u1", artist_id: "down1", signal: "thumbs_down", deleted_at: null },
+          { user_id: "u1", artist_id: "up1", signal: "thumbs_up", deleted_at: null },
+        ],
+        recommendation_cache: [
+          { user_id: "u1", artist_id: "skip1", seen_at: daysAgo(100), skip_at: daysAgo(100) },
+          { user_id: "u1", artist_id: "seen1", seen_at: daysAgo(1), skip_at: null },
+        ],
+        artists: [
+          { id: "down1", name: "Foo Band" },
+          { id: "up1", name: "Liked Band" },
+          { id: "skip1", name: "Skipped Band" },
+          { id: "seen1", name: "Seen Band" },
+        ],
+      },
+      { ...FEED, liked: true },
+    )
+    expect(ex.reason(a("down2", "foo band"))).toBe("thumbs_down")
+    expect(ex.reason(a("up2", "Liked Band"))).toBe("liked")
+    expect(ex.reason(a("skip2", "Skipped Band"))).toBe("cooldown")
+    expect(ex.reason(a("seen2", "Seen Band"))).toBeNull() // passive seen stays id-only
+    expect(ex.reason(a("other", "Other Band"))).toBeNull()
+  })
+})
+
 describe("loadExclusions — reads past the 1000-row cap (#175 F16)", () => {
   it("pages listened, thumbs-down and cooldown reads until a short page", async () => {
     const many = (n: number, mk: (i: number) => Record<string, unknown>) =>

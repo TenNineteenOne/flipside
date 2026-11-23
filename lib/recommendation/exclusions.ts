@@ -145,17 +145,50 @@ export async function loadExclusions(
   const cooldownIds = new Set<string>()
   for (const r of [...(seen.data ?? []), ...(skipped.data ?? [])]) cooldownIds.add(r.artist_id as string)
   const likedIds = new Set([...(thumbsUp.data ?? []), ...(saved.data ?? [])].map((r) => r.artist_id as string))
+  const skippedIds = new Set((skipped.data ?? []).map((r) => r.artist_id as string))
+
+  // An explicit verdict also applies by name: the roster can hold several rows
+  // for one artist (#168), and a verdict keyed on one uuid would stop applying
+  // once the resolver lands on another. Same-name homonyms are hidden too.
+  const names = await readNameKeys(supabase, [...thumbsDownIds, ...likedIds, ...skippedIds])
+  const namesOf = (ids: Set<string>) => {
+    const out = new Set<string>()
+    for (const id of ids) {
+      const key = names.get(id)
+      if (key) out.add(key)
+    }
+    return out
+  }
+  const thumbsDownNames = namesOf(thumbsDownIds)
+  const likedNames = namesOf(likedIds)
+  const skippedNames = namesOf(skippedIds)
 
   return {
     reason(artist) {
-      if (thumbsDownIds.has(artist.id)) return "thumbs_down"
+      const key = names.size > 0 ? artistNameKey(artist.name) : ""
+      if (thumbsDownIds.has(artist.id) || thumbsDownNames.has(key)) return "thumbs_down"
       if (listenedIds.has(artist.id)) return "listened"
       if (listenedNames.size > 0 && listenedNames.has(artistNameKey(artist.name))) return "listened"
-      if (likedIds.has(artist.id)) return "liked"
-      if (cooldownIds.has(artist.id)) return "cooldown"
+      if (likedIds.has(artist.id) || likedNames.has(key)) return "liked"
+      if (cooldownIds.has(artist.id) || skippedNames.has(key)) return "cooldown"
       return null
     },
   }
+}
+
+/** uuid → artistNameKey for roster rows. A failed read degrades to id-only matching. */
+async function readNameKeys(supabase: Pick<SupabaseClient, "from">, ids: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  const CHUNK = 200 // `.in()` goes in the URL; 200 uuids stay well under the limit
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const { data, error } = await supabase.from("artists").select("id, name").in("id", ids.slice(i, i + CHUNK))
+    if (error) {
+      console.error(`[exclusions] name read failed: ${error.message}`)
+      return out
+    }
+    for (const row of data ?? []) if (row.name) out.set(row.id as string, artistNameKey(row.name as string))
+  }
+  return out
 }
 
 /**

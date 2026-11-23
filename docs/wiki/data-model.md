@@ -1,12 +1,12 @@
 ---
 title: Data Model (Supabase)
-updated: 2026-11-22
+updated: 2026-11-23
 related: [[auth-and-session]], [[generation-engine]], [[api-routes]]
 ---
 
 # Data Model (Supabase)
 
-Postgres on Supabase, migrations in `supabase/migrations/` (`0001`–`0042`). **All tables
+Postgres on Supabase, migrations in `supabase/migrations/` (`0001`–`0044`; `0043` and `0044` are written and tested locally but **not yet applied to production** as of 2026-11-23). **All tables
 have RLS enabled.** The service-role key bypasses RLS; most privileged writes go through
 `createServiceClient()` (see [[auth-and-session]]).
 
@@ -75,8 +75,10 @@ from `artists` by id, so the delete does not reach them.
 
 ### `explore_cache` — retired
 The removed Explore page's per-rail cache (`(user_id, rail_key)`, 24h TTL). No code reads or
-writes it since 2026-11-10 (#205); a later migration drops it. `users.last_explore_generated_at`
-(its 90s rebuild cooldown) is likewise unused.
+writes it since 2026-11-10 (#205). Migration `0044` drops it, together with
+`users.last_explore_generated_at` and the other retired `users` columns (`play_threshold`,
+`popularity_curve`, `underground_mode`, `deep_discovery`, `adventurous`,
+`flipside_playlist_id`, `spotify_authorized`). `0044` is destructive: dump first.
 
 ### `feedback` — thumbs signals
 `(user_id, artist_id)` unique, `signal` (`thumbs_up`|`thumbs_down`), soft-delete
@@ -86,7 +88,9 @@ via `deleted_at`. Partial index `WHERE deleted_at IS NULL`.
 `spotify_track_id` nullable (0002). Social/group sharing removed in 0010.
 
 ### `seed_artists` — onboarding picks
-Links a user to explicitly chosen artists (`artist_id`, unique per user); used as cold-start
+Links a user to explicitly chosen artists (`artist_id`, unique per user); capped at 200 per user
+(`lib/api/seed-cap.ts` in the routes, and a `before insert` trigger from `0043` that locks the
+user row so two tabs cannot both pass the count; the routes map its `23514` to a 400); used as cold-start
 seeds. Last.fm-only picks get their uuid via `/api/onboarding/resolve` (the doorway).
 
 ## Shared caches (cross-user)

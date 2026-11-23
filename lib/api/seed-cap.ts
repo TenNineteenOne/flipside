@@ -29,3 +29,8 @@ export async function seedCapError(
   }
   return null
 }
+
+/** The database's own cap (migration 0043 trigger) refusing a concurrent add: 400, not 500. */
+export function seedCapDbError(error: { code?: string }): Response | null {
+  return error.code === "23514" ? apiError(`Cannot exceed ${MAX_SEED_ARTISTS} seed artists`, 400) : null
+}

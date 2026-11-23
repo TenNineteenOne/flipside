@@ -4,7 +4,7 @@ import { isValidArtistId } from "@/lib/spotify-ids"
 import { validateSeedArtists } from "@/lib/seed-artist-validation"
 import { onTasteChanged } from "@/lib/taste-change"
 import { withAuthedRoute, withAuthedCsrfRoute } from "@/lib/api/with-authed-route"
-import { MAX_SEED_ARTISTS, seedCapError } from "@/lib/api/seed-cap"
+import { MAX_SEED_ARTISTS, seedCapDbError, seedCapError } from "@/lib/api/seed-cap"
 
 export const GET = withAuthedRoute(async ({ userId }) => {
   const supabase = createServiceClient()
@@ -54,7 +54,7 @@ export const POST = withAuthedCsrfRoute(async ({ userId, request }) => {
     .from("seed_artists")
     .upsert(rows, { onConflict: "user_id,artist_id" })
 
-  if (error) return dbError(error, "settings/seed-artists/upsert")
+  if (error) return seedCapDbError(error) ?? dbError(error, "settings/seed-artists/upsert")
 
   await onTasteChanged(supabase, userId, { kind: "seeds" })
 

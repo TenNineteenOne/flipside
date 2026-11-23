@@ -1,6 +1,6 @@
 ---
 title: Generation Engine (Feed)
-updated: 2026-11-22
+updated: 2026-11-23
 related: [[music-providers]], [[external-apis]], [[genre-system]], [[data-model]]
 ---
 
@@ -68,6 +68,8 @@ far pool (step 10; always on).
    #205; `users.play_threshold` is retired) by id or name key, thumbs-up
    or saved — Feed only, they never come back (D1, #175 F-B) — and the 7-day seen /
    dismissed cooldown), popularity>50 at fame level 0 ("Underground only").
+   A thumbs-down, like, save or dismiss also applies by name key, so it holds when the
+   roster has several rows for one artist (#168); the passive 7-day seen cooldown is by id only.
    Exclusions start loading before the seed gather: every exclusion read (listened,
    thumbs-down, cooldown seen/skipped, thumbs-up, saves) runs once per build
    (`preloadExclusionRows`) and is shared by every soften run; the gather reuses the same
